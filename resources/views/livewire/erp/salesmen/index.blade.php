@@ -3,15 +3,107 @@
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
 use App\Models\User;
+use App\Services\Payroll\PayrollStatementImporter;
 use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
+use Livewire\WithFileUploads;
 use Livewire\WithPagination;
 
 new #[Layout('components.layouts.app')] class extends Component {
+    use WithFileUploads;
     use WithPagination;
+
+    // ── 📄 급여대장 업로드 (jin 2026-10-14 «엑셀 업로드를 통해 월급명세서를 올리면 해당인원에 맞게 기입») ──
+    //   xls 를 읽어(PayrollStatementImporter) 미리보기 → 사람이 미매칭을 연결 → 「기입」. 그 달·그 사람만 덮어쓴다(다른 달 보존).
+    //   ⚠️ 프로퍼티 이름과 메서드 이름을 같게 두지 말 것(§8 #32) — payrollFile / parsePayrollFile.
+    public $payrollFile = null;
+    public bool $showImport = false;
+    /** @var array{month:?string, people:list<array>, errors:list<string>}|array{} */
+    public array $importPreview = [];
+    /** @var array<int, string> 급여대장 행번호 → salesman_id('' = 미매칭) */
+    public array $importMatches = [];
+
+    public function openImport(): void
+    {
+        abort_unless(auth()->user()?->canEditPayroll(), 403);
+        $this->reset(['payrollFile', 'importPreview', 'importMatches']);
+        $this->showImport = true;
+    }
+
+    public function closeImport(): void
+    {
+        $this->reset(['payrollFile', 'importPreview', 'importMatches', 'showImport']);
+    }
+
+    public function updatedPayrollFile(): void
+    {
+        abort_unless(auth()->user()?->canEditPayroll(), 403);
+        $this->validate(['payrollFile' => 'required|file|mimes:xls,xlsx|max:10240'], [], ['payrollFile' => __('salesman.import.file')]);
+        $importer = new PayrollStatementImporter;
+        $this->importPreview = $importer->parse($this->payrollFile->getRealPath());
+        $this->importMatches = [];
+        foreach ($importer->match($this->importPreview['people']) as $row => $id) {
+            $this->importMatches[$row] = $id === null ? '' : (string) $id;
+        }
+    }
+
+    /** 미매칭을 연결할 후보 — 활성 인원 전부(유형 무관). 배열로 담는다(모델이면 페이로드가 커진다, §8 #96-C). */
+    #[Computed]
+    public function importCandidates(): array
+    {
+        return Salesman::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'type'])
+            ->map(fn ($s) => ['id' => $s->id, 'name' => $s->name, 'type' => $s->type])->all();
+    }
+
+    public function applyImport(): void
+    {
+        $actor = auth()->user();
+        abort_unless($actor?->canEditPayroll(), 403);
+        $month = $this->importPreview['month'] ?? null;
+        if (! $month || ! PayrollEntry::isMonth($month) || ($this->importPreview['errors'] ?? []) !== []) {
+            $this->dispatch('notify', message: __('salesman.import.not_ready'), type: 'error');
+
+            return;
+        }
+        // 같은 사람에게 두 줄이 붙으면 멈춘다 — 나중 줄이 앞 줄을 조용히 덮는다.
+        $ids = array_filter(array_map('intval', $this->importMatches));
+        if (count($ids) !== count(array_unique($ids))) {
+            $this->dispatch('notify', message: __('salesman.import.duplicate'), type: 'error');
+
+            return;
+        }
+        $done = 0;
+        $skipped = 0;
+        foreach ($this->importPreview['people'] as $p) {
+            $id = (int) ($this->importMatches[$p['row']] ?? 0);
+            if (! $p['ok'] || $id === 0) {
+                $skipped++;
+
+                continue;
+            }
+            $sm = Salesman::find($id);
+            if (! $sm) {
+                $skipped++;
+
+                continue;
+            }
+            // 사원번호를 명부에 박아 다음 달부터 이름이 달라도 자동 매칭(jin #3).
+            if ($sm->employee_no !== $p['employee_no']) {
+                $sm->update(['employee_no' => $p['employee_no']]);
+            }
+            PayrollEntry::writeMonthWithAudit($sm, $month, PayrollStatementImporter::rowsFor($p), $actor, '급여대장 업로드 '.$month);
+            $done++;
+        }
+        unset($this->salesmen);
+        if ($this->editingId) {
+            $this->loadPayroll($this->editingId);
+        }
+        $this->dispatch('notify', message: __('salesman.import.applied', ['month' => $month, 'done' => $done, 'skipped' => $skipped]), type: 'success');
+        $this->closeImport();
+    }
 
     public string $search    = '';
     #[Url] public int $perPage = 10;
@@ -396,15 +488,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             // 💴 급여 항목 — 사내직원·검차직원, 관리 이상 + 재무. 그 달을 통째로 교체하고 지급합계 변화를 감사로그 1줄로.
             if (($sm->type === 'employee' || $sm->isPayrollOnly()) && $actor?->canEditPayroll() && PayrollEntry::isMonth($this->payrollMonth)) {
-                $wasTotal = PayrollEntry::totalFor($sm->id, $this->payrollMonth);
-                PayrollEntry::replaceFor($sm->id, $this->payrollMonth, $this->payrollRows());
-                $nowTotal = PayrollEntry::totalFor($sm->id, $this->payrollMonth);
-                if (\App\Models\AuditLog::valuesDiffer($wasTotal, $nowTotal)) {
-                    \App\Models\AuditLog::recordChange($sm, 'payroll_'.$this->payrollMonth, $wasTotal, $nowTotal);
-                    // 🪜 그 달 월정산이 결재 중이면 변경 이력에도 남긴다 — 카드가 노란 표시로 결재자에게 알린다(월정산 v3).
-                    \App\Models\SettlementPayoutBatch::where('month', $this->payrollMonth)->where('status', 'pending')->get()
-                        ->each(fn ($b) => $b->recordChange($actor, $sm->id, \App\Models\SettlementPayoutBatchChange::FIELD_PAYROLL, $wasTotal, $nowTotal, '급여 항목 수정'));
-                }
+                // 감사로그·결재 중 월정산 변경 이력은 writeMonthWithAudit 한 곳(급여대장 업로드와 공용, §8 #44).
+                PayrollEntry::writeMonthWithAudit($sm, $this->payrollMonth, $this->payrollRows(), $actor, '급여 항목 수정');
             }
         } else {
             // 🔀 2026-10-14 (jin «사용자관리에서 한번에 관리») — 이 화면에서는 등록하지 않는다. 검차직원을 포함한 모든 인원은
@@ -471,8 +556,89 @@ new #[Layout('components.layouts.app')] class extends Component {
             {{ __('salesman.register_in_users') }}
         </a>
         @endif
+        @if(auth()->user()?->canEditPayroll())
+        <button type="button" wire:click="openImport" class="btn-primary" title="{{ __('salesman.import.hint') }}">{{ __('salesman.import.button') }}</button>
+        @endif
     </div>
 </div>
+
+{{-- 📄 급여대장 업로드 모달 (jin 2026-10-14). 카드는 max-h + overflow(폰에서 아래 버튼 닿게, §8 #98). --}}
+@if($showImport)
+<div class="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-3 sm:items-center sm:p-6" wire:click.self="closeImport">
+    <div class="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-5 shadow-2xl" data-payroll-import>
+        <div class="flex items-center justify-between">
+            <h3 class="text-base font-bold text-gray-800">{{ __('salesman.import.title') }}</h3>
+            <button type="button" wire:click="closeImport" class="rounded p-1 text-gray-400 hover:bg-gray-100">✕</button>
+        </div>
+        <p class="mt-1 text-xs text-gray-500">{{ __('salesman.import.hint') }}</p>
+        <div class="mt-3">
+            <input type="file" wire:model="payrollFile" accept=".xls,.xlsx" class="block w-full text-sm" />
+            <div wire:loading wire:target="payrollFile" class="mt-1 text-xs text-violet-600">{{ __('salesman.import.reading') }}</div>
+            @error('payrollFile')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        </div>
+        @if($importPreview !== [])
+            @foreach(($importPreview['errors'] ?? []) as $err)
+            <p class="mt-2 rounded bg-red-50 px-3 py-2 text-xs text-red-700">{{ $err }}</p>
+            @endforeach
+            @php
+                $people = $importPreview['people'] ?? [];
+                $month = $importPreview['month'] ?? null;
+                $candidates = $this->importCandidates;
+                $byId = collect($candidates)->keyBy('id');
+                $matchedIds = array_filter(array_map('intval', $importMatches));
+                $overwrite = $month ? \App\Models\PayrollEntry::whereIn('salesman_id', $matchedIds)->where('month', $month)->distinct()->count('salesman_id') : 0;
+            @endphp
+            <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-700">
+                <span>{{ __('salesman.import.month') }} <b>{{ $month ?? '—' }}</b></span>
+                <span>{{ __('salesman.import.count', ['n' => count($people)]) }}</span>
+                <span>{{ __('salesman.import.matched', ['n' => count($matchedIds)]) }}</span>
+                @if($overwrite > 0)<span class="text-amber-700">{{ __('salesman.import.overwrite', ['n' => $overwrite]) }}</span>@endif
+            </div>
+            <div class="mt-2 overflow-x-auto">
+                <table class="w-full min-w-[640px] text-xs">
+                    <thead><tr class="border-b border-gray-200 text-left text-gray-500">
+                        <th class="py-1 pr-2">{{ __('salesman.import.col_no') }}</th>
+                        <th class="py-1 pr-2">{{ __('salesman.import.col_name') }}</th>
+                        <th class="py-1 pr-2">{{ __('salesman.import.col_dept') }}</th>
+                        <th class="py-1 pr-2 text-right">{{ __('salesman.payroll.total') }}</th>
+                        <th class="py-1 pr-2">{{ __('salesman.import.col_match') }}</th>
+                        <th class="py-1">{{ __('common.status') }}</th>
+                    </tr></thead>
+                    <tbody class="divide-y divide-gray-100">
+                    @foreach($people as $p)
+                        @php $mid = (int) ($importMatches[$p['row']] ?? 0); $m = $mid ? $byId->get($mid) : null; @endphp
+                        <tr class="{{ ! $p['ok'] ? 'bg-red-50' : ($mid ? '' : 'bg-amber-50') }}" data-import-row="{{ $p['row'] }}">
+                            <td class="py-1 pr-2 text-gray-500">{{ $p['employee_no'] }}</td>
+                            <td class="py-1 pr-2 font-medium text-gray-800">{{ $p['name'] }} <span class="text-gray-400">{{ $p['position'] }}</span></td>
+                            <td class="py-1 pr-2 text-gray-500">{{ $p['dept'] }}</td>
+                            <td class="py-1 pr-2 text-right font-mono">{{ number_format($p['total']) }}</td>
+                            <td class="py-1 pr-2">
+                                <select wire:model="importMatches.{{ $p['row'] }}" class="input-base h-8 py-0 text-xs text-gray-800">
+                                    <option value="">{{ __('salesman.import.unmatched') }}</option>
+                                    @foreach($candidates as $c)
+                                    <option value="{{ $c['id'] }}">{{ $c['name'] }} ({{ __('salesman.type.'.$c['type']) }})</option>
+                                    @endforeach
+                                </select>
+                            </td>
+                            <td class="py-1 text-[11px]">
+                                @if(! $p['ok'])<span class="text-red-600">{{ $p['error'] }}</span>
+                                @elseif(! $mid)<span class="text-amber-700">{{ __('salesman.import.pick') }}</span>
+                                @elseif(($m['type'] ?? '') === 'freelance')<span class="text-amber-700">{{ __('salesman.import.freelance_note') }}</span>
+                                @else<span class="text-green-600">{{ __('salesman.import.ready') }}</span>@endif
+                            </td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
+            </div>
+            <div class="mt-3 flex flex-wrap items-center justify-end gap-2">
+                <button type="button" wire:click="closeImport" class="rounded-lg border px-3 py-2 text-sm text-gray-600">{{ __('common.cancel') }}</button>
+                <button type="button" wire:click="applyImport" class="btn-primary" @disabled(($importPreview['errors'] ?? []) !== [] || $matchedIds === [])>{{ __('salesman.import.apply') }}</button>
+            </div>
+        @endif
+    </div>
+</div>
+@endif
 
 {{-- 검색 --}}
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">

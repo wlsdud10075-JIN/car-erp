@@ -1,11 +1,13 @@
 <?php
 
 use App\Models\ApprovalRequest;
+use App\Models\CashAccount;
 use App\Models\CashSnapshot;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
 use App\Services\CapitalStatusService;
+use App\Services\CashAccountBalanceService;
 use App\Services\ExchangeRateService;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
@@ -31,6 +33,110 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $cashUsd = '';
     public string $cashEur = '';
     public ?string $cashSavedAt = null;
+
+    // 🏦 계좌별 잔액 (jin 2026-10-14 «싼카는 계좌가 많아서 드롭박스로 계좌를 선택하고 잔액을 기입») — 계좌가 1개 이상 등록되면
+    //   아래 폼이 이 모드로 바뀐다. 0개면 종전 3칸 폼(heyman·karaba 가 배포 다음 날도 그대로 입력). 합계는 CashAccountBalanceService 가 스냅샷으로.
+    public string $cashAccountId = '';
+    /** @var array<string, string> 통화 → 금액 문자열(절대값, KRW 부호는 cashKrwNegative 토글) */
+    public array $cashAmounts = [];
+    public bool $showAddAccount = false;
+    public string $newBank = '';
+    public string $newAccountNo = '';
+    public string $newLabel = '';
+    /** @var list<string> */
+    public array $newCurrencies = ['KRW'];
+
+    #[Computed]
+    public function cashAccounts()
+    {
+        return CashAccount::active()->get();
+    }
+
+    /** 이 날짜에 적용되는 계좌별 값(이어쓴 값은 날짜가 다르다) — 화면 표. */
+    #[Computed]
+    public function cashAccountRows()
+    {
+        return app(CashAccountBalanceService::class)->rowsFor($this->cashDate ?: now()->toDateString());
+    }
+
+    public function updatedCashDate(): void
+    {
+        unset($this->cashAccountRows);
+    }
+
+    public function saveAccountBalance(): void
+    {
+        $user = auth()->user();
+        abort_unless($user->canEnterCashBalance(), 403);
+        $account = CashAccount::active()->find((int) $this->cashAccountId);
+        if (! $account) {
+            $this->dispatch('notify', message: __('cash.account.pick_first'), type: 'error');
+
+            return;
+        }
+        $date = $this->cashDate ?: now()->toDateString();
+        if (\Illuminate\Support\Carbon::parse($date)->gt(now())) {
+            $this->dispatch('notify', message: '미래 날짜는 입력할 수 없습니다.', type: 'error');
+
+            return;
+        }
+        $clean = fn ($v) => abs((float) str_replace([',', ' '], '', (string) $v));
+        $amounts = [];
+        foreach ($account->currencies as $cur) {
+            $raw = trim((string) ($this->cashAmounts[$cur] ?? ''));
+            if ($raw === '') {
+                continue;   // 비운 통화는 안 건드린다(이어쓰기)
+            }
+            // 원화만 음수 허용(마이너스 통장) — 부호는 토글이 정한다(종전 폼과 같은 규칙).
+            $amounts[$cur] = $cur === 'KRW' ? $clean($raw) * ($this->cashKrwNegative ? -1 : 1) : $clean($raw);
+        }
+        if ($amounts === []) {
+            $this->dispatch('notify', message: __('cash.account.amount_required'), type: 'error');
+
+            return;
+        }
+        app(CashAccountBalanceService::class)->save($account, $date, $amounts, $user);
+        $this->cashSavedAt = $date;
+        $this->reset(['cashAmounts', 'cashKrwNegative']);
+        unset($this->cashAccountRows);
+        $this->dispatch('notify', message: __('cash.account.saved', ['date' => $date, 'account' => $account->display_name]), type: 'success');
+    }
+
+    /** 「n행 추가」 — 계좌 등록. 잔액 입력 권한자면 누구나(jin «추천대로»). */
+    public function addCashAccount(): void
+    {
+        abort_unless(auth()->user()->canEnterCashBalance(), 403);
+        $this->validate([
+            'newBank' => 'required|string|max:40',
+            'newAccountNo' => 'required|string|max:60',
+            'newLabel' => 'nullable|string|max:60',
+            'newCurrencies' => 'required|array|min:1',
+            'newCurrencies.*' => 'in:'.implode(',', CashAccount::CURRENCIES),
+        ], [], ['newBank' => __('cash.account.bank'), 'newAccountNo' => __('cash.account.number'), 'newCurrencies' => __('cash.account.currencies')]);
+        $acc = CashAccount::create([
+            'bank' => trim($this->newBank), 'account_no' => trim($this->newAccountNo), 'label' => trim($this->newLabel) ?: null,
+            'currencies' => array_values(array_intersect(CashAccount::CURRENCIES, $this->newCurrencies)),
+            'sort' => (int) CashAccount::max('sort') + 1, 'is_active' => true,
+        ]);
+        \App\Models\AuditLog::recordChange($acc, 'cash_account', null, $acc->display_name.' ['.implode(',', $acc->currencies).']');
+        $this->reset(['newBank', 'newAccountNo', 'newLabel', 'newCurrencies', 'showAddAccount']);
+        $this->cashAccountId = (string) $acc->id;
+        unset($this->cashAccounts, $this->cashAccountRows);
+        $this->dispatch('notify', message: __('cash.account.added'), type: 'success');
+    }
+
+    /** 계좌 숨김 — 지우지 않는다(잔액 이력이 달려 있다). 합계에서만 빠진다. */
+    public function deactivateCashAccount(int $id): void
+    {
+        abort_unless(auth()->user()->canEnterCashBalance(), 403);
+        $acc = CashAccount::findOrFail($id);
+        $acc->update(['is_active' => false]);
+        \App\Models\AuditLog::recordChange($acc, 'cash_account_active', true, false);
+        if ($this->cashAccountId === (string) $id) {
+            $this->cashAccountId = '';
+        }
+        unset($this->cashAccounts, $this->cashAccountRows);
+    }
 
     public function mount(): void
     {
@@ -754,6 +860,88 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         @if($cashSavedAt)<span class="text-xs text-gray-400">{{ __('cash.last_input') }} {{ $cashSavedAt }}</span>@endif
     </div>
+    @if($this->cashAccounts->isNotEmpty())
+    {{-- 🏦 계좌별 입력 모드 (jin 2026-10-14) — 날짜 · 계좌 드롭다운 · 그 계좌의 통화 칸 · 저장. 아래 표 = 이 날짜에 적용되는 계좌별 값. --}}
+    @php $selAcc = $this->cashAccounts->firstWhere('id', (int) $cashAccountId); @endphp
+    <div class="flex flex-wrap items-end gap-2" data-cash-accounts>
+        <div class="w-full sm:w-40">
+            <label class="text-xs text-gray-500">{{ __('cash.date') }}</label>
+            <input type="date" wire:model.live="cashDate" max="{{ now()->toDateString() }}" class="input-base w-full" />
+        </div>
+        <div class="w-full sm:w-64">
+            <label class="text-xs text-gray-500">{{ __('cash.account.label') }}</label>
+            <select wire:model.live="cashAccountId" class="input-base w-full text-gray-800">
+                <option value="">{{ __('cash.account.pick') }}</option>
+                @foreach($this->cashAccounts as $acc)
+                <option value="{{ $acc->id }}">{{ $acc->display_name }} · {{ implode('/', $acc->currencies) }}</option>
+                @endforeach
+            </select>
+        </div>
+        <button type="button" wire:click="$toggle('showAddAccount')" class="h-9 rounded-lg border border-dashed border-gray-300 px-3 text-xs text-gray-600 hover:bg-gray-50">{{ __('cash.account.add_row') }}</button>
+        @if($selAcc)
+            @foreach($selAcc->currencies as $cur)
+            <div class="w-full sm:w-44">
+                <label class="text-xs text-gray-500">{{ __('cash.'.strtolower($cur)) }}</label>
+                <div class="flex gap-1">
+                    @if($cur === 'KRW')
+                    <button type="button" wire:click="$toggle('cashKrwNegative')" title="{{ __('cash.sign_hint') }}"
+                            class="shrink-0 rounded border px-2 text-sm font-bold {{ $cashKrwNegative ? 'border-red-300 bg-red-50 text-red-600' : 'border-gray-300 bg-white text-gray-500' }}">{{ $cashKrwNegative ? '−' : '+' }}</button>
+                    <input type="text" wire:model="cashAmounts.{{ $cur }}" data-money inputmode="numeric" class="input-base w-full text-right" placeholder="0" />
+                    @else
+                    <input type="text" wire:model="cashAmounts.{{ $cur }}" inputmode="decimal" class="input-base w-full text-right" placeholder="0.00" />
+                    @endif
+                </div>
+            </div>
+            @endforeach
+            <button type="button" wire:click="saveAccountBalance" class="btn-primary h-9">{{ __('cash.save') }}</button>
+        @endif
+    </div>
+    @if($showAddAccount)
+    <div class="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2" data-cash-account-add>
+        <div><label class="text-xs text-gray-500">{{ __('cash.account.bank') }}</label><input type="text" wire:model="newBank" class="input-base w-28" placeholder="{{ __('cash.account.bank_ph') }}" /></div>
+        <div><label class="text-xs text-gray-500">{{ __('cash.account.number') }}</label><input type="text" wire:model="newAccountNo" class="input-base w-48" placeholder="{{ __('cash.account.number_ph') }}" /></div>
+        <div><label class="text-xs text-gray-500">{{ __('cash.account.label_opt') }}</label><input type="text" wire:model="newLabel" class="input-base w-24" placeholder="{{ __('cash.account.label_ph') }}" /></div>
+        <div class="flex items-center gap-2 pb-2 text-xs text-gray-700">
+            @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
+            <label class="flex items-center gap-1"><input type="checkbox" wire:model="newCurrencies" value="{{ $cur }}" class="rounded" /> {{ $cur }}</label>
+            @endforeach
+        </div>
+        <button type="button" wire:click="addCashAccount" class="btn-primary h-9">{{ __('cash.account.add') }}</button>
+        @error('newBank')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
+        @error('newAccountNo')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
+        @error('newCurrencies')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
+    </div>
+    @endif
+    @php $rows = $this->cashAccountRows; $sums = ['KRW' => 0.0, 'USD' => 0.0, 'EUR' => 0.0]; @endphp
+    <div class="mt-2 overflow-x-auto">
+        <table class="w-full min-w-[420px] text-xs" data-cash-account-table>
+            <thead><tr class="border-b border-gray-200 text-left text-gray-500">
+                <th class="py-1 pr-2">{{ __('cash.account.label') }}</th><th class="py-1 pr-2">{{ __('cash.account.currency') }}</th>
+                <th class="py-1 pr-2 text-right">{{ __('cash.account.balance') }}</th><th class="py-1 pr-2">{{ __('cash.account.as_of') }}</th><th class="py-1"></th>
+            </tr></thead>
+            <tbody class="divide-y divide-gray-100">
+            @foreach($rows as $r)
+                @php if ($r['balance'] !== null) { $sums[$r['currency']] += $r['balance']; } @endphp
+                <tr class="{{ $r['carried'] ? 'text-gray-400' : 'text-gray-700' }}">
+                    <td class="py-1 pr-2">{{ $r['account']->display_name }}</td>
+                    <td class="py-1 pr-2">{{ $r['currency'] }}</td>
+                    <td class="py-1 pr-2 text-right font-mono">{{ $r['balance'] === null ? '—' : ($r['currency'] === 'KRW' ? number_format($r['balance']) : number_format($r['balance'], 2)) }}</td>
+                    <td class="py-1 pr-2">{{ $r['as_of'] ?? __('cash.account.never') }}{{ $r['carried'] ? ' '.__('cash.account.carried') : '' }}</td>
+                    <td class="py-1 text-right">
+                        @if($loop->first || $rows[$loop->index - 1]['account']->id !== $r['account']->id)
+                        <button type="button" wire:click="deactivateCashAccount({{ $r['account']->id }})" wire:confirm="{{ __('cash.account.hide_confirm') }}" class="text-[11px] text-gray-400 hover:text-red-500">{{ __('cash.account.hide') }}</button>
+                        @endif
+                    </td>
+                </tr>
+            @endforeach
+            </tbody>
+            <tfoot><tr class="border-t border-gray-200 font-semibold text-gray-800">
+                <td class="py-1 pr-2" colspan="2">{{ __('cash.account.total') }}</td>
+                <td class="py-1 pr-2 text-right font-mono" colspan="3">KRW {{ number_format($sums['KRW']) }} · USD {{ number_format($sums['USD'], 2) }} · EUR {{ number_format($sums['EUR'], 2) }}</td>
+            </tr></tfoot>
+        </table>
+    </div>
+    @else
     <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <div>
             <label class="text-xs text-gray-500">{{ __('cash.date') }}</label>
@@ -786,6 +974,25 @@ new #[Layout('components.layouts.app')] class extends Component {
             <button type="button" wire:click="saveCashBalance" class="btn-primary w-full">{{ __('cash.save') }}</button>
         </div>
     </div>
+    @if(auth()->user()->canEnterCashBalance())
+    <button type="button" wire:click="$toggle('showAddAccount')" class="mt-2 rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">{{ __('cash.account.add_row') }}</button>
+    @if($showAddAccount)
+    <div class="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2" data-cash-account-add>
+        <div><label class="text-xs text-gray-500">{{ __('cash.account.bank') }}</label><input type="text" wire:model="newBank" class="input-base w-28" placeholder="{{ __('cash.account.bank_ph') }}" /></div>
+        <div><label class="text-xs text-gray-500">{{ __('cash.account.number') }}</label><input type="text" wire:model="newAccountNo" class="input-base w-48" placeholder="{{ __('cash.account.number_ph') }}" /></div>
+        <div><label class="text-xs text-gray-500">{{ __('cash.account.label_opt') }}</label><input type="text" wire:model="newLabel" class="input-base w-24" placeholder="{{ __('cash.account.label_ph') }}" /></div>
+        <div class="flex items-center gap-2 pb-2 text-xs text-gray-700">
+            @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
+            <label class="flex items-center gap-1"><input type="checkbox" wire:model="newCurrencies" value="{{ $cur }}" class="rounded" /> {{ $cur }}</label>
+            @endforeach
+        </div>
+        <button type="button" wire:click="addCashAccount" class="btn-primary h-9">{{ __('cash.account.add') }}</button>
+        @error('newBank')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
+        @error('newAccountNo')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
+    </div>
+    @endif
+    @endif
+    @endif
     <p class="mt-2 text-[11px] text-gray-400">{{ __('cash.input_note') }}</p>
 </div>
 @endif
