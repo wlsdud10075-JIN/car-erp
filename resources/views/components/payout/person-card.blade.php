@@ -63,6 +63,10 @@
             <div class="bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-700">{{ __('payout_card.payroll') }}</div>
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('payroll') }}"><span class="text-gray-500">{{ __('payout_card.payroll') }}</span>
                 <span class="font-mono">@if($payrollMissing)<span class="text-amber-700" data-payroll-missing>{{ __('payout_card.payroll_missing') }}</span>@else{{ $fmt($p['payroll']) }}@endif</span></div>
+            {{-- 기입된 급여 항목만(jin 2026-10-14) — 행이 없는 항목은 안 그린다. 옛 박제엔 키가 없어 비어 있다. --}}
+            @foreach(($p['payroll_items'] ?? []) as $it)
+            <div class="flex justify-between px-2 py-0.5 pl-5 text-[10px] text-gray-400" data-payroll-item="{{ $it['label'] }}"><span>{{ $it['label'] }}</span><span class="font-mono">{{ number_format($it['amount']) }}</span></div>
+            @endforeach
             @if($p['incentive'] !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('incentive') }}"><span class="text-gray-500">{{ __('payout_card.incentive') }}</span><span class="font-mono">{{ $signed($p['incentive']) }}</span></div>
             @endif
@@ -105,6 +109,10 @@
             <div class="bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-700">{{ __('payout_card.ledger_person') }}</div>
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('payroll') }}"><span class="text-gray-500">{{ __('payout_card.payroll') }}</span>
                 <span class="font-mono">@if($payrollMissing)<span class="text-amber-700" title="{{ __('payout_card.payroll_missing_hint') }}" data-payroll-missing>{{ __('payout_card.payroll_missing') }}</span>@else{{ $fmt($p['payroll']) }}@endif</span></div>
+            {{-- 기입된 급여 항목만(jin 2026-10-14) — 행이 없는 항목은 안 그린다. 옛 박제엔 키가 없어 비어 있다. --}}
+            @foreach(($p['payroll_items'] ?? []) as $it)
+            <div class="flex justify-between px-2 py-0.5 pl-5 text-[10px] text-gray-400" data-payroll-item="{{ $it['label'] }}"><span>{{ $it['label'] }}</span><span class="font-mono">{{ number_format($it['amount']) }}</span></div>
+            @endforeach
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.settlement_pay') }} ({{ __('payout_card.count', ['n' => $p['count']]) }} · {{ ! empty($p['tier']) ? __('payout_card.settlement_pay_tier') : __('payout_card.settlement_pay_per_unit') }})</span><span class="font-mono">{{ $fmt($p['settlement_pay']) }}</span></div>
             @if($p['adj_manual'] !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('adj_manual') }}"><span class="text-gray-500">{{ __('payout_card.adj_manual') }}</span><span class="font-mono">{{ $signed($p['adj_manual']) }}</span></div>
