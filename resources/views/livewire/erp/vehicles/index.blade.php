@@ -1037,11 +1037,28 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 서류 발송(EMS·DHL) — 등기번호·운송장번호·발송비·접수일 (jin 2026-08-31).
         'ems_tracking_no_cache', 'dhl_tracking_no_cache', 'shipping_fee_total_cache', 'shipping_sent_date_cache',
         'ems_fee_total_cache', 'dhl_fee_total_cache',
+        // 전 컬럼 정렬 (jin 2026-10-14 «안 되는 항목도 있더라») — 컨테이너·B/L 번호·미수금(KRW 캐시).
+        'container_number', 'bl_number', 'sale_unpaid_amount_krw_cache',
+    ];
+
+    /**
+     * DB 컬럼이 아닌 표시 컬럼의 정렬식 (jin 2026-10-14 «모든 컬럼 오름차순·내림차순»).
+     * 키 = 헤더 `$sortBtn` 키. 값 = ORDER BY 에 그대로 들어가는 SQL(MySQL·SQLite 공통 문법만).
+     *  - purchase_total / sale_total = 화면 accessor(`purchase_total_amount` / `sale_total_amount`)와 같은 식.
+     *  - unpaid_ratio = 미수 KRW 캐시 ÷ (총판매가 × 환율) — 화면의 `unpaid_ratio` 와 같은 분모(SKILLS §13). 환율 0·미입력은 NULL.
+     *  - settlement_stage = 정산 유무·지급 여부 순(none < 있음 < paid). 화면 뱃지(운임대기 등)의 완전한 순서는 아니다 —
+     *    뱃지는 accessor 체인(`settlementStage()`)이라 SQL 로 못 옮긴다. 「정산됨을 모으기」 용도.
+     */
+    private const SORT_EXPRESSIONS = [
+        'purchase_total' => '(COALESCE(vehicles.purchase_price, 0) + COALESCE(vehicles.selling_fee, 0))',
+        'sale_total' => '(COALESCE(vehicles.sale_price, 0) + COALESCE(vehicles.transport_fee, 0) + COALESCE(vehicles.sale_other_costs, 0) + COALESCE(vehicles.commission, 0) + COALESCE(vehicles.auto_loading, 0) - COALESCE(vehicles.tax_dc, 0))',
+        'unpaid_ratio' => '(vehicles.sale_unpaid_amount_krw_cache * 1.0 / NULLIF((COALESCE(vehicles.sale_price, 0) + COALESCE(vehicles.transport_fee, 0) + COALESCE(vehicles.sale_other_costs, 0) + COALESCE(vehicles.commission, 0) + COALESCE(vehicles.auto_loading, 0) - COALESCE(vehicles.tax_dc, 0)) * COALESCE(vehicles.exchange_rate, 0), 0))',
+        'settlement_stage' => "(CASE WHEN (SELECT s.settlement_status FROM settlements s WHERE s.vehicle_id = vehicles.id AND s.deleted_at IS NULL ORDER BY s.id DESC LIMIT 1) = 'paid' THEN 2 WHEN EXISTS (SELECT 1 FROM settlements s2 WHERE s2.vehicle_id = vehicles.id AND s2.deleted_at IS NULL) THEN 1 ELSE 0 END)",
     ];
 
     public function setSort(string $col): void
     {
-        if (! in_array($col, self::SORTABLE_COLUMNS, true)) {
+        if (! in_array($col, self::SORTABLE_COLUMNS, true) && ! array_key_exists($col, self::SORT_EXPRESSIONS)) {
             return;
         }
         if ($this->sortColumn === $col) {
@@ -2388,9 +2405,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             ]);
 
         // 컨사이니 정렬은 폴백 우선순위(COALESCE)로 — consignee_id 만 보면 신규 차량이 전부 NULL 이라 정렬이 무의미.
-        $q = $this->sortColumn === 'consignee_id'
-            ? $q->orderByRaw(Vehicle::effectiveConsigneeSortExpression().' '.($this->sortDirection === 'asc' ? 'asc' : 'desc'))
-            : $q->orderBy($this->sortColumn, $this->sortDirection);
+        $dir = $this->sortDirection === 'asc' ? 'asc' : 'desc';
+        $q = match (true) {
+            $this->sortColumn === 'consignee_id' => $q->orderByRaw(Vehicle::effectiveConsigneeSortExpression().' '.$dir),
+            array_key_exists($this->sortColumn, self::SORT_EXPRESSIONS) => $q->orderByRaw(self::SORT_EXPRESSIONS[$this->sortColumn].' '.$dir),
+            default => $q->orderBy($this->sortColumn, $this->sortDirection),
+        };
 
         // 🚨 동점 tie-break 필수 (jin 2026-09-11) — 기본 정렬이 `created_at` 인데 **일괄 적재분은
         //    초 단위 시각이 전부 같다**(실측 ssancarerp 4,794대 중 4,693대 · 한 초에 최대 79대).
@@ -7820,10 +7840,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @php if ($this->colOn('eta_date')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['eta_date']">{!! $sortBtn('eta_date', __('vehicle.col.eta_date')) !!}</th>@php endif; @endphp
                 @php if ($this->colOn('bl_issue_date')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['bl_issue_date']">{!! $sortBtn('bl_issue_date', __('vehicle.col.bl_issue_date')) !!}</th>@php endif; @endphp
                 @php if ($this->colOn('deregistration_date')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['deregistration_date']">{!! $sortBtn('deregistration_date', __('vehicle.col.deregistration_date')) !!}</th>@php endif; @endphp
-                @php if ($this->colOn('export_declaration_number')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{{ __('vehicle.col.export_declaration_number') }}</th>@php endif; @endphp
+                @php if ($this->colOn('export_declaration_number')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{!! $sortBtn('export_declaration_number', __('vehicle.col.export_declaration_number')) !!}</th>@php endif; @endphp
                 @php if ($this->colOn('vessel_name')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['vessel_name']">{!! $sortBtn('vessel_name', __('vehicle.col.vessel_name')) !!}</th>@php endif; @endphp
-                @php if ($this->colOn('container_number')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{{ __('vehicle.col.container_number') }}</th>@php endif; @endphp
-                @php if ($this->colOn('bl_number')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{{ __('vehicle.col.bl_number') }}</th>@php endif; @endphp
+                @php if ($this->colOn('container_number')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{!! $sortBtn('container_number', __('vehicle.col.container_number')) !!}</th>@php endif; @endphp
+                @php if ($this->colOn('bl_number')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{!! $sortBtn('bl_number', __('vehicle.col.bl_number')) !!}</th>@php endif; @endphp
                 @php if ($this->colOn('ems_tracking')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['ems_tracking']">{!! $sortBtn('ems_tracking_no_cache', __('vehicle.col.ems_tracking')) !!}</th>@php endif; @endphp
                 @php if ($this->colOn('dhl_tracking')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['dhl_tracking']">{!! $sortBtn('dhl_tracking_no_cache', __('vehicle.col.dhl_tracking')) !!}</th>@php endif; @endphp
                 @php if ($this->colOn('shipping_sent_date')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['shipping_sent_date']">{!! $sortBtn('shipping_sent_date_cache', __('vehicle.col.shipping_sent_date')) !!}</th>@php endif; @endphp
@@ -7835,16 +7855,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @php if ($this->colOn('buyer')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer_id', __('vehicle.col.buyer')) !!}</th>@php endif; @endphp
                 @php if ($this->colOn('consignee')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['consignee']">{!! $sortBtn('consignee_id', __('vehicle.col.consignee')) !!}</th>@php endif; @endphp
                 @php if ($this->colOn('sales_channel')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{!! $sortBtn('sales_channel', __('vehicle.col.channel')) !!}</th>@php endif; @endphp
-                @php if ($this->colOn('currency_rate')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{{ __('vehicle.col.currency_rate') }}</th>@php endif; @endphp
+                @php if ($this->colOn('currency_rate')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{!! $sortBtn('currency', __('vehicle.col.currency_rate'), 'right') !!}</th>@php endif; @endphp
                 @php if ($this->colOn('purchase_price')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', __('vehicle.col.purchase_price'), 'right') !!}</th>@php endif; @endphp
-                @php if ($this->colOn('purchase_total')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_total']">{{ __('vehicle.col.purchase_total') }}</th>@php endif; @endphp
+                @php if ($this->colOn('purchase_total')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_total']">{!! $sortBtn('purchase_total', __('vehicle.col.purchase_total'), 'right') !!}</th>@php endif; @endphp
                 @php if ($this->colOn('sale_price')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', __('vehicle.col.sale_price'), 'right') !!}</th>@php endif; @endphp
-                @php if ($this->colOn('sale_total')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_total']">{{ __('vehicle.col.sale_total') }}</th>@php endif; @endphp
-                @php if ($this->colOn('settlement_stage')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['settlement_stage']">{{ __('vehicle.col.settlement_stage') }}</th>@php endif; @endphp
+                @php if ($this->colOn('sale_total')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_total']">{!! $sortBtn('sale_total', __('vehicle.col.sale_total'), 'right') !!}</th>@php endif; @endphp
+                @php if ($this->colOn('settlement_stage')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['settlement_stage']">{!! $sortBtn('settlement_stage', __('vehicle.col.settlement_stage')) !!}</th>@php endif; @endphp
                 @php if ($this->colOn('transport_fee')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['transport_fee']">{!! $sortBtn('transport_fee', __('vehicle.col.transport_fee'), 'right') !!}</th>@php endif; @endphp
                 @php if ($this->colOn('transport_fee_usd')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['transport_fee_usd']">{!! $sortBtn('transport_fee_usd', __('vehicle.col.transport_fee_usd'), 'right') !!}</th>@php endif; @endphp
-                @php if ($this->colOn('unpaid_amount')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_amount']">{{ __('vehicle.col.unpaid_amount') }}</th>@php endif; @endphp
-                @php if ($this->colOn('unpaid_ratio')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_ratio']">{{ __('vehicle.col.unpaid_ratio') }}</th>@php endif; @endphp
+                @php if ($this->colOn('unpaid_amount')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_amount']">{!! $sortBtn('sale_unpaid_amount_krw_cache', __('vehicle.col.unpaid_amount'), 'right') !!}</th>@php endif; @endphp
+                @php if ($this->colOn('unpaid_ratio')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['unpaid_ratio']">{!! $sortBtn('unpaid_ratio', __('vehicle.col.unpaid_ratio'), 'right') !!}</th>@php endif; @endphp
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
