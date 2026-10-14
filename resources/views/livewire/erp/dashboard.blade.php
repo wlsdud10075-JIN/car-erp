@@ -43,8 +43,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $newBank = '';
     public string $newAccountNo = '';
     public string $newLabel = '';
-    /** @var list<string> */
-    public array $newCurrencies = ['KRW'];
 
     #[Computed]
     public function cashAccounts()
@@ -80,24 +78,30 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
-        $clean = fn ($v) => abs((float) str_replace([',', ' '], '', (string) $v));
+        $clean = fn ($v) => (float) str_replace([',', ' '], '', (string) $v);
         $amounts = [];
-        foreach ($account->currencies as $cur) {
+        foreach (CashAccount::CURRENCIES as $cur) {   // 어느 계좌든 세 통화(jin 2026-10-14)
             $raw = trim((string) ($this->cashAmounts[$cur] ?? ''));
             if ($raw === '') {
                 continue;   // 비운 통화는 안 건드린다(이어쓰기)
             }
-            // 원화만 음수 허용(마이너스 통장) — 부호는 토글이 정한다(종전 폼과 같은 규칙).
-            $amounts[$cur] = $cur === 'KRW' ? $clean($raw) * ($this->cashKrwNegative ? -1 : 1) : $clean($raw);
+            // 원화는 칸에 친 부호 그대로(마이너스 통장 — data-money-signed, jin «이제 자판에서 +,- 기입할 수 있는데 토글로 할 필요가 있나»).
+            //   외화는 종전대로 0 이상(마이너스 통장은 원화 계좌라, 외화 음수는 오타일 확률이 높다).
+            $amounts[$cur] = $clean($raw);
         }
         if ($amounts === []) {
             $this->dispatch('notify', message: __('cash.account.amount_required'), type: 'error');
 
             return;
         }
+        if (($amounts['USD'] ?? 0) < 0 || ($amounts['EUR'] ?? 0) < 0) {
+            $this->dispatch('notify', message: '외화 잔액은 0 이상이어야 합니다.', type: 'error');
+
+            return;
+        }
         app(CashAccountBalanceService::class)->save($account, $date, $amounts, $user);
         $this->cashSavedAt = $date;
-        $this->reset(['cashAmounts', 'cashKrwNegative']);
+        $this->reset(['cashAmounts']);
         unset($this->cashAccountRows);
         $this->dispatch('notify', message: __('cash.account.saved', ['date' => $date, 'account' => $account->display_name]), type: 'success');
     }
@@ -110,16 +114,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             'newBank' => 'required|string|max:40',
             'newAccountNo' => 'required|string|max:60',
             'newLabel' => 'nullable|string|max:60',
-            'newCurrencies' => 'required|array|min:1',
-            'newCurrencies.*' => 'in:'.implode(',', CashAccount::CURRENCIES),
-        ], [], ['newBank' => __('cash.account.bank'), 'newAccountNo' => __('cash.account.number'), 'newCurrencies' => __('cash.account.currencies')]);
+        ], [], ['newBank' => __('cash.account.bank'), 'newAccountNo' => __('cash.account.number')]);
         $acc = CashAccount::create([
             'bank' => trim($this->newBank), 'account_no' => trim($this->newAccountNo), 'label' => trim($this->newLabel) ?: null,
-            'currencies' => array_values(array_intersect(CashAccount::CURRENCIES, $this->newCurrencies)),
+            'currencies' => CashAccount::CURRENCIES,
             'sort' => (int) CashAccount::max('sort') + 1, 'is_active' => true,
         ]);
-        \App\Models\AuditLog::recordChange($acc, 'cash_account', null, $acc->display_name.' ['.implode(',', $acc->currencies).']');
-        $this->reset(['newBank', 'newAccountNo', 'newLabel', 'newCurrencies', 'showAddAccount']);
+        \App\Models\AuditLog::recordChange($acc, 'cash_account', null, $acc->display_name);
+        $this->reset(['newBank', 'newAccountNo', 'newLabel', 'showAddAccount']);
         $this->cashAccountId = (string) $acc->id;
         unset($this->cashAccounts, $this->cashAccountRows);
         $this->dispatch('notify', message: __('cash.account.added'), type: 'success');
@@ -873,20 +875,20 @@ new #[Layout('components.layouts.app')] class extends Component {
             <select wire:model.live="cashAccountId" class="input-base w-full text-gray-800">
                 <option value="">{{ __('cash.account.pick') }}</option>
                 @foreach($this->cashAccounts as $acc)
-                <option value="{{ $acc->id }}">{{ $acc->display_name }} · {{ implode('/', $acc->currencies) }}</option>
+                <option value="{{ $acc->id }}">{{ $acc->display_name }}</option>
                 @endforeach
             </select>
         </div>
         <button type="button" wire:click="$toggle('showAddAccount')" class="h-9 rounded-lg border border-dashed border-gray-300 px-3 text-xs text-gray-600 hover:bg-gray-50">{{ __('cash.account.add_row') }}</button>
         @if($selAcc)
-            @foreach($selAcc->currencies as $cur)
+            {{-- 어느 계좌든 원화·달러·유로 세 칸(jin 2026-10-14). 비운 칸은 안 건드린다(이어쓰기). 부호는 종전대로 원화 ± 토글. --}}
+            @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
             <div class="w-full sm:w-44">
                 <label class="text-xs text-gray-500">{{ __('cash.'.strtolower($cur)) }}</label>
                 <div class="flex gap-1">
                     @if($cur === 'KRW')
-                    <button type="button" wire:click="$toggle('cashKrwNegative')" title="{{ __('cash.sign_hint') }}"
-                            class="shrink-0 rounded border px-2 text-sm font-bold {{ $cashKrwNegative ? 'border-red-300 bg-red-50 text-red-600' : 'border-gray-300 bg-white text-gray-500' }}">{{ $cashKrwNegative ? '−' : '+' }}</button>
-                    <input type="text" wire:model="cashAmounts.{{ $cur }}" data-money inputmode="numeric" class="input-base w-full text-right" placeholder="0" />
+                    {{-- 마이너스 통장은 칸에 − 를 직접 친다(data-money-signed) — 10-07 단축키 폐지로 가능해졌다(jin 2026-10-14). --}}
+                    <input type="text" wire:model="cashAmounts.{{ $cur }}" data-money data-money-signed inputmode="numeric" class="input-base w-full text-right" placeholder="0" title="{{ __('cash.sign_hint_typed') }}" />
                     @else
                     <input type="text" wire:model="cashAmounts.{{ $cur }}" inputmode="decimal" class="input-base w-full text-right" placeholder="0.00" />
                     @endif
@@ -901,47 +903,52 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div><label class="text-xs text-gray-500">{{ __('cash.account.bank') }}</label><input type="text" wire:model="newBank" class="input-base w-28" placeholder="{{ __('cash.account.bank_ph') }}" /></div>
         <div><label class="text-xs text-gray-500">{{ __('cash.account.number') }}</label><input type="text" wire:model="newAccountNo" class="input-base w-48" placeholder="{{ __('cash.account.number_ph') }}" /></div>
         <div><label class="text-xs text-gray-500">{{ __('cash.account.label_opt') }}</label><input type="text" wire:model="newLabel" class="input-base w-24" placeholder="{{ __('cash.account.label_ph') }}" /></div>
-        <div class="flex items-center gap-2 pb-2 text-xs text-gray-700">
-            @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
-            <label class="flex items-center gap-1"><input type="checkbox" wire:model="newCurrencies" value="{{ $cur }}" class="rounded" /> {{ $cur }}</label>
-            @endforeach
-        </div>
         <button type="button" wire:click="addCashAccount" class="btn-primary h-9">{{ __('cash.account.add') }}</button>
         @error('newBank')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
         @error('newAccountNo')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
-        @error('newCurrencies')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
     </div>
     @endif
-    @php $rows = $this->cashAccountRows; $sums = ['KRW' => 0.0, 'USD' => 0.0, 'EUR' => 0.0]; $never = $rows->where('balance', null)->count(); @endphp
+    @php
+        $rows = $this->cashAccountRows;
+        $sums = ['KRW' => 0.0, 'USD' => 0.0, 'EUR' => 0.0];
+        foreach ($rows as $r) { if ($r['balance'] !== null) { $sums[$r['currency']] += $r['balance']; } }
+        // 계좌 한 줄 = 통화 3칸. 한 번도 안 넣은 계좌(세 통화 전부 없음)만 센다 — 외화가 없는 계좌는 달러·유로가 비는 게 정상이다.
+        $byAccount = $rows->groupBy(fn ($r) => $r['account']->id);
+        $never = $byAccount->filter(fn ($g) => $g->every(fn ($r) => $r['balance'] === null))->count();
+    @endphp
     {{-- 🚨 한 번도 안 넣은 계좌는 합계에 0 으로 들어간다 — 계좌 7개를 등록하고 하나만 넣은 날 청산가치가 꺼진다. 눈에 띄게 알린다. --}}
     @if($never > 0)
     <p class="mt-2 rounded bg-amber-50 px-3 py-1.5 text-xs text-amber-700" data-cash-never-entered>{{ __('cash.account.never_entered', ['n' => $never]) }}</p>
     @endif
     <div class="mt-2 overflow-x-auto">
-        <table class="w-full min-w-[420px] text-xs" data-cash-account-table>
+        <table class="w-full min-w-[520px] text-xs" data-cash-account-table>
             <thead><tr class="border-b border-gray-200 text-left text-gray-500">
-                <th class="py-1 pr-2">{{ __('cash.account.label') }}</th><th class="py-1 pr-2">{{ __('cash.account.currency') }}</th>
-                <th class="py-1 pr-2 text-right">{{ __('cash.account.balance') }}</th><th class="py-1 pr-2">{{ __('cash.account.as_of') }}</th><th class="py-1"></th>
+                <th class="py-1 pr-2">{{ __('cash.account.label') }}</th>
+                <th class="py-1 pr-2 text-right">KRW</th><th class="py-1 pr-2 text-right">USD</th><th class="py-1 pr-2 text-right">EUR</th>
+                <th class="py-1 pr-2">{{ __('cash.account.as_of') }}</th><th class="py-1"></th>
             </tr></thead>
             <tbody class="divide-y divide-gray-100">
-            @foreach($rows as $r)
-                @php if ($r['balance'] !== null) { $sums[$r['currency']] += $r['balance']; } @endphp
-                <tr class="{{ $r['carried'] ? 'text-gray-400' : 'text-gray-700' }}">
-                    <td class="py-1 pr-2">{{ $r['account']->display_name }}</td>
-                    <td class="py-1 pr-2">{{ $r['currency'] }}</td>
-                    <td class="py-1 pr-2 text-right font-mono">{{ $r['balance'] === null ? '—' : ($r['currency'] === 'KRW' ? number_format($r['balance']) : number_format($r['balance'], 2)) }}</td>
-                    <td class="py-1 pr-2">{{ $r['as_of'] ?? __('cash.account.never') }}{{ $r['carried'] ? ' '.__('cash.account.carried') : '' }}</td>
+            @foreach($byAccount as $accId => $g)
+                @php $acc = $g->first()['account']; $cells = $g->keyBy('currency'); $asOf = $g->pluck('as_of')->filter()->max(); $carried = $g->contains(fn ($r) => $r['carried']); @endphp
+                <tr class="text-gray-700">
+                    <td class="py-1 pr-2">{{ $acc->display_name }}</td>
+                    @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
+                    @php $c = $cells->get($cur); @endphp
+                    <td class="py-1 pr-2 text-right font-mono {{ ($c['carried'] ?? false) ? 'text-gray-400' : '' }}">{{ ($c['balance'] ?? null) === null ? '—' : ($cur === 'KRW' ? number_format($c['balance']) : number_format($c['balance'], 2)) }}</td>
+                    @endforeach
+                    <td class="py-1 pr-2 {{ $carried ? 'text-gray-400' : '' }}">{{ $asOf ?? __('cash.account.never') }}{{ $carried ? ' '.__('cash.account.carried') : '' }}</td>
                     <td class="py-1 text-right">
-                        @if($loop->first || $rows[$loop->index - 1]['account']->id !== $r['account']->id)
-                        <button type="button" wire:click="deactivateCashAccount({{ $r['account']->id }})" wire:confirm="{{ __('cash.account.hide_confirm') }}" class="text-[11px] text-gray-400 hover:text-red-500">{{ __('cash.account.hide') }}</button>
-                        @endif
+                        <button type="button" wire:click="deactivateCashAccount({{ $acc->id }})" wire:confirm="{{ __('cash.account.hide_confirm') }}" class="text-[11px] text-gray-400 hover:text-red-500">{{ __('cash.account.hide') }}</button>
                     </td>
                 </tr>
             @endforeach
             </tbody>
             <tfoot><tr class="border-t border-gray-200 font-semibold text-gray-800">
-                <td class="py-1 pr-2" colspan="2">{{ __('cash.account.total') }}</td>
-                <td class="py-1 pr-2 text-right font-mono" colspan="3">KRW {{ number_format($sums['KRW']) }} · USD {{ number_format($sums['USD'], 2) }} · EUR {{ number_format($sums['EUR'], 2) }}</td>
+                <td class="py-1 pr-2">{{ __('cash.account.total') }}</td>
+                <td class="py-1 pr-2 text-right font-mono">{{ number_format($sums['KRW']) }}</td>
+                <td class="py-1 pr-2 text-right font-mono">{{ number_format($sums['USD'], 2) }}</td>
+                <td class="py-1 pr-2 text-right font-mono">{{ number_format($sums['EUR'], 2) }}</td>
+                <td class="py-1" colspan="2"></td>
             </tr></tfoot>
         </table>
     </div>
@@ -985,11 +992,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div><label class="text-xs text-gray-500">{{ __('cash.account.bank') }}</label><input type="text" wire:model="newBank" class="input-base w-28" placeholder="{{ __('cash.account.bank_ph') }}" /></div>
         <div><label class="text-xs text-gray-500">{{ __('cash.account.number') }}</label><input type="text" wire:model="newAccountNo" class="input-base w-48" placeholder="{{ __('cash.account.number_ph') }}" /></div>
         <div><label class="text-xs text-gray-500">{{ __('cash.account.label_opt') }}</label><input type="text" wire:model="newLabel" class="input-base w-24" placeholder="{{ __('cash.account.label_ph') }}" /></div>
-        <div class="flex items-center gap-2 pb-2 text-xs text-gray-700">
-            @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
-            <label class="flex items-center gap-1"><input type="checkbox" wire:model="newCurrencies" value="{{ $cur }}" class="rounded" /> {{ $cur }}</label>
-            @endforeach
-        </div>
         <button type="button" wire:click="addCashAccount" class="btn-primary h-9">{{ __('cash.account.add') }}</button>
         @error('newBank')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
         @error('newAccountNo')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror

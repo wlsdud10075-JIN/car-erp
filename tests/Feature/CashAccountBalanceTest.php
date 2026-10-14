@@ -21,26 +21,35 @@ class CashAccountBalanceTest extends TestCase
         return User::factory()->create(['permission' => 'user', 'role' => '재무']);
     }
 
-    public function test_two_currency_account_saves_two_rows_and_totals_land_in_the_snapshot(): void
+    /** 어느 계좌든 원화·달러·유로 세 칸 (jin 2026-10-14 «신한이라고 한화만 해야 된다는 보장이 어디 있어») — 비운 칸은 안 건드린다. */
+    public function test_any_account_takes_all_three_currencies_and_totals_land_in_the_snapshot(): void
     {
-        $fx = CashAccount::create(['bank' => '하나', 'account_no' => '430-910007-816638', 'label' => '외화', 'currencies' => ['USD', 'EUR']]);
+        $sh = CashAccount::create(['bank' => '신한', 'account_no' => '140-013-363536']);
         $this->actingAs($u = $this->finance());
 
-        Volt::test('erp.dashboard')->set('cashDate', '2026-10-14')->set('cashAccountId', (string) $fx->id)
-            ->set('cashAmounts.USD', '1,000.50')->set('cashAmounts.EUR', '200')->call('saveAccountBalance');
+        Volt::test('erp.dashboard')->set('cashDate', '2026-10-13')->set('cashAccountId', (string) $sh->id)
+            ->set('cashAmounts.KRW', '3,000,000')->set('cashAmounts.USD', '1,000.50')->set('cashAmounts.EUR', '200')->call('saveAccountBalance');
 
-        $this->assertSame(2, CashAccountBalance::count());
-        $snap = CashSnapshot::whereDate('snapshot_date', '2026-10-14')->firstOrFail();
+        $this->assertSame(3, CashAccountBalance::count());
+        $snap = CashSnapshot::whereDate('snapshot_date', '2026-10-13')->firstOrFail();
+        $this->assertSame(3_000_000, (int) $snap->balance_krw);
         $this->assertSame(1000.5, (float) $snap->balance_usd);
         $this->assertSame(200.0, (float) $snap->balance_eur);
-        $this->assertSame(0, (int) $snap->balance_krw);
         $this->assertSame($u->id, (int) $snap->entered_by);
+
+        // 달러만 다시 넣으면 원화·유로는 그대로(이어쓰기)
+        Volt::test('erp.dashboard')->set('cashDate', '2026-10-14')->set('cashAccountId', (string) $sh->id)   // 미래 날짜는 거부되므로 어제→오늘
+            ->set('cashAmounts.USD', '900')->call('saveAccountBalance');
+        $snap2 = CashSnapshot::whereDate('snapshot_date', '2026-10-14')->firstOrFail();
+        $this->assertSame(3_000_000, (int) $snap2->balance_krw);
+        $this->assertSame(900.0, (float) $snap2->balance_usd);
+        $this->assertSame(200.0, (float) $snap2->balance_eur);
     }
 
     public function test_untouched_accounts_carry_forward_their_latest_value(): void
     {
-        $a = CashAccount::create(['bank' => '신한', 'account_no' => '1', 'currencies' => ['KRW']]);
-        $b = CashAccount::create(['bank' => '국민', 'account_no' => '2', 'currencies' => ['KRW']]);
+        $a = CashAccount::create(['bank' => '신한', 'account_no' => '1']);
+        $b = CashAccount::create(['bank' => '국민', 'account_no' => '2']);
         $svc = app(CashAccountBalanceService::class);
         $svc->save($a, '2026-10-10', ['KRW' => 1_000]);
         $svc->save($b, '2026-10-12', ['KRW' => 5_000]);
@@ -59,32 +68,35 @@ class CashAccountBalanceTest extends TestCase
 
     public function test_never_entered_accounts_are_flagged_above_the_table(): void
     {
-        $a = CashAccount::create(['bank' => '신한', 'account_no' => '1', 'currencies' => ['KRW']]);
-        CashAccount::create(['bank' => '국민', 'account_no' => '2', 'currencies' => ['KRW']]);
-        app(CashAccountBalanceService::class)->save($a, now()->toDateString(), ['KRW' => 1]);
+        $a = CashAccount::create(['bank' => '신한', 'account_no' => '1']);
+        CashAccount::create(['bank' => '국민', 'account_no' => '2']);
+        app(CashAccountBalanceService::class)->save($a, now()->toDateString(), ['KRW' => 1]);   // 원화만 넣어도 「넣은 계좌」다
         $this->actingAs($this->finance());
 
         Volt::test('erp.dashboard')->assertSeeHtml('data-cash-never-entered')->assertSee(__('cash.account.never_entered', ['n' => 1]));
     }
 
-    public function test_krw_account_takes_its_sign_from_the_toggle(): void
+    /** 마이너스 통장은 원화 칸에 − 를 직접 친다(토글 없음, jin 2026-10-14). 외화 음수는 종전대로 거부. */
+    public function test_krw_account_takes_a_typed_minus_and_foreign_negative_is_refused(): void
     {
-        $a = CashAccount::create(['bank' => '신한', 'account_no' => '1', 'currencies' => ['KRW']]);
+        $a = CashAccount::create(['bank' => '신한', 'account_no' => '1']);
         $this->actingAs($this->finance());
 
-        Volt::test('erp.dashboard')->set('cashAccountId', (string) $a->id)->set('cashAmounts.KRW', '300,000,000')
-            ->set('cashKrwNegative', true)->call('saveAccountBalance');
-
+        Volt::test('erp.dashboard')->set('cashAccountId', (string) $a->id)->set('cashAmounts.KRW', '-300,000,000')->call('saveAccountBalance');
         $this->assertSame(-300_000_000, (int) CashSnapshot::latest('snapshot_date')->first()->balance_krw);
+
+        Volt::test('erp.dashboard')->set('cashAccountId', (string) $a->id)->set('cashAmounts.USD', '-5')->call('saveAccountBalance')
+            ->assertDispatched('notify', type: 'error');
+        $this->assertSame(0, CashAccountBalance::where('currency', 'USD')->count());
     }
 
     public function test_entry_permission_holders_can_add_and_hide_accounts_and_sales_cannot(): void
     {
         $this->actingAs($this->finance());
-        Volt::test('erp.dashboard')->set('newBank', '농협')->set('newAccountNo', '301-0344-9249-21')->set('newCurrencies', ['KRW'])
+        Volt::test('erp.dashboard')->set('newBank', '농협')->set('newAccountNo', '301-0344-9249-21')
             ->call('addCashAccount')->assertHasNoErrors();
         $acc = CashAccount::firstOrFail();
-        $this->assertSame(['KRW'], $acc->currencies);
+        $this->assertSame(['KRW', 'USD', 'EUR'], $acc->currencies);
         $this->assertSame('농협 301-0344-9249-21', $acc->display_name);
 
         Volt::test('erp.dashboard')->call('deactivateCashAccount', $acc->id);
