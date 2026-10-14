@@ -658,6 +658,13 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-14(밤) — board 포털 정산 행 `margin_rate`(마진율) 동봉 `fe21493d` (3사 동시, 코드 1커밋, 마이그 0)
+
+- board 세션 요청(«정산 응답 3곳 차량 행에 margin_rate — jin 이 board 요약 화면 「차량번호·마진율·건당금액」 표 지시»). 마진 노출 = 대표 승인 사안이라 dev 에만 두고 jin 에게 되물음 → jin 「배포해줘」.
+- dev `0545749b` → master `fe21493d`(docs 는 삭제 유지). `/settlements` · `/payout-batches` settlements[] · unbatched_paid[] 에 `Settlement::margin_rate`(승인 카드 「차량별 보기」와 같은 값, null 그대로). 마진 raw 는 여전히 없음 — 가드 `BoardPayoutBatchApiTest::test_rows_carry_margin_rate_only_and_never_raw_margin`.
+- 로컬 master 순차 전체 **3,307 pass · 실패 0**(830초). deploy 런 38526320702 잡 5개 success. 3사 SHA `fe21493d`, /login 200.
+- board 는 값이 없으면 「—」(board dev `e196415`) → 배포 순서 무관, board 재배포 없이 채워진다.
+
 ## 2026-10-14(저녁) — 계좌별 잔액 정정(세 통화·− 직접 입력) · 월정산 급여 항목 줄 · board /bundles 미수 4필드 `38bc1a22` (3사 동시, 코드 4커밋, 마이그 0)
 
 - jin 지적 두 건(«신한이라고 한화만?» · «토글로 할 필요가 있나») + «기입된 항목만 펼침에» + board 세션 요청(«/bundles 차량 행에 /shippable 의 미수 4필드») → «board 쪽이랑 같이 묶어서 배포».
