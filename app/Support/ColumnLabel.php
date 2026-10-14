@@ -91,6 +91,7 @@ class ColumnLabel
             'ApprovalRequest' => 'approval_requests',
             // 2026-07-31 — 감사로그에 실제로 쌓이는데 표가 없어 컬럼명이 영문으로 새던 것들.
             'CashSnapshot' => 'cash_snapshots',
+            'CashAccount' => 'cash_accounts',   // 2026-10-14 계좌별 잔액
             'Setting' => 'settings',
             'SettlementPayoutBatch' => 'settlement_payout_batches',
             'SignedContract' => 'signed_contracts',

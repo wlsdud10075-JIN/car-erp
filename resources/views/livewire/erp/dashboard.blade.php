@@ -912,7 +912,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         @error('newCurrencies')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
     </div>
     @endif
-    @php $rows = $this->cashAccountRows; $sums = ['KRW' => 0.0, 'USD' => 0.0, 'EUR' => 0.0]; @endphp
+    @php $rows = $this->cashAccountRows; $sums = ['KRW' => 0.0, 'USD' => 0.0, 'EUR' => 0.0]; $never = $rows->where('balance', null)->count(); @endphp
+    {{-- 🚨 한 번도 안 넣은 계좌는 합계에 0 으로 들어간다 — 계좌 7개를 등록하고 하나만 넣은 날 청산가치가 꺼진다. 눈에 띄게 알린다. --}}
+    @if($never > 0)
+    <p class="mt-2 rounded bg-amber-50 px-3 py-1.5 text-xs text-amber-700" data-cash-never-entered>{{ __('cash.account.never_entered', ['n' => $never]) }}</p>
+    @endif
     <div class="mt-2 overflow-x-auto">
         <table class="w-full min-w-[420px] text-xs" data-cash-account-table>
             <thead><tr class="border-b border-gray-200 text-left text-gray-500">

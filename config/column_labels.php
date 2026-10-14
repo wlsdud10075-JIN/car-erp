@@ -217,7 +217,18 @@ return [
         'phone' => '전화번호',
         'email' => '이메일',
         'initials' => '이니셜',
+        'employee_no' => '사원번호(급여대장)',   // 2026-10-14 급여대장 업로드 매칭 키
         'memo' => '메모',
+    ],
+
+    // 2026-10-14 — 계좌별 통장 잔액(업무 대시보드 「+ 계좌 추가」·「숨김」)
+    'cash_accounts' => [
+        'cash_account' => '계좌 등록',
+        'cash_account_active' => '계좌 표시(활성)',
+        'bank' => '은행',
+        'account_no' => '계좌번호',
+        'label' => '구분',
+        'is_active' => '활성 상태',
     ],
 
     'buyers' => [
@@ -396,7 +407,7 @@ return [
         'Consignee' => '컨사이니',
         'ForwardingCompany' => '포워딩사',
         'ForwardingInvoice' => '포워딩사 인보이스',
-        'Salesman' => '영업담당자',
+        'Salesman' => '사내직원 명부',   // 2026-10-14 영업 외 직원·검차직원도 들어온다
         'SavingsStatus' => '적립금',
         'ReceivableHistory' => '채권 이력',
         'InterVehicleTransfer' => '차량 간 이체',
@@ -406,6 +417,7 @@ return [
         'Port' => '항구',
         // 2026-07-31 — 운영 감사로그에 실제로 쌓여 있는데 매핑이 없어 영문으로 노출되던 것들.
         'CashSnapshot' => '통장 잔액',
+        'CashAccount' => '통장 계좌',   // 2026-10-14 계좌별 잔액
         'Setting' => '기능 설정',
         'SettlementPayoutBatch' => '정산 지급 배치',
         'SignedContract' => '전자서명 계약',
