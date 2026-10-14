@@ -13,7 +13,7 @@ class Salesman extends Model
     use SoftDeletes;
 
     protected $fillable = [
-        'user_id', 'name', 'initials', 'phone', 'email', 'memo', 'is_active',
+        'user_id', 'name', 'initials', 'employee_no', 'phone', 'email', 'memo', 'is_active',   // employee_no = 급여대장 사원번호(2026-10-14)
         // 2026-05-20 #2-2+2-4 — type 분기 (employee 건당 / freelance 비율)
         'type',
         // 2026-08-04 jin — 사내직원 차등정산(tier) 담당자별 on/off. OFF=10만원 고정.

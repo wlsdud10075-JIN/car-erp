@@ -86,6 +86,27 @@ class PayrollEntry extends Model
         });
     }
 
+    /**
+     * 그 달 급여를 쓰고 **감사로그 + 결재 중 월정산 변경 이력**까지 남긴다 — 화면 저장과 급여대장 업로드가 같이 쓴다(§8 #44).
+     *
+     * @param  array<int, array{label:string, amount:int|null, is_custom?:bool}>  $rows
+     * @return array{was: ?int, now: ?int} 지급합계 전·후
+     */
+    public static function writeMonthWithAudit(Salesman $sm, string $month, array $rows, ?User $actor, string $note): array
+    {
+        $was = self::totalFor($sm->id, $month);
+        self::replaceFor($sm->id, $month, $rows);
+        $now = self::totalFor($sm->id, $month);
+        if (AuditLog::valuesDiffer($was, $now)) {
+            AuditLog::recordChange($sm, 'payroll_'.$month, $was, $now);
+            // 🪜 그 달 월정산이 결재 중이면 변경 이력에도 남긴다 — 카드가 노란 표시로 결재자에게 알린다(월정산 v3).
+            SettlementPayoutBatch::where('month', $month)->where('status', 'pending')->get()
+                ->each(fn ($b) => $b->recordChange($actor, $sm->id, SettlementPayoutBatchChange::FIELD_PAYROLL, $was, $now, $note));
+        }
+
+        return ['was' => $was, 'now' => $now];
+    }
+
     /** 그 달 지급합계 — 행이 하나도 없으면 null(미입력). 0 은 「없음」을 적은 것. */
     public static function totalFor(int $salesmanId, string $month): ?int
     {
