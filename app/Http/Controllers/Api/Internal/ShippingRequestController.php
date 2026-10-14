@@ -263,6 +263,12 @@ class ShippingRequestController extends Controller
                     ];
 
                     if ($ex && $ex->status === ShippingRequest::STATUS_REQUESTED) {
+                        // 🔇 변경 없는 requested 행 = no-op (board 요청 2026-10-14, jin 승인). sync 는 선언형이라 기존 묶음이 **그대로** 실려 오는데,
+                        //    종전엔 매번 갱신·관리 알람 재발사·updated 집계를 해서 새 차 1대로 선적요청을 누르면 알람 35건 + 「갱신 35」(heymanerp 실측).
+                        //    속성(batch·바이어·컨사이니·방법·B/L·포워딩·운임총액)이 전부 같으면 건너뛴다 — 응답 배열 어디에도 안 센다(skipped 는 IDOR 뜻).
+                        if (self::sameBundleAttrs($ex, $attrs)) {
+                            continue;
+                        }
                         $forwardingChanged = (int) $ex->forwarding_company_id !== (int) $forwardingId;
                         $ex->update($attrs + ['requested_at' => now()]);
                         $this->applyBundleToVehicle($vid, $salesman, $forwardingId, $forwardingChanged, $freightShare[$vid] ?? null);
@@ -470,6 +476,19 @@ class ShippingRequestController extends Controller
      *    "누가 골랐나" 를 못 따져 위 추적이 통째로 빈다. 연결 User 가 없으면 null(그땐
      *    `shipping_requests.requested_by_email` 이 남는다).
      */
+    /** 기존 requested 행과 이번 sync 속성이 전부 같은가 — null·'' ·숫자 표기 차이는 같은 것으로(§8 #108 의 strcmp 함정). */
+    private static function sameBundleAttrs(ShippingRequest $ex, array $attrs): bool
+    {
+        foreach ($attrs as $key => $value) {
+            $norm = fn ($v) => $v === null || $v === '' ? null : (is_numeric($v) ? (string) (0 + $v) : (string) $v);
+            if ($norm($ex->{$key}) !== $norm($value)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private function applyBundleToVehicle(int $vehicleId, Salesman $salesman, ?int $forwardingId, bool $forwardingChanged, ?int $freightShare): void
     {
         $vehicle = Vehicle::find($vehicleId);
