@@ -215,6 +215,7 @@ board 의 **전송 감사 명령 `board:purchase-sync-audit`**(board dev `cb9974
   - **재무 집계**(아래 5-4): `sales_by_currency`·`unpaid_total_krw`·`fx_missing_count`·`fully_paid`·`unpaid_ratio`·`surrender_unpaid_warning`.
   - **묶음 속성 되돌려주기 (2026-08-11)**: `forwarding_company`(=`{id,name}`|null)·`transport_fee_usd_total`(int|null). 없으면 board 가 묶음을 다시 열었을 때 칸이 비고, 그대로 재전송하면 값이 날아간다.
   - `change_requested`(in_progress 변경요청 대기 여부).
+  - 📊 **`vehicles[]` 행마다 미수 4필드 (2026-10-14, board 요청·jin 승인)**: `currency`·`unpaid_krw`·`unpaid_ratio`·`fully_paid` — `/shippable` 과 **같은 이름·같은 의미**(원본 = `shippable()` map). 묶인 차는 `/shippable` 에서 빠지므로 이 행이 유일한 출처다. `unpaid_krw` null = 환율 미입력(0 아님), `fully_paid` 는 cache 가 있고 ≤ 0 일 때만 true. 차량이 지워진 행은 전부 null/false. 가드 = `BoardPortalApiTest::test_bundles_vehicle_rows_carry_the_same_unpaid_fields_as_shippable`.
   - → board "내 선적묶음" 영속 뷰 + 미수 게이지. *(이게 "묶음이 화면에서 안 사라짐"의 구현)*
 
 ### 5-2. 쓰기 — 선언형 sync + B/L요청 + 변경요청 (모두 HMAC, 본인 차만)
