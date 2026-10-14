@@ -30,7 +30,7 @@ class User extends Authenticatable
     public const INSPECTOR_ROLE = '검차';
 
     /** 영업이 아닌 일반사용자 역할 — 사내직원관리에 「직원(staff)」으로 미러돼 급여를 적는다(2026-10-14). */
-    public const STAFF_ROLES = ['수출통관', '재무', '관리'];
+    public const STAFF_ROLES = ['관리', '수출통관', '재무'];   // 순서 = 사내직원관리 탭 순서(jin «관리, 수출통관, 재무»)
 
     /** 사용자 관리 폼의 역할 선택지 = ERP 역할 + 검차직원. */
     public const ROLE_OPTIONS = ['영업', '수출통관', '재무', '관리', self::INSPECTOR_ROLE];
