@@ -658,6 +658,13 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-14(밤 3) — FOB + 「FOB포워더」 + 완납 → 거래완료 · 병렬 테스트 rename 충돌 해결 `696a85d6` (3사 동시, 코드 1커밋, **마이그 1**)
+
+- jin «인코텀즈 FOB + 포워딩사 FOB포워더면 판매완료 = 거래완료(B/L 은 바이어가 발급)» + «배포 하나에 20분? 둘 다 적용해서 실적용».
+- dev `5628ece4` → master `696a85d6`(.md·notion 삭제 유지). `forwarding_companies.buyer_handles_bl`(기존 「FOB포워더」 행 켬 — 3사 전부 플래그 1건, 차량 0대 → 배포 직후 변화 0) · 포워딩사 관리 체크박스 · `Vehicle::progress_status` v4 에 bl_document 다음 규칙 · 거래완료 진입 훅이 정산 자동 생성.
+- ⚡ **배포 절차 전환**: `AppServiceProvider::register` 가 `TEST_TOKEN` 별 `view.compiled` 분리 → 로컬 병렬 전체 **3분 45초 · 3,315 pass · rename 충돌 0**. 순차 14분 대신 이걸 게이트로 쓴다(CI 가 전체를 다시 돈다). deploy 런 38532090780 잡 5개 success(7분 11초). 배포 1회 = cherry-pick 1분 + 로컬 4분 + CI 7분 ≈ **12분**(종전 22분+).
+- 효과: 실무자가 FOB 차량의 포워딩사를 「FOB포워더」로 고르면 완납 시점에 거래완료 + 정산 생성. 포워딩사 관리에서 다른 회사도 체크 가능.
+
 ## 2026-10-14(밤 2) — board sync 변경 없는 requested 행 no-op `60a5a3e2` (3사 동시, 코드 1커밋, 마이그 0)
 
 - board 세션 3번째 요청(«선언형 sync 가 기존 묶음을 그대로 실어 와도 갱신·알람 재발사·updated 집계를 하지 않게» — heymanerp 무사백 requested 35대: 새 차 1대에 알람 35건 재발사 + 「갱신 35」). jin 「배포해줘」.
