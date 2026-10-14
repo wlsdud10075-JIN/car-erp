@@ -103,7 +103,7 @@ final class BatchPayoutBreakdown
             $vehicles += (int) $r['count'];
             $totalMargin += (int) $r['total_margin'];
             $equivSum += (int) ($r['equiv_total'] ?? 0);
-            if ($r['type'] === 'inspector') {
+            if (in_array($r['type'], Salesman::PAYROLL_ONLY_TYPES, true)) {   // 검차직원·직원 = 공통 인건비
                 $commonLabor += (int) $r['payout'];
             } elseif ($r['company_contribution'] !== null) {
                 $contributionSum += (int) $r['company_contribution'];

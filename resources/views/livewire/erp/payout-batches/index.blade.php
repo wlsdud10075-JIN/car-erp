@@ -319,7 +319,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <div class="mt-1 flex flex-wrap items-center gap-1.5">
                             <select wire:model="incSalesmanId" class="input-base w-32 text-xs text-gray-800">
                                 <option value="">{{ __('settlement.batch.adjust_salesman') }}</option>
-                                @foreach(collect($bd['people'])->where('type', '!=', 'inspector') as $pp)
+                                @foreach(collect($bd['people'])->whereNotIn('type', \App\Models\Salesman::PAYROLL_ONLY_TYPES) as $pp)
                                 <option value="{{ $pp['salesman_id'] }}">{{ $pp['name'] }}</option>
                                 @endforeach
                             </select>

@@ -5,6 +5,8 @@ return [
     'title' => 'Staff',
     'total' => ':count people',
     'create_btn' => 'Add person',
+    'register_in_users' => 'Register people in User Management',
+    'register_in_users_hint' => 'Employees, freelancers, inspectors and management/clearance/finance staff registered in User Management appear here automatically.',
     'search_ph' => 'Name · email · phone',
     'empty' => 'No people registered.',
     'cashflow' => 'Cashflow',
@@ -46,8 +48,6 @@ return [
         'payout_excluded' => 'Excluded from payouts',
         'payout_excluded_hint' => 'Turn this on for accounts that are not people (a sister company, for example). Settlements for this salesman are still created and listed, but never join a monthly payout batch, so zero-value rows stop piling up. Batches already paid are not changed retroactively.',
         'type_no_account' => 'No login account linked',
-        'create_type' => 'Type',
-        'create_type_hint' => 'Inspectors are registered by name only, without an account. Employees and freelancers are created automatically from User management (role Sales).',
     ],
 
     'payroll' => [
@@ -70,11 +70,13 @@ return [
         'employee' => 'Employee',
         'freelance' => 'Freelancer',
         'inspector' => 'Inspector',
+        'staff' => 'Staff',
     ],
     'type_suffix' => [
         'employee' => '(per-unit)',
         'freelance' => '(ratio)',
         'inspector' => '(payroll only)',
+        'staff' => '(payroll only)',
     ],
     'handover' => [
         'button' => 'Hand over',

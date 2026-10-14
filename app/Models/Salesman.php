@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Lang;
 
 class Salesman extends Model
 {
@@ -38,17 +39,63 @@ class Salesman extends Model
         // 월정산 v3 (jin 2026-10-08) — 검차직원: 계정 없이 이름만 등록, 정산·판매 없음, 급여 지급합계만 월정산에.
         //   🚨 DB enum 과 같은 커밋(마이그 2026_10_09_000002) — 가드 SalesmanTypeEnumTest.
         'inspector' => '검차직원',
+        // 직원 명부 확장 (jin 2026-10-14) — 영업이 아닌 일반사용자(관리·수출통관·재무)의 미러. 급여만(검차직원과 같은 취급).
+        //   라벨은 연결 계정의 role(관리/수출통관/재무)로 보여 준다(`type_label`). 🚨 DB enum 마이그 2026_10_14_000001 과 같은 커밋.
+        'staff' => '직원',
     ];
 
-    /** 영업을 하는 사람만(검차직원 제외) — 차량 담당자 드롭다운·필터·대시보드 랭킹은 이 스코프를 쓴다. */
+    /** 영업을 하는 유형 — 차량을 맡고 정산을 받는다. */
+    public const SALES_TYPES = ['employee', 'freelance'];
+
+    /** 급여만 받는 유형 — 정산·회사 기여 없음, 월정산엔 지급합계만(공통 인건비). 검차직원·직원. */
+    public const PAYROLL_ONLY_TYPES = ['inspector', 'staff'];
+
+    /**
+     * 영업을 하는 사람만(검차직원·직원 제외) — 차량 담당자 드롭다운·필터·대시보드 랭킹·board 이메일 매칭은 이 스코프를 쓴다.
+     * 🔑 부정 조건(`!= inspector`)이 아니라 **포함 목록**이다 — 다음 유형이 또 생겨도 새지 않는다.
+     */
     public function scopeSales($query)
     {
-        return $query->where('type', '!=', 'inspector');
+        return $query->whereIn('type', self::SALES_TYPES);
+    }
+
+    public function isSales(): bool
+    {
+        return in_array($this->type, self::SALES_TYPES, true);
     }
 
     public function isInspector(): bool
     {
         return $this->type === 'inspector';
+    }
+
+    /** 급여만 받는 사람인가(검차직원·직원) — 월정산 카드·합계 띠·대시보드 공통 인건비가 이걸로 가른다. */
+    public function isPayrollOnly(): bool
+    {
+        return in_array($this->type, self::PAYROLL_ONLY_TYPES, true);
+    }
+
+    /**
+     * 계정 → 명부 유형 (단일 출처, 2026-10-14). 사용자 관리 저장과 백필(`salesmen:sync-staff`)이 같은 판정을 쓴다.
+     *  - 영업 → 정산 분류(employee/freelance) 그대로(권한 무관 — 종전 동작)
+     *  - 검차(ROLES 밖) → inspector
+     *  - 일반사용자 ∧ 관리·수출통관·재무 → staff(급여만)
+     *  - 그 외(관리자 등급의 비영업) → null = 미러 안 함(기존 행은 비활성화)
+     */
+    public static function mirrorTypeFor(User $user, ?string $salesType = null): ?string
+    {
+        return match (true) {
+            $user->role === '영업' => $salesType ?: ($user->type ?: 'employee'),
+            $user->role === User::INSPECTOR_ROLE => 'inspector',
+            $user->permission === 'user' && in_array($user->role, User::STAFF_ROLES, true) => 'staff',
+            default => null,
+        };
+    }
+
+    /** 유형 뱃지 색 — 목록·월정산 카드가 같은 표를 쓴다. */
+    public static function typeBadgeClass(?string $type): string
+    {
+        return ['employee' => 'badge-blue', 'freelance' => 'badge-purple', 'inspector' => 'badge-amber', 'staff' => 'badge-teal'][$type] ?? 'badge-gray';
     }
 
     /** 정산 type 자동 매핑: employee → per_unit, freelance → ratio. */
@@ -59,7 +106,16 @@ class Salesman extends Model
 
     public function getTypeLabelAttribute(): string
     {
-        return self::TYPES[$this->type] ?? '사내직원';
+        // 직원(staff)은 연결 계정의 역할(관리/수출통관/재무)이 곧 유형이다 — 역할이 바뀌면 따라온다.
+        if ($this->type === 'staff') {
+            $role = $this->user?->role;
+
+            return $role ? __('domain.role.'.$role) : __('salesman.type.staff');
+        }
+
+        $key = 'salesman.type.'.$this->type;
+
+        return Lang::has($key) ? __($key) : (self::TYPES[$this->type] ?? '사내직원');
     }
 
     /**

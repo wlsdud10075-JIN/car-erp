@@ -10,7 +10,10 @@
     $cls = fn ($v) => $v === null ? 'text-gray-400' : ($v < 0 ? 'text-red-600' : 'text-emerald-600');
     // 「− 항목」 줄 전용 — 값이 음수면 빼는 게 더하는 것이라 「+」로 뒤집는다(−+3,600,000 / −−500,000 방지). null 은 0.
     $minus = fn ($v) => ((($v ?? 0) < 0) ? '+' : '−').number_format(abs($v ?? 0));
-    $typeBadge = ['employee' => 'badge-blue', 'freelance' => 'badge-purple', 'inspector' => 'badge-amber'][$t] ?? 'badge-gray';
+    $typeBadge = \App\Models\Salesman::typeBadgeClass($t);
+    // 급여만 받는 사람(검차직원·직원) — 정산·마진 칸 없이 지급합계만(2026-10-14 직원 합류). 옛 박제엔 type_label 이 없다 → 유형 번역으로.
+    $payrollOnly = in_array($t, \App\Models\Salesman::PAYROLL_ONLY_TYPES, true);
+    $typeLabel = $p['type_label'] ?? __('salesman.type.'.$t);
     $chg = fn (string $k) => in_array($k, $changed, true) ? ' bg-amber-50' : '';
     // 이익배수 = 인센티브 전 회사이익 ÷ (급여 + 정산금) (jin 2026-10-12). 옛 박제엔 키가 없다 → 같은 식으로 되살린다(단일 출처 = PersonPayoutBreakdown::profitMultiple).
     $basePay = $p['base_pay'] ?? ((int) ($p['payroll'] ?? 0) + (int) ($p['settlement_pay'] ?? 0));
@@ -27,23 +30,23 @@
         {{-- 이름 묶음은 줄어들지 않는다(shrink-0) — 오른쪽 숫자가 길면 이름이 0px 로 눌려 뱃지가 세로로 서던 것(jin 2026-10-09 스크린샷). 숫자 쪽이 줄바꿈한다. --}}
         <span class="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
             <span class="text-xs font-semibold text-gray-800">{{ $p['name'] }}</span>
-            <span class="badge {{ $typeBadge }} text-[10px] whitespace-nowrap">{{ __('salesman.type.'.$t) }}</span>
-            @if($t !== 'inspector')<span class="pill-count whitespace-nowrap">{{ __('payout_card.count', ['n' => $p['count']]) }}</span>@endif
+            <span class="badge {{ $typeBadge }} text-[10px] whitespace-nowrap">{{ $typeLabel }}</span>
+            @if(! $payrollOnly)<span class="pill-count whitespace-nowrap">{{ __('payout_card.count', ['n' => $p['count']]) }}</span>@endif
             @if(!empty($changed))<span class="badge badge-amber text-[10px]" data-changed>{{ __('payout_card.changed') }}</span>@endif
         </span>
         <span class="ml-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px]">
             {{-- 접힌 줄 순서(jin 2026-10-12): 총마진 / 실지급액 / 회사이익 / 마진율 / 이익배수 / 지분율. 전부 지분율과 같은 모양(회색 라벨 + 굵은 고정폭, 음수 빨강). --}}
-            @if($t !== 'inspector' && ! $p['unsupported'])
+            @if(! $payrollOnly && ! $p['unsupported'])
             <span class="text-gray-500">{{ __('payout_card.total_margin') }} <b class="font-mono {{ $cls($p['total_margin']) }}" data-total-margin-head>{{ $signed($p['total_margin']) }}</b></span>
             @endif
-            <span class="text-gray-500">{{ $t === 'inspector' ? __('payout_card.payroll_total') : __('payout_card.payout') }} <b class="font-mono text-gray-800" data-payout>₩{{ $fmt($p['payout']) }}</b></span>
+            <span class="text-gray-500">{{ $payrollOnly ? __('payout_card.payroll_total') : __('payout_card.payout') }} <b class="font-mono text-gray-800" data-payout>₩{{ $fmt($p['payout']) }}</b></span>
             @if($t === 'employee' && ! $p['unsupported'])
             {{-- 🔀 2026-10-12 jin — 「급여공제후 마진·초과 배율」(프리랜서 환산 계열)은 뺐다. 이익배수 = 인센티브 전 회사이익 ÷ (급여+정산금) · 회사이익 = 최종(인센티브 뺀 뒤). --}}
             <span class="text-gray-500">{{ __('payout_card.company_profit') }} <b class="font-mono {{ $cls($p['company_contribution']) }}" data-contribution>{{ $signed($p['company_contribution']) }}</b></span>
             @elseif($t === 'freelance' && ! $p['unsupported'])
             <span class="text-gray-500">{{ __('payout_card.contribution') }} <b class="font-mono {{ $cls($p['company_contribution']) }}">{{ $signed($p['company_contribution']) }}</b></span>
             @endif
-            @if($t !== 'inspector' && array_key_exists('margin_rate', $p))
+            @if(! $payrollOnly && array_key_exists('margin_rate', $p))
             <span class="text-gray-500">{{ __('payout_batch.margin.label') }} <b class="font-mono {{ $cls($p['margin_rate']) }}" data-margin-rate>{{ \App\Models\Settlement::formatMarginRate($p['margin_rate']) }}</b></span>
             @endif
             @if($t === 'employee' && ! $p['unsupported'])
@@ -54,7 +57,7 @@
     </summary>
 
     <div class="grid gap-2 border-t border-gray-100 px-3 pb-3 pt-2 sm:grid-cols-2">
-        @if($t === 'inspector')
+        @if($payrollOnly)
         {{-- 검차직원 = 급여만 --}}
         <div class="rounded border border-gray-100">
             <div class="bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-700">{{ __('payout_card.payroll') }}</div>
@@ -151,7 +154,7 @@
         </div>
         @endif
 
-        @if($t !== 'inspector' && !empty($p['vehicles']))
+        @if(! $payrollOnly && !empty($p['vehicles']))
         {{-- 차량별 보기 — 머리글 클릭 정렬 (jin 2026-10-12). 순수 JS(승인 링크 페이지엔 Alpine 이 없다) · 문서 위임 1회 등록이라 Livewire morph 뒤에도 산다. --}}
         <details class="sm:col-span-2">
             <summary class="cursor-pointer text-[11px] text-gray-500 hover:text-violet-700">{{ __('payout_card.vehicles') }} ({{ count($p['vehicles']) }})</summary>

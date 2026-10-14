@@ -66,7 +66,7 @@ return [
         'equiv_sum' => 'Freelance-equivalent total',
         'transfer_total' => 'Transfer total (incl. payroll)',
         'settlement_total' => 'Settlement + adjustments (approved amount)',
-        'common_labor' => 'Common labor (inspectors)',
+        'common_labor' => 'Common labor (inspectors & staff)',
         'contribution_sum' => 'Sum of individual company profit',
         'hint' => 'Company net = Σ(total margin − take-home − shipping) − common labor. The approved amount is still the settlement + adjustments total.',
     ],

@@ -97,7 +97,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->editingId  = $id;
         $this->name       = $user->name;
-        $this->email      = $user->email;
+        $this->email      = $user->email ?? '';
         $this->phone      = $user->phone      ?? '';
         $this->password   = '';
         $this->permission = $user->permission ?? 'user';
@@ -147,14 +147,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->approval_title = '';
         }
 
+        // 🔍 검차직원(jin 2026-10-14 «사용자관리에서 한번에 관리») — 로그인하지 않는 사람. 이메일·비밀번호 없이 등록된다.
+        //   role 은 ROLES 밖이라 canAccessErp() 가 막고, 저장 시 Salesman(type=inspector)으로 미러된다.
+        $isInspector = $this->permission === 'user' && $this->role === \App\Models\User::INSPECTOR_ROLE;
+        if ($isInspector) {
+            $this->type = '';
+            $this->manager_user_ids = [];
+        }
+
         $rules = [
             'name'       => 'required|string|max:100',
-            'email'      => 'required|email|max:255|unique:users,email' . ($this->editingId ? ",{$this->editingId}" : ''),
+            'email'      => ($isInspector ? 'nullable' : 'required').'|email|max:255|unique:users,email' . ($this->editingId ? ",{$this->editingId}" : ''),
             'phone'      => 'nullable|string|max:20',
             'permission' => 'required|in:super,admin,manager,user',
             // 회의확장씬 #11 별건 fix (2026-05-22) — 옛 role 명('전체','통관','정산')이 stale 이었음.
             // ROLES const 변경(2026-05-20 안건 I — 정산→재무 / 통관→수출통관) 동기화 누락 — 재무·수출통관 user 편집 시 validation fail.
-            'role'       => 'required|in:'.implode(',', \App\Models\User::ROLES),
+            'role'       => 'required|in:'.implode(',', \App\Models\User::ROLE_OPTIONS),   // ROLES + 검차(로그인 없음)
             // 2026-05-21 — role='영업' 일 때만 type 필수. 그 외 role 은 type 무시(null 저장).
             'type'       => 'nullable|in:employee,freelance|required_if:role,영업',
             // 2026-06-30 — 다중 관리 배정 (role='영업' 외엔 비움). pivot sync.
@@ -164,7 +172,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
 
         if (! $this->editingId) {
-            $rules['password'] = 'required|string|min:8';
+            $rules['password'] = ($isInspector ? 'nullable' : 'required').'|string|min:8';
         } elseif ($this->password !== '') {
             $rules['password'] = 'string|min:8';
         }
@@ -198,7 +206,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $data = [
             'name'              => $this->name,
-            'email'             => $this->email,
+            'email'             => $this->email !== '' ? $this->email : null,
             'phone'             => $this->phone ?: null,
             'permission'        => $this->permission,
             'role'              => $this->role,
@@ -209,7 +217,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
 
         if (! $this->editingId) {
-            $data['password'] = Hash::make($this->password);
+            // 검차직원은 비밀번호를 안 받는다 — 로그인 경로를 열지 않도록 무작위 해시를 심는다.
+            $data['password'] = Hash::make($this->password !== '' ? $this->password : \Illuminate\Support\Str::random(40));
             $user = User::create($data);
         } else {
             if ($this->password !== '') {
@@ -222,19 +231,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 2026-05-21 — User-Salesman 자동 미러링 (사용자 결정: 영업 user = 영업담당자).
         // 운영 흐름 자동화: 영업계정 등록 → 자동 영업담당자 row 생성 → 사이드바·차량 목록·캐시플로우에 즉시 노출.
         // 폼 내부에서만 호출 (Vehicle::saved 훅처럼 booted 에 박지 않음) — 테스트의 Salesman::create + user_id 패턴과 충돌 회피.
-        if ($this->role === '영업') {
+        // 🔀 2026-10-14 (jin) — 직원 명부 확장. 영업뿐 아니라 검차직원·일반사용자(관리/수출통관/재무)도 Salesman 으로 미러돼
+        //   사내직원관리에 올라와 급여를 적는다. 단일 출처 = Salesman::mirrorTypeFor() — 백필 커맨드(salesmen:sync-staff)와 같은 판정.
+        $mirrorType = \App\Models\Salesman::mirrorTypeFor($user, $typeValue);
+        if ($mirrorType !== null) {
             \App\Models\Salesman::updateOrCreate(
                 ['user_id' => $user->id],
                 [
                     'name'      => $user->name,
                     'email'     => $user->email,
                     'phone'     => $user->phone,
-                    'type'      => $typeValue,
+                    'type'      => $mirrorType,
                     'is_active' => true,
                 ]
             );
         } else {
-            // 영업 → 다른 role 전환 시: 기존 Salesman 비활성화 (차량 FK 보호 위해 삭제 X).
+            // 미러 대상이 아닌 계정(관리자 등급의 비영업)으로 전환 시: 기존 Salesman 비활성화 (차량 FK 보호 위해 삭제 X).
             \App\Models\Salesman::where('user_id', $user->id)->update(['is_active' => false]);
         }
 
@@ -506,7 +518,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="ml-1 text-[10px] text-gray-400">{{ __('user.me') }}</span>
                     @endif
                 </td>
-                <td class="py-3 pr-4 text-gray-500">{{ $u->email }}</td>
+                <td class="py-3 pr-4 text-gray-500">{{ $u->email ?? '-' }}</td>
                 {{-- 전화번호 (jin 2026-08-04) — 비면 알림톡이 로그도 없이 조용히 skip 되므로 미입력을 눈에 띄게 --}}
                 <td class="py-3 pr-4 text-gray-500">
                     @if(filled($u->phone))
@@ -550,7 +562,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="card-tight flex items-center justify-between cursor-pointer" wire:click="openEdit({{ $u->id }})">
         <div>
             <div class="font-medium text-gray-800">{{ $u->name }}{{ $u->id === auth()->id() ? ' '.__('user.me') : '' }}</div>
-            <div class="text-xs text-gray-500">{{ $u->email }}</div>
+            <div class="text-xs text-gray-500">{{ $u->email ?? '-' }}</div>
             <div class="text-xs {{ filled($u->phone) ? 'text-gray-500' : 'text-amber-600' }}">
                 {{ filled($u->phone) ? $u->phone : __('user.phone_missing') }}
             </div>
@@ -606,11 +618,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <input wire:model="name" type="text" class="input-base" placeholder="{{ __('user.field.name_ph') }}" />
                 @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
+            @php $formIsInspector = $permission === 'user' && $role === \App\Models\User::INSPECTOR_ROLE; @endphp
+            {{-- 검차직원(로그인 없음)은 이메일·비밀번호 칸을 숨긴다 — 2026-10-14 --}}
+            @if(! $formIsInspector)
             <div>
                 <label class="label-base">{{ __('common.email') }} <span class="text-red-500">*</span></label>
                 <input wire:model="email" type="email" class="input-base" placeholder="{{ __('user.field.email_ph') }}" />
                 @error('email')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
+            @endif
             {{-- 2026-05-21 — 전화번호 + Alpine phoneMask 자동 하이픈 (한국 4 패턴) --}}
             <div>
                 <label class="label-base">{{ __('user.field.phone') }}</label>
@@ -620,6 +636,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                        x-on:input="$event.target.value = $store.phoneMask.apply($event.target.value); $wire.phone = $event.target.value" />
                 @error('phone')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
+            @if(! $formIsInspector)
             <div>
                 <label class="label-base">
                     {{ __('user.field.password') }}
@@ -628,6 +645,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <input wire:model="password" type="password" class="input-base" placeholder="{{ __('user.field.password_ph') }}" autocomplete="new-password" />
                 @error('password')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
+            @endif
         </div>
 
         {{-- 권한 / 역할 --}}
@@ -673,11 +691,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div>
                 <label class="label-base">{{ __('user.field.role') }} <span class="text-red-500">*</span></label>
                 <select wire:model.live="role" class="input-base">
-                    @foreach(App\Models\User::ROLES as $r)
+                    @foreach(App\Models\User::ROLE_OPTIONS as $r)
                     <option value="{{ $r }}">{{ __('domain.role.'.$r) }}</option>
                     @endforeach
                 </select>
-                <p class="mt-1 text-xs text-gray-400">{{ __('user.field.role_note') }}</p>
+                <p class="mt-1 text-xs text-gray-400">{{ $role === \App\Models\User::INSPECTOR_ROLE ? __('user.field.inspector_note') : __('user.field.role_note') }}</p>
                 @error('role')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             @endif

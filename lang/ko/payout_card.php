@@ -73,7 +73,7 @@ return [
         'equiv_sum' => '프리랜서 환산 합계',
         'transfer_total' => '송금 총액 (급여 포함)',
         'settlement_total' => '정산·조정 총액 (승인 금액)',
-        'common_labor' => '공통 인건비 (검차직원)',
+        'common_labor' => '공통 인건비 (검차·직원)',
         'contribution_sum' => '개인 회사이익 합',
         'hint' => '회사 순이익 = Σ(총마진 − 실지급 − 발송비) − 공통 인건비. 승인하는 금액은 종전처럼 「정산·조정 총액」입니다.',
     ],

@@ -622,13 +622,14 @@ class PurchaseSyncController extends Controller
             }
         }
 
-        $salesman = Salesman::where('email', $email)->first();
+        // 🚫 영업만(sales) — 관리직 「직원」 미러 행이 차량 담당자로 꽂히지 않게(2026-10-14, SalesmanResolver 와 같은 규칙).
+        $salesman = Salesman::where('email', $email)->sales()->first();
         if ($salesman) {
             return $salesman->id;
         }
 
         $user = User::where('email', $email)->first();
-        if ($user && $user->salesman) {
+        if ($user && $user->salesman?->isSales()) {
             return $user->salesman->id;
         }
 

@@ -46,6 +46,7 @@ return [
         '수출통관' => 'Export Clearance',
         '재무' => 'Finance',
         '관리' => 'Management',
+        '검차' => 'Inspector',
     ],
 
     // Sales channel (sales_channel enum — value is English code, display only).

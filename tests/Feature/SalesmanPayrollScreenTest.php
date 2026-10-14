@@ -54,20 +54,17 @@ class SalesmanPayrollScreenTest extends TestCase
 
     // ── 검차직원 등록 ─────────────────────────────────────────────────
 
-    public function test_an_inspector_is_registered_by_name_only(): void
+    /** 🔀 2026-10-14 (jin «사용자관리에서 한번에 관리») — 이 화면은 더 이상 등록하지 않는다. 검차직원은 사용자 관리에서(StaffRosterTest). */
+    public function test_this_screen_no_longer_registers_and_points_to_user_management(): void
     {
         $this->actingAs($this->user('admin'));
 
-        Volt::test('erp.salesmen.index')->call('openCreate')
-            ->assertSet('create_type', 'inspector')
-            ->assertDontSee(__('salesman.field.account_none'))   // 검차 등록엔 계정 select 자체가 없다
-            ->set('name', '오검차')->call('save')->assertHasNoErrors();
+        Volt::test('erp.salesmen.index')
+            ->assertSee(__('salesman.register_in_users'))
+            ->assertSeeHtml(route('admin.users.index'))
+            ->set('name', '오검차')->call('save')->assertStatus(403);
 
-        $sm = Salesman::where('name', '오검차')->firstOrFail();
-        $this->assertSame('inspector', $sm->type);
-        $this->assertNull($sm->user_id);
-        $this->assertTrue($sm->isInspector());
-        $this->assertSame(0, Salesman::query()->sales()->where('id', $sm->id)->count(), '검차직원은 영업 목록(sales)에서 빠져야 한다');
+        $this->assertNull(Salesman::where('name', '오검차')->first());
     }
 
     public function test_finance_cannot_register_or_delete_or_hand_over(): void
@@ -75,8 +72,7 @@ class SalesmanPayrollScreenTest extends TestCase
         $sm = $this->employee();
         $this->actingAs($this->user('user', '재무'));
 
-        Volt::test('erp.salesmen.index')->call('openCreate')->set('name', '몰래')->call('save')->assertStatus(403);
-        $this->assertNull(Salesman::where('name', '몰래')->first());
+        Volt::test('erp.salesmen.index')->assertDontSee(__('salesman.register_in_users'));   // 재무에겐 등록 안내 링크도 없다
 
         Volt::test('erp.salesmen.index')->call('delete', $sm->id)->assertStatus(403);
         $this->assertNotNull($sm->fresh());

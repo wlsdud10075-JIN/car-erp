@@ -22,6 +22,19 @@ class User extends Authenticatable
     // admin/super는 role 무관 (permission 기반)이라 임의 값 가능 — 시더에서 '관리'로 통일.
     public const ROLES = ['영업', '수출통관', '재무', '관리'];
 
+    /**
+     * 검차직원 역할 (jin 2026-10-14 «사용자관리에서 한번에 관리») — 🚫 `ROLES` 밖에 둔다.
+     * `canAccessErp()` 가 `role ∈ ROLES` 를 보므로 ERP 가 열리지 않는다('전체' 기본값이 안전망인 것과 같은 원리).
+     * 로그인하지 않는 사람이라 이메일 없음·비밀번호 무작위. 저장 시 Salesman(type=inspector)으로 미러된다.
+     */
+    public const INSPECTOR_ROLE = '검차';
+
+    /** 영업이 아닌 일반사용자 역할 — 사내직원관리에 「직원(staff)」으로 미러돼 급여를 적는다(2026-10-14). */
+    public const STAFF_ROLES = ['수출통관', '재무', '관리'];
+
+    /** 사용자 관리 폼의 역할 선택지 = ERP 역할 + 검차직원. */
+    public const ROLE_OPTIONS = ['영업', '수출통관', '재무', '관리', self::INSPECTOR_ROLE];
+
     // item 1 (jin 2026-07-07) — 권한 등급. super > admin(대표) > manager(업무관리자) > user.
     //   manager = admin 등가 권한에서 [기능설정·단계강제·super/admin 계정관리]만 제외.
     //   Phase 2 정산지급 월정산 승인 사다리의 중간 계단([관리]→manager→대표).
