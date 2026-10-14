@@ -35,28 +35,18 @@ class OverdraftBalanceTest extends TestCase
         $this->actingAs($this->cashUser());
 
         Volt::test('erp.dashboard')
-            ->set('cashKrw', '300,000,000')
-            ->set('cashKrwNegative', true)
+            ->set('cashKrw', '-300,000,000')   // 2026-10-14 — 칸에 − 를 직접 친다(data-money-signed). ± 토글은 폐지.
             ->call('saveCashBalance');
 
         $this->assertSame(-300_000_000, (int) CashSnapshot::latest('snapshot_date')->first()->balance_krw);
     }
 
-    /**
-     * ⚠️ **부호는 토글이 정한다** — 금액칸(`data-money`)이 `-` 를 실시간으로 지우고 `-` 키를
-     * ÷1000 단축키로 써서 음수를 타이핑할 수 없다. 칸에 음수가 와도 절대값으로 다룬 뒤 토글로 부호를 붙인다
-     * (안 그러면 토글 OFF + 칸에 음수 = 의도치 않은 음수가 된다).
-     */
-    public function test_sign_comes_from_the_toggle_not_the_text(): void
+    /** 원화 칸은 부호 있는 금액칸(data-money-signed)이어야 − 를 칠 수 있다 — 포매터가 지우면 음수를 영영 못 넣는다(§8 #58). */
+    public function test_krw_field_is_a_signed_money_input(): void
     {
-        $this->actingAs($this->cashUser());
-
-        Volt::test('erp.dashboard')
-            ->set('cashKrw', '-300,000,000')   // 칸에 음수가 흘러들어와도
-            ->set('cashKrwNegative', false)    // 토글이 꺼져 있으면 양수다
-            ->call('saveCashBalance');
-
-        $this->assertSame(300_000_000, (int) CashSnapshot::latest('snapshot_date')->first()->balance_krw);
+        $src = file_get_contents(resource_path('views/livewire/erp/dashboard.blade.php'));
+        $this->assertMatchesRegularExpression('/wire:model="cashKrw"[^>]*data-money-signed/', $src);
+        $this->assertStringNotContainsString('cashKrwNegative', $src, '± 토글은 2026-10-14 폐지');
     }
 
     /** 외화는 종전대로 0 이상 — 마이너스 통장은 원화 계좌라 외화칸의 음수는 오타일 확률이 높다. */
