@@ -571,10 +571,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             <button type="button" wire:click="closeImport" class="rounded p-1 text-gray-400 hover:bg-gray-100">✕</button>
         </div>
         <p class="mt-1 text-xs text-gray-500">{{ __('salesman.import.hint') }}</p>
-        <div class="mt-3">
-            <input type="file" wire:model="payrollFile" accept=".xls,.xlsx" class="block w-full text-sm" />
-            <div wire:loading wire:target="payrollFile" class="mt-1 text-xs text-violet-600">{{ __('salesman.import.reading') }}</div>
-            @error('payrollFile')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        {{-- 파일 선택은 **버튼처럼** (jin 2026-10-14 «파일선택이 그냥 텍스트 같아서») — 기본 input 은 숨기고 label 을 버튼으로. --}}
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+            <label class="btn-primary cursor-pointer" data-payroll-file-button>
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12l-4 4m4-4l4 4"/></svg>
+                <span wire:loading.remove wire:target="payrollFile">{{ __('salesman.import.choose') }}</span>
+                <span wire:loading wire:target="payrollFile">{{ __('salesman.import.reading') }}</span>
+                <input type="file" wire:model="payrollFile" accept=".xls,.xlsx" class="hidden" />
+            </label>
+            <span class="text-xs text-gray-500">{{ $payrollFile ? $payrollFile->getClientOriginalName() : __('salesman.import.no_file') }}</span>
+            @error('payrollFile')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
         @if($importPreview !== [])
             @foreach(($importPreview['errors'] ?? []) as $err)

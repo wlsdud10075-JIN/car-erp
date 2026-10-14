@@ -55,6 +55,8 @@ return [
         'title' => 'Upload payroll sheet (xls)',
         'hint' => 'Upload the accounting payroll sheet; only pay items are read and written as that month\'s payroll. Deductions are ignored. Re-uploading a month overwrites only those people for that month.',
         'file' => 'Payroll file',
+        'choose' => '📂 Choose payroll file (xls)',
+        'no_file' => 'No file chosen yet — click the button to pick the payroll sheet.',
         'reading' => 'Reading…',
         'month' => 'Month',
         'count' => ':n people read',
