@@ -658,6 +658,15 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-14 — 매입총액 컬럼 · 전화번호 검색 · 전 컬럼 정렬 · 직원 명부 확장(검차직원 사용자관리 등록) · 급여대장 xls 업로드 · 계좌별 통장 잔액 `d17d9a22` (3사 동시, 코드 10커밋, **마이그 4**)
+
+- jin «한번에 하면 어디서부터 어디까지?» → master `12f9e720` 이후 dev 전부에서 BizM 승인 대기 2건(`d22a9a36`·`8b45da57`)만 제외. dev→master cherry-pick 10건(`e2b07003`·`297a9003`·`6d8c0ed5`·`c4d4c66a`·`3bd85983`·`3da0c0cb`·`c702a712`·`90e8374b`·`55897eda`·`1bbbec1e`; `6cbe08a0` 은 settings.local.json 되돌림이라 빈 커밋 → skip). 충돌 = `.claude/settings.local.json`(master 판 유지) · dev 전용 `scripts/notion-*`·`docs/*`·`tests/Feature/NotionGuideAudienceTest.php`(삭제 유지).
+- 마이그 4건: `salesmen.type` enum +staff · `users.email` nullable(검차직원 = 로그인 없음, unique 인덱스 유지 확인) · `salesmen.employee_no` · `cash_accounts`+`cash_account_balances`. 3사 `migrate:status` 전부 Ran(heymancar 배치 69 · karaba 78 · heysellcar 84). 라운드테이블은 컬럼·테이블 추가뿐이라 생략(jin 에게 고지).
+- 로컬 master 순차 전체 **3,303 pass · 실패 0**(771초). deploy 런 38515803228 잡 5개 success. 3사 SHA `d17d9a22`, /login 200.
+- 배포 뒤 운영 쓰기(jin 「SSANCARERP에 계좌등록은 너가 해줘」): ssancarerp `cash_accounts` 7건 생성(잔액계좌정보.txt — KRW 6 + 하나 외화 USD/EUR 1, 감사로그 `cash_account`). heyman·karaba 는 계좌 0 → 종전 3칸 폼.
+- `salesmen:sync-staff` dry-run: **ssancarerp 7명**(김다정·김희연·박수정·유재숙·이솔·이정아·최현방, 전부 user/관리 → staff) · heymanerp 1명(이다은 user/관리) · karaba 0. **apply 는 jin 승인 대기.**
+- 효과 시점: 컬럼·정렬·검색 = 즉시. 명부 탭·검차직원 역할 = 즉시(기존 관리직은 apply 뒤). 급여대장 업로드 = 실무자가 09월 파일 올릴 때(이름 다른 2명 수동 연결 1회). 계좌별 잔액 = ssancarerp 다음 입력부터 — 첫날 7개 전부 넣어야 합계가 맞다(미입력 경고 띠).
+
 ## 2026-10-13(저녁) — 알림톡 재시도·09:30 따라잡기 + ko 누수 + board 라벨 ko + 연동 판매값 감사 `12f9e720` (3사 동시, 코드 4커밋, 마이그 0)
 
 - jin «지금 바로 올릴 건들 추려봐, BizM 만 빼고». dev `987321ea`(알림톡 ConnectionException 3회 재시도 + 일간 9종 09:30 재스케줄, `once_per_day` 코드·번호·차량 단위 중복 방지, 로그 안 남김) · `f92a482f`(lang/ko auth·pagination·passwords + ko.json + 설정/인증 화면 `__()`, 가드 2건) · `560509ef`(board 요청 알림톡 라벨 `__(…,'ko')` — 운영 heymanerp·ssancarerp `.env APP_LOCALE=en` 실측, `.env.example` ko) · `4fa56225`(AUDITED_COLUMNS sale_date·currency + 연동 생성 시 sale_price/currency/exchange_rate/sale_date/buyer_id/consignee_id 값 있는 칸만 inbound_purchase_sync 행) → master `f13a784a`·`a9d9d84d`·`8808b6d0`·`12f9e720`.
