@@ -167,6 +167,7 @@ return [
         'channel' => 'Channel',
         'currency_rate' => 'Currency/Rate',
         'purchase_price' => 'Buy Price',
+        'purchase_total' => 'Buy Total',
         'sale_price' => 'Sell Price',
         'sale_total' => 'Sell Total',
         'transport_fee' => 'Freight',

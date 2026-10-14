@@ -170,6 +170,7 @@ return [
         'channel' => '채널',
         'currency_rate' => '통화/환율',
         'purchase_price' => '매입가',
+        'purchase_total' => '매입총액',
         'sale_price' => '판매가',
         'sale_total' => '판매총액',
         'transport_fee' => '운임비',

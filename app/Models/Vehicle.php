@@ -2544,9 +2544,15 @@ class Vehicle extends Model
             ->sum('amount');
     }
 
+    /** 총매입액 = 매입가 + 매도비 (SKILLS §13). 차량관리 「매입총액」 컬럼·매입 미지급 분모의 단일 출처. */
+    public function getPurchaseTotalAmountAttribute(): int
+    {
+        return (int) $this->purchase_price + (int) $this->selling_fee;
+    }
+
     public function getPurchaseUnpaidAmountAttribute(): int
     {
-        return (int) (($this->purchase_price + $this->selling_fee) - $this->purchase_paid_amount);
+        return $this->purchase_total_amount - $this->purchase_paid_amount;
     }
 
     /**
