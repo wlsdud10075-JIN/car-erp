@@ -5,7 +5,7 @@ return [
     'title' => 'User Management',
     'total' => ':count users',
     'create_btn' => 'Add User',
-    'search_ph' => 'Name · email',
+    'search_ph' => 'Name · email · phone',
     'all_perm' => 'All permissions',
     'me' => '(me)',
     'no_login' => 'Never',

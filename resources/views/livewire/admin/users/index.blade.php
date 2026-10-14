@@ -64,6 +64,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when(SearchTerm::of($this->search), fn($q) => $q->where(fn($q2) =>
                 $q2->where('name', 'like', SearchTerm::like($this->search))
                    ->orWhere('email', 'like', SearchTerm::like($this->search))
+                   // 전화번호 (jin 2026-10-14) — 저장값은 하이픈 포함(phoneMask)이라 숫자만 쳐도 걸리게 둘 다 본다.
+                   ->orWhere('phone', 'like', SearchTerm::like($this->search))
+                   ->orWhereRaw("REPLACE(phone, '-', '') like ?", ['%'.str_replace('-', '', SearchTerm::of($this->search)).'%'])
             ))
             ->when($this->permFilter, fn($q) => $q->where('permission', $this->permFilter))
             ->orderBy('name')

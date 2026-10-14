@@ -5,7 +5,7 @@ return [
     'title' => '사용자 관리',
     'total' => '총 :count명',
     'create_btn' => '사용자 추가',
-    'search_ph' => '이름 · 이메일',
+    'search_ph' => '이름 · 이메일 · 전화번호',
     'all_perm' => '전체 권한',
     'me' => '(나)',
     'no_login' => '없음',
