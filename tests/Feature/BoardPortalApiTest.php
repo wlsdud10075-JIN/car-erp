@@ -9,6 +9,7 @@ use App\Models\Consignee;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\ShippingRequest;
+use App\Models\TaskAlarm;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -565,6 +566,33 @@ class BoardPortalApiTest extends TestCase
         $res2->assertJsonPath('cancelled.0', $b->id);
         $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $b->id, 'status' => 'cancelled']);
         $this->assertDatabaseHas('shipping_requests', ['vehicle_id' => $a->id, 'shipping_method' => 'CONTAINER']);
+    }
+
+    /** 🔇 변경 없는 requested 행은 no-op — 선언형 sync 가 기존 묶음을 그대로 실어 와도 갱신·알람 재발사·updated 집계가 없다 (board 요청 2026-10-14). */
+    public function test_sync_leaves_unchanged_requested_rows_alone(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $a = $this->exportVehicle($me->id, '11가1111');
+        $b = $this->exportVehicle($me->id, '22나2222');
+        $payload = ['salesman_email' => 'me@a.com', 'bundles' => [['shipping_method' => 'RORO', 'vehicle_ids' => [$a->id]]]];
+
+        $this->signedPost('/api/internal/board/shipping-requests/sync', $payload)->assertOk()->assertJsonCount(1, 'created');
+        $row = ShippingRequest::where('vehicle_id', $a->id)->firstOrFail();
+        $alarm = TaskAlarm::where('type', 'shipping_requested')->where('vehicle_id', $a->id)->firstOrFail();
+        $this->travel(5)->minutes();
+
+        // 같은 묶음 그대로 + 새 차 b 추가 → a 는 손대지 않고 b 만 생성
+        $payload['bundles'][0]['vehicle_ids'] = [$a->id, $b->id];
+        $res = $this->signedPost('/api/internal/board/shipping-requests/sync', $payload)->assertOk();
+
+        $res->assertJsonCount(1, 'created')->assertJsonCount(0, 'updated')->assertJsonCount(0, 'skipped')->assertJsonCount(0, 'cancelled');
+        $this->assertEquals($row->requested_at, $row->fresh()->requested_at, 'requested_at 이 갱신되면 안 된다');
+        $this->assertEquals($alarm->updated_at, $alarm->fresh()->updated_at, '관리 알람이 재발사되면 안 된다');
+
+        // 속성이 하나라도 다르면 종전대로 갱신
+        $payload['bundles'][0]['shipping_method'] = 'CONTAINER';
+        $this->signedPost('/api/internal/board/shipping-requests/sync', $payload)->assertOk()->assertJsonCount(2, 'updated');
+        $this->assertNotEquals($row->requested_at, $row->fresh()->requested_at);
     }
 
     public function test_sync_empty_bundles_cancels_all_requested_and_keeps_in_progress_locked(): void

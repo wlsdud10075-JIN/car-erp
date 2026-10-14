@@ -234,7 +234,7 @@ board 의 **전송 감사 명령 `board:purchase-sync-audit`**(board dev `cb9974
   - 💵 **`transport_fee_usd_total`** (2026-08-11, 인계 §7) — 묶음 총액(USD 정수). **`CONTAINER` 묶음에서만** 받는다(RORO 면 서버가 버린다 — board 를 믿지 않는다). 멤버 차량에 **1/N** 로 `vehicles.transport_fee_usd`(회계 미포함 기록칸)에 기입.
     - 🧮 **분할 규칙**(단일 출처 = `ShippingRequest::splitFreightUsd`): 몫 = `intdiv(총액, 묶음 전체 대수)`, **나머지는 최소 `vehicle_id` 한 대**가 받는다(재전송해도 같은 차가 받아 값이 안 흔들린다).
     - **비어 있을 때만 채운다**(jin 확정. NULL·0 둘 다 빈 것으로 봄). 그래서 **기입 합계가 총액과 안 맞을 수 있다** — 분모는 언제나 전체 대수이고 수기값은 보호되기 때문. 의도된 결과다.
-  - diff(트랜잭션): desired에 있고 open 없음→**생성** / `requested`이고 attrs 변경→**갱신**(bundle 이동 시 batch 재배치) / desired에 없고 `requested`→**자동취소**(+알람 resolve) / `in_progress`→**잠금**(desired 유무로 자동변경·자동취소 안 함).
+  - diff(트랜잭션): desired에 있고 open 없음→**생성** / `requested`이고 attrs 변경→**갱신**(bundle 이동 시 batch 재배치) / **`requested`이고 attrs 전부 동일→no-op**(갱신·`requested_at`·관리 알람·`updated[]` 전부 없음, 응답 어느 배열에도 안 셈 — 2026-10-14 board 요청, 가드 `BoardPortalApiTest::test_sync_leaves_unchanged_requested_rows_alone`) / desired에 없고 `requested`→**자동취소**(+알람 resolve) / `in_progress`→**잠금**(desired 유무로 자동변경·자동취소 안 함).
   - 응답 `{created:[], updated:[], cancelled:[], skipped:[], locked:[]}`.
   - **⚠️ board 측 강제**: payload는 **반드시 영업 전체 desired 묶음**. 일부만 보내면 빠진 `requested` 차가 **의도치 않게 자동취소**됨 → board는 `/bundles`로 전체를 그려놓고 영업이 빼/옮긴 것만 반영해 통째 전송.
 - **`POST /bundles/{batch}/bl-request`** — 기존 묶음의 **B/L요청 재사용**. `{ salesman_email, bl_type:"original|surrender" }` → `bl_type` 확정 + `bl_status='requested'` + 관리 알람. (선적요청을 베낀 별도 시스템 아님 = 같은 묶음의 상태 전이.)
