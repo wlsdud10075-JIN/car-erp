@@ -72,6 +72,7 @@ final class BatchPayoutBreakdown
         $people = Salesman::query()->whereIn('id', $ids)->get()->keyBy('id');
         $payrollTotals = PayrollEntry::query()->where('month', $month)->whereIn('salesman_id', $ids)
             ->selectRaw('salesman_id, SUM(amount) as total')->groupBy('salesman_id')->pluck('total', 'salesman_id');
+        $payrollItems = PersonPayoutBreakdown::payrollItemsFor($ids->all(), $month);   // 카드 펼침용 기입 항목(한 쿼리)
 
         $rows = [];
         foreach ($ids as $id) {
@@ -84,7 +85,7 @@ final class BatchPayoutBreakdown
                 $sm, $month,
                 ($bySalesman->get($id) ?? collect())->values(),
                 ($adjBySalesman->get($id) ?? collect())->values(),
-                $payroll, false,
+                $payroll, false, $payrollItems[$id] ?? [],
             );
         }
 

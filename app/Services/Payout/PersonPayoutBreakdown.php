@@ -40,15 +40,41 @@ use Illuminate\Support\Collection;
 final class PersonPayoutBreakdown
 {
     /**
+     * 그 달 기입된 급여 항목 — 사람별 [label, amount] 목록(고정 항목 순서 → 직접 추가 순). 한 쿼리로 여러 사람.
+     *
+     * @param  list<int>  $salesmanIds
+     * @return array<int, list<array{label:string, amount:int}>>
+     */
+    public static function payrollItemsFor(array $salesmanIds, string $month): array
+    {
+        if ($salesmanIds === []) {
+            return [];
+        }
+        $out = [];
+        $rows = PayrollEntry::query()->where('month', $month)->whereIn('salesman_id', $salesmanIds)
+            ->orderBy('salesman_id')->orderBy('sort')->orderBy('id')->get(['salesman_id', 'label', 'amount']);
+        foreach ($rows as $r) {
+            $out[(int) $r->salesman_id][] = ['label' => $r->label, 'amount' => (int) $r->amount];
+        }
+
+        return $out;
+    }
+
+    /**
      * @param  Collection<int, Settlement>  $settlements  이 사람의 이번 배치(또는 달) 정산. vehicle.finalPayments·receivableHistories 로드 권장
      * @param  Collection<int, SettlementPayoutAdjustment>  $adjustments  이 사람의 배치 조정(kind 포함)
      * @param  int|null  $payrollTotal  그 달 급여 지급합계(null = 미입력). 생략하면 PayrollEntry 에서 읽는다
+     * @param  list<array{label:string, amount:int}>|null  $payrollItems  기입된 급여 항목(순서대로). 생략하면 PayrollEntry 에서 읽는다 —
+     *                                                                    카드 펼침에 「기입된 항목만」 보여 준다(jin 2026-10-14 «18개 다 기입되는 경우는 드무니까»)
      */
-    public static function build(Salesman $sm, string $month, Collection $settlements, Collection $adjustments, ?int $payrollTotal = null, bool $loadPayroll = true): array
+    public static function build(Salesman $sm, string $month, Collection $settlements, Collection $adjustments, ?int $payrollTotal = null, bool $loadPayroll = true, ?array $payrollItems = null): array
     {
         $type = $sm->type ?? 'employee';
         if ($payrollTotal === null && $loadPayroll && $type !== 'freelance') {
             $payrollTotal = PayrollEntry::totalFor($sm->id, $month);
+        }
+        if ($payrollItems === null && $loadPayroll && $type !== 'freelance') {
+            $payrollItems = self::payrollItemsFor([$sm->id], $month)[$sm->id] ?? [];
         }
         $payroll = $type === 'freelance' ? 0 : (int) ($payrollTotal ?? 0);
 
@@ -72,6 +98,7 @@ final class PersonPayoutBreakdown
             'salesman_id' => $sm->id, 'name' => $sm->name, 'type' => $type, 'type_label' => $sm->type_label, 'month' => $month,
             'count' => $settlements->count(), 'vehicles' => $vehicles,
             'payroll' => $type === 'freelance' ? null : $payrollTotal,
+            'payroll_items' => $type === 'freelance' ? [] : ($payrollItems ?? []),   // 기입된 항목만(행 없는 항목은 안 실린다)
             'incentive' => $incentive, 'adj_manual' => $adjManual, 'adj_carry' => $adjCarry,
             'deposit' => $type === 'freelance' ? $sm->deposit_krw : null,   // 표시만(지급액 무관)
             'tier' => (bool) $sm->per_unit_tier_enabled,
