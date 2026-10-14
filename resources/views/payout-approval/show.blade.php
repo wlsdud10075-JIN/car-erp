@@ -177,7 +177,7 @@
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
                 <select name="salesman_id" style="border:1px solid #d1d5db;border-radius:8px;padding:9px;font-size:14px;">
                     <option value="">{{ __('settlement.batch.adjust_salesman') }}</option>
-                    @foreach(collect($v3['people'])->where('type', '!=', 'inspector') as $pp)
+                    @foreach(collect($v3['people'])->whereNotIn('type', \App\Models\Salesman::PAYROLL_ONLY_TYPES) as $pp)
                     <option value="{{ $pp['salesman_id'] }}">{{ $pp['name'] }}</option>
                     @endforeach
                 </select>

@@ -37,6 +37,7 @@ return [
         'perm' => 'Permission',
         'role' => 'Role',
         'role_note' => 'Accessible menus depend on the role.',
+        'inspector_note' => 'Inspectors do not log in to the ERP — registered without email/password; payroll is entered in Staff Management.',
         'settlement_type' => 'Settlement Type',
         'type_select' => '— Select —',
         'type_note' => 'Determines the auto-created settlement method on completion — explicit selection required to avoid omissions.',

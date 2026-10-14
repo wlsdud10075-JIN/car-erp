@@ -712,7 +712,7 @@ new #[Layout('components.layouts.app')] class extends Component
             $payroll = \App\Models\PayrollEntry::query()->whereIn('month', $payrollMonths)
                 ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
                 ->selectRaw('salesman_id, SUM(amount) as t')->groupBy('salesman_id')->pluck('t', 'salesman_id');
-            $inspectorIds = $payroll->isEmpty() ? collect() : Salesman::query()->whereIn('id', $payroll->keys())->where('type', 'inspector')->pluck('id');
+            $inspectorIds = $payroll->isEmpty() ? collect() : Salesman::query()->whereIn('id', $payroll->keys())->whereIn('type', Salesman::PAYROLL_ONLY_TYPES)->pluck('id');   // 검차·직원 = 공통 인건비
             foreach ($payroll as $sid => $t) {
                 $t = (int) $t;
                 if ($inspectorIds->contains((int) $sid)) {

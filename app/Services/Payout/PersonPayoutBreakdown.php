@@ -69,7 +69,7 @@ final class PersonPayoutBreakdown
         ])->values()->all();
 
         $base = [
-            'salesman_id' => $sm->id, 'name' => $sm->name, 'type' => $type, 'month' => $month,
+            'salesman_id' => $sm->id, 'name' => $sm->name, 'type' => $type, 'type_label' => $sm->type_label, 'month' => $month,
             'count' => $settlements->count(), 'vehicles' => $vehicles,
             'payroll' => $type === 'freelance' ? null : $payrollTotal,
             'incentive' => $incentive, 'adj_manual' => $adjManual, 'adj_carry' => $adjCarry,
@@ -79,7 +79,7 @@ final class PersonPayoutBreakdown
             'unsupported' => false,
         ];
 
-        if ($type === 'inspector') {
+        if (in_array($type, Salesman::PAYROLL_ONLY_TYPES, true)) {   // 검차직원·직원 = 급여만
             return $base + [
                 'equiv_sale_rate' => null, 'fx_primary' => null, 'carry' => null, 'fx_secondary' => null, 'equiv_total' => null,
                 'settlement_pay' => 0, 'payout' => $payroll + $incentive + $adjManual,

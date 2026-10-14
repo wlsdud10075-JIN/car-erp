@@ -246,3 +246,17 @@
 - 🔀 **같은 날 3차 — 펼침을 더 줄였다.** jin: *«회사손익산출에서 총마진 − 실지급액 = 회사이익 이렇게만. 왼쪽 회사이익·총마진, 오른쪽 실지급액만 초록 배경. 이익배수·지분율은 상세에서 색만 유지»*. 급여·정산금·인센티브 차감 줄은 왼쪽에서 빠지고(오른쪽 지급 내역에 그대로), 발송비는 0 이 아닐 때만. 「인센티브 전 회사이익」 줄은 이익배수 툴팁(분자 ÷ 분모)으로.
 - 옛 박제(`breakdown_snapshot`)엔 `profit_multiple`·`base_pay`·`profit_before_incentive` 키가 없다 → 카드가 payroll·settlement_pay·total_margin·shipping 으로 같은 헬퍼를 불러 되살린다(가드 = `PayoutCardScreensTest` 키 없는 배열).
 - 🅿️ 합계 띠의 「프리랜서 환산 합계」는 아직 사내직원 가상 환산을 포함한 채 그대로다 — jin 이 띠까지 단순화하길 원하면 그때.
+
+### 🔀 2026-10-14 — 직원 명부 확장 · 검차직원 등록 경로 변경 (jin «추천으로 하자 · 사용자관리에서 한번에 관리»)
+
+위 5차 문답의 「검차직원 등록 = 사내직원관리에서 이름만」은 **이 날짜부터 안 맞는다**(§8 #97-B — 줄은 남기고 여기 덧붙임).
+
+| # | 결정 |
+|---|---|
+| 검차직원 등록 | **사용자 관리**에서 역할 「검차직원」으로. 이메일·비밀번호 없음(`users.email` nullable, 비밀번호 무작위 해시). role `'검차'` 는 `User::ROLES` **밖** → `canAccessErp()` 가 막는다. 저장 시 Salesman(type=inspector) 미러. 사내직원관리의 「이름만 등록」 경로는 **제거** |
+| 명부 범위 | 영업이 아닌 **일반사용자(관리·수출통관·재무)** 도 Salesman(type=`staff`)으로 미러 → 사내직원관리에 올라와 급여 항목을 적는다. 관리자 등급(admin/manager)의 비영업은 종전대로 미러 안 함. karaba 는 «일단 신경쓰지마»(전원 admin 이라 아무도 안 늘어난다) |
+| 탭 | 전체 / 사내직원 / 프리랜서 / 검차직원 / **관리 / 수출통관 / 재무**(뒤 셋 = type staff + 연결 계정 role). 수출통관·재무 일반사용자는 3사 0명(10-14 실측) — 당분간 빈 탭 |
+| 급여 취급 | staff = inspector 와 같다(`Salesman::PAYROLL_ONLY_TYPES`) — 정산·회사 기여 없음, 월정산엔 지급합계만, 송금 총액 포함, 대시보드 「공통 인건비」 |
+| 단일 출처 | 계정→유형 = `Salesman::mirrorTypeFor()`(사용자 관리 저장 · 백필 `salesmen:sync-staff` 공용) · 영업만 = `Salesman::sales()`(이제 포함 목록 employee/freelance) · board 이메일 매칭(`SalesmanResolver`·purchase-sync)도 `sales()` |
+| 배포 뒤 할 일 | 기존 계정은 배포만으로 안 올라온다 → `salesmen:sync-staff`(dry-run) 실측 → jin 승인 → `--apply`. 대상 실측 ssancarerp 8 · heymanerp 1 |
+

@@ -19,12 +19,41 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   기준은 `salesmen.type`(정산 훅이 읽는 그 값 — user.type 의 미러). 컬럼이 NOT NULL default 'employee' 라
     //   계정 미연결 담당자는 「사내직원」으로 잡힌다(실측 마이그 2026_05_20_000011).
     //   ⚠️ 메서드 이름을 프로퍼티와 같게 두지 말 것(§8 #32) — setTypeFilter().
+    //   🔀 2026-10-14 (jin) — 탭 = 사내직원 / 프리랜서 / 검차직원 / 관리 / 수출통관 / 재무. 뒤 셋은 type=staff + 연결 계정의 role.
     #[Url(as: 'type')] public string $typeFilter = '';
+
+    /** 탭 키 → 라벨. 역할 탭은 `staff:관리` 처럼 접두를 붙인다(role 이 바뀌면 자동으로 따라온다 — 동기화 불필요). */
+    public static function rosterTabs(): array
+    {
+        $tabs = [];
+        foreach (['employee', 'freelance', 'inspector'] as $t) {
+            $tabs[$t] = __('salesman.type.'.$t);
+        }
+        foreach (User::STAFF_ROLES as $role) {
+            $tabs['staff:'.$role] = __('domain.role.'.$role);
+        }
+
+        return $tabs;
+    }
 
     public function setTypeFilter(string $type): void
     {
-        $this->typeFilter = array_key_exists($type, Salesman::TYPES) ? $type : '';
+        $this->typeFilter = array_key_exists($type, self::rosterTabs()) ? $type : '';
         $this->resetPage();
+    }
+
+    private function applyTypeFilter($q)
+    {
+        if ($this->typeFilter === '') {
+            return $q;
+        }
+        if (str_starts_with($this->typeFilter, 'staff:')) {
+            $role = substr($this->typeFilter, 6);
+
+            return $q->where('type', 'staff')->whereHas('user', fn ($u) => $u->where('role', $role));
+        }
+
+        return $q->where('type', $this->typeFilter);
     }
     public bool   $showPanel = false;
     public ?int   $editingId = null;
@@ -57,9 +86,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $deposit_krw_str     = '';
     public string $base_salary_krw_str = '';   // ⚠️ v3 부터 화면에서 빼고 급여 항목(PayrollEntry)이 대신한다. 저장하지 않는다.
 
-    // 월정산 v3 (jin 2026-10-08) — 등록 유형(등록 모드만). 검차직원 = 계정 없이 이름만. 사내직원·프리랜서는 /admin/users 가 원본.
-    public string $create_type = 'inspector';
-
     // 💴 급여 항목 — 귀속월별(PayrollEntry). 고정 18(ITEMS 순서, 인덱스로 바인딩) + 직접 추가 행.
     //   금액은 문자열(콤마 포매터 data-money-signed — 전월소급 등 음수). '' = 미입력.
     public string $payrollMonth = '';
@@ -74,7 +100,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return Salesman::query()
             ->with('user')
-            ->when($this->typeFilter !== '', fn($q) => $q->where('type', $this->typeFilter))
+            ->tap(fn ($q) => $this->applyTypeFilter($q))
             ->when(SearchTerm::of($this->search), fn($q) => $q->where(fn($q2) =>
                 $q2->where('name', 'like', SearchTerm::like($this->search))
                    ->orWhere('email', 'like', SearchTerm::like($this->search))
@@ -85,20 +111,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
             ->orderBy('id')
             ->paginate($this->perPage);
-    }
-
-    #[Computed]
-    public function users()
-    {
-        return User::orderBy('name')->get();
-    }
-
-    public function openCreate(): void
-    {
-        $this->resetValidation();
-        $this->resetForm();
-        $this->editingId = null;
-        $this->showPanel = true;
     }
 
     /*
@@ -383,7 +395,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             // 💴 급여 항목 — 사내직원·검차직원, 관리 이상 + 재무. 그 달을 통째로 교체하고 지급합계 변화를 감사로그 1줄로.
-            if (in_array($sm->type, ['employee', 'inspector'], true) && $actor?->canEditPayroll() && PayrollEntry::isMonth($this->payrollMonth)) {
+            if (($sm->type === 'employee' || $sm->isPayrollOnly()) && $actor?->canEditPayroll() && PayrollEntry::isMonth($this->payrollMonth)) {
                 $wasTotal = PayrollEntry::totalFor($sm->id, $this->payrollMonth);
                 PayrollEntry::replaceFor($sm->id, $this->payrollMonth, $this->payrollRows());
                 $nowTotal = PayrollEntry::totalFor($sm->id, $this->payrollMonth);
@@ -395,31 +407,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
             }
         } else {
-            // 등록 — 월정산 v3: **검차직원은 여기서 이름만** 등록한다(계정 없음). 사내직원·프리랜서는 /admin/users 가 원본
-            //   (예외 경로로 남겨 둔다). 재무는 등록하지 않는다(관리 이상만).
-            abort_unless(auth()->user()?->canApprove(), 403);
-            $this->validate([
-                'name' => 'required|string|max:100',
-                'create_type' => 'required|in:'.implode(',', array_keys(Salesman::TYPES)),
-            ], [], ['name' => __('salesman.field.name'), 'create_type' => __('salesman.field.create_type')]);
-            $isInspector = $this->create_type === 'inspector';
-            $data = [
-                'name'      => $this->name,
-                'initials'  => $this->initials ? strtoupper(trim($this->initials)) : null,
-                'user_id'   => ! $isInspector && $this->user_id_str !== '' ? (int) $this->user_id_str : null,
-                'phone'     => $this->phone ?: null,
-                'email'     => $this->email ?: null,
-                'memo'      => $this->memo  ?: null,
-                'is_active' => $this->is_active,
-                'type'      => $this->create_type,
-            ];
-            if ($data['user_id'] !== null) {
-                $user = User::find($data['user_id']);
-                if ($user && $user->type) {
-                    $data['type'] = $user->type;   // 계정이 연결되면 계정 유형이 이긴다(미러 규칙)
-                }
-            }
-            Salesman::create($data);
+            // 🔀 2026-10-14 (jin «사용자관리에서 한번에 관리») — 이 화면에서는 등록하지 않는다. 검차직원을 포함한 모든 인원은
+            //   사용자 관리에서 등록하면 Salesman::mirrorTypeFor() 로 여기에 올라온다. (구 10-08 「검차직원 이름만 등록」 경로 폐지)
+            abort(403);
         }
 
         unset($this->salesmen);
@@ -445,7 +435,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->name = $this->initials = $this->user_id_str = $this->phone = $this->email = $this->memo = '';
         $this->is_active = true;
-        $this->create_type = 'inspector';
         $this->payrollItems = [];
         $this->payrollCustom = [];
         $this->payrollEntered = false;
@@ -476,10 +465,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="100">{{ __('common.per_page', ['count' => 100]) }}</option>
         </select>
         @if(auth()->user()?->canApprove())
-        <button wire:click="openCreate" class="btn-primary">
+        {{-- 2026-10-14 — 등록은 사용자 관리 한 곳에서(검차직원 포함). 여기선 안내 링크만. --}}
+        <a href="{{ route('admin.users.index') }}" wire:navigate class="btn-primary" title="{{ __('salesman.register_in_users_hint') }}">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-            {{ __('salesman.create_btn') }}
-        </button>
+            {{ __('salesman.register_in_users') }}
+        </a>
         @endif
     </div>
 </div>
@@ -492,7 +482,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="flex flex-wrap items-center gap-1">
         <button type="button" wire:click="setTypeFilter('')"
                 class="tab-pill {{ $typeFilter === '' ? 'is-active' : '' }}">{{ __('salesman.type_filter.all') }}</button>
-        @foreach(\App\Models\Salesman::TYPES as $tKey => $tLabel)
+        @foreach(static::rosterTabs() as $tKey => $tLabel)
         <button type="button" wire:click="setTypeFilter('{{ $tKey }}')"
                 class="tab-pill {{ $typeFilter === $tKey ? 'is-active' : '' }}">{{ $tLabel }}</button>
         @endforeach
@@ -525,7 +515,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif
                 </td>
                 <td class="py-3 pr-4">
-                    <span class="badge {{ $sm->type === 'freelance' ? 'badge-purple' : ($sm->type === 'inspector' ? 'badge-amber' : 'badge-blue') }}">{{ $sm->type_label }}</span>
+                    <span class="badge {{ \App\Models\Salesman::typeBadgeClass($sm->type) }}">{{ $sm->type_label }}</span>
                 </td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->user?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->phone ?? '-' }}</td>
@@ -575,7 +565,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="text-xs text-gray-500">{{ $sm->phone ?? '' }}{{ $sm->email ? ' · '.$sm->email : '' }}</div>
             </div>
             <div class="flex items-center gap-2">
-                <span class="badge {{ $sm->type === 'freelance' ? 'badge-purple' : ($sm->type === 'inspector' ? 'badge-amber' : 'badge-blue') }}">{{ $sm->type_label }}</span>
+                <span class="badge {{ \App\Models\Salesman::typeBadgeClass($sm->type) }}">{{ $sm->type_label }}</span>
                 <span class="badge {{ $sm->is_active ? 'badge-green' : 'badge-gray' }}">{{ $sm->is_active ? __('common.active') : __('common.inactive') }}</span>
                 <a href="{{ route('erp.salesmen.cashflow', $sm->id) }}" wire:navigate
                    class="text-xs text-violet-600 hover:underline">{{ __('salesman.cashflow') }}</a>
@@ -626,41 +616,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             @endif
         </div>
-        {{-- 월정산 v3 — 등록 유형. 검차직원(기본)은 계정 없이 이름만. --}}
-        @if(! $editingId)
-        <div>
-            <label class="label-base">{{ __('salesman.field.create_type') }}</label>
-            <select wire:model.live="create_type" class="input-base text-gray-800">
-                @foreach(\App\Models\Salesman::TYPES as $tKey => $tLabel)
-                <option value="{{ $tKey }}">{{ $tLabel }}</option>
-                @endforeach
-            </select>
-            <p class="mt-1 text-[11px] text-gray-400">{{ __('salesman.field.create_type_hint') }}</p>
-            @error('create_type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
-        </div>
-        @endif
         {{-- 영업담당자 이니셜 (item 7) — Proforma Invoice No. 접두 {이니셜}MU{차대번호숫자} --}}
         <div>
             <label class="label-base">{{ __('salesman.field.initials') }} <span class="text-xs text-gray-400">{{ __('common.optional') }}</span></label>
             <input wire:model="initials" type="text" maxlength="10" class="input-base uppercase" placeholder="{{ __('salesman.field.initials_ph') }}" @disabled(! $canApproveHere) />
             <p class="mt-1 text-[11px] text-gray-400">{{ __('salesman.field.initials_note') }}</p>
         </div>
-        @if($editingId || $create_type !== 'inspector')
+        @if($editingId)
         <div>
-            <label class="label-base">{{ __('salesman.field.account') }} @if(! $editingId)<span class="text-xs text-gray-400">{{ __('common.optional') }}</span>@endif</label>
-            @if($editingId)
-                @php $linkedUser = $user_id_str !== '' ? \App\Models\User::find((int) $user_id_str) : null; @endphp
-                <div class="input-base bg-gray-50 text-gray-700">
-                    {{ $linkedUser ? "{$linkedUser->name} ({$linkedUser->email})" : __('salesman.field.linked_none') }}
-                </div>
-            @else
-                <select wire:model="user_id_str" class="input-base">
-                    <option value="">{{ __('salesman.field.account_none') }}</option>
-                    @foreach($this->users as $u)
-                    <option value="{{ $u->id }}">{{ $u->name }} ({{ $u->email }})</option>
-                    @endforeach
-                </select>
-            @endif
+            <label class="label-base">{{ __('salesman.field.account') }}</label>
+            @php $linkedUser = $user_id_str !== '' ? \App\Models\User::find((int) $user_id_str) : null; @endphp
+            <div class="input-base bg-gray-50 text-gray-700">
+                {{ $linkedUser ? $linkedUser->name.($linkedUser->email ? " ({$linkedUser->email})" : '') : __('salesman.field.linked_none') }}
+            </div>
         </div>
         @endif
         <div class="grid grid-cols-2 gap-3">
@@ -687,7 +655,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $editingSalesman = \App\Models\Salesman::with('user')->find($editingId);
             // 월정산 v3 — 유형의 출처는 salesmen.type (user.type 의 미러 + 계정 없는 검차직원). 사용자 관리에서 바꾸면 따라온다.
             $linkedUserType  = $editingSalesman?->type;
-            $typeLabel       = $linkedUserType ? __('salesman.type.'.$linkedUserType) : null;
+            $typeLabel       = $linkedUserType ? $editingSalesman->type_label : null;   // staff 는 연결 계정 role(관리/수출통관/재무)
             $canEditPayroll  = (bool) auth()->user()?->canEditPayroll();
         @endphp
         <div>
@@ -731,7 +699,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('salesman.field.deposit_hint') }}</p>
         </div>
-        @elseif(in_array($linkedUserType, ['employee', 'inspector'], true) && $canEditPayroll)
+        @elseif(in_array($linkedUserType, ['employee', ...\App\Models\Salesman::PAYROLL_ONLY_TYPES], true) && $canEditPayroll)
         {{-- 💴 급여 항목 (월정산 v3, jin 2026-10-08) — 귀속월별 18항목 + 직접 추가. 매달 빈칸. 관리 이상 + 재무.
              구 「기본급」 한 칸을 대신한다. 금액은 data-money-signed(전월소급 등 음수). --}}
         {{-- 금액칸은 deferred(wire:model) — 치는 동안 서버에 안 간다(SearchRequiresButtonTest). 합계 미리보기는 Alpine 이 칸을 더한다. --}}

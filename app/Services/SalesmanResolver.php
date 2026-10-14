@@ -22,12 +22,15 @@ class SalesmanResolver
             }
         }
 
-        $salesman = Salesman::where('email', $email)->first();
+        // 🚫 영업만 — 검차직원·직원(관리/수출통관/재무 미러) 행이 board 포털 본인격리·차량 담당자로 꽂히면 안 된다(2026-10-14).
+        $salesman = Salesman::where('email', $email)->sales()->first();
         if ($salesman) {
             return $salesman;
         }
 
-        return User::where('email', $email)->first()?->salesman;
+        $viaUser = User::where('email', $email)->first()?->salesman;
+
+        return $viaUser?->isSales() ? $viaUser : null;
     }
 
     /**
