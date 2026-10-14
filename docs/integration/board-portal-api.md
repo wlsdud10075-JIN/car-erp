@@ -54,7 +54,7 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:board
 | `GET /purchases` | 매입 차 — `purchase_price`·비용9 합·매입일·매입 미지급(`PurchaseBalancePayment`) | |
 | `GET /sales` | 판매 차 — `sale_price`·`currency`·바이어 | |
 | `GET /inventory?category=` | 재고 4분류(`awaiting_payment`\|`general`\|`pre_ship`\|`shipped_out`) — `erp/inventory` 화면 미러 | **scope 재사용**(조건 옮겨적기 금지 = §8 #44). `search=` 는 화면과 **같은 목록**을 훑는다: 차량번호·브랜드·차종·차대번호·수출신고번호·선박명·컨테이너번호 + **바이어명**(2026-08-12 추가). ⚠️바이어는 **행에 찍히는 `buyer_id`** 만 — 통관 바이어로 훑으면 A 로 표시된 행이 B 로 검색된다. 일반재고는 바이어가 없어 0건이 정상. 가드 = `BoardInventoryApiTest::test_search_columns_match_the_screen`(정적) |
-| `GET /settlements` | 정산 — `status`·`actual_payout`·`confirmed_at`·**`paid_at`(실제 지급일)** | **마진 raw 제외**. `$s->settlement_amount` accessor 경유(환차·이월 분기). board 는 **`paid_at` 月 기준으로 정산 묶음**(예: 4월 일한 분 = 5/10 지급 → 5월). 일괄적재 과거분은 CK 배치로 paid_at 백데이트(`settlements:backdate-from-ck`), 이후 신규는 paid 전환 시점 자동 기록 |
+| `GET /settlements` | 정산 — `status`·`actual_payout`·**`margin_rate`(마진율, 2026-10-14 jin 승인 — null 은 판정 불가)**·`confirmed_at`·**`paid_at`(실제 지급일)** | **마진 raw 제외**(마진율 하나만 예외). `$s->settlement_amount` accessor 경유(환차·이월 분기). board 는 **`paid_at` 月 기준으로 정산 묶음**(예: 4월 일한 분 = 5/10 지급 → 5월). 일괄적재 과거분은 CK 배치로 paid_at 백데이트(`settlements:backdate-from-ck`), 이후 신규는 paid 전환 시점 자동 기록 |
 | `GET /by-buyer` | **바이어별 묶음** — `vehicle_count`·`sales_by_currency`(통화별 판매금액)·`payout_total_krw`(정산 실지급액 합="나에게 준 이득")·`payout_paid_krw`(paid 확정만) | 바이어=**판매측**(`buyer_id`). **매입은 구입처 기준이라 바이어 무관 → 미포함**. payout=`actual_payout` accessor 합(환차·이월). 마진 raw 제외 |
 | `GET /buyers` | **드로어 드롭다운** — `{id, name, country, purchase_locked, purchase_lock{…}}` | **영업 본인 바이어만**(`buyers.salesman_id`=해소 영업) + `is_active`. 연락처·주소·메모 등 PII 금지. 매입 락 = **§4-0** |
 | `GET /consignees?buyer_id=` | **드로어 드롭다운** — `{id, name}` | 해당 buyer 하위 `is_active` 컨사이니. **IDOR — buyer_id 가 본인 소유일 때만**(아니면 빈 목록) |
@@ -675,13 +675,13 @@ board 는 조정의 존재조차 모르므로 배치를 미러해야 숫자가 �
     "month": "2026-07",              // 귀속월 (ERP 화면 라벨과 같은 축)
     "status": "approved",
     "decided_at": "2026-08-10",      // 승인 확정일 ≈ 지급일
-    "settlements": [{"vehicle_number": "11가1111", "actual_payout": 1000000, "paid_at": "2026-08-10"}],
+    "settlements": [{"vehicle_number": "11가1111", "actual_payout": 1000000, "margin_rate": 0.031, "paid_at": "2026-08-10"}],   // margin_rate = Settlement::margin_rate(2026-10-14 jin) · null = 분모 없음/내수
     "adjustments": [{"amount": -300000, "reason": "62두1461 5월 배치 환율오류 과지급 환수"}],
     "settlement_total": 1000000,
     "adjustment_total": -300000,
     "net_payout": 700000             // ⭐ 이 사람이 이 배치로 실제 받은 금액
   }],
-  "unbatched_paid": [{"vehicle_number": "44라4444", "actual_payout": 800000, "paid_at": "2026-06-15"}]
+  "unbatched_paid": [{"vehicle_number": "44라4444", "actual_payout": 800000, "margin_rate": null, "paid_at": "2026-06-15"}]
 }
 ```
 

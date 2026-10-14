@@ -20,6 +20,8 @@ use Illuminate\Http\Request;
  * 권위 스펙 = docs/integration/board-portal-api.md §3·§4.
  * - 응답은 **명시 화이트리스트만** — RRN(nice_reg_owner_rrn)·계좌(purchase_seller_account)·
  *   마진(sales/vat/total_margin) 절대 미포함. toArray() 금지.
+ *   🔀 2026-10-14 예외 = `margin_rate`(마진율, Settlement accessor) 하나만 — 정산 행 3곳(/settlements · /payout-batches settlements[] · unbatched_paid[]).
+ *      jin 이 board 요약 화면 「차량번호·마진율·건당금액」 표를 지시(마진 노출은 대표 승인 사안 — 그 승인). 마진 raw(총마진·판매마진)는 여전히 미포함.
  * - accessor/cache 그대로 반환(raw SQL 재계산 금지 = drift). 환율0 외화 = unpaid_krw null.
  * - 본인격리 = SalesmanResolver::resolveActiveOrFail (퇴사자 403).
  */
@@ -276,6 +278,7 @@ class InternalPortalController extends Controller
                 'vehicle_number' => $s->vehicle?->vehicle_number,
                 'status' => $s->settlement_status,
                 'actual_payout' => $s->actual_payout,   // 실지급액 — 마진 raw 는 미포함
+                'margin_rate' => $s->margin_rate,       // 마진율만(2026-10-14 jin) — null 은 null 그대로(분모 없음·내수)
                 'confirmed_at' => $s->confirmed_at?->toDateString(),
                 'paid_at' => $s->paid_at?->toDateString(),   // 실제 지급일 — board 가 받은 月(5/6월) 기준으로 묶음
             ])->values();
@@ -333,6 +336,7 @@ class InternalPortalController extends Controller
                     'settlements' => $b->settlements->map(fn (Settlement $s) => [
                         'vehicle_number' => $s->vehicle?->vehicle_number,
                         'actual_payout' => $s->actual_payout,
+                        'margin_rate' => $s->margin_rate,   // 마진율만(2026-10-14 jin) — null 그대로
                         'paid_at' => $s->paid_at?->toDateString(),
                     ])->values(),
                     'adjustments' => $b->adjustments->map(fn ($a) => [
@@ -360,6 +364,7 @@ class InternalPortalController extends Controller
             ->map(fn (Settlement $s) => [
                 'vehicle_number' => $s->vehicle?->vehicle_number,
                 'actual_payout' => $s->actual_payout,
+                'margin_rate' => $s->margin_rate,   // 마진율만(2026-10-14 jin) — null 그대로
                 'paid_at' => $s->paid_at?->toDateString(),
             ])->values();
 
