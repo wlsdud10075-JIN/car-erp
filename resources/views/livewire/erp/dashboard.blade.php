@@ -28,8 +28,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 자금 현황 — 통장 마감잔액 입력 (재무·[관리]·업무관리자). 손익은 관리자 대시보드(대표) 전용.
     public string $cashDate = '';   // 기준일 (기본 오늘, 소급 입력 허용)
     public string $cashKrw = '';
-    /** 원화 잔액이 마이너스인가 (마이너스 통장, jin 2026-08-12). 금액칸은 절대값만 담는다. */
-    public bool $cashKrwNegative = false;
+    // 🔀 2026-10-14 (jin «이제 자판에서 +,- 기입할 수 있는데 토글로 할 필요가 있나») — ± 토글 폐지. 원화 칸은 data-money-signed 로 − 를 직접 친다.
     public string $cashUsd = '';
     public string $cashEur = '';
     public ?string $cashSavedAt = null;
@@ -37,7 +36,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 🏦 계좌별 잔액 (jin 2026-10-14 «싼카는 계좌가 많아서 드롭박스로 계좌를 선택하고 잔액을 기입») — 계좌가 1개 이상 등록되면
     //   아래 폼이 이 모드로 바뀐다. 0개면 종전 3칸 폼(heyman·karaba 가 배포 다음 날도 그대로 입력). 합계는 CashAccountBalanceService 가 스냅샷으로.
     public string $cashAccountId = '';
-    /** @var array<string, string> 통화 → 금액 문자열(절대값, KRW 부호는 cashKrwNegative 토글) */
+    /** @var array<string, string> 통화 → 금액 문자열(원화는 부호 포함) */
     public array $cashAmounts = [];
     public bool $showAddAccount = false;
     public string $newBank = '';
@@ -172,8 +171,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless($user->canEnterCashBalance(), 403);
 
         $clean = fn ($v) => (float) str_replace([',', ' '], '', (string) $v);
-        // 부호는 칸이 아니라 토글이 정한다 — 칸에는 절대값만 들어온다(data-money 가 `-` 를 지우기 때문).
-        $krw = abs($clean($this->cashKrw)) * ($this->cashKrwNegative ? -1 : 1);
+        // 원화는 칸에 친 부호 그대로(data-money-signed) — 2026-10-14 ± 토글 폐지.
+        $krw = $clean($this->cashKrw);
         $usd = $clean($this->cashUsd);
         $eur = $clean($this->cashEur);
         // 🏦 원화는 **음수 허용** (jin 2026-08-12) — 마이너스 통장(한도대출)을 쓰면 잔액이 +/− 를 오간다.
@@ -197,7 +196,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         app(CapitalStatusService::class)->capture(['krw' => $krw, 'usd' => $usd, 'eur' => $eur], $user, $date);
         $this->cashSavedAt = $date;
         // 저장 후 입력칸 비움 — 다음 입력을 빈칸에서 시작 (jin 2026-07-24). 날짜는 오늘로 리셋.
-        $this->reset(['cashKrw', 'cashUsd', 'cashEur', 'cashKrwNegative']);
+        $this->reset(['cashKrw', 'cashUsd', 'cashEur']);
         $this->cashDate = now()->toDateString();
         $this->dispatch('notify', message: $date.' 통장 잔액을 저장했습니다.', type: 'success');
     }
@@ -960,18 +959,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         <div>
             <label class="text-xs text-gray-500">{{ __('cash.krw') }}</label>
-            {{-- 🏦 부호는 **버튼으로** 고른다 (jin 2026-08-12, 마이너스 통장).
-                 금액칸(data-money)은 숫자 외 문자를 실시간으로 지워
-                 **음수를 타이핑하는 것 자체가 불가능**하다(data-money-signed 칸 제외, ÷1000 단축키는 10-07 폐지). 공용 포매터를 고치면 모든 금액칸이 영향을 받으므로
-                 여기서만 부호를 분리한다 — 겸사겸사 "실수로 음수" 가 안 생긴다(눌러야 음수). --}}
-            <div class="flex gap-1">
-                <button type="button" wire:click="$toggle('cashKrwNegative')"
-                        title="{{ __('cash.sign_hint') }}"
-                        class="shrink-0 rounded border px-2 text-sm font-bold {{ $cashKrwNegative ? 'border-red-300 bg-red-50 text-red-600' : 'border-gray-300 bg-white text-gray-400' }}">
-                    {{ $cashKrwNegative ? '−' : '+' }}
-                </button>
-                <input type="text" wire:model="cashKrw" data-money inputmode="numeric" class="input-base w-full text-right" placeholder="0" />
-            </div>
+            {{-- 🏦 마이너스 통장은 − 를 직접 친다(data-money-signed). 구 ± 토글(08-12)은 10-07 단축키 폐지로 불필요해져 10-14 제거(jin). --}}
+            <input type="text" wire:model="cashKrw" data-money data-money-signed inputmode="numeric" class="input-base w-full text-right" placeholder="0" title="{{ __('cash.sign_hint_typed') }}" />
         </div>
         <div>
             <label class="text-xs text-gray-500">{{ __('cash.usd') }}</label>
