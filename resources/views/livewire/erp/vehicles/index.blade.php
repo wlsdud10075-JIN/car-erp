@@ -1533,6 +1533,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ['key' => 'sales_channel', 'label' => __('vehicle.col.channel')],
             ['key' => 'currency_rate', 'label' => __('vehicle.col.currency_rate')],
             ['key' => 'purchase_price', 'label' => __('vehicle.col.purchase_price')],
+            ['key' => 'purchase_total', 'label' => __('vehicle.col.purchase_total')],
             ['key' => 'sale_price', 'label' => __('vehicle.col.sale_price')],
             ['key' => 'sale_total', 'label' => __('vehicle.col.sale_total')],
             ['key' => 'settlement_stage', 'label' => __('vehicle.col.settlement_stage')],
@@ -7836,6 +7837,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @php if ($this->colOn('sales_channel')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{!! $sortBtn('sales_channel', __('vehicle.col.channel')) !!}</th>@php endif; @endphp
                 @php if ($this->colOn('currency_rate')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{{ __('vehicle.col.currency_rate') }}</th>@php endif; @endphp
                 @php if ($this->colOn('purchase_price')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', __('vehicle.col.purchase_price'), 'right') !!}</th>@php endif; @endphp
+                @php if ($this->colOn('purchase_total')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_total']">{{ __('vehicle.col.purchase_total') }}</th>@php endif; @endphp
                 @php if ($this->colOn('sale_price')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', __('vehicle.col.sale_price'), 'right') !!}</th>@php endif; @endphp
                 @php if ($this->colOn('sale_total')): @endphp<th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_total']">{{ __('vehicle.col.sale_total') }}</th>@php endif; @endphp
                 @php if ($this->colOn('settlement_stage')): @endphp<th class="pb-2 pr-4 font-medium" x-show="visible['settlement_stage']">{{ __('vehicle.col.settlement_stage') }}</th>@php endif; @endphp
@@ -7993,6 +7995,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @php if ($this->colOn('purchase_price')): @endphp<td class="py-3 pr-4 text-right text-gray-600" x-show="visible['purchase_price']">
                     @if($v->purchase_price > 0)₩{{ number_format($v->purchase_price) }}@else -@endif
                 </td>@php endif; @endphp
+                {{-- 매입총액 = 매입가 + 매도비 (jin 2026-10-14). 단일 출처 = Vehicle::purchase_total_amount (§13 총매입액). --}}
+                @php if ($this->colOn('purchase_total')): @endphp<td class="py-3 pr-4 text-right font-medium text-gray-700" x-show="visible['purchase_total']">
+                    @if($v->purchase_price > 0)₩{{ number_format($v->purchase_total_amount) }}@else -@endif
+                </td>@php endif; @endphp
                 @php if ($this->colOn('sale_price')): @endphp<td class="py-3 pr-4 text-right font-medium text-gray-800" x-show="visible['sale_price']">
                     @if($v->sale_price > 0)
                         {{ number_format($v->sale_price) }} <span class="text-xs text-gray-400">{{ $v->currency }}</span>
@@ -8105,7 +8111,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
         export_declaration_number: false, vessel_name: false, container_number: false, bl_number: false,
         ems_tracking: false, dhl_tracking: false, shipping_sent_date: false,
         ems_fee: false, dhl_fee: false, shipping_fee: false,
-        currency_rate: false, purchase_price: false,
+        currency_rate: false, purchase_price: false, purchase_total: false,
         unpaid_amount: false, unpaid_ratio: false,
         buyer: false, consignee: false, sales_channel: false,
         settlement_stage: false,
