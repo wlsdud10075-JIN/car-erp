@@ -658,6 +658,14 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-14(저녁) — 계좌별 잔액 정정(세 통화·− 직접 입력) · 월정산 급여 항목 줄 · board /bundles 미수 4필드 `38bc1a22` (3사 동시, 코드 4커밋, 마이그 0)
+
+- jin 지적 두 건(«신한이라고 한화만?» · «토글로 할 필요가 있나») + «기입된 항목만 펼침에» + board 세션 요청(«/bundles 차량 행에 /shippable 의 미수 4필드») → «board 쪽이랑 같이 묶어서 배포».
+- dev `b449dba5`·`3c0d9639`·`80a38b20`·`f72ddf60` → master `b3fa1869`·`3a4d1e92`·`fd353ae6`·`38bc1a22`(dev 전용 notion·docs·NotionGuideAudienceTest 는 삭제 유지).
+- 로컬 master 순차 전체 **3,306 pass · 실패 0**(823초). deploy 런 38521580160 잡 5개 success. 3사 SHA `38bc1a22`, /login 200.
+- 효과: 업무 대시보드 잔액 = 어느 계좌든 KRW/USD/EUR 세 칸, 원화 음수는 `-` 직접(토글 없음, 계좌 0건인 heyman·karaba 의 3칸 폼도 동일). 월정산 카드 펼침에 기입된 급여 항목만 줄. board 선적 계획의 「환율 미입력」 거짓 칩은 board 가 /bundles 를 다시 읽는 순간 사라진다(board dev `cf1cebc`·`32c5de9` 배포 순서 무관).
+- 같은 날 운영 쓰기(jin 지시): ssancarerp `payroll:clear-legacy-base-salary --apply` 21명 비움(heyman·karaba 0). `salesmen:sync-staff --apply` 는 아직 승인 대기(ssancarerp 7 · heymanerp 1).
+
 ## 2026-10-14 — 매입총액 컬럼 · 전화번호 검색 · 전 컬럼 정렬 · 직원 명부 확장(검차직원 사용자관리 등록) · 급여대장 xls 업로드 · 계좌별 통장 잔액 `d17d9a22` (3사 동시, 코드 10커밋, **마이그 4**)
 
 - jin «한번에 하면 어디서부터 어디까지?» → master `12f9e720` 이후 dev 전부에서 BizM 승인 대기 2건(`d22a9a36`·`8b45da57`)만 제외. dev→master cherry-pick 10건(`e2b07003`·`297a9003`·`6d8c0ed5`·`c4d4c66a`·`3bd85983`·`3da0c0cb`·`c702a712`·`90e8374b`·`55897eda`·`1bbbec1e`; `6cbe08a0` 은 settings.local.json 되돌림이라 빈 커밋 → skip). 충돌 = `.claude/settings.local.json`(master 판 유지) · dev 전용 `scripts/notion-*`·`docs/*`·`tests/Feature/NotionGuideAudienceTest.php`(삭제 유지).
