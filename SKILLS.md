@@ -39,6 +39,8 @@ public function getProgressStatusAttribute(): string
     if ($ruleVersion >= 4) {
         // v4 cascade — 반입(선적) → 통관 → B/L → 거래완료
         if ($this->bl_document) return '거래완료';
+        // 🚢 2026-10-14 — FOB + FOB포워더(buyer_handles_bl) + 완납 → 거래완료 (B/L 을 바이어가 발급하는 거래). 반입지·통관보다 앞.
+        if ($this->incoterms === 'FOB' && in_array($this->forwarding_company_id, ForwardingCompany::buyerHandledIds()) && $this->sale_price > 0 && $this->sale_unpaid_amount <= 0) return '거래완료';
         if ($this->bl_document && $this->is_export_cleared) return '통관완료';     // 실질 도달 불가 — #1 우선
         if ($this->is_export_cleared && $this->bl_loading_location) return '통관중';
         if ($this->bl_loading_location && $this->export_declaration_document) return '선적완료';
@@ -563,6 +565,7 @@ CSS Flexbox 사양 — 자동 최소 크기는 **그 축의 overflow 가 `visibl
 내가 새로 넣은 검색칸을 잡았다. **그 가드의 존재 자체를 몰랐다.**
 필터로 돌린 범위엔 그 파일이 없었으므로 **원리상 못 잡는다.**
 ⇒ 알려진 실패 개수를 외워 두고 **그 숫자가 늘면 멈춘다**. (🔀 2026-10-12 — 이 레포의 「GD 7건」은 오진이었다, §8 #115. 지금 기대 실패 = **0**.)
+🔀 **2026-10-14 (jin «배포 하나에 20분?») — 「전체」는 맞지만 「순차」일 필요는 없어졌다.** 병렬(`--parallel`, 약 3분)이 매번 1~4건 `rename(): 액세스 거부` 를 내던 원인은 프로세스 여럿이 같은 Livewire 컴파일 폴더에 쓰던 것 — `AppServiceProvider::register()` 가 `TEST_TOKEN` 별 `storage/framework/views/parallel_N` 으로 `view.compiled` 를 갈라 **충돌 0**(실측 3,322건). ⇒ 배포 직전 전체 = **병렬 3분**. 순차 14분은 CI 가 어차피 다시 돈다(배포 게이트). 병렬에서 실패가 나오면 그 클래스를 순차로 한 번 더 돌려 **코드 문제인지** 가른다.
 
 ---
 

@@ -13,9 +13,32 @@ class ForwardingCompany extends Model
     protected $fillable = [
         'name', 'contact_name', 'email', 'phone', 'address', 'memo', 'is_active',
         'tracking_url_template',
+        // 🚢 「FOB포워더」(jin 2026-10-14) — 바이어가 직접 고른 포워딩사라 B/L 을 바이어가 발급한다.
+        //    인코텀즈 FOB + 이 플래그 + 판매 완납 ⇒ 거래완료(Vehicle::progress_status). 이름이 아니라 플래그로 판정.
+        'buyer_handles_bl',
     ];
 
-    protected $casts = ['is_active' => 'boolean'];
+    protected $casts = ['is_active' => 'boolean', 'buyer_handles_bl' => 'boolean'];
+
+    /** @var list<int>|null 요청 단위 메모 — 진행상태 accessor 가 차량마다 포워딩사를 조회하지 않게(캐시 재계산 4,700대). */
+    private static ?array $buyerHandledIdsMemo = null;
+
+    /** B/L 을 바이어가 직접 발급하는 포워딩사 id 목록(활성·비활성 무관 — 이미 붙은 차의 판정은 유지). */
+    public static function buyerHandledIds(): array
+    {
+        return self::$buyerHandledIdsMemo ??= self::query()->where('buyer_handles_bl', true)->pluck('id')->map(fn ($i) => (int) $i)->all();
+    }
+
+    public static function flushBuyerHandledMemo(): void
+    {
+        self::$buyerHandledIdsMemo = null;
+    }
+
+    protected static function booted(): void
+    {
+        static::saved(fn () => self::flushBuyerHandledMemo());
+        static::deleted(fn () => self::flushBuyerHandledMemo());
+    }
 
     /** 템플릿에서 차대번호가 들어갈 자리. 지금은 이것 하나뿐이다. */
     public const TRACKING_PLACEHOLDER = '{VIN}';
