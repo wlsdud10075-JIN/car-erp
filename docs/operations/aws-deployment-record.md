@@ -658,6 +658,13 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-14(밤 2) — board sync 변경 없는 requested 행 no-op `60a5a3e2` (3사 동시, 코드 1커밋, 마이그 0)
+
+- board 세션 3번째 요청(«선언형 sync 가 기존 묶음을 그대로 실어 와도 갱신·알람 재발사·updated 집계를 하지 않게» — heymanerp 무사백 requested 35대: 새 차 1대에 알람 35건 재발사 + 「갱신 35」). jin 「배포해줘」.
+- dev `f3bcd16a` → master `60a5a3e2`(docs 삭제 유지). `ShippingRequestController::sync()` requested 분기에 `sameBundleAttrs()`(null·''·숫자 표기 동일시) → 전부 같으면 continue. 응답 모양 그대로, 어느 배열에도 안 셈. 문서 §5-2.
+- 로컬 master 순차 전체 **3,308 pass · 실패 0**(815초). deploy 런 38528843204 잡 5개 success. 3사 SHA `60a5a3e2`, /login 200.
+- 효과: 다음 board 선적요청부터. board 측 「안 묶인 차만」 화면(board dev `aa5c6cb`) 배포 순서 무관.
+
 ## 2026-10-14(밤) — board 포털 정산 행 `margin_rate`(마진율) 동봉 `fe21493d` (3사 동시, 코드 1커밋, 마이그 0)
 
 - board 세션 요청(«정산 응답 3곳 차량 행에 margin_rate — jin 이 board 요약 화면 「차량번호·마진율·건당금액」 표 지시»). 마진 노출 = 대표 승인 사안이라 dev 에만 두고 jin 에게 되물음 → jin 「배포해줘」.
