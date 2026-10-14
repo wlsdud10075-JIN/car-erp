@@ -2267,6 +2267,20 @@ class Vehicle extends Model
             if ($this->bl_document) {
                 return '거래완료';
             }
+            /**
+             * 🚢 FOB + 「FOB포워더」(바이어가 직접 고른 포워딩사, B/L 을 바이어가 발급) + 판매 완납 ⇒ 거래완료 (jin 2026-10-14).
+             *
+             * 우리가 운임을 안 내고(FOB) B/L 도 바이어가 뽑으니 ERP 에 B/L 파일이 올 일이 없다 — 종전 규칙(거래완료 = B/L 파일)으로는
+             * 영영 판매완료에 머물렀다. 판정은 포워딩사 **플래그**(`forwarding_companies.buyer_handles_bl`)로, 이름이 아니다.
+             * 🔑 반입지·통관 규칙보다 **앞**에 둔다 — 이런 차에 반입지를 적어도 완납이면 끝난 거래다(B/L 경로가 없으니 다른 출구가 없다).
+             * ⚠️ 순수 확대 — 플래그 켜진 포워딩사가 붙은 차만 움직인다(실측 10-14: 3사 「FOB포워더」 차량 0대). 가드 = ProgressRuleFobForwarderTest.
+             * 성능 — 컬럼 둘(incoterms·forwarding_company_id)을 먼저 보고 통과한 행에서만 미수 accessor 를 부른다.
+             */
+            if ($this->incoterms === 'FOB' && $this->forwarding_company_id
+                && in_array((int) $this->forwarding_company_id, ForwardingCompany::buyerHandledIds(), true)
+                && $this->sale_price > 0 && $this->sale_unpaid_amount <= 0) {
+                return '거래완료';
+            }
             if ($this->bl_document && $this->is_export_cleared) {
                 return '통관완료';
             }

@@ -66,6 +66,8 @@ return [
     'name_ph' => 'SSANCAR LOGISTICS',
     'saved' => '포워딩사 정보가 저장됐습니다.',
     'tracking_url' => '화물추적 URL',
+    'buyer_handles_bl' => 'FOB포워더 — 바이어가 직접 고른 포워딩사 (B/L 을 바이어가 발급)',
+    'buyer_handles_bl_hint' => '이 포워딩사가 붙은 차량은 인코텀즈가 FOB 이고 판매대금이 완납되면 B/L 파일 없이 바로 「거래완료」가 되고 정산으로 넘어갑니다. 우리가 운임을 내지 않고 B/L 도 바이어가 뽑는 거래에만 켜세요.',
     'tracking_url_hint' => '차대번호가 들어갈 자리에 {VIN} 을 넣습니다. 예) https://www.cigbooking.com/track/{VIN} · 비워 두면 그 포워딩사 차량엔 추적 버튼이 뜨지 않습니다.',
     'tracking_url_invalid' => 'https:// 로 시작하고 {VIN} 을 포함해야 합니다.',
     'deleted' => '포워딩사가 삭제됐습니다.',

@@ -51,6 +51,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 화물추적 URL 템플릿 — `{VIN}` 자리에 차대번호가 들어간다. 비우면 그 회사 차량엔 버튼이 안 뜬다. */
     public string $tracking_url_template = '';
     public bool   $is_active    = true;
+    /** 🚢 FOB포워더 — B/L 을 바이어가 직접 발급(jin 2026-10-14). FOB + 완납이면 거래완료. */
+    public bool   $buyer_handles_bl = false;
 
     // 포워딩사(선적현황) — admin + [관리] (canManageForwarding). 라우트 'auth, verified' + mount 가드 (2026-07-08 jin).
     public function mount(): void
@@ -161,6 +163,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->memo         = $fc->memo         ?? '';
         $this->tracking_url_template = $fc->tracking_url_template ?? '';
         $this->is_active    = $fc->is_active;
+        $this->buyer_handles_bl = (bool) $fc->buyer_handles_bl;
         $this->showPanel    = true;
     }
 
@@ -195,6 +198,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'memo'         => $this->memo         ?: null,
             'tracking_url_template' => trim($this->tracking_url_template) ?: null,
             'is_active'    => $this->is_active,
+            'buyer_handles_bl' => $this->buyer_handles_bl,
         ];
 
         if ($this->editingId) {
@@ -220,6 +224,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->name = $this->contact_name = $this->email = $this->phone = $this->address = $this->memo = '';
         $this->tracking_url_template = '';   // 안 지우면 「새 등록」에 직전 회사 URL 이 남는다
         $this->is_active = true;
+        $this->buyer_handles_bl = false;
     }
 
     // ── 운임 인보이스 로직 ────────────────────────────────────────────────
@@ -913,6 +918,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>
             <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
                 <input wire:model="is_active" type="checkbox" class="rounded" /> {{ __('common.active') }}
+            </label>
+        </div>
+        {{-- 🚢 FOB포워더 (jin 2026-10-14) — 바이어가 직접 고른 포워딩사. 인코텀즈 FOB + 완납이면 B/L 없이 거래완료. --}}
+        <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
+            <label class="flex items-start gap-2 text-sm text-gray-800 cursor-pointer">
+                <input wire:model="buyer_handles_bl" type="checkbox" class="mt-0.5 rounded" />
+                <span>{{ __('forwarding.buyer_handles_bl') }}
+                    <span class="mt-1 block text-[11px] leading-relaxed text-gray-600">{{ __('forwarding.buyer_handles_bl_hint') }}</span></span>
             </label>
         </div>
     </div>

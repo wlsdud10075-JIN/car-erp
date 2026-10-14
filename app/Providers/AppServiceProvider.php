@@ -20,6 +20,17 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        // ⚡ 병렬 테스트(`--parallel`) 프로세스마다 **뷰·Livewire 컴파일 폴더를 분리**한다 (jin 2026-10-14 «배포 하나에 20분?»).
+        //    Livewire 는 `config('view.compiled')/livewire/classes` 에 rename 으로 쓰는데, 프로세스 여럿이 같은 폴더를 쓰면
+        //    Windows 파일 잠금으로 `rename(): 액세스가 거부되었습니다` 가 매번 1~4건 났다(수개월 실측). ParaTest 가 주는
+        //    TEST_TOKEN 별 폴더면 원리상 충돌이 없다 — 병렬 3분이 믿을 만한 전체 검사가 된다. 뷰 싱글톤이 아직 안 풀린 register 단계라 안전.
+        if ($this->app->runningUnitTests() && ($token = env('TEST_TOKEN')) !== null && $token !== '') {
+            $dir = storage_path('framework/views/parallel_'.preg_replace('/[^A-Za-z0-9_]/', '', (string) $token));
+            if (! is_dir($dir)) {
+                @mkdir($dir, 0777, true);
+            }
+            config(['view.compiled' => $dir]);
+        }
         // 사내 업무 도우미 — Ollama 클라이언트를 config(.env) 기반으로 바인딩 (이식성).
         $this->app->bind(OllamaClient::class,
             fn () => OllamaClient::fromConfig());

@@ -66,6 +66,8 @@ return [
     'name_ph' => 'SSANCAR LOGISTICS',
     'saved' => 'Forwarder saved.',
     'tracking_url' => 'Cargo tracking URL',
+    'buyer_handles_bl' => 'FOB forwarder - chosen by the buyer (buyer issues the B/L)',
+    'buyer_handles_bl_hint' => 'Vehicles with this forwarder close as Completed and go to settlement once Incoterms is FOB and the sale is fully paid, without a B/L file. Enable only when we pay no freight and the buyer issues the B/L.',
     'tracking_url_hint' => 'Use {VIN} where the chassis number goes, e.g. https://www.cigbooking.com/track/{VIN}. Leave blank to hide the tracking button for this forwarder.',
     'tracking_url_invalid' => 'Must start with https:// and contain {VIN}.',
     'deleted' => 'Forwarder deleted.',
