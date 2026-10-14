@@ -50,6 +50,7 @@ return [
     'overdraft_used' => 'used :used / limit :limit',
     'overdraft_headroom' => ':n available',
     'overdraft_over' => '⚠ Over the limit — check the setting',
+    'sign_hint_typed' => 'Overdraft? Type a leading minus (e.g. -3,000,000)',
     'sign_hint' => 'Press this when the balance is negative (overdraft account)',
 
     'account' => [

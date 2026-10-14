@@ -26,7 +26,8 @@ class CashAccountBalanceService
      */
     public function save(CashAccount $account, string $date, array $amounts, ?User $user = null): CashSnapshot
     {
-        foreach ($account->currencies as $cur) {
+        // 어느 계좌든 원화·달러·유로 세 칸 전부 — 계좌별 통화 목록(`currencies`)은 쓰지 않는다(jin 2026-10-14 «신한이라고 한화만?»).
+        foreach (CashAccount::CURRENCIES as $cur) {
             if (! array_key_exists($cur, $amounts)) {
                 continue;
             }
@@ -86,7 +87,7 @@ class CashAccountBalanceService
 
         $rows = collect();
         foreach ($accounts as $acc) {
-            foreach ($acc->currencies as $cur) {
+            foreach (CashAccount::CURRENCIES as $cur) {
                 $b = $latest->get($acc->id.'|'.$cur);
                 $asOf = $b?->snapshot_date->toDateString();
                 $rows->push([
