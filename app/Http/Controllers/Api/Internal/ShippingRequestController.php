@@ -161,6 +161,13 @@ class ShippingRequestController extends Controller
                     'vehicle_id' => $r->vehicle_id,
                     'vehicle_number' => $r->vehicle?->vehicle_number ?? ('#'.$r->vehicle_id),
                     'status' => $r->status,
+                    // 📊 미수 4필드 — /shippable 과 같은 이름·같은 의미 (board 요청 2026-10-14, jin 승인). 묶인 차는 /shippable 에서 빠지므로
+                    //    이 행에만 실린다. 없으면 board 가 「필드 없음」을 환율 미입력으로 읽어 35대 전부 거짓 경고(heymanboard 실측).
+                    //    ⚠️ unpaid_krw 의 null 은 그대로(= 환율 미입력), 0 으로 바꾸지 말 것. 차량이 지워졌으면 전부 null.
+                    'currency' => $r->vehicle?->currency,
+                    'unpaid_krw' => $r->vehicle?->sale_unpaid_amount_krw_cache,
+                    'unpaid_ratio' => $r->vehicle?->unpaid_ratio,
+                    'fully_paid' => $r->vehicle !== null && $r->vehicle->sale_unpaid_amount_krw_cache !== null && $r->vehicle->sale_unpaid_amount_krw_cache <= 0,
                 ])->values(),
             ], $fin);
         })->sortByDesc(fn ($b) => $b['batch_id'])->values();

@@ -329,6 +329,30 @@ class BoardPortalApiTest extends TestCase
         $res->assertJsonPath('data.0.shipping_method', 'RORO');
     }
 
+    /** 📊 /bundles 차량 행의 미수 4필드 = /shippable 과 같은 이름·의미 (board 요청 2026-10-14). 없으면 board 가 「환율 미입력」 거짓 경고를 그린다. */
+    public function test_bundles_vehicle_rows_carry_the_same_unpaid_fields_as_shippable(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $buyer = Buyer::create(['name' => 'TOKYO', 'is_active' => true, 'country_id' => null]);
+        $v = $this->exportVehicle($me->id, '22가2222');
+        $v->update(['buyer_id' => $buyer->id]);
+        $v->refresh();
+        ShippingRequest::create([
+            'batch_id' => 'b2', 'vehicle_id' => $v->id, 'shipping_method' => 'RORO',
+            'requested_by_email' => 'me@a.com', 'status' => 'requested', 'requested_at' => now(),
+        ]);
+
+        $row = $this->signedGet('/api/internal/board/bundles', ['salesman_email' => 'me@a.com'])->assertOk()->json('data.0.vehicles.0');
+
+        foreach (['currency', 'unpaid_krw', 'unpaid_ratio', 'fully_paid'] as $key) {
+            $this->assertArrayHasKey($key, $row, "/bundles 차량 행에 {$key} 가 없다");
+        }
+        $this->assertSame($v->currency, $row['currency']);
+        $this->assertSame($v->sale_unpaid_amount_krw_cache, $row['unpaid_krw'], 'null 은 null 그대로(환율 미입력), 0 으로 바꾸지 않는다');
+        $this->assertSame($v->sale_unpaid_amount_krw_cache !== null && $v->sale_unpaid_amount_krw_cache <= 0, $row['fully_paid']);
+        $this->assertEquals($v->unpaid_ratio, $row['unpaid_ratio']);
+    }
+
     public function test_store_skips_other_salesman_vehicle(): void
     {
         $me = $this->salesman('me@a.com');
