@@ -34,7 +34,12 @@ class VehicleSortableColumnsTest extends TestCase
         $this->assertNotEmpty($listMatch, 'SORTABLE_COLUMNS 를 찾지 못했다');
         preg_match_all("/'([a-z_]+)'/", $listMatch[1], $whitelisted);
 
-        $dead = array_diff($buttonColumns, $whitelisted[1]);
+        // 2026-10-14 — DB 컬럼이 아닌 표시 컬럼(매입총액·판매총액·입금률·정산)은 SORT_EXPRESSIONS 의 키로 정렬한다.
+        preg_match('/private const SORT_EXPRESSIONS = \[(.*?)\n    \];/s', $source, $exprMatch);
+        $this->assertNotEmpty($exprMatch, 'SORT_EXPRESSIONS 를 찾지 못했다');
+        preg_match_all("/^\s*'([a-z_]+)' => /m", $exprMatch[1], $exprKeys);
+
+        $dead = array_diff($buttonColumns, $whitelisted[1], $exprKeys[1]);
 
         $this->assertSame([], array_values($dead),
             '정렬 버튼은 있는데 SORTABLE_COLUMNS 에 없다 — 눌러도 아무 일이 안 일어나는 죽은 버튼: '
