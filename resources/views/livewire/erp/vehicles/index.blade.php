@@ -1049,10 +1049,13 @@ new #[Layout('components.layouts.app')] class extends Component {
      *  - settlement_stage = 정산 유무·지급 여부 순(none < 있음 < paid). 화면 뱃지(운임대기 등)의 완전한 순서는 아니다 —
      *    뱃지는 accessor 체인(`settlementStage()`)이라 SQL 로 못 옮긴다. 「정산됨을 모으기」 용도.
      */
+    /** 총판매가 SQL (= Vehicle::sale_total_amount, SKILLS §13 분모). ⚠️ freightTotalsByCurrency() 의 SUM 식도 같은 항이다 — 항을 바꾸면 같이. */
+    private const SALE_TOTAL_SQL = '(COALESCE(vehicles.sale_price, 0) + COALESCE(vehicles.transport_fee, 0) + COALESCE(vehicles.sale_other_costs, 0) + COALESCE(vehicles.commission, 0) + COALESCE(vehicles.auto_loading, 0) - COALESCE(vehicles.tax_dc, 0))';
+
     private const SORT_EXPRESSIONS = [
         'purchase_total' => '(COALESCE(vehicles.purchase_price, 0) + COALESCE(vehicles.selling_fee, 0))',
-        'sale_total' => '(COALESCE(vehicles.sale_price, 0) + COALESCE(vehicles.transport_fee, 0) + COALESCE(vehicles.sale_other_costs, 0) + COALESCE(vehicles.commission, 0) + COALESCE(vehicles.auto_loading, 0) - COALESCE(vehicles.tax_dc, 0))',
-        'unpaid_ratio' => '(vehicles.sale_unpaid_amount_krw_cache * 1.0 / NULLIF((COALESCE(vehicles.sale_price, 0) + COALESCE(vehicles.transport_fee, 0) + COALESCE(vehicles.sale_other_costs, 0) + COALESCE(vehicles.commission, 0) + COALESCE(vehicles.auto_loading, 0) - COALESCE(vehicles.tax_dc, 0)) * COALESCE(vehicles.exchange_rate, 0), 0))',
+        'sale_total' => self::SALE_TOTAL_SQL,
+        'unpaid_ratio' => '(vehicles.sale_unpaid_amount_krw_cache * 1.0 / NULLIF('.self::SALE_TOTAL_SQL.' * COALESCE(vehicles.exchange_rate, 0), 0))',
         'settlement_stage' => "(CASE WHEN (SELECT s.settlement_status FROM settlements s WHERE s.vehicle_id = vehicles.id AND s.deleted_at IS NULL ORDER BY s.id DESC LIMIT 1) = 'paid' THEN 2 WHEN EXISTS (SELECT 1 FROM settlements s2 WHERE s2.vehicle_id = vehicles.id AND s2.deleted_at IS NULL) THEN 1 ELSE 0 END)",
     ];
 
@@ -2474,6 +2477,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->selectRaw(
                 "COALESCE(currency,'KRW') AS cur, "
                 .'COALESCE(SUM(COALESCE(transport_fee,0)),0) AS freight, '
+                // ⚠️ 같은 항이 SALE_TOTAL_SQL(정렬식)에도 있다 — 항을 바꾸면 같이 (§8 #45).
                 .'COALESCE(SUM(COALESCE(sale_price,0)+COALESCE(transport_fee,0)+COALESCE(sale_other_costs,0)'
                 .'+COALESCE(commission,0)+COALESCE(auto_loading,0)-COALESCE(tax_dc,0)),0) AS sale_total, '
                 .'COUNT(*) AS cnt'
