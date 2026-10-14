@@ -57,6 +57,16 @@ class CashAccountBalanceTest extends TestCase
         $this->assertSame(10_000, (int) CashSnapshot::whereDate('snapshot_date', '2026-10-11')->value('balance_krw'));
     }
 
+    public function test_never_entered_accounts_are_flagged_above_the_table(): void
+    {
+        $a = CashAccount::create(['bank' => '신한', 'account_no' => '1', 'currencies' => ['KRW']]);
+        CashAccount::create(['bank' => '국민', 'account_no' => '2', 'currencies' => ['KRW']]);
+        app(CashAccountBalanceService::class)->save($a, now()->toDateString(), ['KRW' => 1]);
+        $this->actingAs($this->finance());
+
+        Volt::test('erp.dashboard')->assertSeeHtml('data-cash-never-entered')->assertSee(__('cash.account.never_entered', ['n' => 1]));
+    }
+
     public function test_krw_account_takes_its_sign_from_the_toggle(): void
     {
         $a = CashAccount::create(['bank' => '신한', 'account_no' => '1', 'currencies' => ['KRW']]);

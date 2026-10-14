@@ -71,6 +71,7 @@ return [
         'balance' => 'Balance',
         'as_of' => 'Entered',
         'never' => 'never',
+        'never_entered' => ':n account(s) never entered — they count as 0, so totals and liquidation value are understated. Enter each account once.',
         'carried' => '(carried)',
         'total' => 'Total',
         'hide' => 'Hide',
