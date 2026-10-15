@@ -1492,7 +1492,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 메일 첨부 후보 — 단계 업로드 파일 컬럼 / 자동생성 서류 type (VehicleDocumentController 와 정합)
     private const MAIL_STAGE_FILES = ['deregistration_document', 'export_declaration_document', 'bl_document'];
 
-    private const MAIL_GEN_ALL = ['deregistration_set', 'poa', 'clearance'];
+    private const MAIL_GEN_ALL = ['deregistration_set', 'poa', 'clearance', 'clearance_v2'];
 
     private const MAIL_GEN_EXPORT = ['invoice', 'sales_contract', 'container_invoice_packing', 'container_contract', 'roro_invoice_packing', 'roro_contract'];
 
@@ -1768,7 +1768,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'invoice' => 'invoice', 'sales_contract' => 'sales_contract',
             'container_invoice_packing' => 'container_invoice_packing', 'container_contract' => 'container_contract',
             'roro_invoice_packing' => 'roro_invoice_packing', 'roro_contract' => 'roro_contract',
-            'clearance' => 'clearance_set',
+            'clearance' => 'clearance_set', 'clearance_v2' => 'clearance_set_v2',
         ];
 
         return __('vehicle.docs.'.($map[$type] ?? $type));
@@ -10625,6 +10625,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     ['type' => 'roro_invoice_packing', 'label' => __('vehicle.docs.roro_invoice_packing')],
                     ['type' => 'roro_contract', 'label' => __('vehicle.docs.roro_contract')],
                     ['type' => 'clearance', 'label' => __('vehicle.docs.clearance_set')],
+                    ['type' => 'clearance_v2', 'label' => __('vehicle.docs.clearance_set_v2')],
                 ];
                 $pdfDocsJs = $hasId
                     ? collect($pdfDocs)->map(fn ($d) => ['label' => $d['label'], 'url' => $url($d['type'])])->values()->all()
@@ -10808,12 +10809,21 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 <span class="section-dot bg-green-500"></span>
                 <span class="section-title">{{ __('vehicle.docs.sec_clearance') }}</span>
             </div>
-            <div class="grid grid-cols-1 gap-3">
+            {{-- Ver.1(8시트) 과 Ver.2(6시트 — 차량인보이스 없음·팩킹 상단 간소화, jin 2026-10-15) 를 나란히. 어느 쪽을 쓸지는 실무자가 고른다. --}}
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <a href="{{ $url('clearance') }}"
                    class="card-tight flex items-center justify-between hover:border-green-400 hover:bg-green-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
                     <div>
                         <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.clearance_set') }}</div>
                         <div class="text-xs text-gray-500">{{ __('vehicle.docs.clearance_set_sub') }}</div>
+                    </div>
+                    <span class="text-xs text-green-600">↓</span>
+                </a>
+                <a href="{{ $url('clearance_v2') }}" data-doc-clearance-v2
+                   class="card-tight flex items-center justify-between hover:border-green-400 hover:bg-green-50 transition {{ $hasId ? '' : 'pointer-events-none opacity-50' }}">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.docs.clearance_set_v2') }}</div>
+                        <div class="text-xs text-gray-500">{{ __('vehicle.docs.clearance_set_v2_sub') }}</div>
                     </div>
                     <span class="text-xs text-green-600">↓</span>
                 </a>

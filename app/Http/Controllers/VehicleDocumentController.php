@@ -29,7 +29,8 @@ class VehicleDocumentController extends Controller
 
         'invoice', 'sales_contract',                          // 판매 (export)
         'container_invoice_packing', 'container_contract', 'roro_invoice_packing', 'roro_contract', // 선적 (export)
-        'clearance',                                          // 통관 (8시트 SET)
+        'clearance',                                          // 통관 (8시트 SET, Ver.1)
+        'clearance_v2',                                       // 통관 (6시트 SET, Ver.2 — 2026-10-15)
     ];
 
     // 다중차량(여러 대 → 1서류) 발급. 선적 4종 + 판매계약서 + 인보이스. 30대까지 슬롯 자동 트림.

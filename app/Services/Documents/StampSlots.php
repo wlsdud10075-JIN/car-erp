@@ -32,7 +32,8 @@ class StampSlots
         'deregistration_set' => '말소신청서_계약서',
         'transfer_certificate' => '양도증명서',
         'invoice' => '판매 인보이스',
-        'clearance' => '통관 SET',
+        'clearance' => '통관 SET (Ver.1)',
+        'clearance_v2' => '통관 SET (Ver.2)',
         'container_invoice_packing' => '컨테이너 Invoice&Packing',
         'container_contract' => '컨테이너 계약서',
         'roro_invoice_packing' => 'RORO Invoice&Packing',
@@ -177,6 +178,12 @@ class StampSlots
                 ['key' => 'sign_travel', 'role' => 'signature', 'sheet' => 'Travel Services Invoice', 'anchor' => 'B28', 'width' => 291, 'height' => 188],
                 ['key' => 'logo_travel', 'role' => 'logo', 'sheet' => 'Travel Services Invoice', 'anchor' => 'A1', 'width' => 246, 'height' => 55],
             ],
+            // 통관 SET Ver.2 (2026-10-15) — 차량인보이스 탭이 없으니 그 슬롯만 뺀다. 앵커·크기는 Ver.1 과 같다(양식 빌드가 Ver.1 직인을 그대로 옮긴다).
+            'clearance_v2' => [
+                ['key' => 'sign_packing', 'role' => 'signature', 'sheet' => '차량팩킹', 'anchor' => 'G33', 'width' => 290, 'height' => 136],
+                ['key' => 'sign_travel', 'role' => 'signature', 'sheet' => 'Travel Services Invoice', 'anchor' => 'B28', 'width' => 291, 'height' => 188],
+                ['key' => 'logo_travel', 'role' => 'logo', 'sheet' => 'Travel Services Invoice', 'anchor' => 'A1', 'width' => 246, 'height' => 55],
+            ],
         ];
     }
 
@@ -243,6 +250,11 @@ class StampSlots
             //   Travel 상단은 글자 「HEYMAN」이라 로고 슬롯이 없다(올리면 글자를 덮는다).
             'clearance' => [
                 ['key' => 'seal_invoice', 'role' => 'seal', 'sheet' => '차량인보이스', 'anchor' => 'G34', 'dx' => 17, 'dy' => 2, 'width' => 290, 'height' => 137],
+                ['key' => 'seal_packing', 'role' => 'seal', 'sheet' => '차량팩킹', 'anchor' => 'G34', 'dx' => 18, 'dy' => 7, 'width' => 290, 'height' => 136],
+                ['key' => 'seal_travel', 'role' => 'seal', 'sheet' => 'Travel Services Invoice', 'anchor' => 'B28', 'dx' => 0, 'dy' => 21, 'width' => 291, 'height' => 188],
+            ],
+            // 통관 SET Ver.2 (2026-10-15) — 차량인보이스 슬롯만 뺀다.
+            'clearance_v2' => [
                 ['key' => 'seal_packing', 'role' => 'seal', 'sheet' => '차량팩킹', 'anchor' => 'G34', 'dx' => 18, 'dy' => 7, 'width' => 290, 'height' => 136],
                 ['key' => 'seal_travel', 'role' => 'seal', 'sheet' => 'Travel Services Invoice', 'anchor' => 'B28', 'dx' => 0, 'dy' => 21, 'width' => 291, 'height' => 188],
             ],
