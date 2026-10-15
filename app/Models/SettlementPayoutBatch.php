@@ -1018,7 +1018,7 @@ class SettlementPayoutBatch extends Model
      */
     public static function canResendRequest(?User $u): bool
     {
-        return $u !== null && $u->canSubmitPayoutBatch();
+        return $u !== null && ! $u->isSuperAdmin() && $u->canSubmitPayoutBatch();   // super 는 제출은 되지만(10-15 점검용) 재촉 버튼은 종전대로 없다
     }
 
     /** 재전송 대기 — 마지막 발송 뒤 이 시간 안에는 다시 못 보낸다(대표 카톡 도배 방지). */

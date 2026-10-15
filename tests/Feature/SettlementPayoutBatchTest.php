@@ -91,6 +91,7 @@ class SettlementPayoutBatchTest extends TestCase
         $this->assertTrue($this->user('user', '관리')->canSubmitPayoutBatch());
         $this->assertTrue($this->user('manager')->canSubmitPayoutBatch());
         $this->assertFalse($this->user('admin')->canSubmitPayoutBatch());
+        $this->assertTrue($this->user('super')->canSubmitPayoutBatch(), '시스템관리자는 점검·대행으로 제출 가능(jin 2026-10-15)');
         $this->assertFalse($this->user('user', '영업')->canSubmitPayoutBatch());
     }
 
