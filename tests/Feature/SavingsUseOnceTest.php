@@ -145,10 +145,13 @@ class SavingsUseOnceTest extends TestCase
         $this->panel($v)->set('savings_used_str', '878')->call('save');
         ReceivableHistory::create(['vehicle_id' => $v->id, 'collected_at' => '2026-10-10', 'collector_id' => $admin->id, 'method' => 'other', 'amount' => 100, 'note' => '자투리']);
         ReceivableHistory::create(['vehicle_id' => $v->id, 'collected_at' => '2026-10-11', 'collector_id' => $admin->id, 'method' => 'write_off', 'amount' => 62, 'note' => '손실']);
+        // 과입금 정리 기록(misc_loss)은 미수에서 안 빼는 미러 행 — 이 줄에도 안 들어가야 미수 식과 맞는다
+        ReceivableHistory::create(['vehicle_id' => $v->id, 'collected_at' => '2026-10-12', 'collector_id' => $admin->id, 'method' => 'misc_loss', 'amount' => 999, 'note' => '과입금 정리 기록']);
 
         $c = $this->panel($v);
         $c->assertSeeHtml('data-non-cash-recoveries')->assertSee('입금 외 정리')
-            ->assertSee('적립금 사용 EUR 878')->assertSee('기타 EUR 100')->assertSee('손실(셀러부담) EUR 62')->assertSee('= EUR 1,040');
+            ->assertSee('적립금 사용 EUR 878')->assertSee('기타 EUR 100')->assertSee('손실(셀러부담) EUR 62')->assertSee('= EUR 1,040')->assertDontSee('잡손실');
+        $this->assertSame(1_040.0, $c->get('panelNonCashRecoveries')['total'], 'misc_loss 는 합계 밖(Vehicle::MIRRORED_RECEIVABLE_METHODS 와 같은 제외)');
         $this->assertSame(2_000.0, (float) $v->fresh()->sale_unpaid_amount, '3,040 − 878 − 100 − 62');
     }
 }
