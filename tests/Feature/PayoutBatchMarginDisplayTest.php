@@ -243,6 +243,29 @@ class PayoutBatchMarginDisplayTest extends TestCase
     }
 
     /**
+     * 🧾 **직원(관리·재무·수출통관) 명부는 「그 달 급여 항목이 있는 사람」만 월정산에 오른다** (jin 2026-10-15 확인 요청).
+     *    사내직원관리에 있어도 급여명세서(그 달 PayrollEntry)에 없으면 카드도 송금 예상도 없다. 다음 달 행이 생기면 그 달에만 오른다.
+     */
+    public function test_staff_without_a_payroll_row_for_the_month_stay_off_the_batch(): void
+    {
+        [$batch] = $this->batch();
+        $offRoster = Salesman::create(['name' => '명세서에 없는 관리직', 'type' => 'staff', 'is_active' => true]);
+        $onRoster = Salesman::create(['name' => '명세서에 있는 재무직', 'type' => 'staff', 'is_active' => true]);
+        PayrollEntry::replaceFor($onRoster->id, '2026-05', [['label' => '기본급', 'amount' => 3_000_000]]);
+        PayrollEntry::replaceFor($offRoster->id, '2026-06', [['label' => '기본급', 'amount' => 3_000_000]]);   // 다른 달 행은 이 배치와 무관
+
+        $people = collect(BatchPayoutBreakdown::forBatch($batch->fresh())['people'])->pluck('salesman_id');
+        $this->assertTrue($people->contains($onRoster->id), '그 달 급여 행이 있는 직원은 오른다');
+        $this->assertFalse($people->contains($offRoster->id), '그 달 급여 행이 없는 직원은 안 오른다(다른 달 행이 있어도)');
+
+        $this->actingAs($this->manager());
+        $html = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
+        $this->assertStringContainsString('data-person-card="'.$onRoster->id.'"', $html);
+        $this->assertStringNotContainsString('data-person-card="'.$offRoster->id.'"', $html);
+        $this->assertStringNotContainsString($offRoster->name, $html);
+    }
+
+    /**
      * 🔁 **배치에 이미 있는 직원은 두 번 안 센다** — 정산이 있는 직원은 정산 줄로만 나오고
      *    「기본급만」 줄이 또 생기면 안 된다(id 로 뺀다 — 이름으로 빼면 동명이인이 사라진다).
      */
