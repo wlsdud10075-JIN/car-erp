@@ -76,6 +76,7 @@ return [
         'leaver_submitted' => '퇴사 정산 제출됨 (:name · :count건). 승인큐에서 진행됩니다.',
         'leaver_blocked' => '먼저 처리할 것이 남아 있어 제출할 수 없습니다 — 미확정 :u건 · 미수 보류 :h건. 미확정은 확정하고, 미수 보류는 완납되거나 정산관리 「예외 대상」으로 등록하면 올릴 수 있습니다.',
         'leaver_blocked_short' => '정리 후 제출',
+        'leaver_lines_title' => '처리 대상 :n건 = 지급 가능 :ok · 미확정 :u · 미수 보류 :h',
         'leaver_line_in_batch' => '배치 #:id 결재 중',
         'leaver_line_held' => '미수 보류',
         'leaver_line_override' => '예외 대상',

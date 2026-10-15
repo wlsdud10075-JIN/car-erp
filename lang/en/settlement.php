@@ -71,6 +71,7 @@ return [
         'leaver_submitted' => 'Leaver payout submitted (:name, :count items). It continues in the approval queue.',
         'leaver_blocked' => 'Cannot submit yet - :u unconfirmed, :h on unpaid hold. Confirm the unconfirmed ones; holds clear when fully paid or registered as a settlement exception.',
         'leaver_blocked_short' => 'Clear first',
+        'leaver_lines_title' => ':n to handle = payable :ok · unconfirmed :u · unpaid hold :h',
         'leaver_line_in_batch' => 'in batch #:id',
         'leaver_line_held' => 'unpaid hold',
         'leaver_line_override' => 'exception',
