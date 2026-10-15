@@ -113,7 +113,7 @@ class DepositsTabTest extends TestCase
     /**
      * ⚠️ 정책 변경 (jin 2026-08-05) — 예치·가수금은 **[관리]·재무도 못 본다.**
      * 대표가 회사에 넣고 뺀 돈이라 자금 기밀 축으로 올렸다.
-     * 통장 마감잔액 입력(canEnterCashBalance)은 별개 게이트로 두 role 모두 종전대로 가능 —
+     * 통장 마감잔액 입력(canEnterCashBalance)은 별개 게이트 — 재무는 종전대로 가능([관리] 는 2026-10-15 jin 결정으로 그쪽도 제외).
      * 여기를 canEnterCashBalance 로 되돌리면 그 분리가 무너진다.
      */
     public function test_management_and_finance_roles_blocked(): void
@@ -124,13 +124,12 @@ class DepositsTabTest extends TestCase
         }
     }
 
-    /** 분리 증명 — 예치는 막혀도 통장 마감잔액 입력 권한은 재무·[관리]에 그대로 남아야 한다. */
-    public function test_cash_balance_entry_still_allowed_for_finance_and_management(): void
+    /** 분리 증명 — 예치는 막혀도 통장 마감잔액 입력 권한은 재무에 그대로 남아야 한다([관리] 는 둘 다 못 본다, 2026-10-15). */
+    public function test_cash_balance_entry_still_allowed_for_finance(): void
     {
-        foreach (['관리', '재무'] as $role) {
-            $this->assertTrue($this->user($role)->canEnterCashBalance(), "{$role} 의 통장잔액 입력이 같이 막혔다");
-            $this->assertFalse($this->user($role)->canAccessDeposits());
-        }
+        $this->assertTrue($this->user('재무')->canEnterCashBalance(), '재무의 통장잔액 입력이 같이 막혔다');
+        $this->assertFalse($this->user('재무')->canAccessDeposits());
+        $this->assertFalse($this->user('관리')->canEnterCashBalance(), '[관리] 는 통장잔액 입력 제외(jin 2026-10-15)');
     }
 
     /*

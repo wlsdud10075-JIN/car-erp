@@ -152,7 +152,9 @@ class User extends Authenticatable
 
     /**
      * 통장 마감잔액 입력 권한 (자금 현황, jin 2026-07-23).
-     *   재무·[관리]·업무관리자(+super/admin). 업무 대시보드 입력 카드 노출·capture 액션 가드.
+     *   재무(일반사용자)·업무관리자(+super/admin). 업무 대시보드 입력 카드 노출·capture 액션 가드.
+     *   🔀 2026-10-15 (jin «전부 오픈될 필요 없어서 — 일반사용자 재무와 업무관리자만») — 일반사용자 [관리] 를 뺐다.
+     *      ⚠️ 「관리 이상 = 넷 전부」 기본값(메모리 feedback_manager_and_above)의 **명시적 예외**다.
      *   ⚠️ 입력만 — 손익·원금·재고총액은 안 보임(canViewCapital 별개).
      */
     public function canEnterCashBalance(): bool
@@ -161,7 +163,7 @@ class User extends Authenticatable
             return true;
         }
 
-        return in_array($this->role, ['재무', '관리'], true);
+        return $this->role === '재무';
     }
 
     /**
