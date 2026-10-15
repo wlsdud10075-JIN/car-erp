@@ -100,7 +100,7 @@ class PayrollEntry extends Model
         if (AuditLog::valuesDiffer($was, $now)) {
             AuditLog::recordChange($sm, 'payroll_'.$month, $was, $now);
             // 🪜 그 달 월정산이 결재 중이면 변경 이력에도 남긴다 — 카드가 노란 표시로 결재자에게 알린다(월정산 v3).
-            SettlementPayoutBatch::where('month', $month)->where('status', 'pending')->get()
+            SettlementPayoutBatch::monthly()->where('month', $month)->where('status', 'pending')->get()
                 ->each(fn ($b) => $b->recordChange($actor, $sm->id, SettlementPayoutBatchChange::FIELD_PAYROLL, $was, $now, $note));
         }
 

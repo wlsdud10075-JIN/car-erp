@@ -31,7 +31,8 @@ final class BatchPayoutBreakdown
             : $batch->settlements()->with(['salesman', 'vehicle.finalPayments', 'vehicle.receivableHistories'])->get();
         $adjustments = $batch->relationLoaded('adjustments') ? $batch->adjustments : $batch->adjustments()->with('salesman')->get();
 
-        return self::assemble($batch->month, $settlements, $adjustments);
+        // 🚪 퇴사 배치는 그 한 사람을 반드시 그린다(정산 0건·이월만일 수 있다) (2026-10-15)
+        return self::assemble($batch->month, $settlements, $adjustments, $batch->isLeaverBatch() && $batch->salesman_id ? [(int) $batch->salesman_id] : []);
     }
 
     /**
@@ -55,16 +56,19 @@ final class BatchPayoutBreakdown
      * @param  Collection<int, Settlement>  $settlements
      * @param  Collection<int, SettlementPayoutAdjustment>  $adjustments
      */
-    private static function assemble(string $month, Collection $settlements, Collection $adjustments): array
+    private static function assemble(string $month, Collection $settlements, Collection $adjustments, array $forceIds = []): array
     {
         $bySalesman = $settlements->groupBy('salesman_id');
         $adjBySalesman = $adjustments->groupBy('salesman_id');
 
-        $ids = $bySalesman->keys()->merge($adjBySalesman->keys())->filter()->map(fn ($i) => (int) $i);
+        $ids = $bySalesman->keys()->merge($adjBySalesman->keys())->merge($forceIds)->filter()->map(fn ($i) => (int) $i);
         // 그 달 급여가 입력된 사내직원·검차직원 — 정산이 0건이어도 월급은 나간다(jin 2026-10-06 → v3 급여 항목)
+        //   🚪 퇴사자(퇴사일 있음)는 비활성이어도 들어간다 — 마지막 달 급여는 종전대로 월정산 10일에 나간다(jin 2026-10-15).
+        //      재직 표시 없이 그냥 비활성인 옛 행(관리자 계정 미러 등)은 종전대로 빠진다.
         $payrollIds = PayrollEntry::query()->where('month', $month)->distinct()->pluck('salesman_id')->map(fn ($i) => (int) $i);
         $salaried = Salesman::query()->whereIn('id', $payrollIds)
-            ->where('is_active', true)->where('payout_excluded', false)
+            ->where(fn ($q) => $q->where('is_active', true)->orWhereNotNull('left_at'))
+            ->where('payout_excluded', false)
             ->where('type', '!=', 'freelance')
             ->pluck('id');
         $ids = $ids->merge($salaried)->unique()->values();

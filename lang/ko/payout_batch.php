@@ -11,6 +11,7 @@ return [
         'cancelled' => '취소',
     ],
     'count' => ':n건',
+    'leaver_label' => '퇴사 정산 · :name',
     'submitter' => '제출',
     'next_level' => ':role 승인 차례',
     'confirm_approve' => '이 배치를 승인합니까? (대표 최종 승인이면 전 정산이 즉시 지급 처리됩니다)',

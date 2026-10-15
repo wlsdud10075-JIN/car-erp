@@ -14,6 +14,9 @@ class Salesman extends Model
 
     protected $fillable = [
         'user_id', 'name', 'initials', 'employee_no', 'phone', 'email', 'memo', 'is_active',   // employee_no = 급여대장 사원번호(2026-10-14)
+        // 🚪 퇴사일 (jin 2026-10-15) — 있으면 퇴사자. 프리랜서는 정산관리 「퇴사자」에서 즉시 정산 배치, 사내직원은 종전대로 월정산.
+        //    미러(사용자 관리 저장)는 퇴사일이 있으면 is_active 를 되살리지 않는다. 마이그레이션 2026_10_15_000001 주석 참조.
+        'left_at',
         // 2026-05-20 #2-2+2-4 — type 분기 (employee 건당 / freelance 비율)
         'type',
         // 2026-08-04 jin — 사내직원 차등정산(tier) 담당자별 on/off. OFF=10만원 고정.
@@ -27,6 +30,7 @@ class Salesman extends Model
 
     protected $casts = [
         'is_active' => 'boolean',
+        'left_at' => 'date',
         'per_unit_tier_enabled' => 'boolean',
         'payout_excluded' => 'boolean',
         'deposit_krw' => 'integer',
@@ -73,6 +77,39 @@ class Salesman extends Model
     public function isPayrollOnly(): bool
     {
         return in_array($this->type, self::PAYROLL_ONLY_TYPES, true);
+    }
+
+    // ── 🚪 퇴사 (jin 2026-10-15 「퇴사자 사용 씬」) ──────────────────────────────────────────
+
+    /** 퇴사자인가 — 퇴사일이 적혀 있으면. 활성 체크(`is_active`)와 별개의 칸이다(미러가 활성을 되살려도 퇴사는 남는다). */
+    public function hasLeft(): bool
+    {
+        return $this->left_at !== null;
+    }
+
+    /**
+     * 🔑 **퇴사하면 즉시 정산하는 사람인가 = 프리랜서 퇴사자** (jin 2026-10-15 «사내직원은 똑같이 10일에 지급, 프리랜서만 별도»).
+     *
+     * 이 사람의 미지급 정산·미청산 이월은 **월정산 후보에서 빠지고** 정산관리 「퇴사자」의 즉시 정산 배치(`kind=leaver`)로만 나간다.
+     * 두 배치가 같은 정산을 가져가는 일은 `settlements.payout_batch_id` 가 막지만, 후보에서도 서로 빼야 「월정산에 섞여 10일에 나가는」
+     * 반대 순서가 안 생긴다. 판정은 여기 한 곳 — `Settlement::isReservedForLeaverBatch()`·`scopeImmediateLeavers()`·월정산 이월 줄이 같이 쓴다.
+     * 사내직원·급여형 퇴사자는 false — 종전대로 월정산(마지막 달 급여 줄 포함).
+     */
+    public function settlesImmediatelyOnLeave(): bool
+    {
+        return $this->hasLeft() && $this->type === 'freelance';
+    }
+
+    /** SQL 짝 — 즉시 정산 대상 퇴사자(프리랜서 + 퇴사일). `settlesImmediatelyOnLeave()` 와 글자 단위로 같은 조건. */
+    public function scopeImmediateLeavers($query)
+    {
+        return $query->whereNotNull('left_at')->where('type', 'freelance');
+    }
+
+    /** 퇴사 알림톡 라벨 — 승인요청 카드 「제출」 칸(20자 자동컷)에 들어간다. 본문은 BizM 등록본 그대로라 변수 값으로만 알린다. */
+    public function leaverTag(): string
+    {
+        return '퇴사정산 '.$this->name;
     }
 
     /**

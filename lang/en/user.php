@@ -8,6 +8,7 @@ return [
     'search_ph' => 'Name · email · phone',
     'all_perm' => 'All permissions',
     'me' => '(me)',
+    'left_hint' => 'The leaving date is set and cleared in Staff roster.',
     'no_login' => 'Never',
     'phone_missing' => 'Not set',
     'phone_missing_hint' => 'Without a phone number this user receives no KakaoTalk notifications (and no log entry is created).',

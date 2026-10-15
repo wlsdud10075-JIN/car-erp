@@ -27,7 +27,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         //    (정산액 → 총마진 → 판매금원화 → 정산환율 → 미수). 안 얹으면 배치 1개당 쿼리가
         //    1,000개를 넘는다(실측 560건 = 1,125개 → 5개).
         return SettlementPayoutBatch::with([
-            'submitter', 'approvals.approver', 'steps.approver', 'batchChanges.user', 'batchChanges.salesman', 'settlements.salesman',
+            'submitter', 'salesman', 'approvals.approver', 'steps.approver', 'batchChanges.user', 'batchChanges.salesman', 'settlements.salesman',
             'settlements.vehicle.finalPayments', 'settlements.vehicle.receivableHistories',
             'adjustments.salesman', 'adjustments.creator',
         ])
@@ -186,6 +186,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
                     <button type="button" wire:click="toggle({{ $b->id }})" class="flex flex-1 items-center gap-2 text-left">
                         <span class="whitespace-nowrap font-semibold text-gray-800">{{ $b->month }}</span>
+                        {{-- 🚪 퇴사 정산 (2026-10-15) — 달을 닫지 않는 한 사람 배치. 월정산과 한눈에 갈리게 --}}
+                        @if($b->isLeaverBatch())<span class="badge badge-purple" data-leaver-batch>{{ __('payout_batch.leaver_label', ['name' => $b->salesman?->name ?? '-']) }}</span>@endif
                         <span class="badge {{ $statusBadge }}">{{ __('payout_batch.status.'.$b->status) }}</span>
                         <span class="pill-count">{{ __('payout_batch.count', ['n' => $b->settlement_count]) }}</span>
                         <span class="text-sm font-medium text-primary-text">₩{{ number_format($b->total_payout) }}</span>

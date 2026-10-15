@@ -66,7 +66,9 @@
     </div>
     @endif
     <div class="card">
-        <h1>정산 지급 승인 요청</h1>
+        <h1>{{ $batch->isLeaverBatch() ? '퇴사 정산 지급 승인 요청' : '정산 지급 승인 요청' }}</h1>
+        {{-- 🚪 퇴사 정산 (2026-10-15) — 월정산이 아니라 그 한 사람의 즉시 정산. 결재자가 카톡 카드에서 본 「퇴사정산 이름」과 같은 말 --}}
+        @if($batch->isLeaverBatch())<p class="sub" style="color:#6d28d9;font-weight:600;">퇴사자 {{ $batch->salesman?->name ?? '-' }} · 퇴사일 {{ $batch->salesman?->left_at?->format('Y-m-d') ?? '-' }}</p>@endif
         <p class="sub">{{ $batch->month }} 귀속 · 제출: {{ $batch->submitter?->name ?? '-' }}</p>
         <div class="row"><span class="k">귀속월</span><span class="v">{{ $batch->month }}</span></div>
         <div class="row"><span class="k">건수</span><span class="v">{{ number_format($batch->settlement_count) }}건</span></div>

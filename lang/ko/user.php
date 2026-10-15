@@ -8,6 +8,7 @@ return [
     'search_ph' => '이름 · 이메일 · 전화번호',
     'all_perm' => '전체 권한',
     'me' => '(나)',
+    'left_hint' => '퇴사일은 사내직원관리에서 적고 지웁니다.',
     'no_login' => '없음',
     'phone_missing' => '미입력',
     'phone_missing_hint' => '전화번호가 없으면 이 사용자에게는 알림톡이 발송되지 않습니다(로그도 남지 않음).',

@@ -36,6 +36,8 @@ class SettlementPayoutBatch extends Model
 
     protected $fillable = [
         'month', 'submitter_id', 'submitter_rank', 'current_level', 'current_step', 'status',
+        // 🚪 종류(월정산/퇴사 정산) + 퇴사 배치의 그 한 사람 (jin 2026-10-15). 마이그레이션 2026_10_15_000002 주석 참조.
+        'kind', 'salesman_id',
         'breakdown_snapshot',
         'total_payout', 'settlement_count', 'submitted_at', 'decided_at', 'reject_reason',
         // 2026-10-07 jin — 승인요청 마지막 발송 시각(재전송 연타 방지 · 발송 결과 표시). 마이그레이션 주석 참조.
@@ -49,14 +51,44 @@ class SettlementPayoutBatch extends Model
         'breakdown_snapshot' => 'array',
     ];
 
+    // ── 🚪 배치 종류 (jin 2026-10-15 「퇴사자 사용 씬」) ──────────────────────────────────────────
+    /** 월정산 — 그 달 확정 정산 전부(종전). 월 마감·「월당 pending 1건」은 이 종류만 센다. */
+    public const KIND_MONTH = 'month';
+
+    /** 퇴사 정산 — 프리랜서 퇴사자 한 사람의 미지급 정산·미청산 이월을 날짜와 무관하게 바로 결재에 올린다. 달을 닫지 않는다. */
+    public const KIND_LEAVER = 'leaver';
+
+    public function isLeaverBatch(): bool
+    {
+        return $this->kind === self::KIND_LEAVER;
+    }
+
+    /** 퇴사 배치의 그 한 사람(월정산은 NULL). */
+    public function salesman(): BelongsTo
+    {
+        return $this->belongsTo(Salesman::class);
+    }
+
+    public function scopeMonthly($q)
+    {
+        return $q->where('kind', self::KIND_MONTH);
+    }
+
+    public function scopeLeaver($q)
+    {
+        return $q->where('kind', self::KIND_LEAVER);
+    }
+
     /**
-     * 해당 월(Y-m)이 마감됐나 — 승인(지급)된 배치가 1건이라도 있으면 닫힘 (jin 2026-07-18).
+     * 해당 월(Y-m)이 마감됐나 — 승인(지급)된 **월정산** 배치가 1건이라도 있으면 닫힘 (jin 2026-07-18).
+     * 🚪 퇴사 배치(kind=leaver)는 세지 않는다 — 10월 20일 퇴사 배치 승인이 10월을 닫으면 월결산 보고가 반쪽으로 나가고
+     *    뒤늦게 생긴 정산이 다음 달로 밀린다(2026-10-15). 가드 = LeaverSettlementTest.
      * "6월 마감되면 그 순간 끝. 늦게 완성된 건은 완성된 달(현재 열린 달)에 포함" 규칙의 기준.
      * pending/rejected/cancelled 배치는 마감 아님 (approved = execute()로 실지급 상태만).
      */
     public static function isMonthClosed(string $ym): bool
     {
-        return self::where('month', $ym)->where('status', self::STATUS_APPROVED)->exists();
+        return self::monthly()->where('month', $ym)->where('status', self::STATUS_APPROVED)->exists();
     }
 
     public function submitter(): BelongsTo
@@ -375,7 +407,35 @@ class SettlementPayoutBatch extends Model
         // 🚪 지급 대상이 아닌 담당자(자매 회사 계정 등)의 정산은 배치에 안 넣는다 (jin 2026-09-16).
         //    판정은 `isPayoutExcludedBySalesman()` 단일 출처 — 조건을 여기 옮겨 적으면
         //    「목록엔 빠졌다고 뜨는데 배치엔 들어가는」 형태가 된다(§8 #44).
+        // 🚪 프리랜서 퇴사자의 정산은 퇴사 배치 전용 (jin 2026-10-15 «이중으로 정산되지 않게») — 판정은 `isReservedForLeaverBatch()` 한 곳.
         return Settlement::whereIn('id', $ids)->with(['vehicle', 'salesman'])->get()
+            ->reject(fn (Settlement $s) => $s->isPayoutExcludedBySalesman())
+            ->reject(fn (Settlement $s) => $s->isReservedForLeaverBatch())
+            ->reject(fn (Settlement $s) => $s->isPayoutHeldByUnpaid())
+            ->pluck('id');
+    }
+
+    /**
+     * 🚪 **퇴사 배치로 나갈 수 있는 그 사람의 확정 정산 id** — 정산관리 「퇴사자」 미리보기와 `submitForLeaver` 의 단일 출처 (jin 2026-10-15).
+     *
+     * 월과 무관하게 **그 사람의 미배치 확정 정산 전부**. 미수 보류·지급 대상 제외는 월정산과 같은 판정을 그대로 쓴다.
+     * 이중 지급은 두 겹으로 막는다 — ①`payout_batch_id` 가 비어 있는 것만(한 정산은 한 배치) ②월정산 후보는 이 사람 몫을
+     * `isReservedForLeaverBatch()` 로 뺀다. 그래서 어느 쪽이 먼저 제출돼도 같은 정산이 두 배치에 들어갈 수 없다.
+     *
+     * @return Collection<int, int>
+     */
+    public static function leaverEligibleSettlementIds(Salesman $sm): Collection
+    {
+        if (! $sm->settlesImmediatelyOnLeave()) {
+            return collect();
+        }
+
+        return Settlement::query()
+            ->where('salesman_id', $sm->id)
+            ->where('settlement_status', 'confirmed')
+            ->whereNull('payout_batch_id')
+            ->with(['vehicle', 'salesman'])
+            ->get()
             ->reject(fn (Settlement $s) => $s->isPayoutExcludedBySalesman())
             ->reject(fn (Settlement $s) => $s->isPayoutHeldByUnpaid())
             ->pluck('id');
@@ -406,14 +466,20 @@ class SettlementPayoutBatch extends Model
      * @param  Collection<int, Settlement>  $settlements  이번 배치에 들어갈 정산(제출 전 미리 읽은 것)
      * @return array<int, array{salesman_id:int, name:string, amount:int, unconsumed:int, partial:bool, reason:string}>
      */
-    public static function carryoverLinesFor($settlements): array
+    public static function carryoverLinesFor($settlements, ?Salesman $only = null): array
     {
         $payoutBySalesman = $settlements->groupBy('salesman_id')->map(fn ($g) => (int) $g->sum(fn ($s) => $s->actual_payout));
 
         $lines = [];
-        foreach (Salesman::orderBy('name')->get() as $sm) {
+        // 🚪 퇴사 배치(`$only`)는 그 한 사람만. 월정산은 즉시 정산 퇴사자(프리랜서)를 건너뛴다 — 그 이월은 퇴사 배치가 가져간다(2026-10-15).
+        //    같은 사람 이월이 두 배치에 들어가는 일은 CarryoverClearance(제출 시 생성 → unconsumed 0)가 한 번 더 막는다.
+        $people = $only ? collect([$only]) : Salesman::orderBy('name')->get();
+        foreach ($people as $sm) {
             // 지급 대상 아닌 담당자 — `Settlement::isPayoutExcludedBySalesman()` 과 같은 칸(salesmen.payout_excluded)을 본다.
             if ((bool) $sm->payout_excluded) {
+                continue;
+            }
+            if ($only === null && $sm->settlesImmediatelyOnLeave()) {
                 continue;
             }
             $unconsumed = (int) $sm->unconsumed_carryover;
@@ -449,8 +515,8 @@ class SettlementPayoutBatch extends Model
         if (! $submitter->canSubmitPayoutBatch()) {
             throw new \DomainException('월정산 제출 권한이 없습니다.');
         }
-        // 월당 진행중(pending) 배치 1개 — 동시 제출로 정산이 재지목돼 phantom 배치가 되는 것 방지.
-        if (self::where('month', $month)->where('status', self::STATUS_PENDING)->exists()) {
+        // 월당 진행중(pending) 배치 1개 — 동시 제출로 정산이 재지목돼 phantom 배치가 되는 것 방지. 🚪 퇴사 배치는 따로 센다.
+        if (self::monthly()->where('month', $month)->where('status', self::STATUS_PENDING)->exists()) {
             throw new \DomainException('해당 월에 이미 승인 대기 중인 배치가 있습니다.');
         }
 
@@ -459,12 +525,59 @@ class SettlementPayoutBatch extends Model
             throw new \DomainException('지급 가능한 정산이 없습니다 (해당 월 확정 정산이 없거나, 전부 미수 있는 차량이라 지급보류됨. 완납 후 지급).');
         }
 
-        $rank = $submitter->approvalRank();
-        $steps = self::normalizeLine($line);
+        return self::openBatch($submitter, $month, $ids, $adjustments, self::normalizeLine($line));
+    }
 
-        $batch = DB::transaction(function () use ($submitter, $month, $rank, $ids, $adjustments, $steps) {
+    /**
+     * 🚪 **퇴사 정산 제출** — 프리랜서 퇴사자 한 사람의 미지급 확정 정산 + 미청산 이월 + 조정(예치금 반환 등 수동)을 한 배치로 (jin 2026-10-15).
+     *
+     * 월정산과 같은 결재선·같은 알림톡 3종. 다른 점 — `kind=leaver`·`salesman_id`, `month` = 퇴사월(표시·급여 조회 기준일 뿐 달을 닫지 않는다).
+     * 이중 지급 가드 ①그 사람의 pending 퇴사 배치가 있으면 거부 ②정산은 `payout_batch_id` 비어 있는 것만 ③이월은 그 사람 것만.
+     * 정산이 0건이어도 이월·조정이 있으면 올릴 수 있다(마지막 2차 마감 차액만 남은 사람).
+     *
+     * @param  array<int, array{amount:int, reason:string, kind?:string}>  $adjustments  담당자는 이 사람으로 고정
+     */
+    public static function submitForLeaver(User $submitter, Salesman $sm, array $adjustments = [], array $line = []): self
+    {
+        if (! $submitter->canSubmitPayoutBatch()) {
+            throw new \DomainException('월정산 제출 권한이 없습니다.');
+        }
+        if (! $sm->settlesImmediatelyOnLeave()) {
+            throw new \DomainException('퇴사 정산은 퇴사일이 적힌 프리랜서만 올릴 수 있습니다 (사내직원은 월정산에서 지급).');
+        }
+        if (self::leaver()->where('salesman_id', $sm->id)->where('status', self::STATUS_PENDING)->exists()) {
+            throw new \DomainException('이 사람의 퇴사 정산이 이미 승인 대기 중입니다.');
+        }
+
+        $ids = self::leaverEligibleSettlementIds($sm);
+        $carry = self::carryoverLinesFor(Settlement::whereIn('id', $ids)->get(), $sm);
+        if ($ids->isEmpty() && $carry === [] && $adjustments === []) {
+            throw new \DomainException('올릴 것이 없습니다 (미지급 확정 정산·미청산 이월·조정이 전부 없음).');
+        }
+
+        $adjustments = array_map(fn ($a) => $a + ['salesman_id' => (int) $sm->id], $adjustments);
+        $month = $sm->left_at->format('Y-m');
+
+        return self::openBatch($submitter, $month, $ids, $adjustments, self::normalizeLine($line), [
+            'kind' => self::KIND_LEAVER, 'salesman_id' => (int) $sm->id,
+        ], $sm);
+    }
+
+    /**
+     * 배치 + 조정 + 이월 줄을 **한 트랜잭션**으로 만들고 첫 결재자에게 알림톡 — 월정산·퇴사 정산 공용 본체.
+     *
+     * @param  Collection<int, int>  $ids
+     * @param  array<int, array{title: string, user_id: int}>  $steps
+     * @param  array<string, mixed>  $extra  kind·salesman_id (퇴사 배치)
+     * @param  Salesman|null  $carryOnly  이월 줄을 이 사람 것만(퇴사 배치). null = 월정산(즉시 정산 퇴사자 제외 전원)
+     */
+    private static function openBatch(User $submitter, string $month, Collection $ids, array $adjustments, array $steps, array $extra = [], ?Salesman $carryOnly = null): self
+    {
+        $rank = $submitter->approvalRank();
+
+        $batch = DB::transaction(function () use ($submitter, $month, $rank, $ids, $adjustments, $steps, $extra, $carryOnly) {
             $settlements = Settlement::whereIn('id', $ids)->get();
-            $batch = self::create([
+            $batch = self::create($extra + [
                 'month' => $month,
                 'submitter_id' => $submitter->id,
                 'submitter_rank' => $rank,
@@ -494,12 +607,12 @@ class SettlementPayoutBatch extends Model
             }
 
             // 💸 미청산 이월 자동 조정 줄 (jin 2026-10-06) — 제출 모달 미리보기와 **같은 함수**로 뽑는다.
-            foreach (self::carryoverLinesFor($settlements) as $line) {
+            foreach (self::carryoverLinesFor($settlements, $carryOnly) as $line) {
                 $batch->addAdjustment($submitter, $line['salesman_id'], $line['amount'], $line['reason'], null, SettlementPayoutAdjustment::KIND_CARRYOVER);
                 CarryoverClearance::create([
                     'salesman_id' => $line['salesman_id'], 'payout_batch_id' => $batch->id,
                     'amount_krw' => $line['amount'], 'direction' => $line['amount'] > 0 ? 'pay' : 'collect',
-                    'cleared_by' => $submitter->id, 'note' => '월정산 #'.$batch->id.' 자동 흡수',
+                    'cleared_by' => $submitter->id, 'note' => ($carryOnly ? '퇴사 정산 #' : '월정산 #').$batch->id.' 자동 흡수',
                 ]);
             }
 
@@ -615,10 +728,13 @@ class SettlementPayoutBatch extends Model
             // 🚨 최종 승인 = "그 달 정산이 끝났다"는 확정 신호 → 대표 월 결산 보고를 이때 보낸다(jin 2026-07-31).
             //    종전엔 익월 첫 영업일에 무조건 나가서, 아직 확정 전인 정산이 통째로 빠진 채 보고됐다.
             //    fire-and-forget — 결산 알림 실패가 지급 승인을 깨면 안 된다(스케줄이 다음 날 재시도).
-            try {
-                Artisan::call('alimtalk:monthly-closing', ['month' => $this->month]);
-            } catch (\Throwable $e) {
-                Log::warning('월 결산 알림톡 트리거 실패', ['month' => $this->month, 'error' => $e->getMessage()]);
+            //    🚪 퇴사 배치는 달을 닫지 않으므로 여기서 안 부른다(월정산 승인 때 그 달 보고가 나간다, 2026-10-15).
+            if ($this->kind === self::KIND_MONTH) {
+                try {
+                    Artisan::call('alimtalk:monthly-closing', ['month' => $this->month]);
+                } catch (\Throwable $e) {
+                    Log::warning('월 결산 알림톡 트리거 실패', ['month' => $this->month, 'error' => $e->getMessage()]);
+                }
             }
         } else {
             $this->notifyPayoutRequest();
@@ -808,7 +924,10 @@ class SettlementPayoutBatch extends Model
             '건수' => (string) $this->settlement_count,
             '총액' => number_format($this->total_payout).'원',
             '회사이익' => number_format($this->profitStats()['company_profit_after_payroll']).'원',
-            '제출자' => $this->submitter?->name ?? '-',
+            // 🚪 퇴사 배치는 「제출」 칸(20자 자동컷)에 퇴사자 이름을 싣는다 — 본문·줄 구성은 BizM 등록본 그대로라 변수 값으로만 알린다(jin 2026-10-15 (가)).
+            '제출자' => $this->isLeaverBatch()
+                ? ($this->salesman?->leaverTag() ?? '퇴사정산').' · '.($this->submitter?->name ?? '-')
+                : ($this->submitter?->name ?? '-'),
         ];
         // 지금 차례인 사람에게만 — steps 모드 = 그 칸의 한 사람(부장·전무·대표 각자 차례에 1회, jin (가)) / 종전 = 그 계단 전원.
         foreach ($this->currentApprovers()->filter(fn (User $u) => trim((string) $u->phone) !== '') as $user) {
