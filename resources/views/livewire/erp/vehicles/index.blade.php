@@ -9709,7 +9709,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
                             <span class="shrink-0">{{ $row['date'] }}</span>
                             <span class="shrink-0 {{ $row['type'] === 'USED' ? 'text-violet-600' : 'text-emerald-600' }}">{{ $row['type'] === 'USED' ? __('vehicle.panel.savings_row_used') : __('vehicle.panel.savings_row_refund') }}</span>
                             <span class="font-mono {{ $row['reverted'] ? 'line-through' : '' }}">{{ $currency }} {{ number_format($row['amount'], fmod($row['amount'], 1) == 0.0 ? 0 : 2) }}</span>
-                            <span class="min-w-0 flex-1 truncate text-gray-400">{{ __('vehicle.panel.savings_row_balance', ['balance' => number_format($row['balance'], fmod($row['balance'], 1) == 0.0 ? 0 : 2)]) }}</span>
+                            @php $svBal = __('vehicle.panel.savings_row_balance', ['balance' => number_format($row['balance'], fmod($row['balance'], 1) == 0.0 ? 0 : 2)]); @endphp
+                            <span class="min-w-0 flex-1 truncate text-gray-400" title="{{ $svBal }}{{ $row['note'] ? ' · '.$row['note'] : '' }}">{{ $svBal }}</span>
                             @if($row['type'] === 'USED' && ! $row['reverted'] && $canConfirmFinanceLocalSavings)
                             <button type="button" wire:click="revertSavingsUse({{ $row['id'] }})" wire:confirm="{{ __('vehicle.panel.savings_revert_confirm', ['amount' => number_format($row['amount'], 2)]) }}"
                                     class="shrink-0 text-[10px] text-rose-500 hover:underline">{{ __('vehicle.panel.savings_revert') }}</button>
