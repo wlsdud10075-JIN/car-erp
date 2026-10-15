@@ -1159,6 +1159,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $rows = [];
         foreach (Salesman::query()->immediateLeavers()->where('payout_excluded', false)->orderByDesc('left_at')->orderBy('name')->get() as $sm) {
             $open = Settlement::query()->where('salesman_id', $sm->id)
+                ->where('settlement_status', '!=', 'paid')   // 지급된 건은 처리 대상이 아니다(jin «이미 지급된 건 빼고 실제로 받아야 할 것만»)
                 ->where(fn ($q) => $q->whereNull('payout_batch_id')->orWhereIn('payout_batch_id', $pendingBatches->pluck('id')))
                 ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
                 ->get();
@@ -1166,8 +1167,9 @@ new #[Layout('components.layouts.app')] class extends Component
             $eligible = $open->whereIn('id', $eligibleIds);
             $inBatch = $open->whereNotNull('payout_batch_id');
             $blockers = \App\Models\SettlementPayoutBatch::leaverBlockers($sm);   // 제출 가드와 같은 함수
-            // 그 사람의 처리 대상 정산 줄 — 이 표 안에서 [확정]·[예외 등록]을 한다(일반 목록엔 안 나온다).
-            $lines = $open->sortBy([['payout_batch_id', 'asc'], ['id', 'asc']])->map(fn ($s) => [
+            // 그 사람의 처리 대상 정산 줄 = **미배치분만** — 이 표 안에서 [확정]·[예외 등록]을 한다(일반 목록엔 안 나온다).
+            //   결재 중인 건은 줄로 안 그린다(«다 나오면 보기 어렵다») — 건수만 「결재 중 n」 뱃지로.
+            $lines = $open->whereNull('payout_batch_id')->sortBy('id')->map(fn ($s) => [
                 'id' => (int) $s->id,
                 'plate' => $s->vehicle?->vehicle_number ?? '-',
                 'month' => $s->attributed_month?->format('Y-m') ?? '-',
@@ -2241,6 +2243,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                 <span class="badge {{ ['pending' => 'badge-blue', 'calculating' => 'badge-amber', 'confirmed' => 'badge-green', 'paid' => 'badge-gray'][$ln['status']] ?? 'badge-gray' }}">{{ \Illuminate\Support\Facades\Lang::has('settlement.status.'.$ln['status']) ? __('settlement.status.'.$ln['status']) : $ln['status'] }}</span>
                                 <span class="font-mono text-gray-700">₩{{ number_format($ln['payout']) }}</span>
                                 @if($ln['batch_id'])
+                                    {{-- 미배치만 그리므로 여기 올 일은 없다 — 안전망 --}}
                                     <span class="badge badge-blue">{{ __('settlement.batch.leaver_line_in_batch', ['id' => $ln['batch_id']]) }}</span>
                                 @else
                                     @if($ln['held'])<span class="badge badge-red" title="{{ $ln['currency'] }} {{ number_format($ln['unpaid'], 2) }}">{{ __('settlement.batch.leaver_line_held') }}</span>@endif

@@ -415,10 +415,6 @@ return [
         'savings_deposit_note' => '(저장 시 누적, reset)',
         // 💳 적립금 사용 1회성 (jin 2026-10-15)
         'savings_used_note' => '(이번에 쓸 금액 · 저장 후 비워짐)',
-        'savings_used_total' => '이 차에 쓴 적립금 합계',
-        'savings_row_used' => '사용',
-        'savings_row_refund' => '되돌림',
-        'savings_row_balance' => '잔액 :balance',
         'non_cash_title' => '입금 외 정리',
         'non_cash_link' => '채권관리',
         'non_cash_hint' => '— 채권관리에서 입금 행 밖으로 정리된 것. 잔금 행에는 안 섞입니다(실입금·정산환율 기준). 입력은 채권관리·적립금 칸에서.',
