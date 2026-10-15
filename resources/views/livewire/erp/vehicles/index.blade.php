@@ -131,6 +131,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     /** 이미 파일이 있는 차량도 덮어쓸지 — 기본 꺼짐(실수로 덮는 것 방지, jin). */
     public bool $bulkDocReplace = false;
+    /** ✅ 서류와 짝 체크박스(말소·통관)도 함께 켬 — 기본 ON (jin 2026-10-15). 끄면 종전처럼 파일만. */
+    public bool $bulkDocSetFlag = true;
 
     /** 같은 번호인데 선택 밖인 차량도 함께 처리할지 — 기본 켬(묶음이 반쪽으로 남지 않게). */
     public bool $bulkDocIncludeOutside = true;
@@ -2562,6 +2564,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkDocFile = null;
         $this->bulkDocFiles = [];
         $this->bulkDocReplace = false;
+        $this->bulkDocSetFlag = true;
         $this->bulkDocIncludeOutside = true;
         $this->bulkDocMixedAck = false;
         $this->bulkDocReason = '';
@@ -2657,13 +2660,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                     fn ($f, $id) => $f !== null && isset($allowed[(int) $id]),
                     ARRAY_FILTER_USE_BOTH,
                 );
-                $result = $svc->applyIndividual($files, $this->bulkDocType, $user, $this->bulkDocReplace, $reason);
+                $result = $svc->applyIndividual($files, $this->bulkDocType, $user, $this->bulkDocReplace, $reason, $this->bulkDocSetFlag);
             } else {
                 $ids = array_column($preview['targets'], 'id');
                 if ($this->bulkDocIncludeOutside) {
                     $ids = array_merge($ids, array_column($preview['outside'], 'id'));
                 }
-                $result = $svc->applyShared($ids, $this->bulkDocType, $this->bulkDocFile, $user, $this->bulkDocReplace, $reason);
+                $result = $svc->applyShared($ids, $this->bulkDocType, $this->bulkDocFile, $user, $this->bulkDocReplace, $reason, $this->bulkDocSetFlag);
             }
         } catch (\Throwable $e) {
             $this->dispatch('notify', type: 'error', message: $e->getMessage());
@@ -11510,6 +11513,12 @@ function vehicleColumnsToggle(columns, serverKnows) {
     $bdCount = $bdIndividual
         ? count($bdPrev['targets'])
         : count($bdPrev['targets']) + ($bulkDocIncludeOutside ? count($bdPrev['outside']) : 0);
+    // ✅ 짝 체크박스가 있는 서류(말소증·수출신고서) — 지금 꺼진 대상 수. 켜진 차는 덮어도 무영향이라 안 센다.
+    $bdFlag = $bdCfg['flag'] ?? null;
+    $bdFlagOff = $bdFlag
+        ? collect($bdPrev['targets'])->where('flag_off', true)->count()
+            + ((! $bdIndividual && $bulkDocIncludeOutside) ? collect($bdPrev['outside'])->where('flag_off', true)->count() : 0)
+        : 0;
 @endphp
 <div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3" wire:key="bulk-doc-modal">
     <div class="card mx-4 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -11619,6 +11628,14 @@ function vehicleColumnsToggle(columns, serverKnows) {
             <label class="mt-3 flex items-center gap-1.5 text-xs font-medium text-gray-700">
                 <input type="checkbox" wire:model.live="bulkDocReplace" class="rounded border-gray-300">
                 {{ __('vehicle.bulk_doc.replace', ['count' => $bdHasFile]) }}
+            </label>
+        @endif
+        {{-- ✅ 짝 체크박스도 함께 켬 (jin 2026-10-15) — 파일만 올리면 말소완료·통관중 단계로 못 가고 말소 재촉 알림톡이 계속 나간다 --}}
+        @if($bdFlag)
+            <label class="mt-3 flex items-start gap-1.5 text-xs font-medium text-gray-700" data-bulk-doc-flag>
+                <input type="checkbox" wire:model.live="bulkDocSetFlag" class="mt-0.5 rounded border-gray-300">
+                <span>{{ __('vehicle.bulk_doc.set_flag_'.$bulkDocType, ['count' => $bdFlagOff]) }}
+                    <span class="mt-0.5 block text-[10px] font-normal text-gray-500">{{ __('vehicle.bulk_doc.set_flag_hint_'.$bulkDocType) }}</span></span>
             </label>
         @endif
 

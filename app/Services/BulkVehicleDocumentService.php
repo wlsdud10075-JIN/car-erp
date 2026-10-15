@@ -54,11 +54,18 @@ class BulkVehicleDocumentService
             'group_by' => null,
             'ability' => 'canAccessClearance',
         ],
+        /**
+         * ✅ `flag` — 이 서류의 짝 체크박스 (jin 2026-10-15 «일괄로 올리면 체크박스가 안 켜진다»).
+         *    옵션(기본 ON)으로 파일과 **같은 update() 배열**에 실어 단건 패널과 같은 훅(cascade·캐시·감사)을 탄다.
+         *    수출신고서 → `is_export_cleared`(없으면 cascade #3 통관중 진입 불가) · 말소증 → `is_deregistered`(없으면 말소완료·C4 게이트·말소 재촉 알림톡).
+         *    B/L·체크빌은 체크박스가 없다(B/L 은 파일만으로 거래완료).
+         */
         'export_declaration' => [
             'mode' => self::MODE_SHARED,
             'column' => 'export_declaration_document',
             'group_by' => 'export_declaration_number',
             'ability' => 'canAccessClearance',
+            'flag' => 'is_export_cleared',
         ],
         /**
          * 🚨 B/L 은 **연쇄가 가장 길다.** 붙는 순간 v4 cascade #1 로 거래완료가 되고,
@@ -82,6 +89,7 @@ class BulkVehicleDocumentService
             'column' => 'deregistration_document',
             'group_by' => null,
             'ability' => 'canHandleDeregistration',
+            'flag' => 'is_deregistered',
         ],
     ];
 
@@ -193,6 +201,7 @@ class BulkVehicleDocumentService
         User $by,
         bool $replaceExisting,
         string $reason,
+        bool $setFlag = true,
     ): array {
         $cfg = self::config($type);
         $this->authorize($by, $cfg, $type);
@@ -212,7 +221,7 @@ class BulkVehicleDocumentService
         $skipped = [];
 
         foreach (Vehicle::whereIn('id', $ids)->orderBy('vehicle_number')->get() as $vehicle) {
-            $result = $this->writeOne($vehicle, $cfg, $type, $content, $ext, $by, $replaceExisting, $reason);
+            $result = $this->writeOne($vehicle, $cfg, $type, $content, $ext, $by, $replaceExisting, $reason, $setFlag);
             if ($result === null) {
                 $applied++;
             } else {
@@ -237,6 +246,7 @@ class BulkVehicleDocumentService
         User $by,
         bool $replaceExisting,
         string $reason,
+        bool $setFlag = true,
     ): ?array {
         $disk = (string) config('filesystems.vehicle_docs_disk');
         $stored = null;
@@ -261,8 +271,13 @@ class BulkVehicleDocumentService
 
             // 차량별 트랜잭션 — 한 대가 걸려도 나머지가 통째로 롤백되지 않는다
             //   (선적일 일괄은 chunkById 전체를 감싸고 있어 그 함정이 있다).
-            DB::transaction(function () use ($vehicle, $cfg, $path, $by, $reason, $type) {
-                $vehicle->update([$cfg['column'] => $path]);
+            DB::transaction(function () use ($vehicle, $cfg, $path, $by, $reason, $type, $setFlag) {
+                // ✅ 짝 체크박스를 같은 배열에 — 단건 패널과 같은 훅을 타게(§8 #44). 이미 켜져 있으면 덮어도 무영향.
+                $data = [$cfg['column'] => $path];
+                if ($setFlag && isset($cfg['flag'])) {
+                    $data[$cfg['flag']] = true;
+                }
+                $vehicle->update($data);
                 AuditLog::create([
                     'user_id' => $by->id,
                     'auditable_type' => Vehicle::class,
@@ -329,6 +344,7 @@ class BulkVehicleDocumentService
         User $by,
         bool $replaceExisting,
         string $reason,
+        bool $setFlag = true,
     ): array {
         $cfg = self::config($type);
         $this->authorize($by, $cfg, $type);
@@ -355,7 +371,7 @@ class BulkVehicleDocumentService
         foreach (Vehicle::whereIn('id', array_keys($files))->orderBy('vehicle_number')->get() as $vehicle) {
             $file = $files[$vehicle->id];
             $result = $this->writeOne(
-                $vehicle, $cfg, $type, self::contentOf($file), self::extOf($file), $by, $replaceExisting, $reason
+                $vehicle, $cfg, $type, self::contentOf($file), self::extOf($file), $by, $replaceExisting, $reason, $setFlag
             );
             if ($result === null) {
                 $applied++;
@@ -382,6 +398,8 @@ class BulkVehicleDocumentService
             'group' => $cfg['group_by'] !== null ? trim((string) $v->{$cfg['group_by']}) : '',
             'has_file' => filled($v->{$cfg['column']}),
             'blocked' => self::blockerFor($v, $cfg),
+            // 짝 체크박스가 지금 꺼져 있나(없는 서류는 null) — 모달이 「체크도 함께 켬 (N대)」 숫자에 쓴다
+            'flag_off' => isset($cfg['flag']) ? ! (bool) $v->{$cfg['flag']} : null,
         ];
     }
 
