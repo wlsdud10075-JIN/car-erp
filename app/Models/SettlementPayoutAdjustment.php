@@ -19,8 +19,10 @@ class SettlementPayoutAdjustment extends Model
      *   carryover 미청산 이월 자동 반영(carryover_clearances 와 짝)
      *   loss      매입취소 손실 차감(cancel_vehicle_ids 보유)
      *   incentive 추가 인센티브 — 사람당 N건, 결재 중 수정 가능, 카드·결재 내역에 따로 표시
+     *   deposit   🚪 퇴사 정산의 예치금 반환 (jin 2026-10-15 «예치금까지 다 포함되어서 최종금액으로») — 모달이 보유액 전액을 선입력,
+     *             지급 총액엔 들어가고 **회사이익엔 안 들어간다**(그 사람 돈을 돌려주는 것). 최종 승인 때 `salesmen.deposit_krw` 를 그만큼 줄인다.
      */
-    public const KINDS = ['manual', 'carryover', 'loss', 'incentive'];
+    public const KINDS = ['manual', 'carryover', 'loss', 'incentive', 'deposit'];
 
     public const KIND_MANUAL = 'manual';
 
@@ -29,6 +31,8 @@ class SettlementPayoutAdjustment extends Model
     public const KIND_LOSS = 'loss';
 
     public const KIND_INCENTIVE = 'incentive';
+
+    public const KIND_DEPOSIT = 'deposit';
 
     protected $casts = [
         'amount' => 'integer',

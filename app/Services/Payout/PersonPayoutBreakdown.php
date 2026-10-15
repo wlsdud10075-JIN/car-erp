@@ -82,6 +82,8 @@ final class PersonPayoutBreakdown
         $incentive = $adjOf(SettlementPayoutAdjustment::KIND_INCENTIVE);
         $adjCarry = $adjOf(SettlementPayoutAdjustment::KIND_CARRYOVER);
         $adjManual = $adjOf(SettlementPayoutAdjustment::KIND_MANUAL) + $adjOf(SettlementPayoutAdjustment::KIND_LOSS);
+        // 💰 예치금 반환(퇴사 정산) — 송금엔 들어가고(payout) 회사이익(company_contribution)·이익배수에선 뺀다. 그 사람 돈이다.
+        $adjDeposit = $adjOf(SettlementPayoutAdjustment::KIND_DEPOSIT);
 
         $vehicles = $settlements->map(fn (Settlement $s) => [
             'id' => $s->id,
@@ -99,8 +101,8 @@ final class PersonPayoutBreakdown
             'count' => $settlements->count(), 'vehicles' => $vehicles,
             'payroll' => $type === 'freelance' ? null : $payrollTotal,
             'payroll_items' => $type === 'freelance' ? [] : ($payrollItems ?? []),   // 기입된 항목만(행 없는 항목은 안 실린다)
-            'incentive' => $incentive, 'adj_manual' => $adjManual, 'adj_carry' => $adjCarry,
-            'deposit' => $type === 'freelance' ? $sm->deposit_krw : null,   // 표시만(지급액 무관)
+            'incentive' => $incentive, 'adj_manual' => $adjManual, 'adj_carry' => $adjCarry, 'adj_deposit' => $adjDeposit,
+            'deposit' => $type === 'freelance' ? $sm->deposit_krw : null,   // 보유액 표시(월정산에선 지급액 무관 · 퇴사 정산은 adj_deposit 줄로 반환)
             'tier' => (bool) $sm->per_unit_tier_enabled,
             'margin_rate' => Settlement::marginRateOf($settlements),   // Σ총마진 ÷ Σ판매금원화 — 월정산·승인 두 화면이 같은 식
             'unsupported' => false,
@@ -109,14 +111,14 @@ final class PersonPayoutBreakdown
         if (in_array($type, Salesman::PAYROLL_ONLY_TYPES, true)) {   // 검차직원·직원 = 급여만
             return $base + [
                 'equiv_sale_rate' => null, 'fx_primary' => null, 'carry' => null, 'fx_secondary' => null, 'equiv_total' => null,
-                'settlement_pay' => 0, 'payout' => $payroll + $incentive + $adjManual,
+                'settlement_pay' => 0, 'payout' => $payroll + $incentive + $adjManual + $adjDeposit,
                 'total_margin' => 0, 'shipping' => 0, 'company_contribution' => null,
                 'margin_after_pay' => null, 'excess_ratio' => null,
             ];
         }
 
         if (Setting::isKaraba()) {
-            $payout = (int) $settlements->sum(fn (Settlement $s) => (int) $s->actual_payout) + $adjManual + $adjCarry + $incentive + $payroll;
+            $payout = (int) $settlements->sum(fn (Settlement $s) => (int) $s->actual_payout) + $adjManual + $adjCarry + $incentive + $payroll + $adjDeposit;
 
             return $base + [
                 'unsupported' => true,
@@ -139,14 +141,15 @@ final class PersonPayoutBreakdown
         if ($type === 'freelance') {
             $carryIn = (int) $settlements->sum(fn (Settlement $s) => (int) round((float) ($s->carryover_in_krw ?? 0)));
             $carry = $carryIn + $adjCarry;
-            $equivTotal = $equivEffective + $carryIn + $adjCarry + $adjManual;   // = Σactual_payout + Σ조정 (닫힘)
-            $payout = $equivTotal + $incentive;
+            $equivTotal = $equivEffective + $carryIn + $adjCarry + $adjManual;   // = Σactual_payout + Σ조정(예치금 반환 제외) (닫힘)
+            $payoutCost = $equivTotal + $incentive;            // 회사가 부담하는 지급
+            $payout = $payoutCost + $adjDeposit;               // 실제 송금 = 거기에 예치금 반환
 
             return $base + [
                 'equiv_sale_rate' => $equivSaleRate, 'fx_primary' => $fxPrimary, 'carry' => $carry, 'fx_secondary' => $closedFx,
                 'equiv_total' => $equivTotal, 'settlement_pay' => $equivTotal, 'payout' => $payout,
                 'total_margin' => $totalMargin, 'shipping' => $shipping,
-                'company_contribution' => $totalMargin - $payout - $shipping,
+                'company_contribution' => $totalMargin - $payoutCost - $shipping,
                 'margin_after_pay' => null, 'excess_ratio' => null,
             ];
         }
@@ -154,16 +157,17 @@ final class PersonPayoutBreakdown
         // 사내직원
         $settlementPay = (int) $settlements->sum(fn (Settlement $s) => (int) $s->actual_payout);
         $equivTotal = $equivEffective + $closedCarry + $adjManual;
-        $payout = $payroll + $settlementPay + $adjManual + $adjCarry + $incentive;
-        $marginAfterPay = $equivTotal - $payout;
+        $payoutCost = $payroll + $settlementPay + $adjManual + $adjCarry + $incentive;   // 회사가 부담하는 지급
+        $payout = $payoutCost + $adjDeposit;                                             // 실제 송금(예치금 반환 포함 — 사내직원은 보통 0)
+        $marginAfterPay = $equivTotal - $payoutCost;
 
         return $base + [
             'equiv_sale_rate' => $equivSaleRate, 'fx_primary' => $fxPrimary, 'carry' => $closedCarry, 'fx_secondary' => $closedFx,
             'equiv_total' => $equivTotal, 'settlement_pay' => $settlementPay, 'payout' => $payout,
             'total_margin' => $totalMargin, 'shipping' => $shipping,
-            'company_contribution' => $totalMargin - $payout - $shipping,
+            'company_contribution' => $totalMargin - $payoutCost - $shipping,
             'margin_after_pay' => $marginAfterPay,
-            'excess_ratio' => $payout > 0 ? round($marginAfterPay / $payout, 1) : null,
+            'excess_ratio' => $payoutCost > 0 ? round($marginAfterPay / $payoutCost, 1) : null,
             'base_pay' => $payroll + $settlementPay,
             'profit_before_incentive' => $totalMargin - ($payroll + $settlementPay) - $shipping,
             'profit_multiple' => self::profitMultiple($totalMargin - ($payroll + $settlementPay) - $shipping, $payroll + $settlementPay),

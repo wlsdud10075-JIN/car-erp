@@ -1128,7 +1128,7 @@ new #[Layout('components.layouts.app')] class extends Component
     public bool $showLeavers = false;
     public bool $showLeaverModal = false;
     public int $leaverSalesmanId = 0;
-    /** @var array<int, array{amount:int, reason:string, kind:string}> 퇴사 배치와 함께 만들 조정(예치금 반환 등 수동) */
+    /** @var array<int, array{amount:int, reason:string, kind:string}> 퇴사 배치와 함께 만들 조정 — 예치금 반환(kind=deposit, 보유액 전액 선입력 · 지우거나 줄일 수 있다) + 수기·인센티브 */
     public array $leaverAdjustments = [];
     public string $newLeaverAdjAmount = '';
     public string $newLeaverAdjReason = '';
@@ -1214,7 +1214,12 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
         $this->leaverSalesmanId = $salesmanId;
-        $this->leaverAdjustments = [];
+        // 💰 예치금이 있으면 반환 줄을 전액으로 미리 넣는다(jin 2026-10-15 «예치금까지 다 포함되어서 최종금액으로»).
+        //    일부 반환·회사 귀속이면 사람이 지우거나 금액을 바꾼다. 최종 승인 때 보유액이 그만큼 줄고 감사로그가 남는다.
+        $held = (int) (Salesman::find($salesmanId)?->deposit_krw ?? 0);
+        $this->leaverAdjustments = $held > 0
+            ? [['amount' => $held, 'reason' => __('settlement.batch.leaver_deposit_reason', ['held' => number_format($held)]), 'kind' => 'deposit']]
+            : [];
         $this->newLeaverAdjAmount = '';
         $this->newLeaverAdjReason = '';
         $this->newLeaverAdjKind = 'manual';
@@ -1241,7 +1246,7 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         $sm = Salesman::find($this->leaverSalesmanId);
         if (! $sm) {
-            return ['name' => '', 'rows' => [], 'payout_sum' => 0, 'carryovers' => [], 'adj_sum' => 0, 'final' => 0];
+            return ['name' => '', 'rows' => [], 'payout_sum' => 0, 'carryovers' => [], 'adj_sum' => 0, 'deposit_held' => 0, 'deposit_return' => 0, 'final' => 0];
         }
         $ids = \App\Models\SettlementPayoutBatch::leaverEligibleSettlementIds($sm);
         $settlements = Settlement::whereIn('id', $ids)->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])->get();
@@ -1256,6 +1261,9 @@ new #[Layout('components.layouts.app')] class extends Component
             'payout_sum' => $payoutSum,
             'carryovers' => $carry,
             'adj_sum' => $adjSum,
+            // 💰 예치금 — 보유액과 이번에 돌려줄 금액(deposit 줄 합). 둘이 다르면 모달이 경고한다(일부 반환·회사 귀속은 의도일 수 있어 막지는 않는다).
+            'deposit_held' => (int) ($sm->deposit_krw ?? 0),
+            'deposit_return' => (int) collect($this->leaverAdjustments)->where('kind', 'deposit')->sum('amount'),
             'final' => max(0, $payoutSum + $carrySum + $adjSum),
         ];
     }
@@ -2205,6 +2213,10 @@ new #[Layout('components.layouts.app')] class extends Component
                         @else
                             <span class="text-gray-400">-</span>
                         @endif
+                        {{-- 💰 예치금이 있으면 그것까지 더한 최종 예상(지급 가능 + 이월 + 예치금) — 모달 선입력과 같은 식 --}}
+                        @if(($r['deposit'] ?? 0) > 0 && !$r['blocked'] && !$r['pending_leaver_batch_id'])
+                            <div class="text-[10px] text-violet-700" data-leaver-final-with-deposit>{{ __('settlement.batch.leaver_col.final_with_deposit', ['amount' => number_format(max(0, $r['eligible_sum'] + $r['carryover'] + (int) $r['deposit']))]) }}</div>
+                        @endif
                     </td>
                     <td class="py-2 pr-3 text-right">
                         @if($r['unconfirmed'] > 0)<span class="badge badge-amber">{{ __('settlement.batch.leaver_col.unconfirmed', ['n' => $r['unconfirmed']]) }}</span>@endif
@@ -2225,7 +2237,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         @elseif($r['blocked'])
                             {{-- 🚫 미확정·미수 보류가 남아 있으면 못 올린다(jin «전부 정리되어야 정산») — 미수 보류는 「예외 대상」으로 풀 수 있다 --}}
                             <span class="badge badge-gray" title="{{ __('settlement.batch.leaver_blocked', ['u' => $r['unconfirmed'], 'h' => $r['held']]) }}" data-leaver-blocked>{{ __('settlement.batch.leaver_blocked_short') }}</span>
-                        @elseif(auth()->user()->canSubmitPayoutBatch() && ($r['eligible_count'] > 0 || $r['carryover'] !== 0))
+                        @elseif(auth()->user()->canSubmitPayoutBatch() && ($r['eligible_count'] > 0 || $r['carryover'] !== 0 || ($r['deposit'] ?? 0) > 0))
                             <button type="button" wire:click="openLeaverModal({{ $r['salesman_id'] }})" class="btn-primary text-xs">{{ __('settlement.batch.leaver_submit') }}</button>
                         @endif
                     </td>
@@ -2338,8 +2350,8 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="section-header"><span class="section-dot bg-indigo-500"></span>
                 <span class="section-title">{{ __('settlement.batch.modal_adjust') }}</span></div>
             @foreach($leaverAdjustments as $i => $adj)
-            <div wire:key="ladj-{{ $i }}" class="flex items-center gap-2 px-1.5 py-1 text-xs">
-                <span class="badge {{ $adj['kind'] === 'incentive' ? 'badge-amber' : 'badge-gray' }} text-[10px]">{{ $adj['kind'] === 'incentive' ? __('settlement.batch.adjust_kind_incentive') : __('settlement.batch.adjust_kind_manual') }}</span>
+            <div wire:key="ladj-{{ $i }}" class="flex items-center gap-2 px-1.5 py-1 text-xs" @if($adj['kind'] === 'deposit') data-leaver-deposit-line @endif>
+                <span class="badge {{ $adj['kind'] === 'incentive' ? 'badge-amber' : ($adj['kind'] === 'deposit' ? 'badge-purple' : 'badge-gray') }} text-[10px]">{{ $adj['kind'] === 'incentive' ? __('settlement.batch.adjust_kind_incentive') : ($adj['kind'] === 'deposit' ? __('settlement.batch.adjust_kind_deposit') : __('settlement.batch.adjust_kind_manual')) }}</span>
                 <span class="flex-1 text-gray-400">{{ $adj['reason'] }}</span>
                 <span class="font-mono {{ $adj['amount'] < 0 ? 'text-rose-600' : 'text-emerald-600' }}">{{ $adj['amount'] < 0 ? '−' : '+' }}{{ number_format(abs($adj['amount'])) }}</span>
                 <button type="button" wire:click="removeLeaverAdjustment({{ $i }})" class="text-gray-400 hover:text-red-500">&times;</button>
@@ -2356,13 +2368,20 @@ new #[Layout('components.layouts.app')] class extends Component
                         class="rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">{{ __('settlement.batch.adjust_add') }}</button>
             </div>
             <p class="mt-1 text-[11px] text-amber-600">{{ __('settlement.batch.adjust_reason_visible') }}</p>
+            {{-- 💰 예치금 — 보유액과 반환 줄이 다르면 알려 준다(지웠거나 줄였을 때). 막지는 않는다 — 일부 반환·회사 귀속이 실제로 있다. --}}
+            @if($lp['deposit_held'] > 0 && $lp['deposit_return'] !== $lp['deposit_held'])
+            <p class="mt-1 text-[11px] text-amber-700" data-leaver-deposit-warn>{{ __('settlement.batch.leaver_deposit_mismatch', ['held' => number_format($lp['deposit_held']), 'ret' => number_format($lp['deposit_return'])]) }}</p>
+            @endif
         </div>
 
         <div class="mt-3 border-t border-gray-200 pt-2">
             <div class="flex items-center justify-between text-sm">
                 <span class="font-semibold text-gray-700">{{ __('settlement.batch.modal_final') }}</span>
-                <span class="font-mono text-base font-bold text-violet-700">₩{{ number_format($lp['final']) }}</span>
+                <span class="font-mono text-base font-bold text-violet-700" data-leaver-final>₩{{ number_format($lp['final']) }}</span>
             </div>
+            @if($lp['deposit_return'] > 0)
+            <p class="mt-0.5 text-right text-[11px] text-gray-500">{{ __('settlement.batch.leaver_final_breakdown', ['pay' => number_format($lp['final'] - $lp['deposit_return']), 'dep' => number_format($lp['deposit_return'])]) }}</p>
+            @endif
             <p class="mt-1 text-[11px] text-gray-400">{{ __('settlement.batch.leaver_modal_hint') }}</p>
         </div>
 

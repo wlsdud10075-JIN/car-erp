@@ -340,4 +340,108 @@ class LeaverSettlementTest extends TestCase
         // 월정산 화면·승인 링크가 종류를 보여 준다
         Volt::test('erp.payout-batches.index')->assertSeeHtml('data-leaver-batch')->assertSee('퇴사 정산 · '.$leaver->name);
     }
+
+    // ── 💰 예치금 반환 (jin 2026-10-15 «퇴사자에 예치금이 있다면 그 예치금까지 다 포함되어서 최종금액으로») ──
+
+    /** 모달이 보유액 전액을 「예치금 반환」 줄로 선입력 → 지급 총액엔 들어가고 회사이익엔 안 들어간다 → 최종 승인 때 보유액이 줄고 감사로그가 남는다. */
+    public function test_leaver_deposit_is_prefilled_paid_out_and_cleared_on_final_approval(): void
+    {
+        $manager = $this->user();
+        $admin = $this->user('admin');
+        $this->actingAs($manager);
+        $leaver = $this->freelancer();
+        $leaver->update(['deposit_krw' => 10_000_000]);
+        $s = $this->confirmed($leaver);
+        $payout = (int) $s->fresh()->actual_payout;
+        $this->assertGreaterThan(0, $payout);
+
+        $c = Volt::test('erp.settlements.index')->set('monthFilter', '2026-10')->call('toggleLeavers')
+            ->assertSeeHtml('data-leaver-final-with-deposit')->assertSee('예치금 포함 ₩'.number_format($payout + 10_000_000));
+        $c->call('openLeaverModal', $leaver->id)->assertSeeHtml('data-leaver-deposit-line')->assertDontSeeHtml('data-leaver-deposit-warn')
+            ->assertSee('예치금 반환 (보유 ₩10,000,000 전액)');
+        $lp = $c->instance()->leaverPreview;
+        $this->assertSame(10_000_000, $lp['deposit_return']);
+        $this->assertSame($payout + 10_000_000, $lp['final'], '최종 = 정산 + 예치금 반환');
+        $c->call('submitLeaverBatch')->assertHasNoErrors();
+
+        $batch = SettlementPayoutBatch::leaver()->first();
+        $dep = $batch->adjustments()->where('kind', 'deposit')->get();
+        $this->assertCount(1, $dep);
+        $this->assertSame(10_000_000, (int) $dep->first()->amount);
+        $this->assertSame($payout + 10_000_000, (int) $batch->total_payout, '승인 금액·알림톡 총액에 예치금이 들어간다');
+
+        // 회사이익 3곳 — 배치 profitStats · 사람 카드 · 관리자 대시보드. 예치금 반환은 그 사람 돈이라 비용이 아니다.
+        $ps = $batch->profitStats();
+        $this->assertSame(10_000_000, $ps['deposit_return']);
+        $this->assertSame($ps['total_margin'] - $payout - $ps['shipping'], $ps['company_profit'], 'profitStats 회사이익은 예치금을 안 뺀다');
+        $person = collect(BatchPayoutBreakdown::forBatch($batch)['people'])->firstWhere('salesman_id', $leaver->id);
+        $this->assertSame(10_000_000, $person['adj_deposit']);
+        $this->assertSame($payout + 10_000_000, $person['payout'], '카드의 담당자 지급(송금)은 예치금 포함');
+        $this->assertSame($person['total_margin'] - $payout - $person['shipping'], $person['company_contribution'], '카드 회사이익은 예치금 제외');
+
+        $this->assertSame(10_000_000, (int) $leaver->fresh()->deposit_krw, '제출만으로는 보유액이 안 줄어든다');
+        $batch->approveBy($admin);
+        $this->assertSame('approved', $batch->fresh()->status);
+        $this->assertSame(0, (int) $leaver->fresh()->deposit_krw, '최종 승인 = 돈이 나간 시점 → 보유액 0');
+        $this->assertDatabaseHas('audit_logs', ['auditable_type' => Salesman::class, 'auditable_id' => $leaver->id, 'column_name' => 'deposit_krw', 'old_value' => '10000000', 'new_value' => '0']);
+        $snap = collect($batch->fresh()->breakdown_snapshot['people'] ?? [])->firstWhere('salesman_id', $leaver->id);
+        $this->assertSame(10_000_000, $snap['adj_deposit'] ?? null, '박제 카드에도 반환 줄이 남는다');
+
+        // 승인 화면·월정산 카드에 줄이 보인다
+        $this->actingAs($admin);
+        Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->assertSeeHtml('data-adj-deposit')->assertSee('예치금 반환 (퇴사 정산)');
+
+        // 관리자 대시보드 회사이익 — 지급 합에도 회사이익에도 예치금이 안 섞인다
+        $cp = Volt::test('admin.dashboard')->set('dateFrom', now()->format('Y-m-d'))->set('dateTo', now()->format('Y-m-d'))->instance()->companyProfit;
+        $this->assertSame($payout, $cp['payout_sum'], '대시보드 지급 합 = 정산만');
+        $this->assertSame($cp['margin_sum'] - $payout - $cp['shipping_sum'], $cp['company_net'], '대시보드 회사이익도 예치금 제외');
+    }
+
+    /** 줄은 지우거나 줄일 수 있고(일부 반환·회사 귀속), 보유액을 넘거나 두 줄이면 거부. 반려되면 보유액 그대로. 월정산엔 자동으로 안 들어간다. */
+    public function test_leaver_deposit_line_is_optional_bounded_and_untouched_by_rejection(): void
+    {
+        $manager = $this->user();
+        $admin = $this->user('admin');
+        $this->actingAs($manager);
+        $leaver = $this->freelancer();
+        $leaver->update(['deposit_krw' => 10_000_000]);
+        $s = $this->confirmed($leaver);
+        $payout = (int) $s->fresh()->actual_payout;
+
+        // 보유액 초과 · 두 줄 → 거부
+        foreach ([
+            [['amount' => 10_000_001, 'reason' => '초과', 'kind' => 'deposit']],
+            [['amount' => 5_000_000, 'reason' => '반', 'kind' => 'deposit'], ['amount' => 5_000_000, 'reason' => '반', 'kind' => 'deposit']],
+        ] as $adj) {
+            try {
+                SettlementPayoutBatch::submitForLeaver($manager, $leaver, $adj);
+                $this->fail('예치금 줄 가드');
+            } catch (\DomainException $e) {
+                $this->assertStringContainsString('예치금 반환', $e->getMessage());
+            }
+        }
+
+        // 일부 반환 → 반려 → 보유액 그대로
+        $batch = SettlementPayoutBatch::submitForLeaver($manager, $leaver, [['amount' => 4_000_000, 'reason' => '예치금 일부 반환', 'kind' => 'deposit']]);
+        $this->assertSame($payout + 4_000_000, (int) $batch->total_payout);
+        $batch->rejectBy($admin, '다시');
+        $this->assertSame(10_000_000, (int) $leaver->fresh()->deposit_krw, '반려 = 돈이 안 나갔다');
+
+        // 모달에서 줄을 지우면 경고만 뜨고 그대로 올라간다(회사 귀속) → 승인해도 보유액 불변
+        $c = Volt::test('erp.settlements.index')->set('monthFilter', '2026-10')->call('openLeaverModal', $leaver->id)
+            ->call('removeLeaverAdjustment', 0)->assertDontSeeHtml('data-leaver-deposit-line')->assertSeeHtml('data-leaver-deposit-warn')
+            ->call('submitLeaverBatch')->assertHasNoErrors();
+        $batch2 = SettlementPayoutBatch::leaver()->where('status', 'pending')->first();
+        $this->assertSame(0, $batch2->adjustments()->where('kind', 'deposit')->count());
+        $this->assertSame($payout, (int) $batch2->total_payout);
+        $batch2->approveBy($admin);
+        $this->assertSame(10_000_000, (int) $leaver->fresh()->deposit_krw, '반환 줄이 없으면 보유액은 그대로(사내직원관리에서 정리)');
+
+        // 월정산은 종전 그대로 — 재직 프리랜서의 예치금이 자동으로 들어가지 않는다
+        $active = $this->freelancer(null);
+        $active->update(['deposit_krw' => 7_000_000]);
+        $this->confirmed($active);
+        $monthly = SettlementPayoutBatch::submitForMonth($manager, '2026-10');
+        $this->assertSame(0, $monthly->adjustments()->count(), '월정산에 예치금 줄 없음(PayoutBatchMarginDisplayTest 와 같은 약속)');
+    }
 }

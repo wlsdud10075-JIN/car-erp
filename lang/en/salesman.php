@@ -42,7 +42,7 @@ return [
         'per_unit_tier_hint' => 'When on: 200,000 KRW for total margin ≥ 1M, or 25% of total margin when purchase total ≥ 100M. When off: flat 100,000 KRW per unit (0 for loss-making vehicles). Inherited-buyer deals are always 50,000 KRW regardless of this setting.',
         'money_ph' => 'Not set',
         'deposit' => 'Deposit held',
-        'deposit_hint' => 'The deposit balance this freelancer keeps with the company. Display only — it is never added to a monthly payout. Record returns or top-ups as an adjustment line when submitting the monthly batch.',
+        'deposit_hint' => 'The deposit balance this freelancer keeps with the company. It is never added to a monthly payout (record returns or top-ups as an adjustment line in the monthly submit dialog). A leaver payout pre-fills this balance as a "Deposit refund" line and reduces it on final approval.',
         'base_salary' => 'Base salary (monthly)',
         'base_salary_hint' => 'The monthly base salary for this employee. Display only — it never enters the batch total or company profit, and appears on the payout batch screen as "base salary + settlement = monthly take-home".',
         'payout_excluded' => 'Excluded from payouts',
