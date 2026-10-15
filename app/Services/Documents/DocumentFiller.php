@@ -513,6 +513,8 @@ class DocumentFiller
             'invoice' => Mappings\SalesInvoiceMapping::class,
             // Phase 3 — 통관 SET (구매리스트 마스터 → 6시트 수식 자동연동)
             'clearance' => Mappings\ClearanceSetMapping::class,
+            // 통관 SET Ver.2 (jin 2026-10-15) — 6시트(차량인보이스 없음·팩킹 상단 간소화). 매핑은 Ver.1 과 같은 것.
+            'clearance_v2' => Mappings\ClearanceSetV2Mapping::class,
             // Phase 4 — 선적 4종 (우선 1대=1행)
             'container_invoice_packing' => Mappings\ContainerInvoicePackingMapping::class,
             'container_contract' => Mappings\ContainerContractMapping::class,

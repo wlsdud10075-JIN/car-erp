@@ -1331,6 +1331,7 @@ UI 단계를 거치며 확립할 공통 유틸. **새 페이지·위젯 만들 �
 | `container_invoice_packing`/`container_contract` | 컨테이너 Invoice&Packing / Contract | 선적 | export |
 | `roro_invoice_packing`/`roro_contract` | RORO Invoice&Packing / Contract | 선적 | export |
 | `clearance` | 통관 SET (8시트, 구매리스트 마스터→6시트 자동연동) | 통관 | 전 채널 |
+| `clearance_v2` | 통관 SET **Ver.2** (6시트 — 차량인보이스 탭 없음·차량팩킹 상단 오른쪽 블록 제거, jin 2026-10-15). 매핑은 Ver.1 과 **같은 것**(`ClearanceSetV2Mapping` 이 config 를 물려받음, brandHeader 만 없음). 양식 = `scripts/build-clearance-set-v2.php` 가 **각 세트 Ver.1 에서** 빌드(원본 통째 X — 노란칸·회사정보·직인 보존, 끊긴 수식 2개 구매리스트로 복구) · `--verify`. 가드 = `ClearanceSetV2Test` | 통관 | 전 채널 |
 
 ### 엔진 — `App\Services\Documents\DocumentFiller`
 - `spreadsheet(type)`: 템플릿 로드 → 전 visible 시트 노란셀 정리 → 매핑 셀 기입 → Spreadsheet. `filename(type)` 다운로드명.

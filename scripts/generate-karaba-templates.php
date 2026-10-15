@@ -104,6 +104,32 @@ $map = [
             'F18' => ['set', $benefAddr],
         ],
     ],
+    // 통관 SET Ver.2 (2026-10-15) — 위와 같은 치환에서 차량인보이스 시트만 없다. (karaba 본은 scripts/build-clearance-set-v2.php 가 karaba Ver.1 에서 직접 만든다 — 여기는 system 에서 다시 파생할 때용)
+    'clearance_set_v2.xlsx' => [
+        '한글등록증' => [
+            'E7' => ['set', '인천광역시 중구 인중로 178 정우빌딩 303호'],
+            'E8' => ['replace', ['주식회사 싼카' => '주식회사 카라바']],
+        ],
+        '영문등록증' => [
+            'E7' => ['set', '#303, 178 Injung-ro, Jung-gu, Incheon, Korea '],
+            'E8' => ['set', 'KARABA CO., LTD. '],
+        ],
+        '말소증' => [
+            'E21' => ['set', '주식회사카라바'],
+        ],
+        '차량팩킹' => [
+            'A3' => ['set', $clearanceSeller],
+        ],
+        'Travel Services Invoice' => [
+            'A2' => ['set', 'Karaba Co., Ltd #303, 178 Injung-ro, Jung-gu, Incheon, Korea   Phone: +82-32-710-7979'],
+            'C16' => ['set', 'KARABA CO., LTD'],
+            'C17' => ['set', 'KOEXKRSEXXX'],
+            'C18' => ['set', '433 910007 14938'],
+            'F16' => ['set', 'KEB Hana Bank'],
+            'F17' => ['set', $bankAddr],
+            'F18' => ['set', $benefAddr],
+        ],
+    ],
 ];
 
 $srcDir = resource_path('templates/system');
