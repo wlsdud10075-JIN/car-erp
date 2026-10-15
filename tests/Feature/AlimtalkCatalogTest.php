@@ -243,4 +243,24 @@ class AlimtalkCatalogTest extends TestCase
             $this->assertNotContains('super', $roles, "DEFAULT_ROLES[{$code}] 에 super 가 있으면 안 됩니다.");
         }
     }
+
+    /** 🪜 지급 결재 결과(승인완료·반려)는 선택지가 「결재선 전원 / 재무 / 관리」뿐 — 다른 역할은 저장에서 버려진다(jin 2026-10-15). */
+    public function test_payout_result_rows_offer_only_line_finance_and_management(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        $set = Setting::companyTemplateSet();
+
+        $c = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')
+            ->assertSeeHtml('data-payout-roles="erp_payout_done"')->assertSeeHtml('data-payout-roles="erp_payout_rejected"')
+            ->assertSee('결재선 전원')->assertSee('제출자 본인(항상)');
+        $this->assertSame(['approval_line'], AlimtalkRecipients::selectedRoles('erp_payout_done'), '기본 = 결재선 전원');
+        $this->assertTrue(AlimtalkRecipients::wantsApprovalLine('erp_payout_done'));
+
+        $c->set('roles.erp_payout_done', ['approval_line', '재무', '영업', 'admin'])->call('saveRoles', 'erp_payout_done');
+        $this->assertSame('approval_line,재무', Setting::get("alimtalk_roles_erp_payout_done_{$set}"), '영업·최고관리자는 선택지 밖이라 버려진다');
+        $this->assertSame([], AlimtalkRecipients::forBroadcast('erp_payout_done'), '결재선 토큰은 번호로 안 풀린다(배치가 채운다) · 재무 0명');
+
+        $c->set('roles.erp_payout_done', [])->call('saveRoles', 'erp_payout_done');
+        $this->assertFalse(AlimtalkRecipients::wantsApprovalLine('erp_payout_done'), '다 풀면 제출자만');
+    }
 }

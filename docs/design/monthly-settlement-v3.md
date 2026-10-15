@@ -275,5 +275,6 @@
 | 월결산 보고 | `alimtalk:monthly-closing` 의 조정 합(`AlimtalkMonthlyClosing.php:194`)은 `month` 가 같은 approved 배치 전부라 **퇴사 배치의 조정(이월·수동)도 퇴사월 보고에 들어간다**(9월 귀속 이월이 10월 보고에 실릴 수 있음). 참고치라 두었다 |
 | 💰 예치금(jin 4차 10-15 «예치금까지 다 포함되어서 최종금액으로») | 모달이 보유액 전액을 **「예치금 반환」 줄(`kind=deposit`)** 로 선입력(지우거나 줄일 수 있음 — 김연아식 일부 반환·아르만식 회사 귀속). 표의 「지급 가능」 아래 「예치금 포함 ₩…」. 지급 총액·알림톡 총액엔 들어가고 **회사이익 3곳(`profitStats`·`PersonPayoutBreakdown::company_contribution`·관리자 대시보드)에선 뺀다** — 그 사람 돈. **최종 승인 때 `salesmen.deposit_krw` −= 줄 합**(바닥 0, `AuditLog` deposit_krw) · 반려는 무변경. 가드 = 보유액 초과·두 줄 거부. 월정산엔 자동으로 안 들어간다. 테스트 2건(일부러 깨뜨려 빨강 확인) |
 | 범위 밖 | 바이어 승계 = 기존 [승계] · 로그인 차단 = 계정 삭제(전부 관리직 수동, jin) |
+| 🔔 결과 알림톡 수신 확장(jin 10-15 «반려되면 전원에게, 완료돼도 다 가는 거고») | `erp_payout_done`·`erp_payout_rejected` 가 역할 선택형이 됐다 — 선택지 = 「결재선 전원 / 재무 / 관리」(`AlimtalkRecipients::GROUP_OPTIONS`), 기본 결재선 전원, **제출자는 항상**. 결재선 전원 = steps 승인자 ∪ 실제 서명한 사람(`payoutNoticePhones`) — 종전 사다리도 덮는다. 요청(`erp_payout_request`)은 종전대로 차례 1명. 템플릿 문안 무변경 |
 | 실측 10-15 | 3사 비활성 담당자 중 미지급 정산 **0건**(ssancarerp 3명 전부 paid · heymanerp 0 · karabaerp 0) — 기능은 앞으로의 퇴사용 |
 

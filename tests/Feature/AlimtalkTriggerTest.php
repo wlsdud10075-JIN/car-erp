@@ -524,4 +524,82 @@ class AlimtalkTriggerTest extends TestCase
             && str_contains(json_encode($req->data()[0], JSON_UNESCAPED_UNICODE), '금액 오류'));
         $this->assertSame('rejected', $batch->fresh()->status);
     }
+
+    // ── 🪜 지급 결재 결과 수신 확장 (jin 2026-10-15 «반려되면 전원에게, 완료돼도 다 가는 거고») ──
+
+    private function payoutFixture(User $submitter): SettlementPayoutBatch
+    {
+        $sm = Salesman::create(['name' => '결재영업'.rand(1, 999), 'type' => 'employee', 'is_active' => true]);
+        $v = Vehicle::create(['vehicle_number' => 'LN'.rand(1000, 9999), 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
+        Settlement::create([
+            'vehicle_id' => $v->id, 'salesman_id' => $sm->id,
+            'settlement_type' => 'per_unit', 'per_unit_amount' => 100_000,
+            'settlement_status' => 'confirmed', 'confirmed_at' => '2026-06-15 10:00:00',
+        ]);
+        $line = ['부장' => (string) User::where('approval_title', '부장')->value('id'), '전무' => '', '대표' => (string) User::where('approval_title', '대표')->value('id')];
+
+        return SettlementPayoutBatch::submitForMonth($submitter, '2026-06', [], $line);
+    }
+
+    private function sentTo(string $code): array
+    {
+        return AlimtalkLog::where('template_code', $code)->where('status', 'sent')->pluck('phone')->sort()->values()->all();
+    }
+
+    /** 결재선(부장→대표) — 요청은 차례 1명, 완료·반려는 제출자 + 결재선 전원(기본). 체크를 풀면 제출자만, 재무를 켜면 재무도. */
+    public function test_payout_result_goes_to_the_approval_line_by_default_and_follows_the_role_checks(): void
+    {
+        $submitter = User::factory()->create(['permission' => 'manager', 'name' => '제출업무', 'phone' => '010-1000-0000', 'email_verified_at' => now()]);
+        $bujang = User::factory()->create(['permission' => 'admin', 'approval_title' => '부장', 'phone' => '010-2000-0000', 'email_verified_at' => now()]);
+        $daepyo = User::factory()->create(['permission' => 'admin', 'approval_title' => '대표', 'phone' => '010-3000-0000', 'email_verified_at' => now()]);
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무', 'phone' => '010-4000-0000', 'email_verified_at' => now()]);
+        $this->enableAlimtalk(['erp_payout_request', 'erp_payout_done', 'erp_payout_rejected']);
+
+        // ① 완료 — 부장 승인(요청은 대표 1명) → 대표 최종 승인 → 제출자·부장·대표
+        $batch = $this->payoutFixture($submitter);
+        $this->assertSame(['01020000000'], $this->sentTo('erp_payout_request'), '제출 → 부장에게만');
+        $batch->approveBy($bujang);
+        $this->assertSame(['01020000000', '01030000000'], $this->sentTo('erp_payout_request'), '부장 승인 → 대표에게만');
+        $batch->approveBy($daepyo);
+        $this->assertSame(['01010000000', '01020000000', '01030000000'], $this->sentTo('erp_payout_done'), '완료 = 제출자 + 결재선 전원(재무 X)');
+
+        // ② 반려 — 부장이 반려 → 제출자·부장·대표(아직 차례가 안 온 대표도 결재선이라 받는다)
+        AlimtalkLog::query()->delete();
+        $batch2 = $this->payoutFixture($submitter);
+        $batch2->rejectBy($bujang, '금액 확인');
+        $this->assertSame(['01010000000', '01020000000', '01030000000'], $this->sentTo('erp_payout_rejected'), '반려 = 제출자 + 결재선 전원');
+
+        // ③ 체크를 다 풀면 제출자만(종전 동작) — 재무만 켜면 제출자 + 재무
+        $set = Setting::companyTemplateSet();
+        Setting::updateOrCreate(['key' => "alimtalk_roles_erp_payout_rejected_{$set}"], ['value' => '', 'type' => 'string']);
+        AlimtalkLog::query()->delete();
+        $batch3 = $this->payoutFixture($submitter);
+        $batch3->rejectBy($bujang, '다시');
+        $this->assertSame(['01010000000'], $this->sentTo('erp_payout_rejected'), '체크 없음 = 제출자만');
+
+        Setting::updateOrCreate(['key' => "alimtalk_roles_erp_payout_rejected_{$set}"], ['value' => '재무', 'type' => 'string']);
+        AlimtalkLog::query()->delete();
+        $batch4 = $this->payoutFixture($submitter);
+        $batch4->rejectBy($bujang, '또');
+        $this->assertSame(['01010000000', '01040000000'], $this->sentTo('erp_payout_rejected'), '재무만 = 제출자 + 재무(결재선 X)');
+        $this->assertTrue($finance->exists);
+    }
+
+    /** 종전 사다리(결재선 없음)도 「결재선 전원」 = 실제 서명한 사람 — 업무관리자가 승인한 뒤 대표가 반려하면 업무관리자도 받는다. */
+    public function test_ladder_mode_result_reaches_whoever_signed(): void
+    {
+        $submitter = User::factory()->create(['permission' => 'user', 'role' => '관리', 'phone' => '010-1000-0000', 'email_verified_at' => now()]);
+        $mgr = User::factory()->create(['permission' => 'manager', 'phone' => '010-2000-0000', 'email_verified_at' => now()]);
+        $adm = User::factory()->create(['permission' => 'admin', 'phone' => '010-3000-0000', 'email_verified_at' => now()]);
+        $this->enableAlimtalk(['erp_payout_request', 'erp_payout_rejected']);
+
+        $sm = Salesman::create(['name' => '사다리영업', 'type' => 'employee', 'is_active' => true]);
+        $v = Vehicle::create(['vehicle_number' => '77다7777', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
+        Settlement::create(['vehicle_id' => $v->id, 'salesman_id' => $sm->id, 'settlement_type' => 'per_unit', 'per_unit_amount' => 100_000, 'settlement_status' => 'confirmed', 'confirmed_at' => '2026-06-15 10:00:00']);
+
+        $batch = SettlementPayoutBatch::submitForMonth($submitter, '2026-06');
+        $batch->approveBy($mgr);
+        $batch->rejectBy($adm, '보류');
+        $this->assertSame(['01010000000', '01020000000', '01030000000'], $this->sentTo('erp_payout_rejected'), '제출자 + 승인한 업무관리자 + 반려한 대표');
+    }
 }

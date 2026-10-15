@@ -42,6 +42,40 @@ class AlimtalkRecipients
     ];
 
     /**
+     * 🪜 **결재선 전원** 의사 그룹 (jin 2026-10-15 «승인완료·반려도 최고관리자에서 역할 나누었듯이 — 체크한 역할에 알림톡»).
+     *   사용자 집합이 아니라 **그 배치의 결재선**(steps 승인자 ∪ 실제 서명한 사람)이라 여기서는 번호로 못 푼다 —
+     *   `resolveTarget` 은 빈 배열을 내고, `SettlementPayoutBatch::payoutNoticePhones()` 가 배치를 보고 채운다.
+     *   제출자 본인은 체크와 무관하게 **항상** 받는다(AUTO_EXTRA).
+     */
+    public const APPROVAL_LINE = 'approval_line';
+
+    /**
+     * 알림별 **역할 선택지 재정의** — 없으면 BROADCAST_GROUPS 전부. 승인완료·반려는 「결재선 전원 / 재무 / 관리」만
+     * (영업·수출통관에게 지급 결재 결과를 뿌릴 이유가 없고, 최고관리자·업무관리자는 결재선으로 받는다).
+     */
+    public const GROUP_OPTIONS = [
+        'erp_payout_done' => [self::APPROVAL_LINE => '결재선 전원', '재무' => '재무', '관리' => '관리'],
+        'erp_payout_rejected' => [self::APPROVAL_LINE => '결재선 전원', '재무' => '재무', '관리' => '관리'],
+    ];
+
+    /** 이 알림의 역할 선택지 (안내 화면 체크박스·저장 검증이 같은 표를 쓴다). */
+    public static function groupsFor(string $code): array
+    {
+        return self::GROUP_OPTIONS[AlimtalkTemplates::baseCode($code)] ?? self::BROADCAST_GROUPS;
+    }
+
+    public static function hasCustomGroups(string $code): bool
+    {
+        return isset(self::GROUP_OPTIONS[AlimtalkTemplates::baseCode($code)]);
+    }
+
+    /** 「결재선 전원」이 켜져 있나 — 배치가 결재선 번호를 보탤지 정한다(의사 그룹이라 호출부가 직접 본다). */
+    public static function wantsApprovalLine(string $code): bool
+    {
+        return in_array(self::APPROVAL_LINE, self::selectedRoles($code), true);
+    }
+
+    /**
      * 브로드캐스트형 알림별 기본 수신 역할 (미설정 시 사용 — 현행 동작 보존).
      * 여기 없는 코드 = 자동(본인/기안자/계단) 대상 = 역할 선택 불가(TARGETED_LABELS).
      */
@@ -88,6 +122,9 @@ class AlimtalkRecipients
         //   v2 는 구 코드가 '담당 영업'을 자동 발송했다 → '영업'을 켠 채로 시작(동작 보존).
         //   ⚠️ 딜러는 역할이 아니다 — 그건 버튼이 직접 보내고 AUTO_EXTRA 로만 안내한다.
         'erp_purchase_paid_v2' => ['영업'],
+        // 🪜 지급 결재 결과 (jin 2026-10-15) — 기본 「결재선 전원」. 제출자는 항상(AUTO_EXTRA). 체크를 다 풀면 종전처럼 제출자만.
+        'erp_payout_done' => [self::APPROVAL_LINE],
+        'erp_payout_rejected' => [self::APPROVAL_LINE],
     ];
 
     /** 자동 대상(역할 선택 불가) 알림 — 안내 화면 고정 라벨. */
@@ -99,13 +136,13 @@ class AlimtalkRecipients
         'erp_purchase_paid' => '국내 딜러(수동 발송)',
         'erp_tax_invoice_request' => '국내 딜러(수동 발송)',
         'erp_payout_request' => '승인 계단 담당자',
-        'erp_payout_done' => '제출자 본인',
-        'erp_payout_rejected' => '제출자 본인',
     ];
 
     /** 브로드캐스트형이면서 자동 대상도 함께 가는 혼합 알림 — 안내 화면 부가 표시. */
     public const AUTO_EXTRA = [
         'erp_purchase_paid_v2' => '국내 딜러(버튼이 직접 발송)',
+        'erp_payout_done' => '제출자 본인(항상)',
+        'erp_payout_rejected' => '제출자 본인(항상)',
     ];
 
     /**
@@ -231,6 +268,7 @@ class AlimtalkRecipients
         $target = trim($target);
 
         return isset(self::BROADCAST_GROUPS[$target])
+            || $target === self::APPROVAL_LINE
             || self::userIdOf($target) !== null
             || strlen(preg_replace('/[^0-9]/', '', $target) ?? '') >= 8;   // 전화번호로 볼 최소 자릿수
     }
@@ -255,6 +293,9 @@ class AlimtalkRecipients
         }
         if (isset(self::BROADCAST_GROUPS[$target])) {
             return self::groupPhones($target);
+        }
+        if ($target === self::APPROVAL_LINE) {
+            return [];   // 배치마다 다르다 — SettlementPayoutBatch::payoutNoticePhones() 가 채운다
         }
         if (($id = self::userIdOf($target)) !== null) {
             // 번호가 비어 있으면 빈 배열 — 화면의 ⚠️ 표시와 같은 판정이다(조용히 빠지지 않게).

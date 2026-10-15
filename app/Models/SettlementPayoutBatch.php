@@ -755,7 +755,7 @@ class SettlementPayoutBatch extends Model
 
         // 커밋 후 fire-and-forget 알림톡 — 최종 승인=제출자에게 완료, 전진=다음 계단에게 요청.
         if ($becameFinal) {
-            $this->sendPayoutAlimtalk('erp_payout_done', $this->submitterPhones(), [
+            $this->sendPayoutAlimtalk('erp_payout_done', $this->payoutNoticePhones('erp_payout_done'), [
                 '귀속월' => $this->month,
                 '건수' => (string) $this->settlement_count,
                 '총액' => number_format($this->total_payout).'원',
@@ -865,8 +865,8 @@ class SettlementPayoutBatch extends Model
             CarryoverClearance::where('payout_batch_id', $this->id)->delete();
         });
 
-        // 커밋 후 fire-and-forget — 제출자에게 반려 통보(사유 포함).
-        $this->sendPayoutAlimtalk('erp_payout_rejected', $this->submitterPhones(), [
+        // 커밋 후 fire-and-forget — 제출자(+체크한 역할·결재선 전원)에게 반려 통보(사유 포함).
+        $this->sendPayoutAlimtalk('erp_payout_rejected', $this->payoutNoticePhones('erp_payout_rejected'), [
             '귀속월' => $this->month,
             '건수' => (string) $this->settlement_count,
             '사유' => $reason,
@@ -1134,6 +1134,28 @@ class SettlementPayoutBatch extends Model
         $phone = trim((string) ($this->submitter?->phone ?? ''));
 
         return $phone !== '' ? [$phone] : [];
+    }
+
+    /**
+     * 🪜 지급 결재 **결과**(승인완료·반려) 수신자 (jin 2026-10-15 «반려되면 전원에게, 완료돼도 다 가는 거고»).
+     *   제출자 본인(항상) ∪ 「결재선 전원」(안내 화면 체크, 기본 ON) ∪ 체크한 역할(재무·관리).
+     *   결재선 전원 = steps 모드의 결재선 승인자 ∪ 이 배치에 실제로 승인/반려 서명한 사람(종전 사다리도 덮는다).
+     *   반려한 본인도 받는다(결재선의 한 명). 요청(erp_payout_request)은 종전대로 그 차례 한 사람만.
+     */
+    private function payoutNoticePhones(string $code): array
+    {
+        $phones = $this->submitterPhones();
+        if (AlimtalkRecipients::wantsApprovalLine($code)) {
+            $users = $this->steps()->with('approver')->get()->map(fn ($st) => $st->approver)
+                ->merge($this->approvals()->with('approver')->get()->map(fn ($a) => $a->approver))
+                ->filter();
+            foreach ($users as $u) {
+                $phones[] = trim((string) ($u->phone ?? ''));
+            }
+        }
+        $phones = array_merge($phones, AlimtalkRecipients::forBroadcast($code));   // 재무·관리 등 체크한 역할(결재선 토큰은 빈 배열)
+
+        return collect($phones)->map(fn ($p) => preg_replace('/[^0-9]/', '', (string) $p))->filter()->unique()->values()->all();
     }
 
     /** 알림톡 발송 — fire-and-forget(BizmAlimtalkService 가 예외 흡수·게이트 off 시 skipped). */
