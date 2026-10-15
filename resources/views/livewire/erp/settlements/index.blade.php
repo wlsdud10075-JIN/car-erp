@@ -1161,8 +1161,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 ->get();
             $eligibleIds = \App\Models\SettlementPayoutBatch::leaverEligibleSettlementIds($sm);
             $eligible = $open->whereIn('id', $eligibleIds);
-            $unbatched = $open->whereNull('payout_batch_id');
             $inBatch = $open->whereNotNull('payout_batch_id');
+            $blockers = \App\Models\SettlementPayoutBatch::leaverBlockers($sm);   // 제출 가드와 같은 함수
             $pendingLeaver = $pendingBatches->first(fn ($b) => $b->kind === \App\Models\SettlementPayoutBatch::KIND_LEAVER && (int) $b->salesman_id === (int) $sm->id);
             $last = \App\Models\SettlementPayoutBatch::query()->leaver()->where('salesman_id', $sm->id)
                 ->where('status', \App\Models\SettlementPayoutBatch::STATUS_APPROVED)->orderByDesc('id')->first(['id', 'decided_at', 'total_payout']);
@@ -1172,8 +1172,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 'left_at' => $sm->left_at->format('Y-m-d'),
                 'eligible_count' => $eligible->count(),
                 'eligible_sum' => (int) $eligible->sum(fn ($s) => $s->actual_payout),
-                'unconfirmed' => $unbatched->whereIn('settlement_status', ['pending', 'calculating'])->count(),
-                'held' => $unbatched->filter(fn ($s) => $s->isPayoutHeldByUnpaid())->count(),
+                'unconfirmed' => $blockers['unconfirmed'],
+                'held' => $blockers['held'],
+                'blocked' => $blockers['unconfirmed'] > 0 || $blockers['held'] > 0,
                 'in_batch' => $inBatch->count(),
                 'in_batch_ids' => $inBatch->pluck('payout_batch_id')->unique()->values()->all(),
                 'carryover' => (int) $sm->unconsumed_carryover,
@@ -1603,6 +1604,8 @@ new #[Layout('components.layouts.app')] class extends Component
 
         $targets = Settlement::query()
             ->whereIn('settlement_status', ['pending', 'calculating'])
+            // 🚪 프리랜서 퇴사자 건은 일괄에서 뺀다(jin 2026-10-15 «퇴사자건은 빼고») — 퇴사자 정산에서 따로 보고 하나씩 확정한다.
+            ->whereDoesntHave('salesman', fn ($q) => $q->immediateLeavers())
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->secondaryFilter, fn ($q) => $q->secondaryFilter($this->secondaryFilter))
@@ -2200,6 +2203,9 @@ new #[Layout('components.layouts.app')] class extends Component
                     <td class="py-2 text-right">
                         @if($r['pending_leaver_batch_id'])
                             <span class="badge badge-amber">{{ __('settlement.batch.leaver_pending_badge', ['id' => $r['pending_leaver_batch_id']]) }}</span>
+                        @elseif($r['blocked'])
+                            {{-- 🚫 미확정·미수 보류가 남아 있으면 못 올린다(jin «전부 정리되어야 정산») — 미수 보류는 「예외 대상」으로 풀 수 있다 --}}
+                            <span class="badge badge-gray" title="{{ __('settlement.batch.leaver_blocked', ['u' => $r['unconfirmed'], 'h' => $r['held']]) }}" data-leaver-blocked>{{ __('settlement.batch.leaver_blocked_short') }}</span>
                         @elseif(auth()->user()->canSubmitPayoutBatch() && ($r['eligible_count'] > 0 || $r['carryover'] !== 0))
                             <button type="button" wire:click="openLeaverModal({{ $r['salesman_id'] }})" class="btn-primary text-xs">{{ __('settlement.batch.leaver_submit') }}</button>
                         @endif

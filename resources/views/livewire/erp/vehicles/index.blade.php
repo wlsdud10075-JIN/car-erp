@@ -1273,7 +1273,8 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     #[Locked]
     public array $loadedPaymentBreakdown = [];
-    public string $savings_used_str     = '';
+    public string $savings_used_str     = '';   // 💳 「이번에 쓸 금액」 1회성 (jin 2026-10-15) — 저장하면 누적(vehicles.savings_used)에 더하고 비운다
+    public ?float $panelSavingsUsedTotal = null;   // 이 차에 지금까지 쓴 적립금 합계(표시 전용 스냅샷)
     // 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 (한 번 저장 → SavingsStatus EARNED 거래 → reset).
     // 누적 표시는 buyerSavingsBalance computed (SavingsStatus 단일 출처).
     public string $savings_deposit_str  = '';
@@ -3335,6 +3336,98 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function forwardingCompanies() { return ForwardingCompany::where('is_active', true)->orderBy('name')->get(); }
 
+    /**
+     * 💳 이 차의 적립금 사용 이력 — USED(사용)·REFUND(되돌림) 행 (jin 2026-10-15). 바이어 적립금 탭의 FIFO 열과 같은 원장(savings_statuses).
+     * `reverted` = 이 USED 행을 되돌린 REFUND 가 있나(original_transaction_id). 되돌린 행은 또 못 되돌린다.
+     *
+     * @return array<int, array{id:int, date:string, type:string, amount:float, balance:float, reverted:bool, note:?string}>
+     */
+    #[Computed]
+    public function savingsUsageRows(): array
+    {
+        if (! $this->editingId) {
+            return [];
+        }
+        $rows = \App\Models\SavingsStatus::query()->where('vehicle_id', $this->editingId)
+            ->whereIn('transaction_type', ['USED', 'REFUND'])->orderBy('id')->get();
+        $reverted = $rows->where('transaction_type', 'REFUND')->pluck('original_transaction_id')->filter()->map(fn ($i) => (int) $i)->all();
+
+        return $rows->map(fn ($r) => [
+            'id' => (int) $r->id,
+            'date' => $r->created_at?->format('Y-m-d') ?? '-',
+            'type' => (string) $r->transaction_type,
+            'amount' => abs((float) $r->savings),
+            'balance' => (float) $r->balance,
+            'reverted' => in_array((int) $r->id, $reverted, true),
+            'note' => $r->note,
+        ])->values()->all();
+    }
+
+    /**
+     * 💳 사용 한 건 되돌리기 — 누적(savings_used)에서 그 금액을 빼고 저장한다. H6 훅이 REFUND 행 + 회수이력(−) 미러를 만든다(원장은 되감기, FIFO 복귀).
+     * 재무 이상(canConfirmFinance). 2차 마감 차량이면 회계 락이 막는다(예외를 토스트로).
+     */
+    public function revertSavingsUse(int $statusId): void
+    {
+        if (! (auth()->user()?->canConfirmFinance() ?? false)) {
+            $this->dispatch('notify', message: __('vehicle.panel.savings_revert_forbidden'), type: 'error');
+
+            return;
+        }
+        $v = $this->editingId ? Vehicle::find($this->editingId) : null;
+        $row = $v ? \App\Models\SavingsStatus::where('vehicle_id', $v->id)->where('transaction_type', 'USED')->find($statusId) : null;
+        if (! $v || ! $row) {
+            return;
+        }
+        if (\App\Models\SavingsStatus::where('original_transaction_id', $row->id)->where('transaction_type', 'REFUND')->exists()) {
+            $this->dispatch('notify', message: __('vehicle.panel.savings_already_reverted'), type: 'warning');
+
+            return;
+        }
+        $amount = abs((float) $row->savings);
+        try {
+            $v->savings_used = max(0, (float) ($v->savings_used ?? 0) - $amount);
+            $v->save();
+            // 방금 생긴 REFUND 행에 「어느 사용을 되돌렸나」를 적는다 — 바이어 적립금 탭·이 이력이 짝을 안다.
+            \App\Models\SavingsStatus::where('vehicle_id', $v->id)->where('transaction_type', 'REFUND')
+                ->whereNull('original_transaction_id')->orderByDesc('id')->first()?->update(['original_transaction_id' => $row->id]);
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', message: __('vehicle.panel.savings_revert_fail', ['msg' => $e->getMessage()]), type: 'error');
+
+            return;
+        }
+        $v->refresh();
+        $this->panelSavingsUsedTotal = (float) ($v->savings_used ?? 0);
+        $this->panelSaleUnpaid = (float) $v->sale_total_amount > 0 ? (float) $v->sale_unpaid_amount : null;
+        $this->panelUnpaidRatio = $v->unpaid_ratio;
+        unset($this->savingsUsageRows, $this->panelNonCashRecoveries, $this->buyerSavingsBalance);
+        $this->dispatch('notify', message: __('vehicle.panel.savings_reverted', ['amount' => number_format($amount, 2), 'currency' => $v->currency]), type: 'success');
+    }
+
+    /**
+     * 💳 「입금 외 정리」 — 채권관리에서 돈 없이 턴 것(현금·상계·기타·손실·잡손실)과 적립금 사용 합계 (jin 2026-10-15 «화면을 왔다갔다 해야 하니 불편»).
+     * 잔금 행에는 **섞지 않는다** — 그 행의 금액·환율이 실입금 원화·정산환율의 기준이라(SKILLS §13). 보여만 주고 입력은 채권관리·적립금 칸에서.
+     *
+     * @return array{savings: float, others: array<string, float>, total: float}
+     */
+    #[Computed]
+    public function panelNonCashRecoveries(): array
+    {
+        $empty = ['savings' => 0.0, 'others' => [], 'total' => 0.0];
+        if (! $this->editingId) {
+            return $empty;
+        }
+        $v = Vehicle::with('receivableHistories')->find($this->editingId);
+        if (! $v) {
+            return $empty;
+        }
+        $others = $v->receivableHistories->whereNotIn('method', ['deposit', 'savings'])->groupBy('method')
+            ->map(fn ($g) => (float) $g->sum('amount'))->filter(fn ($sum) => abs($sum) >= 0.005)->all();
+        $savings = (float) ($v->savings_used ?? 0);
+
+        return ['savings' => $savings, 'others' => $others, 'total' => $savings + array_sum($others)];
+    }
+
     // 회의확장씬 #12 (2026-05-22) — 현재 편집 중 차량의 buyer × currency 누적 적립금.
     // SavingsStatus 단일 출처 (vehicles 판매 탭 적립금 + 바이어 페이지 적립금 둘 다 누적).
     // null = 차량 미선택 또는 buyer 미지정.
@@ -4439,7 +4532,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->map(fn ($rows) => (float) $rows->sum('amount'))
             ->filter(fn ($sum) => abs($sum) >= 0.01)
             ->toArray();
-        $this->savings_used_str     = $v->savings_used     ? (string)$v->savings_used     : '';
+        // 💳 적립금 사용 칸은 1회성 (jin 2026-10-15 «100 쓰고 빈칸, 300 쓰고 FIFO 로 누적») — 누적은 아래 합계·이력 줄로 보여준다.
+        $this->savings_used_str     = '';
+        $this->panelSavingsUsedTotal = (float) ($v->savings_used ?? 0);
         $this->savings_deposit_str  = '';   // 입력란은 항상 빈 값 (누적은 buyerSavingsBalance computed)
         // 바이어 현금 원장 (jin 2026-09-05) — 「이 잔금이 어느 입금에서 나왔나」 **역방향 추적**.
         //   현금 탭은 「입금 → 어느 차」를 보여주지만 그 반대는 볼 데가 없었다(jin 지적).
@@ -5782,6 +5877,31 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
+        // 💳 적립금 사용 — 「이번에 쓸 금액」을 누적(savings_used)에 더한다 (jin 2026-10-15). 잔액을 넘으면 저장 거부
+        //    (채권관리 receivables/index:510~ · 바이어 드로어 useSavingsForVehicle 과 같은 규칙 — 판매탭만 빠져 있던 구멍).
+        //    H6 훅이 delta 로 USED 행·회수이력 미러를 만들므로 여기선 숫자만 맞추면 된다.
+        $savingsBase = (float) (\App\Models\Vehicle::find($this->editingId)?->savings_used ?? 0);
+        $savingsUseNow = (float) str_replace(',', '', $this->savings_used_str !== '' ? $this->savings_used_str : '0');
+        if ($savingsUseNow < 0) {
+            $this->addError('savings_used_str', __('vehicle.valmsg.savings_negative'));
+            $this->dispatch('notify', message: __('vehicle.valmsg.savings_negative'), type: 'warning');
+
+            return;
+        }
+        if ($savingsUseNow > 0) {
+            $savingsBuyerId = $this->buyer_id_str !== '' ? (int) $this->buyer_id_str : null;
+            $savingsBalance = $savingsBuyerId
+                ? (float) (\App\Models\SavingsStatus::where('buyer_id', $savingsBuyerId)->where('currency', $this->currency)->orderByDesc('id')->value('balance') ?? 0)
+                : 0.0;
+            if ($savingsUseNow > $savingsBalance + 0.009) {
+                $msg = __('vehicle.valmsg.savings_over', ['balance' => number_format($savingsBalance, 2), 'use' => number_format($savingsUseNow, 2), 'currency' => $this->currency]);
+                $this->addError('savings_used_str', $msg);
+                $this->dispatch('notify', message: $msg, type: 'warning');
+
+                return;
+            }
+        }
+
         $data = [
             'vehicle_number' => $this->vehicle_number,
             'sales_channel'  => $this->sales_channel,
@@ -5881,7 +6001,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'auto_loading'     => $toFloat($this->auto_loading_str),
             'sale_other_costs' => $toFloat($this->sale_other_costs_str),
             // 큐 22-A-3 — 4컬럼 save 라인 제거. final_payments rows 로 통합.
-            'savings_used'     => $toFloat($this->savings_used_str),
+            'savings_used'     => $savingsBase + $savingsUseNow,   // 💳 누적 + 이번 사용(1회성, 위 가드)
             // 수출통관
             'export_buyer_id'       => $toId($this->export_buyer_id_str),
             'export_consignee_id'   => $toId($this->export_consignee_id_str),
@@ -5980,6 +6100,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 } else {
                     $vehicle = Vehicle::create($data);
                 }
+                // 💳 적립금 사용 칸은 쓰고 나면 비운다(1회성) — 합계는 스냅샷으로.
+                $this->savings_used_str = '';
+                $this->panelSavingsUsedTotal = (float) ($vehicle->savings_used ?? 0);
+                unset($this->savingsUsageRows, $this->panelNonCashRecoveries);
 
                 // 파일: 업로드 / 삭제 / 교체 통합 처리
                 $fileUpdates = [];
@@ -9570,7 +9694,32 @@ function vehicleColumnsToggle(columns, serverKnows) {
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
-                <div><label class="label-base">{{ __('vehicle.field.savings_used') }}</label><input wire:model="savings_used_str" type="text" data-money class="input-base" placeholder="0" /></div>
+                {{-- 💳 적립금 사용 = 「이번에 쓸 금액」 1회성 (jin 2026-10-15). 누적·이력은 아래 줄. 잔액 초과는 저장이 막는다. --}}
+                @php $canConfirmFinanceLocalSavings = auth()->user()?->canConfirmFinance() ?? false; @endphp
+                <div data-savings-use>
+                    <label class="label-base">{{ __('vehicle.field.savings_used') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.savings_used_note') }}</span></label>
+                    <input wire:model="savings_used_str" type="text" data-money class="input-base" placeholder="0" />
+                    @error('savings_used_str') <p class="mt-1 text-xs text-red-500">{{ $message }}</p> @enderror
+                    @if($editingId)
+                    <div class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.panel.savings_used_total') }}: <b class="text-gray-700">{{ $currency }} {{ number_format((float) ($panelSavingsUsedTotal ?? 0), fmod((float) ($panelSavingsUsedTotal ?? 0), 1) == 0.0 ? 0 : 2) }}</b></div>
+                    @if(!empty($this->savingsUsageRows))
+                    <div class="mt-1 space-y-0.5 rounded border border-gray-100 bg-gray-50 px-2 py-1 text-[11px]" data-savings-history>
+                        @foreach($this->savingsUsageRows as $row)
+                        <div wire:key="sv-{{ $row['id'] }}" class="flex items-center gap-2 {{ $row['reverted'] || $row['type'] === 'REFUND' ? 'text-gray-400' : 'text-gray-600' }}">
+                            <span class="shrink-0">{{ $row['date'] }}</span>
+                            <span class="shrink-0 {{ $row['type'] === 'USED' ? 'text-violet-600' : 'text-emerald-600' }}">{{ $row['type'] === 'USED' ? __('vehicle.panel.savings_row_used') : __('vehicle.panel.savings_row_refund') }}</span>
+                            <span class="font-mono {{ $row['reverted'] ? 'line-through' : '' }}">{{ $currency }} {{ number_format($row['amount'], fmod($row['amount'], 1) == 0.0 ? 0 : 2) }}</span>
+                            <span class="min-w-0 flex-1 truncate text-gray-400">{{ __('vehicle.panel.savings_row_balance', ['balance' => number_format($row['balance'], fmod($row['balance'], 1) == 0.0 ? 0 : 2)]) }}</span>
+                            @if($row['type'] === 'USED' && ! $row['reverted'] && $canConfirmFinanceLocalSavings)
+                            <button type="button" wire:click="revertSavingsUse({{ $row['id'] }})" wire:confirm="{{ __('vehicle.panel.savings_revert_confirm', ['amount' => number_format($row['amount'], 2)]) }}"
+                                    class="shrink-0 text-[10px] text-rose-500 hover:underline">{{ __('vehicle.panel.savings_revert') }}</button>
+                            @endif
+                        </div>
+                        @endforeach
+                    </div>
+                    @endif
+                    @endif
+                </div>
                 {{-- 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 + 누적 표시 --}}
                 @php $canConfirmFinanceLocal = auth()->user()?->canConfirmFinance() ?? false; @endphp
                 <div>
@@ -9645,6 +9794,20 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     <span class="text-xs font-medium text-gray-500">{{ __('vehicle.field.balance') }}</span>
                     <button type="button" wire:click="addFinalPayment" class="text-xs text-violet-600 hover:underline">{{ __('vehicle.panel.add') }}</button>
                 </div>
+                {{-- 💳 입금 외 정리 (jin 2026-10-15) — 채권관리에서 돈 없이 턴 것 + 적립금 사용. 읽기 전용, 잔금 행에 안 섞는다(실입금·정산환율 기준 보호). --}}
+                @if($editingId && $this->panelNonCashRecoveries['total'] > 0)
+                @php $ncr = $this->panelNonCashRecoveries; $ncMoney = fn ($x) => number_format((float) $x, fmod((float) $x, 1) == 0.0 ? 0 : 2); @endphp
+                <div class="rounded-md border border-dashed border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] text-gray-600" data-non-cash-recoveries>
+                    <span class="font-medium text-gray-700">{{ __('vehicle.panel.non_cash_title') }}</span>
+                    @if($ncr['savings'] > 0)<span class="ml-1">{{ __('receivable.method.savings') }} {{ $currency }} {{ $ncMoney($ncr['savings']) }}</span>@endif
+                    @foreach($ncr['others'] as $method => $sum)
+                    <span class="ml-1">· {{ __('receivable.method.'.$method) }} {{ $currency }} {{ $ncMoney($sum) }}</span>
+                    @endforeach
+                    <span class="ml-1 font-semibold text-gray-700">= {{ $currency }} {{ $ncMoney($ncr['total']) }}</span>
+                    <a href="{{ route('erp.receivables.index') }}?search={{ urlencode($vehicle_number) }}" wire:navigate class="ml-2 text-violet-600 hover:underline">{{ __('vehicle.panel.non_cash_link') }}</a>
+                    <span class="ml-1 text-gray-400">{{ __('vehicle.panel.non_cash_hint') }}</span>
+                </div>
+                @endif
                 {{-- 바이어 현금 잔액 (jin 2026-09-04) — 기획 docs/design/buyer-cash-ledger.md
                      막히고 나서 알려주는 것보다 **막히기 전에 보이는 게** 낫다. 토글 ON + 게이트
                      대상(외화·바이어 있음)일 때만 뜬다. 0 이면 붉게 — 저장이 막힐 상태라는 뜻. --}}
