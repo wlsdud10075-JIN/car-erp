@@ -2159,7 +2159,7 @@ new #[Layout('components.layouts.app')] class extends Component
         <p class="mt-2 text-sm text-gray-400">{{ __('settlement.batch.leavers_none') }}</p>
         @else
         <div class="mt-2 overflow-x-auto">
-        <table class="w-full min-w-[720px] text-xs">
+        <table class="w-full min-w-[640px] text-xs">
             <thead>
                 <tr class="border-b border-gray-200 text-left text-gray-500">
                     <th class="pb-2 pr-3 font-medium">{{ __('settlement.batch.leaver_col.name') }}</th>

@@ -271,6 +271,7 @@
 | 달을 닫지 않음 | `isMonthClosed()`·「월당 pending 1건」·`PayrollEntry` 결재 중 이력·귀속월 이동 가드 = **`kind=month` 만**. 퇴사 배치 최종 승인은 `alimtalk:monthly-closing` 을 안 부른다 |
 | 🚨 이중 지급 방지 | ①정산 한 건 = 배치 하나(`payout_batch_id`) ②월정산 후보에서 프리랜서 퇴사자 몫 제외(`Settlement::isReservedForLeaverBatch()`) ③퇴사 배치 후보 = 그 사람의 미배치 확정 정산만(`leaverEligibleSettlementIds`, 미수 보류·지급 제외 판정 공용) ④이월 줄: 월정산은 즉시 정산 퇴사자 건너뜀, 퇴사 배치는 그 사람만 + `CarryoverClearance` 가 제출 시 0 으로 ⑤같은 사람 pending 퇴사 배치 있으면 거부. 가드 = `LeaverSettlementTest`(9) |
 | 알림톡 | (가) 템플릿 무변경 — `erp_payout_request` 「제출」 아이템(20자 자동컷)에 「퇴사정산 이름 · 제출자」. 본문의 「월배치 정산」 문구는 남는다(재승인 안 받음). 전용 템플릿(나)은 승인까지 발송 0 이라 버림 |
+| 월결산 보고 | `alimtalk:monthly-closing` 의 조정 합(`AlimtalkMonthlyClosing.php:194`)은 `month` 가 같은 approved 배치 전부라 **퇴사 배치의 조정(이월·수동)도 퇴사월 보고에 들어간다**(9월 귀속 이월이 10월 보고에 실릴 수 있음). 참고치라 두었다 |
 | 범위 밖 | 바이어 승계 = 기존 [승계] · 예치금 반환 = 조정 줄 수동 · 로그인 차단 = 계정 삭제(전부 관리직 수동, jin) |
 | 실측 10-15 | 3사 비활성 담당자 중 미지급 정산 **0건**(ssancarerp 3명 전부 paid · heymanerp 0 · karabaerp 0) — 기능은 앞으로의 퇴사용 |
 
