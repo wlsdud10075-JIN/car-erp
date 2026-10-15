@@ -3405,7 +3405,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
-     * 💳 「입금 외 정리」 — 채권관리에서 돈 없이 턴 것(현금·상계·기타·손실·잡손실)과 적립금 사용 합계 (jin 2026-10-15 «화면을 왔다갔다 해야 하니 불편»).
+     * 💳 「입금 외 정리」 — 채권관리에서 입금 행 밖으로 정리된 것(현금·상계·기타·손실)과 적립금 사용 합계 (jin 2026-10-15 «화면을 왔다갔다 해야 하니 불편»).
      * 잔금 행에는 **섞지 않는다** — 그 행의 금액·환율이 실입금 원화·정산환율의 기준이라(SKILLS §13). 보여만 주고 입력은 채권관리·적립금 칸에서.
      *
      * @return array{savings: float, others: array<string, float>, total: float}
@@ -3421,7 +3421,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $v) {
             return $empty;
         }
-        $others = $v->receivableHistories->whereNotIn('method', ['deposit', 'savings'])->groupBy('method')
+        // 제외 목록은 미수 accessor 와 같은 상수(deposit·savings = 다른 기록의 미러, misc_loss = 과입금 정리 기록) — 옮겨 적으면 합계가 미수 식과 갈린다(§8 #45).
+        $others = $v->receivableHistories->whereNotIn('method', Vehicle::MIRRORED_RECEIVABLE_METHODS)->groupBy('method')
             ->map(fn ($g) => (float) $g->sum('amount'))->filter(fn ($sum) => abs($sum) >= 0.005)->all();
         $savings = (float) ($v->savings_used ?? 0);
 

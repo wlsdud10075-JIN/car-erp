@@ -427,7 +427,7 @@ return [
         'savings_already_reverted' => '이미 되돌린 사용입니다.',
         'non_cash_title' => '입금 외 정리',
         'non_cash_link' => '채권관리',
-        'non_cash_hint' => '— 잔금 행에는 안 섞입니다(실입금·정산환율 기준). 입력은 채권관리·적립금 칸에서.',
+        'non_cash_hint' => '— 채권관리에서 입금 행 밖으로 정리된 것. 잔금 행에는 안 섞입니다(실입금·정산환율 기준). 입력은 채권관리·적립금 칸에서.',
         'savings_balance_note' => '(바이어×통화 SavingsStatus)',
         'after_save_note' => '(저장 후 갱신)',
         'fully_paid' => '✓ 완납',
