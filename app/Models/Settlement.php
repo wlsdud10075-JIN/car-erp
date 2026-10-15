@@ -378,6 +378,24 @@ class Settlement extends Model
             ->whereHas('salesman', fn ($q) => $q->where('payout_excluded', true));
     }
 
+    /**
+     * 🚪 **퇴사 배치 몫인가** — 프리랜서 퇴사자의 미배치 정산 (jin 2026-10-15 «이중으로 정산되지 않게»).
+     * 월정산 후보(`eligibleSettlementIds`)에서 빠지고 정산관리 「퇴사자」의 즉시 정산 배치로만 나간다.
+     * 판정 = `Salesman::settlesImmediatelyOnLeave()` 한 곳. 이미 배치에 묶인 정산은 그 배치가 임자다(소급 안 함).
+     */
+    public function isReservedForLeaverBatch(): bool
+    {
+        return $this->payout_batch_id === null
+            && (bool) $this->salesman?->settlesImmediatelyOnLeave();
+    }
+
+    /** SQL 짝 — 퇴사 배치 몫(미배치분만). */
+    public function scopeReservedForLeaverBatch($query)
+    {
+        return $query->whereNull('payout_batch_id')
+            ->whereHas('salesman', fn ($q) => $q->immediateLeavers());
+    }
+
     /** SQL 스코프 — 지급보류(confirmed·미배치·**예외 없음**·차량 미수 캐시>0). 대시보드 카운트/필터·목록 표시용. */
     public function scopePayoutHeldByUnpaid($query)
     {
@@ -575,7 +593,7 @@ class Settlement extends Model
             if (SettlementPayoutBatch::isMonthClosed($ym)) {
                 continue;
             }
-            if (SettlementPayoutBatch::where('month', $ym)->where('status', SettlementPayoutBatch::STATUS_PENDING)->exists()) {
+            if (SettlementPayoutBatch::monthly()->where('month', $ym)->where('status', SettlementPayoutBatch::STATUS_PENDING)->exists()) {
                 continue;
             }
             $out[$ym] = $m->copy()->addMonthNoOverflow()->format('Y-m').'-10';
@@ -614,7 +632,7 @@ class Settlement extends Model
         if (SettlementPayoutBatch::isMonthClosed($ym)) {
             throw new \DomainException(__('settlement.shift.blocked_closed', ['month' => $ym]));
         }
-        if (SettlementPayoutBatch::where('month', $ym)->where('status', SettlementPayoutBatch::STATUS_PENDING)->exists()) {
+        if (SettlementPayoutBatch::monthly()->where('month', $ym)->where('status', SettlementPayoutBatch::STATUS_PENDING)->exists()) {
             throw new \DomainException(__('settlement.shift.blocked_pending_batch', ['month' => $ym]));
         }
         if (! array_key_exists($ym, self::movableMonths(null, $current->format('Y-m')))) {

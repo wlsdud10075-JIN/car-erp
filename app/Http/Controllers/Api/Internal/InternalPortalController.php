@@ -330,6 +330,7 @@ class InternalPortalController extends Controller
 
                 return [
                     'batch_id' => $b->id,
+                    'kind' => $b->kind,                            // month=월정산 / leaver=퇴사 정산(한 사람, 2026-10-15 가산 필드)
                     'month' => $b->month,                          // 귀속월 — ERP 화면 라벨과 같은 축
                     'status' => $b->status,
                     'decided_at' => $b->decided_at?->toDateString(),   // 승인 확정일(≈ 지급일)

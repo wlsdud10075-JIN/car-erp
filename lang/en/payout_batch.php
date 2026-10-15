@@ -11,6 +11,7 @@ return [
         'cancelled' => 'Cancelled',
     ],
     'count' => ':n items',
+    'leaver_label' => 'Leaver payout · :name',
     'submitter' => 'Submitter',
     'next_level' => 'Awaiting :role',
     'confirm_approve' => 'Approve this batch? (If final Representative approval, all settlements are paid immediately)',

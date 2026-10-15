@@ -1116,6 +1116,178 @@ new #[Layout('components.layouts.app')] class extends Component
      * canApprove user는 직접 paid 변경 가능 (Settlement::saving 가드 통과).
      * 그 외 user는 이 메서드로 ApprovalRequest 생성 → /erp/approvals 큐로 진입.
      */
+    // ── 🚪 퇴사자 정산 (jin 2026-10-15 「퇴사자 사용 씬」) ──────────────────────────────────────
+    //   프리랜서 퇴사자(퇴사일 + freelance)의 미지급 정산을 10일을 기다리지 않고 그 사람 몫만 묶어 바로 결재에 올린다.
+    //   사내직원·검차·직원 퇴사자는 여기 안 나온다 — 종전대로 월정산(마지막 달 급여 포함).
+    //   이중 지급 방지 = 모델 두 겹(`leaverEligibleSettlementIds` + 월정산 `isReservedForLeaverBatch` 제외). 화면은 보여주기만.
+    //   🐢 목록은 펼쳤을 때만 계산한다(wire:poll.30s, §8 #96-C) — 버튼의 숫자는 가벼운 count 하나.
+
+    public bool $showLeavers = false;
+    public bool $showLeaverModal = false;
+    public int $leaverSalesmanId = 0;
+    /** @var array<int, array{amount:int, reason:string, kind:string}> 퇴사 배치와 함께 만들 조정(예치금 반환 등 수동) */
+    public array $leaverAdjustments = [];
+    public string $newLeaverAdjAmount = '';
+    public string $newLeaverAdjReason = '';
+    public string $newLeaverAdjKind = 'manual';
+
+    public function toggleLeavers(): void
+    {
+        $this->showLeavers = ! $this->showLeavers;
+    }
+
+    /** 버튼 숫자 — 미배치 정산(미확정·확정 포함)이 남은 즉시 정산 퇴사자 수. 이월만 남은 사람은 펼쳐야 보인다. */
+    #[Computed]
+    public function leaverOpenCount(): int
+    {
+        return Salesman::query()->immediateLeavers()->where('payout_excluded', false)
+            ->whereHas('settlements', fn ($q) => $q->whereNull('payout_batch_id')->whereIn('settlement_status', ['pending', 'calculating', 'confirmed']))
+            ->count();
+    }
+
+    /**
+     * 퇴사자별 현황 한 줄 — 지급 가능(확정·미배치·미수 없음) / 미확정 / 미수 보류 / 결재 중 / 미청산 이월 / 예치금 / 마지막 퇴사 배치.
+     * 「먼저 처리할 것」(미확정·미수 보류)을 숫자로 보여줘야 재무가 뭘 먼저 할지 안다.
+     */
+    #[Computed]
+    public function leaverRows(): array
+    {
+        $pendingBatches = \App\Models\SettlementPayoutBatch::query()->where('status', \App\Models\SettlementPayoutBatch::STATUS_PENDING)->get(['id', 'kind', 'salesman_id']);
+        $rows = [];
+        foreach (Salesman::query()->immediateLeavers()->where('payout_excluded', false)->orderByDesc('left_at')->orderBy('name')->get() as $sm) {
+            $open = Settlement::query()->where('salesman_id', $sm->id)
+                ->where(fn ($q) => $q->whereNull('payout_batch_id')->orWhereIn('payout_batch_id', $pendingBatches->pluck('id')))
+                ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
+                ->get();
+            $eligibleIds = \App\Models\SettlementPayoutBatch::leaverEligibleSettlementIds($sm);
+            $eligible = $open->whereIn('id', $eligibleIds);
+            $unbatched = $open->whereNull('payout_batch_id');
+            $inBatch = $open->whereNotNull('payout_batch_id');
+            $pendingLeaver = $pendingBatches->first(fn ($b) => $b->kind === \App\Models\SettlementPayoutBatch::KIND_LEAVER && (int) $b->salesman_id === (int) $sm->id);
+            $last = \App\Models\SettlementPayoutBatch::query()->leaver()->where('salesman_id', $sm->id)
+                ->where('status', \App\Models\SettlementPayoutBatch::STATUS_APPROVED)->orderByDesc('id')->first(['id', 'decided_at', 'total_payout']);
+            $rows[] = [
+                'salesman_id' => (int) $sm->id,
+                'name' => (string) $sm->name,
+                'left_at' => $sm->left_at->format('Y-m-d'),
+                'eligible_count' => $eligible->count(),
+                'eligible_sum' => (int) $eligible->sum(fn ($s) => $s->actual_payout),
+                'unconfirmed' => $unbatched->whereIn('settlement_status', ['pending', 'calculating'])->count(),
+                'held' => $unbatched->filter(fn ($s) => $s->isPayoutHeldByUnpaid())->count(),
+                'in_batch' => $inBatch->count(),
+                'in_batch_ids' => $inBatch->pluck('payout_batch_id')->unique()->values()->all(),
+                'carryover' => (int) $sm->unconsumed_carryover,
+                'deposit' => $sm->deposit_krw,
+                'pending_leaver_batch_id' => $pendingLeaver?->id,
+                'last_batch' => $last ? ['id' => $last->id, 'date' => $last->decided_at?->format('Y-m-d'), 'total' => (int) $last->total_payout] : null,
+            ];
+        }
+
+        return $rows;
+    }
+
+    public function openLeaverModal(int $salesmanId): void
+    {
+        if (! auth()->user()->canSubmitPayoutBatch()) {
+            $this->dispatch('notify', message: __('settlement.batch.no_permission'), type: 'error');
+
+            return;
+        }
+        $this->leaverSalesmanId = $salesmanId;
+        $this->leaverAdjustments = [];
+        $this->newLeaverAdjAmount = '';
+        $this->newLeaverAdjReason = '';
+        $this->newLeaverAdjKind = 'manual';
+        unset($this->leaverPreview);
+        // 결재선 기본값은 월정산 제출과 같은 규칙(지난번 선택 → 그 직급 한 명뿐이면 그 사람).
+        $last = \App\Models\SettlementPayoutBatch::lastStepsLine();
+        $this->submitLine = [];
+        foreach (\App\Models\SettlementPayoutBatch::approvalLineOptions() as $title => $users) {
+            $pick = $last[$title] ?? ($users->count() === 1 ? (int) $users->first()->id : null);
+            $this->submitLine[$title] = $pick ? (string) $pick : '';
+        }
+        $this->showLeaverModal = true;
+    }
+
+    public function closeLeaverModal(): void
+    {
+        $this->showLeaverModal = false;
+        $this->leaverSalesmanId = 0;
+    }
+
+    /** 모달 미리보기 — 실제 제출(`submitForLeaver`)과 **같은 함수**(대상 id·이월 줄)로 뽑는다(§8 #44). */
+    #[Computed]
+    public function leaverPreview(): array
+    {
+        $sm = Salesman::find($this->leaverSalesmanId);
+        if (! $sm) {
+            return ['name' => '', 'rows' => [], 'payout_sum' => 0, 'carryovers' => [], 'adj_sum' => 0, 'final' => 0];
+        }
+        $ids = \App\Models\SettlementPayoutBatch::leaverEligibleSettlementIds($sm);
+        $settlements = Settlement::whereIn('id', $ids)->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])->get();
+        $carry = \App\Models\SettlementPayoutBatch::carryoverLinesFor($settlements, $sm);
+        $payoutSum = (int) $settlements->sum(fn ($s) => $s->actual_payout);
+        $adjSum = (int) collect($this->leaverAdjustments)->sum('amount');
+        $carrySum = (int) collect($carry)->sum('amount');
+
+        return [
+            'name' => (string) $sm->name,
+            'rows' => $settlements->map(fn ($s) => ['plate' => $s->vehicle?->vehicle_number ?? '-', 'month' => $s->attributed_month?->format('Y-m') ?? '-', 'payout' => (int) $s->actual_payout])->values()->all(),
+            'payout_sum' => $payoutSum,
+            'carryovers' => $carry,
+            'adj_sum' => $adjSum,
+            'final' => max(0, $payoutSum + $carrySum + $adjSum),
+        ];
+    }
+
+    public function addLeaverAdjustment(): void
+    {
+        $amount = (int) str_replace(',', '', $this->newLeaverAdjAmount);
+        $reason = trim($this->newLeaverAdjReason);
+        if ($amount === 0 || $reason === '') {
+            $this->dispatch('notify', message: __('settlement.batch.adjust_invalid'), type: 'warning');
+
+            return;
+        }
+        $this->leaverAdjustments[] = ['amount' => $amount, 'reason' => $reason, 'kind' => $this->newLeaverAdjKind === 'incentive' ? 'incentive' : 'manual'];
+        $this->newLeaverAdjAmount = '';
+        $this->newLeaverAdjReason = '';
+        unset($this->leaverPreview);
+    }
+
+    public function removeLeaverAdjustment(int $idx): void
+    {
+        unset($this->leaverAdjustments[$idx]);
+        $this->leaverAdjustments = array_values($this->leaverAdjustments);
+        unset($this->leaverPreview);
+    }
+
+    public function submitLeaverBatch(): void
+    {
+        if (! auth()->user()->canSubmitPayoutBatch()) {
+            $this->dispatch('notify', message: __('settlement.batch.no_permission'), type: 'error');
+
+            return;
+        }
+        $sm = Salesman::find($this->leaverSalesmanId);
+        if (! $sm) {
+            return;
+        }
+        $line = array_map(fn ($v) => (int) $v, $this->submitLine);
+        try {
+            $batch = \App\Models\SettlementPayoutBatch::submitForLeaver(auth()->user(), $sm, $this->leaverAdjustments, $line);
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'warning');
+
+            return;
+        }
+
+        $this->showLeaverModal = false;
+        $this->leaverSalesmanId = 0;
+        unset($this->settlements, $this->salesmanSummaries, $this->submitPreview, $this->submitTotals, $this->leaverRows, $this->leaverPreview, $this->leaverOpenCount);
+        $this->dispatch('notify', message: __('settlement.batch.leaver_submitted', ['name' => $sm->name, 'count' => $batch->settlement_count]), type: 'success');
+    }
+
     // ── 월정산 제출 확인 모달 (jin 2026-08-06) ────────────────────────────────
     //   조정을 **제출 전에** 확정한다. 구조상 조정은 배치에 종속(batch_id)이라 예전엔
     //   "제출 → 카톡 → 그제서야 조정" 순서였고, 승인자가 본 총액과 실제 지급액이 어긋났다.
@@ -1971,6 +2143,175 @@ new #[Layout('components.layouts.app')] class extends Component
     <button wire:click="openSubmitModal" class="btn-primary text-xs">{{ __('settlement.batch.submit') }}</button>
     @endif
 </div>
+
+{{-- ── 🚪 퇴사자 정산 (jin 2026-10-15) ─────────────────────────────────────────
+     프리랜서 퇴사자만. 펼쳐야 계산한다(wire:poll 과 겹치지 않게). 「먼저 처리할 것」(미확정·미수 보류)을 숫자로. --}}
+<div class="mt-3" data-leavers>
+    <button type="button" wire:click="toggleLeavers" class="flex items-center gap-2 text-xs text-gray-500 hover:text-violet-700">
+        <span class="inline-block transition-transform {{ $showLeavers ? 'rotate-90' : '' }}">▸</span>
+        <span>{{ __('settlement.batch.leavers_title') }}</span>
+        @if($this->leaverOpenCount > 0)<span class="pill-count">{{ $this->leaverOpenCount }}</span>@endif
+    </button>
+    @if($showLeavers)
+    <div class="card mt-2">
+        <p class="text-[11px] text-gray-500">{{ __('settlement.batch.leavers_hint') }}</p>
+        @if(empty($this->leaverRows))
+        <p class="mt-2 text-sm text-gray-400">{{ __('settlement.batch.leavers_none') }}</p>
+        @else
+        <div class="mt-2 overflow-x-auto">
+        <table class="w-full min-w-[720px] text-xs">
+            <thead>
+                <tr class="border-b border-gray-200 text-left text-gray-500">
+                    <th class="pb-2 pr-3 font-medium">{{ __('settlement.batch.leaver_col.name') }}</th>
+                    <th class="pb-2 pr-3 font-medium">{{ __('settlement.batch.leaver_col.left_at') }}</th>
+                    <th class="pb-2 pr-3 text-right font-medium">{{ __('settlement.batch.leaver_col.eligible') }}</th>
+                    <th class="pb-2 pr-3 text-right font-medium">{{ __('settlement.batch.leaver_col.todo') }}</th>
+                    <th class="pb-2 pr-3 text-right font-medium">{{ __('settlement.batch.leaver_col.carryover') }}</th>
+                    <th class="pb-2 pr-3 text-right font-medium">{{ __('settlement.batch.leaver_col.deposit') }}</th>
+                    <th class="pb-2 pr-3 font-medium">{{ __('settlement.batch.leaver_col.last') }}</th>
+                    <th class="pb-2 font-medium"></th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                @foreach($this->leaverRows as $r)
+                <tr wire:key="leaver-{{ $r['salesman_id'] }}" data-leaver-row="{{ $r['salesman_id'] }}">
+                    <td class="py-2 pr-3 font-medium text-gray-800">{{ $r['name'] }}</td>
+                    <td class="py-2 pr-3 text-gray-500">{{ $r['left_at'] }}</td>
+                    <td class="py-2 pr-3 text-right font-mono">
+                        @if($r['eligible_count'] > 0)
+                            {{ $r['eligible_count'] }}건 · ₩{{ number_format($r['eligible_sum']) }}
+                        @else
+                            <span class="text-gray-400">-</span>
+                        @endif
+                    </td>
+                    <td class="py-2 pr-3 text-right">
+                        @if($r['unconfirmed'] > 0)<span class="badge badge-amber">{{ __('settlement.batch.leaver_col.unconfirmed', ['n' => $r['unconfirmed']]) }}</span>@endif
+                        @if($r['held'] > 0)<span class="badge badge-red">{{ __('settlement.batch.leaver_col.held', ['n' => $r['held']]) }}</span>@endif
+                        @if($r['in_batch'] > 0)<span class="badge badge-blue" title="#{{ implode(', #', $r['in_batch_ids']) }}">{{ __('settlement.batch.leaver_col.in_batch', ['n' => $r['in_batch']]) }}</span>@endif
+                        @if($r['unconfirmed'] === 0 && $r['held'] === 0 && $r['in_batch'] === 0)<span class="text-gray-400">-</span>@endif
+                    </td>
+                    <td class="py-2 pr-3 text-right font-mono {{ $r['carryover'] < 0 ? 'text-rose-600' : ($r['carryover'] > 0 ? 'text-emerald-600' : 'text-gray-400') }}">
+                        {{ $r['carryover'] === 0 ? '-' : (($r['carryover'] < 0 ? '−' : '+').number_format(abs($r['carryover']))) }}
+                    </td>
+                    <td class="py-2 pr-3 text-right font-mono text-gray-600">{{ $r['deposit'] === null ? '-' : '₩'.number_format($r['deposit']) }}</td>
+                    <td class="py-2 pr-3 text-gray-500">
+                        @if($r['last_batch'])#{{ $r['last_batch']['id'] }} · {{ $r['last_batch']['date'] }} · ₩{{ number_format($r['last_batch']['total']) }}@else - @endif
+                    </td>
+                    <td class="py-2 text-right">
+                        @if($r['pending_leaver_batch_id'])
+                            <span class="badge badge-amber">{{ __('settlement.batch.leaver_pending_badge', ['id' => $r['pending_leaver_batch_id']]) }}</span>
+                        @elseif(auth()->user()->canSubmitPayoutBatch() && ($r['eligible_count'] > 0 || $r['carryover'] !== 0))
+                            <button type="button" wire:click="openLeaverModal({{ $r['salesman_id'] }})" class="btn-primary text-xs">{{ __('settlement.batch.leaver_submit') }}</button>
+                        @endif
+                    </td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+        </div>
+        <p class="mt-2 text-[11px] text-gray-400">{{ __('settlement.batch.leaver_blockers_hint') }}</p>
+        @endif
+    </div>
+    @endif
+</div>
+
+{{-- 🚪 퇴사 정산 제출 모달 — 월정산 모달의 축소판(대상 정산·이월·조정·결재선). 담당자는 그 사람으로 고정. --}}
+@if($showLeaverModal)
+@php $lp = $this->leaverPreview; @endphp
+<div class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-3" wire:key="leaver-modal">
+    <div class="card max-h-[90vh] w-full max-w-2xl overflow-y-auto" data-leaver-modal>
+        <div class="flex items-center justify-between">
+            <h3 class="text-sm font-bold text-gray-800">{{ __('settlement.batch.leaver_modal_title', ['name' => $lp['name']]) }}</h3>
+            <button type="button" wire:click="closeLeaverModal" class="text-gray-400 hover:text-gray-600">&times;</button>
+        </div>
+
+        <div class="mt-3 rounded-md bg-gray-50 px-3 py-2 text-xs">
+            <div class="flex items-center justify-between">
+                <span class="text-gray-600">{{ __('settlement.batch.modal_target', ['count' => count($lp['rows'])]) }}</span>
+                <span class="font-mono font-semibold text-gray-800">₩{{ number_format($lp['payout_sum']) }}</span>
+            </div>
+            @foreach($lp['rows'] as $row)
+            <div class="mt-1 flex items-center justify-between text-gray-500">
+                <span>{{ $row['plate'] }} <span class="text-gray-400">· {{ $row['month'] }}</span></span>
+                <span class="font-mono">₩{{ number_format($row['payout']) }}</span>
+            </div>
+            @endforeach
+        </div>
+
+        @php $lineOpts = \App\Models\SettlementPayoutBatch::approvalLineOptions(); @endphp
+        @if(!empty($lineOpts))
+        <div class="mt-3" data-approval-line>
+            <div class="section-header"><span class="section-dot bg-sky-500"></span>
+                <span class="section-title">{{ __('settlement.batch.line_title') }}</span></div>
+            <div class="mt-1 grid gap-1.5 sm:grid-cols-3">
+                @foreach($lineOpts as $title => $users)
+                <div class="text-xs">
+                    <label class="label-base">{{ $title }}</label>
+                    <select wire:model="submitLine.{{ $title }}" class="input-base text-xs text-gray-800">
+                        <option value="">{{ __('settlement.batch.line_none') }}</option>
+                        @foreach($users as $u)
+                        <option value="{{ $u->id }}">{{ $u->name }}@if(trim((string) $u->phone) === '') — {{ __('settlement.batch.line_no_phone') }}@endif</option>
+                        @endforeach
+                    </select>
+                </div>
+                @endforeach
+            </div>
+        </div>
+        @endif
+
+        @if(!empty($lp['carryovers']))
+        <div class="mt-3" data-carryover-lines>
+            <div class="section-header"><span class="section-dot bg-violet-500"></span>
+                <span class="section-title">{{ __('settlement.batch.modal_carryover') }}</span></div>
+            @foreach($lp['carryovers'] as $line)
+            <div class="mt-1 flex items-start gap-2 rounded px-1.5 py-1 text-xs">
+                <span class="flex-1 text-gray-400">{{ $line['reason'] }}</span>
+                <span class="font-mono {{ $line['amount'] < 0 ? 'text-rose-600' : 'text-emerald-600' }}">{{ $line['amount'] < 0 ? '−' : '+' }}{{ number_format(abs($line['amount'])) }}</span>
+            </div>
+            @endforeach
+        </div>
+        @endif
+
+        <div class="mt-3">
+            <div class="section-header"><span class="section-dot bg-indigo-500"></span>
+                <span class="section-title">{{ __('settlement.batch.modal_adjust') }}</span></div>
+            @foreach($leaverAdjustments as $i => $adj)
+            <div wire:key="ladj-{{ $i }}" class="flex items-center gap-2 px-1.5 py-1 text-xs">
+                <span class="badge {{ $adj['kind'] === 'incentive' ? 'badge-amber' : 'badge-gray' }} text-[10px]">{{ $adj['kind'] === 'incentive' ? __('settlement.batch.adjust_kind_incentive') : __('settlement.batch.adjust_kind_manual') }}</span>
+                <span class="flex-1 text-gray-400">{{ $adj['reason'] }}</span>
+                <span class="font-mono {{ $adj['amount'] < 0 ? 'text-rose-600' : 'text-emerald-600' }}">{{ $adj['amount'] < 0 ? '−' : '+' }}{{ number_format(abs($adj['amount'])) }}</span>
+                <button type="button" wire:click="removeLeaverAdjustment({{ $i }})" class="text-gray-400 hover:text-red-500">&times;</button>
+            </div>
+            @endforeach
+            <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                <select wire:model="newLeaverAdjKind" class="input-base w-28 text-xs text-gray-800">
+                    <option value="manual">{{ __('settlement.batch.adjust_kind_manual') }}</option>
+                    <option value="incentive">{{ __('settlement.batch.adjust_kind_incentive') }}</option>
+                </select>
+                <input type="text" wire:model="newLeaverAdjAmount" data-money data-money-signed placeholder="{{ __('settlement.batch.adjust_amount') }}" class="input-base w-28 text-xs" />
+                <input type="text" wire:model="newLeaverAdjReason" placeholder="{{ __('settlement.batch.adjust_reason') }}" class="input-base flex-1 text-xs" />
+                <button type="button" wire:click="addLeaverAdjustment"
+                        class="rounded bg-indigo-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-indigo-700">{{ __('settlement.batch.adjust_add') }}</button>
+            </div>
+            <p class="mt-1 text-[11px] text-amber-600">{{ __('settlement.batch.adjust_reason_visible') }}</p>
+        </div>
+
+        <div class="mt-3 border-t border-gray-200 pt-2">
+            <div class="flex items-center justify-between text-sm">
+                <span class="font-semibold text-gray-700">{{ __('settlement.batch.modal_final') }}</span>
+                <span class="font-mono text-base font-bold text-violet-700">₩{{ number_format($lp['final']) }}</span>
+            </div>
+            <p class="mt-1 text-[11px] text-gray-400">{{ __('settlement.batch.leaver_modal_hint') }}</p>
+        </div>
+
+        <div class="mt-3 flex items-center justify-end gap-2">
+            <button type="button" wire:click="closeLeaverModal"
+                    class="rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+            <button type="button" wire:click="submitLeaverBatch" class="btn-primary text-xs">{{ __('settlement.batch.leaver_submit') }}</button>
+        </div>
+    </div>
+</div>
+@endif
 
 {{-- ── 2차 정산 완료 일괄 확인 모달 (jin 2026-08-26) ──────────────────────
      닫힐 것과 건너뛸 것을 **사유까지** 보여준다. 카운터로 뭉뚱그리면 정작 손봐야 할

@@ -260,3 +260,17 @@
 | 단일 출처 | 계정→유형 = `Salesman::mirrorTypeFor()`(사용자 관리 저장 · 백필 `salesmen:sync-staff` 공용) · 영업만 = `Salesman::sales()`(이제 포함 목록 employee/freelance) · board 이메일 매칭(`SalesmanResolver`·purchase-sync)도 `sales()` |
 | 배포 뒤 할 일 | 기존 계정은 배포만으로 안 올라온다 → `salesmen:sync-staff`(dry-run) 실측 → jin 승인 → `--apply`. 대상 실측 ssancarerp 8 · heymanerp 1 |
 
+### 🚪 2026-10-15 — 퇴사자 정산 (jin «퇴사자 사용 씬» · «이중으로 정산되지 않게만»)
+
+| # | 결정 (jin 10-15) |
+|---|---|
+| 퇴사 표시 | **사내직원관리** 편집 패널 「퇴사일」(`salesmen.left_at`, 관리 이상). 적으면 활성 자동 OFF. 사용자 관리는 「퇴사 YYYY-MM-DD」 뱃지만. 🚫 `is_active` 재사용 안 함 — 사용자 관리 미러가 저장 때마다 활성을 되살리던 구멍(전화번호만 고쳐도 퇴사가 풀림). 미러는 퇴사일이 있으면 활성을 건드리지 않는다 |
+| 누가 즉시 정산 | **프리랜서만**(`Salesman::settlesImmediatelyOnLeave()` = 퇴사일 + freelance). 사내직원·검차·직원 퇴사자는 종전대로 월정산 10일(«사내직원은 똑같이 10일에 지급되는게 맞고, 프리랜서만 시기가 안 맞으면 별도») — `BatchPayoutBreakdown` 급여 줄이 비활성 퇴사자도 포함(퇴사일 없는 옛 비활성은 종전대로 제외) |
+| 화면 | 정산관리 필터줄 아래 「퇴사자 정산」 펼침(펼쳐야 계산, 버튼 숫자는 count 하나) — 사람별 지급 가능(확정)·먼저 처리할 것(미확정·미수 보류·결재 중)·미청산 이월·예치금·마지막 퇴사 정산. [퇴사 정산 제출] 모달 = 대상 정산·결재선·이월 줄·조정(담당자 고정) |
+| 배치 | 같은 `settlement_payout_batches` 에 `kind`(month/leaver) + `salesman_id`. `month` = 퇴사월(표시·급여 조회 기준일 뿐). 결재선·알림톡 3종·승인 링크·월정산 화면 공용. 월정산 화면·승인 링크에 「퇴사 정산 · 이름」 뱃지 |
+| 달을 닫지 않음 | `isMonthClosed()`·「월당 pending 1건」·`PayrollEntry` 결재 중 이력·귀속월 이동 가드 = **`kind=month` 만**. 퇴사 배치 최종 승인은 `alimtalk:monthly-closing` 을 안 부른다 |
+| 🚨 이중 지급 방지 | ①정산 한 건 = 배치 하나(`payout_batch_id`) ②월정산 후보에서 프리랜서 퇴사자 몫 제외(`Settlement::isReservedForLeaverBatch()`) ③퇴사 배치 후보 = 그 사람의 미배치 확정 정산만(`leaverEligibleSettlementIds`, 미수 보류·지급 제외 판정 공용) ④이월 줄: 월정산은 즉시 정산 퇴사자 건너뜀, 퇴사 배치는 그 사람만 + `CarryoverClearance` 가 제출 시 0 으로 ⑤같은 사람 pending 퇴사 배치 있으면 거부. 가드 = `LeaverSettlementTest`(9) |
+| 알림톡 | (가) 템플릿 무변경 — `erp_payout_request` 「제출」 아이템(20자 자동컷)에 「퇴사정산 이름 · 제출자」. 본문의 「월배치 정산」 문구는 남는다(재승인 안 받음). 전용 템플릿(나)은 승인까지 발송 0 이라 버림 |
+| 범위 밖 | 바이어 승계 = 기존 [승계] · 예치금 반환 = 조정 줄 수동 · 로그인 차단 = 계정 삭제(전부 관리직 수동, jin) |
+| 실측 10-15 | 3사 비활성 담당자 중 미지급 정산 **0건**(ssancarerp 3명 전부 paid · heymanerp 0 · karabaerp 0) — 기능은 앞으로의 퇴사용 |
+

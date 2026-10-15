@@ -165,6 +165,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $email       = '';
     public string $memo        = '';
     public bool   $is_active   = true;
+    /** 🚪 퇴사일 'Y-m-d' — 비면 재직 (jin 2026-10-15). 적으면 활성이 자동으로 꺼지고, 프리랜서는 정산관리 「퇴사자」로 간다. */
+    public string $left_at     = '';
     // 2026-05-21 — Salesman.type 입력 제거. User.type 단일 관리로 이동 (/admin/users 폼).
     // Salesman.type 컬럼은 user.type 미러링 결과로만 채워짐 (Vehicle::saved 훅 호환).
 
@@ -318,6 +320,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->email       = $sm->email ?? '';
         $this->memo        = $sm->memo  ?? '';
         $this->is_active   = $sm->is_active;
+        $this->left_at     = $sm->left_at?->format('Y-m-d') ?? '';
         $this->per_unit_tier_enabled = (bool) $sm->per_unit_tier_enabled;
         $this->payout_excluded = (bool) $sm->payout_excluded;
         $this->deposit_krw_str     = $sm->deposit_krw     === null ? '' : (string) $sm->deposit_krw;
@@ -449,6 +452,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'memo'      => $this->memo  ?: null,
                 'is_active' => $this->is_active,
             ] : [];
+            // 🚪 퇴사일 (jin 2026-10-15) — 관리 이상만. 적으면 활성을 끈다(체크를 켜 둔 채 저장해도). 비우면 퇴사 해제(활성은 손대지 않는다).
+            if ($canApprove) {
+                $this->validate(['left_at' => 'nullable|date_format:Y-m-d'], [], ['left_at' => __('salesman.field.left_at')]);
+                $data['left_at'] = $this->left_at !== '' ? $this->left_at : null;
+                if ($data['left_at'] !== null) {
+                    $data['is_active'] = false;
+                }
+            }
             // tier 는 정산 금액을 바꾸므로 화면 노출과 별개로 저장 시점에 재인가한다 (SKILLS §8 #26).
             if ($canApprove) {
                 $data['per_unit_tier_enabled'] = $this->per_unit_tier_enabled;
@@ -469,6 +480,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             $before = [
+                'left_at' => $sm->left_at?->format('Y-m-d'),
                 'per_unit_tier_enabled' => (bool) $sm->per_unit_tier_enabled,
                 'payout_excluded' => (bool) $sm->payout_excluded,
                 'deposit_krw' => $sm->deposit_krw,
@@ -518,7 +530,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function resetForm(): void
     {
-        $this->name = $this->initials = $this->user_id_str = $this->phone = $this->email = $this->memo = '';
+        $this->name = $this->initials = $this->user_id_str = $this->phone = $this->email = $this->memo = $this->left_at = '';
         $this->is_active = true;
         $this->payrollItems = [];
         $this->payrollCustom = [];
@@ -693,9 +705,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->phone ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->email ?? '-' }}</td>
                 <td class="py-3 pr-4">
+                    @if($sm->hasLeft())
+                    <span class="badge badge-gray" title="{{ $sm->settlesImmediatelyOnLeave() ? __('salesman.left_freelance_hint') : __('salesman.left_employee_hint') }}">{{ __('salesman.left_badge', ['date' => $sm->left_at->format('Y-m-d')]) }}</span>
+                    @else
                     <span class="badge {{ $sm->is_active ? 'badge-green' : 'badge-gray' }}">
                         {{ $sm->is_active ? __('common.active') : __('common.inactive') }}
                     </span>
+                    @endif
                 </td>
                 <td class="py-3 text-right">
                     <div class="flex items-center justify-end gap-3">
@@ -738,7 +754,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div class="flex items-center gap-2">
                 <span class="badge {{ \App\Models\Salesman::typeBadgeClass($sm->type) }}">{{ $sm->type_label }}</span>
+                @if($sm->hasLeft())
+                <span class="badge badge-gray">{{ __('salesman.left_badge', ['date' => $sm->left_at->format('Y-m-d')]) }}</span>
+                @else
                 <span class="badge {{ $sm->is_active ? 'badge-green' : 'badge-gray' }}">{{ $sm->is_active ? __('common.active') : __('common.inactive') }}</span>
+                @endif
                 <a href="{{ route('erp.salesmen.cashflow', $sm->id) }}" wire:navigate
                    class="text-xs text-violet-600 hover:underline">{{ __('salesman.cashflow') }}</a>
             </div>
@@ -940,6 +960,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <input wire:model="is_active" type="checkbox" class="rounded" @disabled(! $canApproveHere) /> {{ __('common.active') }}
             </label>
         </div>
+        {{-- 🚪 퇴사일 (jin 2026-10-15) — 관리 이상. 적으면 활성이 꺼진다. 프리랜서는 정산관리 「퇴사자」에서 즉시 정산, 사내직원은 종전대로 월정산. --}}
+        @if($editingId && $canApproveHere)
+        <div class="rounded-lg border border-gray-200 bg-gray-50 p-3" data-left-at>
+            <label class="label-base">{{ __('salesman.field.left_at') }}</label>
+            <input wire:model="left_at" type="date" class="input-base" />
+            @error('left_at') <p class="mt-1 text-xs text-red-500">{{ $message }}</p> @enderror
+            <p class="mt-1 text-[11px] leading-relaxed text-gray-500">{{ __('salesman.field.left_at_hint') }}</p>
+        </div>
+        @endif
         @if($editingId)
         <div class="pt-2 border-t">
             <a href="{{ route('erp.salesmen.cashflow', $editingId) }}" wire:navigate

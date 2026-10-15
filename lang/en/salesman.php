@@ -47,6 +47,8 @@ return [
         'base_salary_hint' => 'The monthly base salary for this employee. Display only — it never enters the batch total or company profit, and appears on the payout batch screen as "base salary + settlement = monthly take-home".',
         'payout_excluded' => 'Excluded from payouts',
         'payout_excluded_hint' => 'Turn this on for accounts that are not people (a sister company, for example). Settlements for this salesman are still created and listed, but never join a monthly payout batch, so zero-value rows stop piling up. Batches already paid are not changed retroactively.',
+        'left_at' => 'Leaving date',
+        'left_at_hint' => 'Setting a date turns the person inactive. Freelancers can then be paid out right away from Settlements > Leavers (they drop out of the monthly batch); employees, inspectors and staff are still paid in the monthly batch on the 10th. Use [Hand over] for buyers and an adjustment line for deposit refunds.',
         'type_no_account' => 'No login account linked',
     ],
 
@@ -103,6 +105,10 @@ return [
         'inspector' => '(payroll only)',
         'staff' => '(payroll only)',
     ],
+    'left_badge' => 'Left :date',
+    'left_freelance_hint' => 'Freelancer who left - pay out immediately from Settlements > Leavers',
+    'left_employee_hint' => 'Left - final salary and settlements go through the monthly batch as before',
+
     'handover' => [
         'button' => 'Hand over',
         'title' => "Hand over :name's book",

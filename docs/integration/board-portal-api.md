@@ -672,6 +672,7 @@ board 는 조정의 존재조차 모르므로 배치를 미러해야 숫자가 �
   "count": 1,
   "data": [{
     "batch_id": 12,
+    "kind": "month",                 // 2026-10-15 가산 — "month"=월정산 / "leaver"=퇴사 정산(그 한 사람의 즉시 정산, month=퇴사월). board 는 무시해도 된다
     "month": "2026-07",              // 귀속월 (ERP 화면 라벨과 같은 축)
     "status": "approved",
     "decided_at": "2026-08-10",      // 승인 확정일 ≈ 지급일

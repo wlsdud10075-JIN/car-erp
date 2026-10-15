@@ -56,6 +56,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $isTeamManager = ! $authUser->isAdmin() && ! $authUser->isManager() && $authUser->role === '관리';
 
         return User::query()
+            ->with('salesman')   // 🚪 퇴사 뱃지(퇴사일은 명부 칸이다, 2026-10-15)
             ->when(! $authUser->isSuperAdmin(), fn($q) => $q->where('permission', '!=', 'super'))
             ->when($isTeamManager, fn($q) => $q
                 ->whereIn('id', $authUser->getManagedSalesmanUserIds())
@@ -235,16 +236,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         //   사내직원관리에 올라와 급여를 적는다. 단일 출처 = Salesman::mirrorTypeFor() — 백필 커맨드(salesmen:sync-staff)와 같은 판정.
         $mirrorType = \App\Models\Salesman::mirrorTypeFor($user, $typeValue);
         if ($mirrorType !== null) {
-            \App\Models\Salesman::updateOrCreate(
-                ['user_id' => $user->id],
-                [
-                    'name'      => $user->name,
-                    'email'     => $user->email,
-                    'phone'     => $user->phone,
-                    'type'      => $mirrorType,
-                    'is_active' => true,
-                ]
-            );
+            $mirrorAttrs = [
+                'name'      => $user->name,
+                'email'     => $user->email,
+                'phone'     => $user->phone,
+                'type'      => $mirrorType,
+            ];
+            // 🚪 퇴사자(퇴사일 있음)는 활성을 되살리지 않는다 (jin 2026-10-15) — 전화번호 하나 고쳐도 퇴사가 풀리던 구멍.
+            //    퇴사 처리·해제는 사내직원관리 편집 패널 한 곳에서만.
+            $existingMirror = \App\Models\Salesman::where('user_id', $user->id)->first();
+            if (! $existingMirror?->hasLeft()) {
+                $mirrorAttrs['is_active'] = true;
+            }
+            \App\Models\Salesman::updateOrCreate(['user_id' => $user->id], $mirrorAttrs);
         } else {
             // 미러 대상이 아닌 계정(관리자 등급의 비영업)으로 전환 시: 기존 Salesman 비활성화 (차량 FK 보호 위해 삭제 X).
             \App\Models\Salesman::where('user_id', $user->id)->update(['is_active' => false]);
@@ -516,6 +520,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ $u->name }}
                     @if($u->id === auth()->id())
                     <span class="ml-1 text-[10px] text-gray-400">{{ __('user.me') }}</span>
+                    @endif
+                    {{-- 🚪 퇴사 (jin 2026-10-15) — 퇴사 처리·해제는 사내직원관리에서. 여기선 보여만 준다. --}}
+                    @if($u->salesman?->hasLeft())
+                    <span class="badge badge-gray ml-1 text-[10px]" title="{{ __('user.left_hint') }}">{{ __('salesman.left_badge', ['date' => $u->salesman->left_at->format('Y-m-d')]) }}</span>
                     @endif
                 </td>
                 <td class="py-3 pr-4 text-gray-500">{{ $u->email ?? '-' }}</td>
