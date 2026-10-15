@@ -9709,11 +9709,13 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 @php $ncr = $this->panelNonCashRecoveries; $ncMoney = fn ($x) => number_format((float) $x, fmod((float) $x, 1) == 0.0 ? 0 : 2); @endphp
                 <div class="rounded-md border border-dashed border-gray-200 bg-gray-50 px-2.5 py-1.5 text-[11px] text-gray-600" data-non-cash-recoveries>
                     <span class="font-medium text-gray-700">{{ __('vehicle.panel.non_cash_title') }}</span>
-                    @if($ncr['savings'] > 0)<span class="ml-1">{{ __('receivable.method.savings') }} {{ $currency }} {{ $ncMoney($ncr['savings']) }}</span>@endif
+                    {{-- 🎨 항목별 색 (jin 2026-10-15 «색 구분해서 눈에 띄게») — 적립금 보라 · 현금 청록 · 상계 파랑 · 기타 노랑 · 손실 빨강 · 합계 회색 굵게. 빌드 CSS 에 있는 badge 색만 쓴다(§8 #50). --}}
+                    @php $ncBadge = ['cash' => 'badge-teal', 'offset' => 'badge-blue', 'other' => 'badge-amber', 'write_off' => 'badge-red']; @endphp
+                    @if($ncr['savings'] > 0)<span class="badge badge-purple ml-1">{{ __('receivable.method.savings') }} {{ $currency }} {{ $ncMoney($ncr['savings']) }}</span>@endif
                     @foreach($ncr['others'] as $method => $sum)
-                    <span class="ml-1">· {{ __('receivable.method.'.$method) }} {{ $currency }} {{ $ncMoney($sum) }}</span>
+                    <span class="badge {{ $ncBadge[$method] ?? 'badge-gray' }} ml-1">{{ __('receivable.method.'.$method) }} {{ $currency }} {{ $ncMoney($sum) }}</span>
                     @endforeach
-                    <span class="ml-1 font-semibold text-gray-700">= {{ $currency }} {{ $ncMoney($ncr['total']) }}</span>
+                    <span class="badge badge-gray ml-1 font-semibold">= {{ $currency }} {{ $ncMoney($ncr['total']) }}</span>
                     <a href="{{ route('erp.receivables.index') }}?search={{ urlencode($vehicle_number) }}" wire:navigate class="ml-2 text-violet-600 hover:underline">{{ __('vehicle.panel.non_cash_link') }}</a>
                     <span class="ml-1 text-gray-400">{{ __('vehicle.panel.non_cash_hint') }}</span>
                 </div>
