@@ -221,6 +221,8 @@ new #[Layout('components.layouts.app')] class extends Component
             // 💡 `receivableHistories` 가 빠져 있었다 — 미수(→ 정산환율 → 마진·마진율)가 그것을 읽는다.
             //    이 화면은 `wire:poll.30s` 라 30초마다 행 수만큼 쿼리가 더 나갔다.
             ->with(['vehicle.finalPayments', 'vehicle.purchaseBalancePayments', 'vehicle.receivableHistories', 'salesman', 'latestPayApproval.approver'])
+            // 🚪 프리랜서 퇴사자의 미배치 정산은 「퇴사자 정산」 표 안에서만 확정·예외 처리한다(jin 2026-10-15) — 여기 섞이지 않는다.
+            ->notReservedForLeaverBatch()
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
@@ -414,7 +416,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->gateVehicleId = null;
         $this->gateSettlementId = null;
         $this->gateReason = '';
-        unset($this->settlements, $this->salesmanSummaries);
+        unset($this->settlements, $this->salesmanSummaries, $this->leaverRows, $this->leaverOpenCount);
         if ($this->showGateCandidates) {
             $this->loadGateCandidates();   // 방금 만든 건은 목록에서 빠진다
         }
@@ -434,7 +436,7 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
 
-        unset($this->settlements, $this->salesmanSummaries);
+        unset($this->settlements, $this->salesmanSummaries, $this->leaverRows, $this->leaverOpenCount);
         session()->flash('success', __('settlement.gate.released'));
     }
 
@@ -465,6 +467,7 @@ new #[Layout('components.layouts.app')] class extends Component
             //    안 실으면 행마다 2쿼리가 붙는다 — 실측(ssancarerp 3,815건) 7,837쿼리 / 19.3초.
             //    싣고 나면 209쿼리 / 7.9초.
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
+            ->notReservedForLeaverBatch()   // 🚪 퇴사자 미배치분은 퇴사자 표에서(2026-10-15)
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->secondaryFilter, fn ($q) => $q->secondaryFilter($this->secondaryFilter))
@@ -1163,6 +1166,19 @@ new #[Layout('components.layouts.app')] class extends Component
             $eligible = $open->whereIn('id', $eligibleIds);
             $inBatch = $open->whereNotNull('payout_batch_id');
             $blockers = \App\Models\SettlementPayoutBatch::leaverBlockers($sm);   // 제출 가드와 같은 함수
+            // 그 사람의 처리 대상 정산 줄 — 이 표 안에서 [확정]·[예외 등록]을 한다(일반 목록엔 안 나온다).
+            $lines = $open->sortBy([['payout_batch_id', 'asc'], ['id', 'asc']])->map(fn ($s) => [
+                'id' => (int) $s->id,
+                'plate' => $s->vehicle?->vehicle_number ?? '-',
+                'month' => $s->attributed_month?->format('Y-m') ?? '-',
+                'status' => (string) $s->settlement_status,
+                'payout' => (int) $s->actual_payout,
+                'unpaid' => (float) ($s->vehicle?->sale_unpaid_amount ?? 0),
+                'currency' => $s->vehicle?->currency ?? '',
+                'held' => $s->isPayoutHeldByUnpaid(),
+                'override' => $s->hasGateOverride(),
+                'batch_id' => $s->payout_batch_id ? (int) $s->payout_batch_id : null,
+            ])->values()->all();
             $pendingLeaver = $pendingBatches->first(fn ($b) => $b->kind === \App\Models\SettlementPayoutBatch::KIND_LEAVER && (int) $b->salesman_id === (int) $sm->id);
             $last = \App\Models\SettlementPayoutBatch::query()->leaver()->where('salesman_id', $sm->id)
                 ->where('status', \App\Models\SettlementPayoutBatch::STATUS_APPROVED)->orderByDesc('id')->first(['id', 'decided_at', 'total_payout']);
@@ -1180,6 +1196,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 'carryover' => (int) $sm->unconsumed_carryover,
                 'deposit' => $sm->deposit_krw,
                 'pending_leaver_batch_id' => $pendingLeaver?->id,
+                'lines' => $lines,
                 'last_batch' => $last ? ['id' => $last->id, 'date' => $last->decided_at?->format('Y-m-d'), 'total' => (int) $last->total_payout] : null,
             ];
         }
@@ -1564,7 +1581,7 @@ new #[Layout('components.layouts.app')] class extends Component
             return;
         }
 
-        unset($this->settlements, $this->salesmanSummaries);
+        unset($this->settlements, $this->salesmanSummaries, $this->leaverRows, $this->leaverOpenCount);
         $this->dispatch('notify', message: __('settlement.notify.confirmed'), type: 'success');
     }
 
@@ -2211,6 +2228,40 @@ new #[Layout('components.layouts.app')] class extends Component
                         @endif
                     </td>
                 </tr>
+                {{-- 그 사람의 처리 대상 정산 — 여기서 [확정]·[예외 등록]·[예외 해제]. 일반 목록에는 안 나온다(jin 2026-10-15). --}}
+                @if(!empty($r['lines']))
+                <tr wire:key="leaver-lines-{{ $r['salesman_id'] }}" class="bg-gray-50/60">
+                    <td colspan="8" class="px-3 py-2">
+                        @php $canFin = auth()->user()->canConfirmFinance(); @endphp
+                        <div class="space-y-1" data-leaver-lines="{{ $r['salesman_id'] }}">
+                            @foreach($r['lines'] as $ln)
+                            <div wire:key="leaver-line-{{ $ln['id'] }}" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
+                                <span class="font-medium text-gray-700">{{ $ln['plate'] }}</span>
+                                <span class="text-gray-400">{{ $ln['month'] }}</span>
+                                <span class="badge {{ ['pending' => 'badge-blue', 'calculating' => 'badge-amber', 'confirmed' => 'badge-green', 'paid' => 'badge-gray'][$ln['status']] ?? 'badge-gray' }}">{{ \Illuminate\Support\Facades\Lang::has('settlement.status.'.$ln['status']) ? __('settlement.status.'.$ln['status']) : $ln['status'] }}</span>
+                                <span class="font-mono text-gray-700">₩{{ number_format($ln['payout']) }}</span>
+                                @if($ln['batch_id'])
+                                    <span class="badge badge-blue">{{ __('settlement.batch.leaver_line_in_batch', ['id' => $ln['batch_id']]) }}</span>
+                                @else
+                                    @if($ln['held'])<span class="badge badge-red" title="{{ $ln['currency'] }} {{ number_format($ln['unpaid'], 2) }}">{{ __('settlement.batch.leaver_line_held') }}</span>@endif
+                                    @if($ln['override'])<span class="badge badge-amber">{{ __('settlement.batch.leaver_line_override') }}</span>@endif
+                                    @if($canFin)
+                                        @if(in_array($ln['status'], ['pending', 'calculating'], true))
+                                        <button type="button" wire:click="confirmSettlement({{ $ln['id'] }})" class="rounded border border-emerald-500 px-2 py-0.5 text-[11px] text-emerald-700 hover:bg-emerald-50" data-leaver-confirm="{{ $ln['id'] }}">{{ __('settlement.batch.leaver_line_confirm') }}</button>
+                                        @endif
+                                        @if($ln['held'])
+                                        <button type="button" wire:click="startGateOverrideForSettlement({{ $ln['id'] }})" class="rounded border border-amber-500 px-2 py-0.5 text-[11px] text-amber-700 hover:bg-amber-50" data-leaver-exception="{{ $ln['id'] }}">{{ __('settlement.batch.leaver_line_exception') }}</button>
+                                        @elseif($ln['override'])
+                                        <button type="button" wire:click="releaseGateOverride({{ $ln['id'] }})" wire:confirm="{{ __('settlement.gate.confirm_release') }}" class="text-[11px] text-gray-400 hover:text-red-500">{{ __('settlement.batch.leaver_line_release') }}</button>
+                                        @endif
+                                    @endif
+                                @endif
+                            </div>
+                            @endforeach
+                        </div>
+                    </td>
+                </tr>
+                @endif
                 @endforeach
             </tbody>
         </table>

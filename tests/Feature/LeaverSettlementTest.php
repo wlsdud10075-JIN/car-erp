@@ -221,6 +221,21 @@ class LeaverSettlementTest extends TestCase
         $this->assertSame(2, SettlementPayoutBatch::leaverEligibleSettlementIds($free)->count());
     }
 
+    public function test_exception_is_registered_from_the_leaver_table(): void
+    {
+        $this->actingAs($this->user('admin'));
+        $leaver = $this->freelancer();
+        $held = $this->confirmed($leaver, '2026-10', paidUp: false);
+
+        $c = Volt::test('erp.settlements.index')->set('monthFilter', '2026-10')->call('toggleLeavers');
+        $c->assertSeeHtml('data-leaver-exception="'.$held->id.'"')->assertSeeHtml('data-leaver-blocked')
+            ->call('startGateOverrideForSettlement', $held->id)->set('gateReason', '퇴사 정산 — 미수는 별도 회수')->call('confirmGateOverride')->assertHasNoErrors();
+
+        $this->assertTrue($held->fresh()->hasGateOverride());
+        $c->assertDontSeeHtml('data-leaver-blocked')->assertSee('예외 대상');
+        $this->assertSame(['unconfirmed' => 0, 'held' => 0], SettlementPayoutBatch::leaverBlockers($leaver));
+    }
+
     public function test_bulk_confirm_skips_freelance_leavers(): void
     {
         $this->actingAs($this->user('admin'));
@@ -302,10 +317,15 @@ class LeaverSettlementTest extends TestCase
         $c->call('toggleLeavers')->assertSee($leaver->name)->assertSee('미확정 1')->assertSeeHtml('data-leaver-row="'.$leaver->id.'"')
             ->assertSeeHtml('data-leaver-blocked')->assertDontSee('퇴사 정산 제출</button>', false);
 
-        // 미확정을 확정하면 버튼이 열린다
-        Settlement::where('salesman_id', $leaver->id)->where('settlement_status', 'pending')->update(['settlement_status' => 'confirmed', 'confirmed_at' => now()]);
-        unset($c->instance()->leaverRows);
-        $c->call('toggleLeavers')->call('toggleLeavers')->assertDontSeeHtml('data-leaver-blocked');
+        // 일반 목록·담당자 합계에는 퇴사자 미배치 정산이 안 섞인다(jin «밑에서 일반 정산과 섞이면 어렵다»)
+        $this->assertSame(0, $c->instance()->settlements->total(), '일반 목록 0건');
+        $c->call('toggleSummaries');
+        $this->assertSame([], array_column($c->instance()->salesmanSummaries, 'salesman_id'));
+        // 표 안에서 [확정] — 미확정을 확정하면 제출 버튼이 열린다
+        $pendingId = Settlement::where('salesman_id', $leaver->id)->where('settlement_status', 'pending')->value('id');
+        $c->assertSeeHtml('data-leaver-confirm="'.$pendingId.'"')->call('confirmSettlement', $pendingId)->assertHasNoErrors();
+        $this->assertSame('confirmed', Settlement::find($pendingId)->settlement_status);
+        $c->assertDontSeeHtml('data-leaver-blocked');
 
         $c->call('openLeaverModal', $leaver->id)->assertSeeHtml('data-leaver-modal')
             ->set('newLeaverAdjAmount', '-50,000')->set('newLeaverAdjReason', '예치금 상계')->call('addLeaverAdjustment')

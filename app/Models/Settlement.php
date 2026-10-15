@@ -396,6 +396,13 @@ class Settlement extends Model
             ->whereHas('salesman', fn ($q) => $q->immediateLeavers());
     }
 
+    /** 여집합 — 정산관리 일반 목록·담당자 합계가 쓴다(jin 2026-10-15 «퇴사자는 퇴사자 탭에서만 확정·예외, 밑에 섞이면 어렵다»). 배치에 묶인 것(지급 이력)은 그대로 보인다. */
+    public function scopeNotReservedForLeaverBatch($query)
+    {
+        return $query->where(fn ($q) => $q->whereNotNull('payout_batch_id')
+            ->orWhereDoesntHave('salesman', fn ($q2) => $q2->immediateLeavers()));
+    }
+
     /** SQL 스코프 — 지급보류(confirmed·미배치·**예외 없음**·차량 미수 캐시>0). 대시보드 카운트/필터·목록 표시용. */
     public function scopePayoutHeldByUnpaid($query)
     {
