@@ -3338,7 +3338,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     /**
      * 💳 이 차의 적립금 사용 이력 — USED(사용)·REFUND(되돌림) 행 (jin 2026-10-15). 바이어 적립금 탭의 FIFO 열과 같은 원장(savings_statuses).
-     * `reverted` = 이 USED 행을 되돌린 REFUND 가 있나(original_transaction_id). 되돌린 행은 또 못 되돌린다.
+     * `reverted` = 이 USED 행을 되돌린 REFUND 가 있나(original_transaction_id, 바이어 적립금 탭에서 정정한 흔적). 🚫 되돌리기 버튼은 두지 않는다(jin 2026-10-15 «실수했음 적립금 탭 가서 수정 — 이 정도 귀찮음은 맞다»).
      *
      * @return array<int, array{id:int, date:string, type:string, amount:float, balance:float, reverted:bool, note:?string}>
      */
@@ -3361,47 +3361,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             'reverted' => in_array((int) $r->id, $reverted, true),
             'note' => $r->note,
         ])->values()->all();
-    }
-
-    /**
-     * 💳 사용 한 건 되돌리기 — 누적(savings_used)에서 그 금액을 빼고 저장한다. H6 훅이 REFUND 행 + 회수이력(−) 미러를 만든다(원장은 되감기, FIFO 복귀).
-     * 재무 이상(canConfirmFinance). 2차 마감 차량이면 회계 락이 막는다(예외를 토스트로).
-     */
-    public function revertSavingsUse(int $statusId): void
-    {
-        if (! (auth()->user()?->canConfirmFinance() ?? false)) {
-            $this->dispatch('notify', message: __('vehicle.panel.savings_revert_forbidden'), type: 'error');
-
-            return;
-        }
-        $v = $this->editingId ? Vehicle::find($this->editingId) : null;
-        $row = $v ? \App\Models\SavingsStatus::where('vehicle_id', $v->id)->where('transaction_type', 'USED')->find($statusId) : null;
-        if (! $v || ! $row) {
-            return;
-        }
-        if (\App\Models\SavingsStatus::where('original_transaction_id', $row->id)->where('transaction_type', 'REFUND')->exists()) {
-            $this->dispatch('notify', message: __('vehicle.panel.savings_already_reverted'), type: 'warning');
-
-            return;
-        }
-        $amount = abs((float) $row->savings);
-        try {
-            $v->savings_used = max(0, (float) ($v->savings_used ?? 0) - $amount);
-            $v->save();
-            // 방금 생긴 REFUND 행에 「어느 사용을 되돌렸나」를 적는다 — 바이어 적립금 탭·이 이력이 짝을 안다.
-            \App\Models\SavingsStatus::where('vehicle_id', $v->id)->where('transaction_type', 'REFUND')
-                ->whereNull('original_transaction_id')->orderByDesc('id')->first()?->update(['original_transaction_id' => $row->id]);
-        } catch (\Throwable $e) {
-            $this->dispatch('notify', message: __('vehicle.panel.savings_revert_fail', ['msg' => $e->getMessage()]), type: 'error');
-
-            return;
-        }
-        $v->refresh();
-        $this->panelSavingsUsedTotal = (float) ($v->savings_used ?? 0);
-        $this->panelSaleUnpaid = (float) $v->sale_total_amount > 0 ? (float) $v->sale_unpaid_amount : null;
-        $this->panelUnpaidRatio = $v->unpaid_ratio;
-        unset($this->savingsUsageRows, $this->panelNonCashRecoveries, $this->buyerSavingsBalance);
-        $this->dispatch('notify', message: __('vehicle.panel.savings_reverted', ['amount' => number_format($amount, 2), 'currency' => $v->currency]), type: 'success');
     }
 
     /**
@@ -9695,8 +9654,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
-                {{-- 💳 적립금 사용 = 「이번에 쓸 금액」 1회성 (jin 2026-10-15). 누적·이력은 아래 줄. 잔액 초과는 저장이 막는다. --}}
-                @php $canConfirmFinanceLocalSavings = auth()->user()?->canConfirmFinance() ?? false; @endphp
+                {{-- 💳 적립금 사용 = 「이번에 쓸 금액」 1회성 (jin 2026-10-15). 누적·이력은 아래 줄(읽기 전용 — 정정은 바이어 적립금 탭). 잔액 초과는 저장이 막는다. --}}
                 <div data-savings-use>
                     <label class="label-base">{{ __('vehicle.field.savings_used') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.savings_used_note') }}</span></label>
                     <input wire:model="savings_used_str" type="text" data-money class="input-base" placeholder="0" />
@@ -9712,10 +9670,6 @@ function vehicleColumnsToggle(columns, serverKnows) {
                             <span class="font-mono {{ $row['reverted'] ? 'line-through' : '' }}">{{ $currency }} {{ number_format($row['amount'], fmod($row['amount'], 1) == 0.0 ? 0 : 2) }}</span>
                             @php $svBal = __('vehicle.panel.savings_row_balance', ['balance' => number_format($row['balance'], fmod($row['balance'], 1) == 0.0 ? 0 : 2)]); @endphp
                             <span class="min-w-0 grow basis-full truncate text-gray-400 sm:basis-0" title="{{ $svBal }}{{ $row['note'] ? ' · '.$row['note'] : '' }}">{{ $svBal }}</span>
-                            @if($row['type'] === 'USED' && ! $row['reverted'] && $canConfirmFinanceLocalSavings)
-                            <button type="button" wire:click="revertSavingsUse({{ $row['id'] }})" wire:confirm="{{ __('vehicle.panel.savings_revert_confirm', ['amount' => number_format($row['amount'], 2)]) }}"
-                                    class="shrink-0 text-[10px] text-rose-500 hover:underline">{{ __('vehicle.panel.savings_revert') }}</button>
-                            @endif
                         </div>
                         @endforeach
                     </div>

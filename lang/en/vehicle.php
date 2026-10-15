@@ -407,12 +407,6 @@ return [
         'savings_row_used' => 'used',
         'savings_row_refund' => 'reverted',
         'savings_row_balance' => 'balance :balance',
-        'savings_revert' => 'Revert',
-        'savings_revert_confirm' => 'Revert this use of :amount? The savings balance comes back and this vehicle\'s unpaid amount grows again.',
-        'savings_reverted' => 'Reverted savings use of :currency :amount.',
-        'savings_revert_fail' => 'Could not revert - :msg',
-        'savings_revert_forbidden' => 'Only finance/manager roles can revert.',
-        'savings_already_reverted' => 'This use was already reverted.',
         'non_cash_title' => 'Settled without cash',
         'non_cash_link' => 'Receivables',
         'non_cash_hint' => '- not mixed into the payment rows (they are the basis for cash received and the settlement rate). Enter via Receivables or the savings field.',
@@ -1301,7 +1295,7 @@ return [
 
     // Custom validation messages (approval / transfer / ledger unlock reasons)
     'valmsg' => [
-        'savings_negative' => 'Savings to use must be greater than 0. Use [Revert] in the history to undo.',
+        'savings_negative' => 'Savings to use must be greater than 0. Correct a wrong use in the buyer savings tab.',
         'savings_over' => 'Cannot use :use - the savings balance is only :currency :balance.',
         'duplicate_final_payment_row' => 'Two new sale payment rows have the same amount, date and note. Remove one or add a note to tell them apart.',
         'duplicate_purchase_payment_row' => 'Two new purchase payment rows have the same amount, date and note. Remove one or add a note to tell them apart.',

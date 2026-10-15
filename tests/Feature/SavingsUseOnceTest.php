@@ -18,7 +18,7 @@ use Tests\TestCase;
  *
  * - 저장하면 누적(vehicles.savings_used)에 더하고 칸은 비워진다. 아래에 합계·사용 이력(USED/REFUND).
  * - 잔액 초과는 저장 거부(채권관리·바이어 드로어와 같은 규칙 — 판매탭만 빠져 있던 구멍).
- * - 사용 한 건 되돌리기 = REFUND 행(original_transaction_id) + 미수 복귀.
+ * - 이력은 읽기 전용(되돌리기 없음 — 정정은 바이어 적립금 탭). 원장 쪽 REFUND 는 이력에 흔적으로.
  * - 「입금 외 정리」 줄 = 채권관리에서 돈 없이 턴 것 + 적립금 사용. 잔금 행에 안 섞는다.
  */
 class SavingsUseOnceTest extends TestCase
@@ -92,33 +92,29 @@ class SavingsUseOnceTest extends TestCase
         $this->assertSame(500.0, (float) $v->fresh()->savings_used, '잔액까지는 된다');
     }
 
-    public function test_reverting_one_use_restores_the_balance_and_the_unpaid(): void
+    /** 이력은 읽기 전용 — 되돌리기 버튼은 없다(jin «실수했음 적립금 탭 가서 수정»). 정정은 바이어 적립금 탭(원장)에서 하고, 그 흔적(REFUND)이 여기 줄로 보인다. */
+    public function test_history_is_read_only_and_shows_refunds_made_elsewhere(): void
     {
         [$v, $admin] = $this->soldVehicle();
         $this->actingAs($admin);
         $this->panel($v)->set('savings_used_str', '878')->call('save')->assertHasNoErrors();
         $used = SavingsStatus::where('vehicle_id', $v->id)->where('transaction_type', 'USED')->first();
-        $this->assertSame(2_162.0, (float) $v->fresh()->sale_unpaid_amount);
 
         $c = $this->panel($v);
-        $rows = $c->get('savingsUsageRows');
-        $this->assertCount(1, $rows);
-        $this->assertFalse($rows[0]['reverted']);
-        $c->assertSeeHtml('data-savings-history')->call('revertSavingsUse', $used->id)->assertHasNoErrors();
+        $this->assertFalse(method_exists($c->instance(), 'revertSavingsUse'), '판매탭에 되돌리기 없음');
+        $c->assertSeeHtml('data-savings-history')->assertDontSee('되돌리기');
+        $this->assertCount(1, $c->get('savingsUsageRows'));
 
+        // 바이어 적립금 탭(원장)에서 정정한 것처럼 — 컬럼을 줄이면 H6 훅이 REFUND 행을 만든다
         $v->refresh();
-        $this->assertSame(0.0, (float) $v->savings_used);
-        $this->assertSame(3_040.0, (float) $v->sale_unpaid_amount, '미수가 되돌아온다');
-        $refund = SavingsStatus::where('vehicle_id', $v->id)->where('transaction_type', 'REFUND')->first();
-        $this->assertNotNull($refund);
-        $this->assertSame($used->id, (int) $refund->original_transaction_id, '어느 사용을 되돌렸는지 짝을 남긴다');
-        $this->assertSame(1_000.0, (float) SavingsStatus::where('buyer_id', $v->buyer_id)->orderByDesc('id')->value('balance'));
-        $this->assertTrue($c->get('savingsUsageRows')[0]['reverted']);
+        $v->savings_used = 0;
+        $v->save();
+        SavingsStatus::where('vehicle_id', $v->id)->where('transaction_type', 'REFUND')->update(['original_transaction_id' => $used->id]);
 
-        // 같은 건 두 번 못 되돌린다
-        $c->call('revertSavingsUse', $used->id);
-        $this->assertSame(1, SavingsStatus::where('vehicle_id', $v->id)->where('transaction_type', 'REFUND')->count());
-        $this->assertSame(0.0, (float) $v->fresh()->savings_used);
+        $rows = $this->panel($v)->get('savingsUsageRows');
+        $this->assertSame(['USED', 'REFUND'], array_column($rows, 'type'));
+        $this->assertTrue($rows[0]['reverted'], '되돌린 사용은 흔적으로 표시');
+        $this->assertSame(3_040.0, (float) $v->fresh()->sale_unpaid_amount);
     }
 
     public function test_history_sum_still_matches_the_column(): void
@@ -127,8 +123,9 @@ class SavingsUseOnceTest extends TestCase
         $this->actingAs($admin);
         $this->panel($v)->set('savings_used_str', '300')->call('save');
         $this->panel($v)->set('savings_used_str', '150')->call('save');
-        $used = SavingsStatus::where('vehicle_id', $v->id)->where('transaction_type', 'USED')->orderBy('id')->first();
-        $this->panel($v)->call('revertSavingsUse', $used->id);
+        $v->refresh();
+        $v->savings_used = 150;   // 원장 쪽 정정(첫 사용 300 되돌림)과 같은 효과
+        $v->save();
 
         $this->assertSame(150.0, (float) $v->fresh()->savings_used);
         $this->assertSame(150.0, (float) ReceivableHistory::where('vehicle_id', $v->id)->where('method', 'savings')->sum('amount'), '회수이력 합 = savings_used (SavingsInReceivablesTest 불변식)');
