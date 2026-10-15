@@ -578,6 +578,7 @@ class SettlementPayoutBatch extends Model
         $batch = DB::transaction(function () use ($submitter, $month, $rank, $ids, $adjustments, $steps, $extra, $carryOnly) {
             $settlements = Settlement::whereIn('id', $ids)->get();
             $batch = self::create($extra + [
+                'kind' => self::KIND_MONTH, 'salesman_id' => null,   // 월정산 기본 — 반환 인스턴스에도 kind 가 실리게(DB 기본값만 믿지 않는다)
                 'month' => $month,
                 'submitter_id' => $submitter->id,
                 'submitter_rank' => $rank,
