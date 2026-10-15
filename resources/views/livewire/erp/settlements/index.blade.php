@@ -2236,6 +2236,8 @@ new #[Layout('components.layouts.app')] class extends Component
                     <td colspan="8" class="px-3 py-2">
                         @php $canFin = auth()->user()->canConfirmFinance(); @endphp
                         <div class="space-y-1" data-leaver-lines="{{ $r['salesman_id'] }}">
+                            {{-- 줄 수 = 처리 대상 전부(지급 가능 + 먼저 처리할 것). 「지급 가능 2건인데 줄은 4개」 혼동 방지(jin 2026-10-15) --}}
+                            <div class="text-[10px] text-gray-500">{{ __('settlement.batch.leaver_lines_title', ['n' => count($r['lines']), 'ok' => $r['eligible_count'], 'u' => $r['unconfirmed'], 'h' => $r['held']]) }}</div>
                             @foreach($r['lines'] as $ln)
                             <div wire:key="leaver-line-{{ $ln['id'] }}" class="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px]">
                                 <span class="font-medium text-gray-700">{{ $ln['plate'] }}</span>
