@@ -679,9 +679,11 @@ new #[Layout('components.layouts.app')] class extends Component
         //    두 달에 걸칠 수 없다. 배치가 잡히면 그 조정 전액이 그 기간의 지급이다.
         //    ⚠️ 그 전제가 깨지면(정산별로 paid_at 을 따로 찍게 되면) 같은 조정이 두 달에
         //       각각 전액 잡힌다 — 그때는 여기도 같이 고쳐야 한다.
+        // 💰 예치금 반환(kind=deposit, 퇴사 정산)은 뺀다 — 그 사람 돈을 돌려주는 것이라 회사이익도 지급도 아니다(2026-10-15).
         if ($batchIds !== []) {
             SettlementPayoutAdjustment::query()
                 ->whereIn('batch_id', array_keys($batchIds))
+                ->where('kind', '!=', SettlementPayoutAdjustment::KIND_DEPOSIT)
                 ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
                 ->get(['salesman_id', 'amount'])
                 ->each(function (SettlementPayoutAdjustment $adj) use (&$companyNet, &$payoutSum, &$byPerson) {

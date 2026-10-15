@@ -122,6 +122,9 @@
             @endif
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('incentive') }}"><span class="text-gray-500">{{ __('payout_card.incentive') }}</span>
                 <span class="font-mono">@if($mode === 'preview' && $p['incentive'] === 0)<span class="text-gray-400">{{ __('payout_card.incentive_preview') }}</span>@else{{ $signed($p['incentive']) }}@endif</span></div>
+            @if(($p['adj_deposit'] ?? 0) !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-deposit><span class="text-gray-500">{{ __('payout_card.adj_deposit') }}</span><span class="font-mono">{{ $signed($p['adj_deposit']) }}</span></div>
+            @endif
             <div class="flex justify-between border-t border-gray-100 bg-emerald-50 px-2 py-1.5 text-xs font-bold text-emerald-800" data-payout-expanded><span>{{ __('payout_card.payout') }}</span><span class="font-mono">{{ $fmt($p['payout']) }}</span></div>
         </div>
 
@@ -155,9 +158,13 @@
             <div class="flex justify-between bg-gray-50 px-2 py-1 text-[11px] font-semibold"><span>{{ __('payout_card.equiv_total') }}</span><span class="font-mono" data-equiv-total>{{ $fmt($p['equiv_total']) }}</span></div>
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('incentive') }}"><span class="text-gray-500">{{ __('payout_card.incentive') }}</span>
                 <span class="font-mono">@if($mode === 'preview' && $p['incentive'] === 0)<span class="text-gray-400">{{ __('payout_card.incentive_preview') }}</span>@else{{ $signed($p['incentive']) }}@endif</span></div>
+            {{-- 💰 퇴사 정산의 예치금 반환 — 송금엔 들어가고 회사이익엔 안 들어간다(그 사람 돈). 옛 박제엔 키가 없다. --}}
+            @if(($p['adj_deposit'] ?? 0) !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-deposit><span class="text-gray-500">{{ __('payout_card.adj_deposit') }}</span><span class="font-mono">{{ $signed($p['adj_deposit']) }}</span></div>
+            @endif
             <div class="flex justify-between border-t border-gray-100 px-2 py-1 text-xs font-bold"><span>{{ __('payout_card.payout') }}</span><span class="font-mono">{{ $fmt($p['payout']) }}</span></div>
             @if(($p['deposit'] ?? null) !== null)
-            <div class="px-2 py-1 text-[10px] text-gray-400">({{ __('payout_card.deposit') }} {{ number_format($p['deposit']) }} · {{ __('payout_card.deposit_hint') }})</div>
+            <div class="px-2 py-1 text-[10px] text-gray-400">({{ __('payout_card.deposit') }} {{ number_format($p['deposit']) }} · {{ ($p['adj_deposit'] ?? 0) !== 0 ? __('payout_card.deposit_returning') : __('payout_card.deposit_hint') }})</div>
             @endif
         </div>
         @endif

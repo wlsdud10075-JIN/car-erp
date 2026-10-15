@@ -47,8 +47,10 @@ return [
     'adj_carry' => '이월 조정',
     'incentive' => '추가 인센티브',
     'incentive_preview' => '월정산 제출 때 입력',
+    'adj_deposit' => '예치금 반환 (퇴사 정산)',
     'deposit' => '예치금 보유',
     'deposit_hint' => '지급액과 무관, 표시만',
+    'deposit_returning' => '위 반환 줄만큼 승인 시 줄어듦',
     'vehicles' => '차량별 보기',
     'vh_vehicle' => '차량번호',       // 차량별 보기 표 머리글(클릭 정렬, jin 2026-10-12)
     'vh_type' => '직책',

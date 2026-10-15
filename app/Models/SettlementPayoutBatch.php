@@ -576,6 +576,18 @@ class SettlementPayoutBatch extends Model
         if ($ids->isEmpty() && $carry === [] && $adjustments === []) {
             throw new \DomainException('올릴 것이 없습니다 (미지급 확정 정산·미청산 이월·조정이 전부 없음).');
         }
+        // 💰 예치금 반환 줄 — 모달이 보유액 전액을 선입력하고 사람이 줄이거나 뺄 수 있다(일부 반환·회사 귀속). 한 줄, 1 ~ 보유액.
+        $depositLines = array_values(array_filter($adjustments, fn ($a) => ($a['kind'] ?? null) === SettlementPayoutAdjustment::KIND_DEPOSIT));
+        if (count($depositLines) > 1) {
+            throw new \DomainException('예치금 반환 줄은 하나만 넣을 수 있습니다.');
+        }
+        if ($depositLines !== []) {
+            $amt = (int) $depositLines[0]['amount'];
+            $held = (int) ($sm->deposit_krw ?? 0);
+            if ($amt <= 0 || $amt > $held) {
+                throw new \DomainException('예치금 반환액은 1원 이상, 보유액('.number_format($held).'원) 이하여야 합니다.');
+            }
+        }
 
         $adjustments = array_map(fn ($a) => $a + ['salesman_id' => (int) $sm->id], $adjustments);
         $month = $sm->left_at->format('Y-m');
@@ -730,6 +742,7 @@ class SettlementPayoutBatch extends Model
                 $this->save();
                 $this->execute();
                 $this->markCancelLossesSettled();
+                $this->settleDepositReturns();
                 $becameFinal = true;
             } elseif ($next !== null) {
                 $this->current_step = (int) $next->seq;
@@ -792,6 +805,37 @@ class SettlementPayoutBatch extends Model
         Vehicle::whereIn('id', $vehicleIds)
             ->whereNull('cancel_loss_settled_at')
             ->update(['cancel_loss_settled_at' => now()]);
+    }
+
+    /**
+     * 💰 최종 승인 시 — 예치금 반환 줄(kind=deposit)만큼 그 사람의 `deposit_krw` 를 줄인다 (jin 2026-10-15 퇴사자 예치금).
+     *
+     * 돈이 실제로 나가는 시점(최종 승인)에만 찍는다 — 반려되면 보유액이 그대로라 되돌릴 것이 없다.
+     * 바닥은 0(보유액보다 큰 줄은 제출 가드가 막지만, 제출 뒤 사내직원관리에서 보유액을 줄였을 수 있다).
+     * Salesman 엔 감사 훅이 없어 여기서 직접 남긴다(사내직원관리 저장부와 같은 `AuditLog::recordChange`).
+     */
+    private function settleDepositReturns(): void
+    {
+        $byPerson = $this->adjustments()->where('kind', SettlementPayoutAdjustment::KIND_DEPOSIT)->get()->groupBy('salesman_id');
+        foreach ($byPerson as $salesmanId => $lines) {
+            $sm = Salesman::find($salesmanId);
+            if (! $sm) {
+                continue;
+            }
+            $was = (int) ($sm->deposit_krw ?? 0);
+            $now = max(0, $was - (int) $lines->sum('amount'));
+            if ($now === $was) {
+                continue;
+            }
+            $sm->update(['deposit_krw' => $now]);
+            AuditLog::recordChange($sm, 'deposit_krw', $was, $now);
+        }
+    }
+
+    /** 이 배치의 예치금 반환 합 — 지급 총액엔 들어가지만 회사이익에선 뺀다(그 사람 돈). */
+    public function depositReturnTotal(): int
+    {
+        return (int) $this->adjustments()->where('kind', SettlementPayoutAdjustment::KIND_DEPOSIT)->sum('amount');
     }
 
     public function rejectBy(User $u, string $reason): void
@@ -857,13 +901,16 @@ class SettlementPayoutBatch extends Model
         //   여기만 `company_net` 을 그대로 못 쓴다 — payout 이 정산 합이 아니라 **조정 포함 배치 총액**이라
         //   실지급액을 두 번 빼게 된다. 발송비 항만 같은 accessor 로 더한다.
         $shipping = (int) $settlements->sum(fn (Settlement $s) => (int) $s->shipping_fee);
+        // 💰 예치금 반환(퇴사 정산)은 지급 총액엔 있지만 회사 비용이 아니다 — 그 사람 돈을 돌려주는 것. 회사이익에서 되돌린다.
+        $depositReturn = $this->depositReturnTotal();
 
         return [
             'total_margin' => $totalMargin,
             'payout' => $payout,
             'fx' => $fx,
             'shipping' => $shipping,
-            'company_profit' => $totalMargin - $payout - $shipping,
+            'deposit_return' => $depositReturn,
+            'company_profit' => $totalMargin - ($payout - $depositReturn) - $shipping,
             // 💴 월정산 v3 — 급여(사내·검차)까지 뺀 회사 순이익. 승인 알림톡 「회사이익」 변수와 승인 화면이 이것을 쓴다(문구 무변경, 숫자만).
             'company_profit_after_payroll' => BatchPayoutBreakdown::forBatch($this)['totals']['company_net'],
             // 📊 배치 전체 마진율 (jin 2026-09-18) — Σ총마진 / Σ판매금원화. 내수는 양쪽에서 빠진다.
