@@ -25,6 +25,7 @@ return [
     'escalate_note' => 'The number is the age at which that role starts receiving an item. The checkbox decides who, the number decides when. Later stages also see the vehicles earlier stages already receive. Leave blank to restore the default.',
     'save' => 'Save',
     'saved' => 'Recipient roles saved.',
+    'payout_roles_note' => 'The submitter always receives it. "Approval line" = the people on that batch\'s approval line (the people chosen as department head / executive / CEO) plus whoever actually approved or rejected — it differs per batch, so it is not counted. Finance / management add everyone in that role.',
     'auto_prefix' => 'also to',
     'auto_suffix' => 'automatically',
     'auto_fixed' => 'This alert is sent automatically to the responsible person (no role selection).',

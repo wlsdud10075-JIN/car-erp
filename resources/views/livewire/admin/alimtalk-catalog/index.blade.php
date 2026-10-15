@@ -556,7 +556,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! AlimtalkRecipients::isBroadcast($code)) {
             return;
         }
-        $valid = array_keys(AlimtalkRecipients::BROADCAST_GROUPS);
+        $valid = array_keys(AlimtalkRecipients::groupsFor($code));   // 지급 결재 결과는 「결재선 전원/재무/관리」만(GROUP_OPTIONS)
 
         // 🔀 2026-09-12 — 역할 키뿐 아니라 **개별 지정(`user:{id}`)과 직접 적은 번호**도 저장한다.
         //    ⚠️ 못 쓰는 토큰은 **버린다** — 남기면 「수신자는 있는데 아무에게도 안 가는」 상태가 되고
@@ -567,9 +567,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         foreach ($this->roles[$code] ?? [] as $raw) {
             $t = trim((string) $raw);
             $uid = AlimtalkRecipients::userIdOf($t);
-            $ok = in_array($t, $valid, true)
-                || ($uid !== null && AlimtalkRecipients::userIsPickable($uid))
-                || ($uid === null && ! in_array($t, $valid, true) && AlimtalkRecipients::isValidTarget($t));
+            // 선택지가 재정의된 알림(지급 결재 결과)은 **그 표의 키만** — 다른 역할 키가 번호로 둔갑해 저장되면 안 된다.
+            $ok = AlimtalkRecipients::hasCustomGroups($code)
+                ? in_array($t, $valid, true)
+                : (in_array($t, $valid, true)
+                    || ($uid !== null && AlimtalkRecipients::userIsPickable($uid))
+                    || ($uid === null && ! in_array($t, $valid, true) && AlimtalkRecipients::isValidTarget($t)));
             $ok ? $selected[] = $t : $bad[] = $t;
         }
         $selected = array_values(array_unique($selected));
@@ -661,7 +664,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @if(\App\Support\AlimtalkRecipients::supportsEscalation($code))
                         <p class="mb-2 text-[11px] leading-relaxed text-gray-500">{{ __('alimtalk_catalog.escalate_note') }}</p>
                         @endif
-                        @if(\App\Support\AlimtalkRecipients::supportsEscalation($code))
+                        @if(\App\Support\AlimtalkRecipients::hasCustomGroups($code))
+                        {{-- 🪜 지급 결재 결과(승인완료·반려, jin 2026-10-15) — 선택지가 「결재선 전원 / 재무 / 관리」뿐이라 피커 대신 체크박스.
+                             결재선 전원은 사용자 집합이 아니라 배치마다의 결재선이라 사람 수를 미리 셀 수 없다. --}}
+                        <p class="mb-2 text-[11px] leading-relaxed text-gray-500">{{ __('alimtalk_catalog.payout_roles_note') }}</p>
+                        <div class="flex flex-wrap items-center gap-x-4 gap-y-2" data-payout-roles="{{ $code }}">
+                            @foreach(\App\Support\AlimtalkRecipients::groupsFor($code) as $gkey => $glabel)
+                                <label class="flex items-center gap-1.5 text-sm text-gray-700">
+                                    <input type="checkbox" value="{{ $gkey }}" wire:model="roles.{{ $code }}" class="h-4 w-4 rounded border-gray-300" />
+                                    {{ $glabel }}
+                                </label>
+                            @endforeach
+                            <button type="button" wire:click="saveRoles('{{ $code }}')" class="btn-primary ml-auto px-3 py-1 text-xs">
+                                {{ __('alimtalk_catalog.save') }}
+                            </button>
+                        </div>
+                        @elseif(\App\Support\AlimtalkRecipients::supportsEscalation($code))
                         {{-- 🪜 단계별 확대가 붙은 알림(말소 재촉)은 **역할 체크박스 그대로** 둔다(jin 2026-09-12).
                              일수가 역할 단위라, 사람을 개별로 고르면 「그 사람은 며칠째부터인가」가 빈칸이 된다. --}}
                         <div class="flex flex-wrap items-center gap-x-4 gap-y-2">

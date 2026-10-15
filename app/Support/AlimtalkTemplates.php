@@ -580,8 +580,8 @@ class AlimtalkTemplates
         'erp_purchase_paid_v2' => '위와 같되 저당 안내가 붙고 담당영업에게도 함께 발송 (승인·tmplId 입력 시 위 템플릿을 대신함)',
         'erp_board_request' => 'board 영업이 계약금·매입잔금·판매대금확인을 보낸 즉시 (수신자는 시각 규칙으로 갈림 — 근무시간엔 담당자, 그 밖엔 대표)',
         'erp_payout_request' => '월배치 정산 지급 제출·전진 시 (→다음 계단 승인자)',
-        'erp_payout_done' => '월배치 정산 지급 최종 승인 시 (→제출자)',
-        'erp_payout_rejected' => '월배치 정산 지급 반려 시 (→제출자)',
+        'erp_payout_done' => '월배치 정산 지급 최종 승인 시 (→제출자 + 체크한 역할, 기본 결재선 전원)',
+        'erp_payout_rejected' => '월배치 정산 지급 반려 시 (→제출자 + 체크한 역할, 기본 결재선 전원)',
     ];
 
     /**
