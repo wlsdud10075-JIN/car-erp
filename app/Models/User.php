@@ -326,10 +326,14 @@ class User extends Authenticatable
         };
     }
 
-    /** 월정산 정산지급 제출 권한 — [관리](1)·업무관리자(2). 재무·영업·통관·대표는 제출자 아님. */
+    /**
+     * 월정산 정산지급 제출 권한 — [관리](1)·업무관리자(2). 재무·영업·통관·대표는 제출자 아님.
+     * 🔧 시스템관리자(super)도 제출할 수 있다(jin 2026-10-15 «시스템관리자도 버튼 보이게 — 그래야 모달을 뭐 뜨고 하는지 보지») — 개발사 점검·대행용.
+     *    결재선 없이 올리면 current_level 이 사다리 위(5)라 super 본인의 override 로만 승인된다(알림톡 수신자 없음).
+     */
     public function canSubmitPayoutBatch(): bool
     {
-        return in_array($this->approvalRank(), [1, 2], true);
+        return $this->isSuperAdmin() || in_array($this->approvalRank(), [1, 2], true);
     }
 
     /** 요청 수명 동안만 유효한 memo — 위임을 켜고 끈 직후엔 `forgetDelegationMemo()` 로 비운다. */
