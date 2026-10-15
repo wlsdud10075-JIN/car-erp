@@ -338,11 +338,11 @@ class CapitalStatusTest extends TestCase
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
         $clear = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
 
-        // 입력 권한: 재무·관리·업무관리자·admin·super
-        foreach ([$super, $admin, $manager, $finance, $gwan] as $u) {
+        // 입력 권한: 재무·업무관리자·admin·super (🔀 2026-10-15 jin — 일반사용자 [관리] 제외)
+        foreach ([$super, $admin, $manager, $finance] as $u) {
             $this->assertTrue($u->canEnterCashBalance(), $u->permission.'/'.$u->role.' 입력 가능');
         }
-        foreach ([$sales, $clear] as $u) {
+        foreach ([$sales, $clear, $gwan] as $u) {
             $this->assertFalse($u->canEnterCashBalance(), $u->role.' 입력 불가');
         }
 
