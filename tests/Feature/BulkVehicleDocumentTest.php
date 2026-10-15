@@ -333,8 +333,64 @@ class BulkVehicleDocumentTest extends TestCase
 
         $this->svc()->applyShared([$v->id], 'export_declaration', $this->file(), $user, false, '테스트');
 
-        $this->assertSame('선적완료', $v->fresh()->progress_status);
-        $this->assertSame('선적완료', $v->fresh()->progress_status_cache);
+        // 🔀 2026-10-15 — 기본값이 「통관 체크도 함께 켬」이라 #4 선적완료를 지나 #3 통관중까지 간다(옵션 OFF 면 선적완료, 아래 테스트).
+        $this->assertSame('통관중', $v->fresh()->progress_status);
+        $this->assertSame('통관중', $v->fresh()->progress_status_cache);
+    }
+
+    // ── ✅ 짝 체크박스 함께 켬 (jin 2026-10-15) ─────────────────────────
+
+    public function test_declaration_upload_ticks_export_cleared_by_default_and_reaches_clearing(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $v = $this->vehicle('11가1001', ['bl_loading_location' => '평택항', 'export_declaration_number' => 'D-1']);
+        $this->assertFalse((bool) $v->is_export_cleared);
+
+        $this->svc()->applyShared([$v->id], 'export_declaration', $this->file(), $user, false, '테스트');
+
+        $v->refresh();
+        $this->assertTrue((bool) $v->is_export_cleared, '파일과 같은 저장에 체크가 실린다');
+        $this->assertSame('통관중', $v->progress_status_cache, 'cascade #3 — 체크 없이는 선적완료에 머물렀다');
+        $this->assertSame(1, AuditLog::where('auditable_id', $v->id)->where('action', 'bulk_document_uploaded')->count(), '일괄 출처 감사행은 그대로');
+    }
+
+    public function test_flag_option_off_keeps_the_old_behaviour(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $v = $this->vehicle('11가1001', ['bl_loading_location' => '평택항', 'export_declaration_number' => 'D-1']);
+
+        $this->svc()->applyShared([$v->id], 'export_declaration', $this->file(), $user, false, '테스트', setFlag: false);
+
+        $v->refresh();
+        $this->assertFalse((bool) $v->is_export_cleared);
+        $this->assertSame('선적완료', $v->progress_status_cache);
+    }
+
+    public function test_deregistration_upload_ticks_is_deregistered_and_leaves_ticked_rows_alone(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $a = $this->vehicle('11가1001');
+        $b = $this->vehicle('22나2002', ['is_deregistered' => true]);   // 「먼저 체크·나중 파일」 운용 — 덮어도 무영향
+
+        $prev = $this->svc()->preview([$a->id, $b->id], 'deregistration', $user);
+        $this->assertSame([true, false], collect($prev['targets'])->sortBy('number')->pluck('flag_off')->values()->all(), '모달 숫자 = 지금 꺼진 대상 수');
+
+        $this->svc()->applyIndividual([$a->id => $this->file('a.pdf'), $b->id => $this->file('b.pdf')], 'deregistration', $user, false, '테스트');
+
+        $this->assertTrue((bool) $a->fresh()->is_deregistered);
+        $this->assertTrue((bool) $b->fresh()->is_deregistered);
+        $this->assertSame('말소완료', $a->fresh()->progress_status_cache);
+        $this->assertSame(0, AuditLog::where('auditable_id', $b->id)->where('column_name', 'is_deregistered')->count(), '이미 켜진 차는 변경 없음');
+    }
+
+    public function test_bl_and_checkbill_have_no_flag(): void
+    {
+        $this->assertArrayNotHasKey('flag', BulkVehicleDocumentService::DOCUMENTS['bl']);
+        $this->assertArrayNotHasKey('flag', BulkVehicleDocumentService::DOCUMENTS['checkbill']);
+        $this->assertStringContainsString('wire:model.live="bulkDocSetFlag"', file_get_contents(resource_path('views/livewire/erp/vehicles/index.blade.php')), '모달에 옵션 체크가 있다(기본 ON)');
     }
 
     // ── 개별형(말소증) — 차량마다 다른 파일 ─────────────────────────

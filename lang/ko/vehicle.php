@@ -33,6 +33,11 @@ return [
         'reason_default' => '서류 일괄 업로드',
         'apply' => '업로드',
         'replace' => '이미 파일이 있는 :count대도 교체합니다',
+        // ✅ 짝 체크박스 함께 켬 (jin 2026-10-15)
+        'set_flag_export_declaration' => '「통관」 체크박스도 함께 켭니다 (지금 꺼진 :count대)',
+        'set_flag_hint_export_declaration' => '수출신고필증이 있다는 것은 통관이 끝났다는 뜻입니다. 끄면 파일만 올라가고, 반입지가 있어도 「통관중」 단계로 가지 않습니다(사람이 패널에서 체크해야 합니다).',
+        'set_flag_deregistration' => '「말소」 체크박스도 함께 켭니다 (지금 꺼진 :count대)',
+        'set_flag_hint_deregistration' => '끄면 파일만 올라가고 「말소완료」가 되지 않아 통관·선적 진입이 막히고 말소 재촉 알림톡이 계속 나갑니다. 일괄로 켠 체크는 패널의 주민번호 검사를 거치지 않으니 다음 패널 저장 때 확인됩니다.',
         'unit' => '대',
         'no_number' => '(번호 없음)',
         'mixed_title' => '⚠️ 대상에 번호가 2종 이상 섞여 있습니다',
