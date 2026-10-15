@@ -196,9 +196,19 @@ class LeaverSettlementTest extends TestCase
         }
 
         $this->confirmed($free);
-        $this->confirmed($free, '2026-10', paidUp: false);   // 미수 → 보류
+        $held = $this->confirmed($free, '2026-10', paidUp: false);   // 미수 → 보류
+        try {
+            SettlementPayoutBatch::submitForLeaver($manager, $free);
+            $this->fail('미수 보류가 남아 있으면 못 올린다(jin «전부 정리되어야 정산»)');
+        } catch (\DomainException $e) {
+            $this->assertStringContainsString('미수 보류 1건', $e->getMessage());
+        }
+        $this->assertSame(['unconfirmed' => 0, 'held' => 1], SettlementPayoutBatch::leaverBlockers($free));
+        // 「예외 대상」(gate override)으로 등록하면 보류가 풀려 올라간다
+        $held->forceFill(['gate_override_at' => now(), 'gate_override_by' => $manager->id])->saveQuietly();
+        $this->assertSame(['unconfirmed' => 0, 'held' => 0], SettlementPayoutBatch::leaverBlockers($free));
         $batch = SettlementPayoutBatch::submitForLeaver($manager, $free);
-        $this->assertSame(1, $batch->settlement_count, '미수 보류는 퇴사 배치에도 안 들어간다');
+        $this->assertSame(2, $batch->settlement_count, '예외 등록된 미수 건은 같이 올라간다');
         try {
             SettlementPayoutBatch::submitForLeaver($manager, $free);
             $this->fail('결재 중이면 또 못 올린다');
@@ -208,7 +218,25 @@ class LeaverSettlementTest extends TestCase
 
         // 반려 → 정산이 풀리고 다시 올릴 수 있다(종전 규칙 그대로)
         $batch->rejectBy($this->user('admin'), '다시');
-        $this->assertSame(1, SettlementPayoutBatch::leaverEligibleSettlementIds($free)->count());
+        $this->assertSame(2, SettlementPayoutBatch::leaverEligibleSettlementIds($free)->count());
+    }
+
+    public function test_bulk_confirm_skips_freelance_leavers(): void
+    {
+        $this->actingAs($this->user('admin'));
+        $leaver = $this->freelancer();
+        $emp = $this->employee('2026-10-12');
+        $staying = $this->freelancer(null);
+        $sL = $this->confirmed($leaver);
+        $sE = $this->confirmed($emp);
+        $sS = $this->confirmed($staying);
+        Settlement::whereIn('id', [$sL->id, $sE->id, $sS->id])->update(['settlement_status' => 'pending', 'confirmed_at' => null]);
+
+        Volt::test('erp.settlements.index')->set('monthFilter', '2026-10')->call('confirmMonth');
+
+        $this->assertSame('pending', $sL->fresh()->settlement_status, '프리랜서 퇴사자 건은 일괄확정에서 빠진다(퇴사자 정산에서 하나씩)');
+        $this->assertSame('confirmed', $sE->fresh()->settlement_status, '사내직원 퇴사자는 월정산 흐름 그대로');
+        $this->assertSame('confirmed', $sS->fresh()->settlement_status);
     }
 
     public function test_carryover_is_absorbed_once_across_leaver_and_monthly_batches(): void
@@ -271,7 +299,13 @@ class LeaverSettlementTest extends TestCase
 
         $c = Volt::test('erp.settlements.index')->set('monthFilter', '2026-10');
         $this->assertSame(1, $c->get('leaverOpenCount'));
-        $c->call('toggleLeavers')->assertSee($leaver->name)->assertSee('미확정 1')->assertSeeHtml('data-leaver-row="'.$leaver->id.'"');
+        $c->call('toggleLeavers')->assertSee($leaver->name)->assertSee('미확정 1')->assertSeeHtml('data-leaver-row="'.$leaver->id.'"')
+            ->assertSeeHtml('data-leaver-blocked')->assertDontSee('퇴사 정산 제출</button>', false);
+
+        // 미확정을 확정하면 버튼이 열린다
+        Settlement::where('salesman_id', $leaver->id)->where('settlement_status', 'pending')->update(['settlement_status' => 'confirmed', 'confirmed_at' => now()]);
+        unset($c->instance()->leaverRows);
+        $c->call('toggleLeavers')->call('toggleLeavers')->assertDontSeeHtml('data-leaver-blocked');
 
         $c->call('openLeaverModal', $leaver->id)->assertSeeHtml('data-leaver-modal')
             ->set('newLeaverAdjAmount', '-50,000')->set('newLeaverAdjReason', '예치금 상계')->call('addLeaverAdjustment')
@@ -279,7 +313,7 @@ class LeaverSettlementTest extends TestCase
 
         $batch = SettlementPayoutBatch::leaver()->first();
         $this->assertNotNull($batch);
-        $this->assertSame(1, $batch->settlement_count);
+        $this->assertSame(2, $batch->settlement_count);
         $this->assertSame(-50_000, (int) $batch->adjustments()->first()->amount);
         $c->assertSee('퇴사 정산 #'.$batch->id.' 결재 중');
 

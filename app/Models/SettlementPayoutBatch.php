@@ -424,6 +424,24 @@ class SettlementPayoutBatch extends Model
      *
      * @return Collection<int, int>
      */
+    /**
+     * 🚪 **퇴사 정산을 막는 것** — 미확정(pending·calculating) · 미수 보류(확정인데 차량 미수, 예외 대상 아님) 건수 (jin 2026-10-15
+     * «이게 전부 정리되어야 정산을 해준다»). 하나라도 있으면 제출 불가. 미수 보류는 정산관리 「예외 대상」(gate override)으로 등록하면 풀린다 —
+     * 판정은 `isPayoutHeldByUnpaid()` 가 예외를 이미 본다. 화면(퇴사자 표)과 `submitForLeaver` 가 같은 함수를 쓴다(§8 #44).
+     *
+     * @return array{unconfirmed:int, held:int}
+     */
+    public static function leaverBlockers(Salesman $sm): array
+    {
+        $open = Settlement::query()->where('salesman_id', $sm->id)->whereNull('payout_batch_id')
+            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])->get();
+
+        return [
+            'unconfirmed' => $open->whereIn('settlement_status', ['pending', 'calculating'])->count(),
+            'held' => $open->filter(fn (Settlement $s) => $s->isPayoutHeldByUnpaid())->count(),
+        ];
+    }
+
     public static function leaverEligibleSettlementIds(Salesman $sm): Collection
     {
         if (! $sm->settlesImmediatelyOnLeave()) {
@@ -547,6 +565,10 @@ class SettlementPayoutBatch extends Model
         }
         if (self::leaver()->where('salesman_id', $sm->id)->where('status', self::STATUS_PENDING)->exists()) {
             throw new \DomainException('이 사람의 퇴사 정산이 이미 승인 대기 중입니다.');
+        }
+        $blockers = self::leaverBlockers($sm);
+        if ($blockers['unconfirmed'] > 0 || $blockers['held'] > 0) {
+            throw new \DomainException(__('settlement.batch.leaver_blocked', ['u' => $blockers['unconfirmed'], 'h' => $blockers['held']]));
         }
 
         $ids = self::leaverEligibleSettlementIds($sm);

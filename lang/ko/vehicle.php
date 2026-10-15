@@ -413,6 +413,21 @@ return [
         'savings_from_cash_note' => '차량 :plate 판매 탭에서 남은 현금을 적립금으로 전환',
         'savings_cash_short' => '적립하지 못했습니다 — :msg 적립금은 남은 현금에서만 나옵니다(현금 탭에서 입금·배분을 확인하세요).',
         'savings_deposit_note' => '(저장 시 누적, reset)',
+        // 💳 적립금 사용 1회성 (jin 2026-10-15)
+        'savings_used_note' => '(이번에 쓸 금액 · 저장 후 비워짐)',
+        'savings_used_total' => '이 차에 쓴 적립금 합계',
+        'savings_row_used' => '사용',
+        'savings_row_refund' => '되돌림',
+        'savings_row_balance' => '잔액 :balance',
+        'savings_revert' => '되돌리기',
+        'savings_revert_confirm' => '이 사용 :amount 을(를) 되돌립니다. 적립금 잔액이 그만큼 복귀하고 이 차의 미수가 다시 늘어납니다. 진행할까요?',
+        'savings_reverted' => '적립금 사용 :currency :amount 을(를) 되돌렸습니다.',
+        'savings_revert_fail' => '되돌리지 못했습니다 — :msg',
+        'savings_revert_forbidden' => '되돌리기는 재무·관리 이상만 할 수 있습니다.',
+        'savings_already_reverted' => '이미 되돌린 사용입니다.',
+        'non_cash_title' => '입금 외 정리',
+        'non_cash_link' => '채권관리',
+        'non_cash_hint' => '— 잔금 행에는 안 섞입니다(실입금·정산환율 기준). 입력은 채권관리·적립금 칸에서.',
         'savings_balance_note' => '(바이어×통화 SavingsStatus)',
         'after_save_note' => '(저장 후 갱신)',
         'fully_paid' => '✓ 완납',
@@ -1308,6 +1323,8 @@ return [
 
     // 검증 커스텀 메시지 (승인·이체·잠금해제 사유 등)
     'valmsg' => [
+        'savings_negative' => '적립금 사용 금액은 0보다 커야 합니다. 되돌리려면 이력의 [되돌리기]를 쓰세요.',
+        'savings_over' => '적립금 잔액(:currency :balance)을 넘는 금액(:use)은 쓸 수 없습니다.',
         'duplicate_final_payment_row' => '판매 잔금에 금액·날짜·메모가 똑같은 새 행이 두 개 있습니다. 하나를 지우거나 메모로 구분해 주세요.',
         'duplicate_purchase_payment_row' => '매입 잔금에 금액·날짜·메모가 똑같은 새 행이 두 개 있습니다. 하나를 지우거나 메모로 구분해 주세요.',
         'unlock_reason_required' => '잠금 해제 사유를 10자 이상 입력하세요.',
