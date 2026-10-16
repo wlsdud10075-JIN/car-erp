@@ -130,7 +130,10 @@ class VehicleSettlementStageColumnTest extends TestCase
             'per_unit_amount' => 100_000, 'settlement_status' => 'paid', 'paid_at' => now(),
         ]);
         Settlement::$allowBatchPayout = false;
+        // 프리랜서 = 부족분 절반이 월정산 조정으로 나가야 끝난다
+        $fr = Salesman::create(['name' => 'FREEMAN', 'type' => 'freelance', 'is_active' => true]);
         Vehicle::whereKey($v->id)->update([
+            'salesman_id' => $fr->id,
             'cancel_status' => Vehicle::CANCEL_CLOSED, 'cancelled_at' => now(), 'cancel_shortfall_krw' => 455_000,
         ]);
         $this->assertSame(Vehicle::SETTLEMENT_STAGE_WAITING, $v->fresh()->settlementStage(), '손실 미반영인데 정산됨으로 떴다');
@@ -138,6 +141,13 @@ class VehicleSettlementStageColumnTest extends TestCase
         // 월정산 손실 조정에 반영(도장) → 정산됨
         Vehicle::whereKey($v->id)->update(['cancel_loss_settled_at' => now()]);
         $this->assertSame(Vehicle::SETTLEMENT_STAGE_DONE, $v->fresh()->settlementStage());
+
+        // 사내직원 = 회사 전액 부담이라 반영할 조정이 없다 → 도장 없이 바로 정산됨 (jin 2026-10-16, 60두1818 영구 「정산대기」)
+        $emp = $this->soldVehicle();   // TESTMAN = employee
+        Vehicle::whereKey($emp->id)->update([
+            'cancel_status' => Vehicle::CANCEL_CLOSED, 'cancelled_at' => now(), 'cancel_shortfall_krw' => 455_000,
+        ]);
+        $this->assertSame(Vehicle::SETTLEMENT_STAGE_DONE, $emp->fresh()->settlementStage(), '사내직원 마감이 영영 정산대기');
 
         // 매입취소 진행중 — 위약금 미수가 남으면 대기, 다 받으면(취소완료) 더 할 게 없다
         $open = $this->soldVehicle([], paid: false);

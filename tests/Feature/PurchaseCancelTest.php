@@ -438,4 +438,132 @@ class PurchaseCancelTest extends TestCase
 
         $this->assertFalse($hit, '매입취소 차가 말소 재촉 알림톡 대상에 남아 있다');
     }
+
+    // ── 2026-10-16 (jin, ssancarerp 60두1818) — 취소완료 = 거래완료 · 마감 취소 · 마감 버튼 숨김 ────────
+
+    /** 위약금 완납(취소완료) 은 끝난 거래다 — 진행상태 「거래완료」. 미수가 남으면 종전대로 「판매중」. */
+    public function test_fully_paid_cancel_is_a_closed_deal(): void
+    {
+        $this->assertSame('거래완료', $this->cancelledFullyPaid()->progress_status);
+        $this->assertSame('거래완료', $this->cancelledFullyPaid()->fresh()->progress_status_cache, '캐시도 같이 간다');
+
+        $open = $this->cancelledUnpaidVehicle('OP1', 'employee');
+        $this->assertSame('판매중', $open->fresh()->progress_status, '위약금 미수가 남으면 아직 진행중');
+    }
+
+    /** 위약금을 아예 안 넣은 취소 차(미수 0 이지만 받은 게 없다)와 미수 마감 차는 거래완료가 아니다. */
+    public function test_no_penalty_and_closed_cancels_do_not_become_closed_deals(): void
+    {
+        $noPenalty = $this->makeVehicle();
+        $noPenalty->update(['cancel_status' => Vehicle::CANCEL_ACTIVE, 'cancelled_at' => now()]);
+        $this->assertNotSame('거래완료', $noPenalty->fresh()->progress_status, '위약금 없는 취소 차가 거래완료로 뛰었다');
+
+        $closed = $this->cancelledUnpaidVehicle('CZ1', 'freelance');
+        $closed->update(['cancel_status' => Vehicle::CANCEL_CLOSED, 'cancel_shortfall_krw' => 1_047_600]);
+        $this->assertSame('판매중', $closed->fresh()->progress_status, '미수 마감은 미수가 남은 상태라 그대로');
+    }
+
+    /** 🔚 마지막 한 걸음(§8 #105) — 잔금 입력으로 거래완료에 들어가도 매입취소 차엔 정산 행이 0 이다. */
+    public function test_closed_deal_entry_creates_no_settlement_for_a_cancel(): void
+    {
+        $this->actingAs($this->admin());
+        $v = $this->cancelledUnpaidVehicle('NS1', 'freelance');
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 600,
+            'payment_date' => '2026-05-27', 'confirmed_at' => now(),
+        ]);
+        $v->refresh()->refreshProgressCache();
+
+        $this->assertSame('거래완료', $v->fresh()->progress_status_cache);
+        $this->assertSame(0, $v->settlements()->count(), '매입취소 차에 정산이 생겼다');
+    }
+
+    /** 💸 거래완료가 돼도 돈 큐(매입 미지급)에는 남는다 — 딜러 대금은 재무가 봐야 할 돈(jin 2026-09-09). */
+    public function test_closed_deal_cancel_stays_in_purchase_unpaid_queue(): void
+    {
+        $v = $this->cancelledUnpaidVehicle('MQ1', 'employee');
+        $v->update(['purchase_price' => 1_000_000, 'purchase_date' => '2026-05-01']);
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 600,
+            'payment_date' => '2026-05-27', 'confirmed_at' => now(),
+        ]);
+        $v->refresh()->refreshProgressCache();
+        $this->assertSame('거래완료', $v->fresh()->progress_status_cache);
+
+        $this->assertTrue(Vehicle::query()->action('purchase_unpaid')->where('id', $v->id)->exists(),
+            '취소완료(거래완료) 차의 매입 미지급이 큐에서 사라졌다');
+        // 정상 차는 종전대로 거래완료면 빠진다 — 예외가 취소 차에만 열렸는지
+        $normal = $this->makeVehicle();
+        $normal->update(['bl_document' => 'vehicles/bl.pdf']);
+        $normal->refresh()->refreshProgressCache();
+        $this->assertFalse(Vehicle::query()->action('purchase_unpaid')->where('id', $normal->id)->exists());
+    }
+
+    /** 마감 뒤 위약금이 다 들어오면 「마감 취소」로 되돌린다 — 60두1818(마감 87초 뒤 잔금 입력). */
+    public function test_reopen_closed_cancel_when_penalty_fully_paid(): void
+    {
+        $this->actingAs($this->admin());
+        $v = $this->cancelledUnpaidVehicle('RO1', 'employee');
+        $v->update(['cancel_status' => Vehicle::CANCEL_CLOSED, 'cancel_shortfall_krw' => 1_047_600]);
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 600,
+            'payment_date' => '2026-05-27', 'confirmed_at' => now(),
+        ]);
+
+        $c = Volt::test('erp.vehicles.index')->call('openEdit', $v->id);
+        $c->assertSet('cancelFullyPaid', true)
+            ->assertSeeHtml('wire:click="reopenPurchaseCancelClosed"')
+            ->call('reopenPurchaseCancelClosed')
+            ->assertSet('cancelStatus', Vehicle::CANCEL_ACTIVE)
+            ->assertSet('cancelStatusLabel', '취소완료');
+
+        $v->refresh();
+        $this->assertSame(Vehicle::CANCEL_ACTIVE, $v->cancel_status);
+        $this->assertNull($v->cancel_shortfall_krw);
+        $this->assertSame('거래완료', $v->progress_status_cache, '되돌린 저장이 거래완료로 재계산');
+        $this->assertDatabaseHas('audit_logs', [
+            'auditable_id' => $v->id, 'action' => 'purchase_cancel_reopened', 'old_value' => '1047600',
+        ]);
+    }
+
+    /** 미수가 남았거나 손실이 이미 월정산에 반영됐으면 되돌리지 않는다. 버튼도 안 그린다. */
+    public function test_reopen_blocked_when_unpaid_or_loss_already_settled(): void
+    {
+        $this->actingAs($this->admin());
+
+        $unpaid = $this->cancelledUnpaidVehicle('RB1', 'freelance');
+        $unpaid->update(['cancel_status' => Vehicle::CANCEL_CLOSED, 'cancel_shortfall_krw' => 1_047_600]);
+        Volt::test('erp.vehicles.index')->call('openEdit', $unpaid->id)
+            ->assertSet('cancelFullyPaid', false)
+            ->assertDontSeeHtml('wire:click="reopenPurchaseCancelClosed"')
+            ->call('reopenPurchaseCancelClosed')
+            ->assertSet('cancelStatus', Vehicle::CANCEL_CLOSED);
+        $this->assertSame(1_047_600, (int) $unpaid->fresh()->cancel_shortfall_krw);
+
+        $settled = $this->cancelledUnpaidVehicle('RB2', 'freelance');
+        $settled->update(['cancel_status' => Vehicle::CANCEL_CLOSED, 'cancel_shortfall_krw' => 1_047_600, 'cancel_loss_settled_at' => now()]);
+        FinalPayment::create([
+            'vehicle_id' => $settled->id, 'type' => 'balance', 'amount' => 600,
+            'payment_date' => '2026-05-27', 'confirmed_at' => now(),
+        ]);
+        Volt::test('erp.vehicles.index')->call('openEdit', $settled->id)
+            ->call('reopenPurchaseCancelClosed')
+            ->assertSet('cancelStatus', Vehicle::CANCEL_CLOSED);
+        $this->assertSame(1_047_600, (int) $settled->fresh()->cancel_shortfall_krw, '배치에 반영된 손실이 지워졌다');
+    }
+
+    /** 완납(취소완료)이면 [미수 마감] 버튼을 그리지 않는다 — 미수가 남았을 때만 보인다. */
+    public function test_close_button_is_hidden_when_penalty_fully_paid(): void
+    {
+        $this->actingAs($this->admin());
+
+        $open = $this->cancelledUnpaidVehicle('HB1', 'freelance');
+        Volt::test('erp.vehicles.index')->call('openEdit', $open->id)
+            ->assertSeeHtml('wire:click="closePurchaseCancelUnpaid"');
+
+        $paid = $this->cancelledFullyPaid();
+        Volt::test('erp.vehicles.index')->call('openEdit', $paid->id)
+            ->assertSet('cancelStatusLabel', '취소완료')
+            ->assertDontSeeHtml('wire:click="closePurchaseCancelUnpaid"');
+    }
 }

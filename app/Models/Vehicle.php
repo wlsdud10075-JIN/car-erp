@@ -1850,7 +1850,10 @@ class Vehicle extends Model
         //    매입취소 진행중 = 위약금 미수가 남아 있으면 대기, 다 받았으면(취소완료) 더 정산할 게 없다.
         if ($this->isPurchaseCancelled()) {
             if ($this->cancel_status === self::CANCEL_CLOSED) {
-                return $this->cancel_loss_settled_at ? self::SETTLEMENT_STAGE_DONE : self::SETTLEMENT_STAGE_WAITING;
+                // 사내직원(프리랜서 몫 0)은 회사 전액 부담이라 월정산에 반영할 조정이 없다 — 도장이 영영 안 찍히므로
+                // 마감 즉시 끝난 것으로 본다(jin 2026-10-16, 60두1818 이 「정산대기」에 영구 고정돼 있었다).
+                return ($this->cancel_loss_settled_at || $this->cancel_freelancer_loss_krw <= 0)
+                    ? self::SETTLEMENT_STAGE_DONE : self::SETTLEMENT_STAGE_WAITING;
             }
 
             return $this->sale_unpaid_amount <= 0 ? self::SETTLEMENT_STAGE_DONE : self::SETTLEMENT_STAGE_WAITING;
@@ -2279,6 +2282,22 @@ class Vehicle extends Model
             if ($this->incoterms === 'FOB' && $this->forwarding_company_id
                 && in_array((int) $this->forwarding_company_id, ForwardingCompany::buyerHandledIds(), true)
                 && $this->sale_price > 0 && $this->sale_unpaid_amount <= 0) {
+                return '거래완료';
+            }
+            /**
+             * 🚫 매입취소 + 위약금 완납(「취소완료」) ⇒ 거래완료 (jin 2026-10-16 「판매금 받고 완납되면 그냥 끝」).
+             *
+             * 위약금을 `sale_price` 로 추적하는 구조라 종전엔 「판매완료」에 머물러, 끝난 거래가 진행중 분포에
+             * 섞였다. 말소·통관·선적·B/L 은 영영 안 오므로(`NOT_FOR_CANCELLED`) 더 갈 단계가 없다.
+             * ⚠️ `sale_price > 0` 이 필요하다 — 위약금을 아예 안 넣은 취소 차(ssancarerp 실측 5대, 매입중·매입완료)는
+             *    미수가 0 이어도 「받고 끝난」 게 아니라 그대로 둔다. 미수 마감(`cancelled_closed`)은 미수가 남은
+             *    상태라 이 분기에 안 걸린다 — 채권이 계속 센다(관리자 대시보드 「미수마감 n건」).
+             * 💸 돈 큐(`purchase_unpaid`·`sale_unpaid` 등)는 거래완료를 빼지만 **취소 차는 예외**로 남긴다
+             *    (`scopeAction` $activeOnly 분기) — 딜러 대금 미지급은 재무가 봐야 할 돈이다(jin 2026-09-09).
+             * 성능 — 컬럼(`cancel_status`·`sale_price`)을 먼저 보고 통과한 행에서만 미수 accessor 를 부른다.
+             * 가드 = PurchaseCancelTest::test_fully_paid_cancel_is_a_closed_deal.
+             */
+            if ($this->cancel_status === self::CANCEL_ACTIVE && $this->sale_price > 0 && $this->sale_unpaid_amount <= 0) {
                 return '거래완료';
             }
             if ($this->bl_document && $this->is_export_cleared) {
@@ -3434,9 +3453,14 @@ class Vehicle extends Model
             // receivable_* 액션은 active 제한 X — 거래완료 차량도 미수금 가능 (위험도는 단계 무관)
         ];
         if (in_array($action, $activeOnly, true)) {
+            // 💸 돈 큐는 매입취소 차를 진행상태와 무관하게 남긴다 — 「취소완료」가 거래완료로 계산되기 시작했는데
+            //    (2026-10-16 cascade) 딜러 대금 미지급·위약금은 그대로 재무가 봐야 할 돈이다(jin 2026-09-09).
+            //    단계 큐는 어차피 NOT_FOR_CANCELLED 로 빠지므로 이 예외는 돈 큐에만 실효가 있다.
+            $moneyQueue = in_array($action, ['purchase_unpaid', 'sale_unpaid', 'purchase_balance_due', 'exchange_rate_missing'], true);
             $q->where(fn ($q2) => $q2
                 ->where('progress_status_cache', '!=', '거래완료')
-                ->orWhereNull('progress_status_cache'));
+                ->orWhereNull('progress_status_cache')
+                ->when($moneyQueue, fn ($m) => $m->orWhere('cancel_status', '!=', self::CANCEL_NONE)));
         }
         if (in_array($action, self::NOT_FOR_CANCELLED, true)) {
             // 🚫 매입취소 차량은 이 단계 큐에 안 들어간다 (jin 2026-09-09 — 아래 상수 주석 참조).

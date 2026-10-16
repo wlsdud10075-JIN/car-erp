@@ -1247,6 +1247,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array  $transferAppliedByType = [];
     public string $cancelStatus = 'none';   // 매입취소 상태(표시용) — 실변경은 서버 액션(mark/unmark/close)만
     public int    $cancelShortfallKrw = 0;  // 미수 마감 동결 부족분(표시용)
+    public bool   $cancelFullyPaid = false; // 위약금 미수 0 (표시용 — 마감 버튼 숨김 · 마감 취소 버튼 노출)
     public string $cancelStatusLabel = '';  // 매입취소/취소완료/미수마감 계산 라벨(표시용)
 
     // ── 판매 ──────────────────────────────────────────────────────
@@ -1812,6 +1813,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $v->save();
         $this->cancelStatus = $v->cancel_status;
         $this->cancelStatusLabel = $v->cancel_status_label ?? '';
+        $this->cancelFullyPaid = $v->sale_unpaid_amount <= 0;
         $this->dispatch('notify', message: __('vehicle.cancel.marked'), type: 'success');
     }
 
@@ -1875,6 +1877,57 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->cancelShortfallKrw = $shortfallKrw;
         $this->cancelStatusLabel = $v->cancel_status_label ?? '';
         $this->dispatch('notify', message: __('vehicle.cancel.closed', ['amount' => number_format($shortfallKrw)]), type: 'success');
+    }
+
+    /**
+     * 미수 마감 취소 (jin 2026-10-16) — 마감 **뒤에** 위약금이 다 들어온 차만 되돌린다.
+     * 실사고 ssancarerp 60두1818: 매입취소 전환 5초 뒤 미수 마감 → 87초 뒤 잔금 입력. 전액 받았는데
+     * 「손실 500,003원 확정」이 남고 되돌릴 길이 없었다(「마감건은 되돌리지 않음」 규칙).
+     *   조건 = cancelled_closed · 미수 0 · 손실이 아직 월정산에 반영되지 않음(`cancel_loss_settled_at` NULL —
+     *   반영됐으면 프리랜서 지급을 이미 깎았으므로 되돌리지 않는다). 권한 = 마감과 같은 canConfirmFinance.
+     *   결과 = cancelled(미수 0 이라 라벨 「취소완료」) + 동결 손실 NULL + 감사로그 purchase_cancel_reopened.
+     */
+    public function reopenPurchaseCancelClosed(): void
+    {
+        $v = $this->scopedEditingVehicle();
+        if (! $v) {
+            return;
+        }
+        abort_unless((bool) auth()->user()?->canConfirmFinance(), 403);
+        if ($v->cancel_status !== Vehicle::CANCEL_CLOSED) {
+            $this->dispatch('notify', message: __('vehicle.cancel.reopen_only_closed'), type: 'warning');
+
+            return;
+        }
+        if ($v->sale_unpaid_amount > 0) {
+            $this->dispatch('notify', message: __('vehicle.cancel.reopen_has_unpaid'), type: 'warning');
+
+            return;
+        }
+        if ($v->cancel_loss_settled_at) {
+            $this->dispatch('notify', message: __('vehicle.cancel.reopen_already_settled'), type: 'warning');
+
+            return;
+        }
+
+        $old = (string) $v->cancel_shortfall_krw;
+        $v->cancel_status = Vehicle::CANCEL_ACTIVE;
+        $v->cancel_shortfall_krw = null;
+        $v->save();
+
+        \App\Models\AuditLog::create([
+            'user_id' => auth()->id(),
+            'auditable_type' => Vehicle::class, 'auditable_id' => $v->id,
+            'action' => 'purchase_cancel_reopened', 'column_name' => 'cancel_shortfall_krw',
+            'old_value' => $old, 'new_value' => null,
+            'ip_address' => request()?->ip(),
+        ]);
+
+        $this->cancelStatus = $v->cancel_status;
+        $this->cancelShortfallKrw = 0;
+        $this->cancelFullyPaid = true;
+        $this->cancelStatusLabel = $v->cancel_status_label ?? '';
+        $this->dispatch('notify', message: __('vehicle.cancel.reopened', ['amount' => number_format((int) $old)]), type: 'success');
     }
 
     /** editingId 차량을 스코프 재인가하여 반환(IDOR #26). editingId 없으면 null, 스코프 밖이면 abort(403). */
@@ -4400,6 +4453,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->cancelStatus = $v->cancel_status ?? 'none';
         $this->cancelShortfallKrw = (int) ($v->cancel_shortfall_krw ?? 0);
         $this->cancelStatusLabel = $v->cancel_status_label ?? '';
+        $this->cancelFullyPaid = $v->cancel_status !== 'none' && $v->sale_unpaid_amount <= 0;
         $this->deregistration_date = $v->deregistration_date ? $v->deregistration_date->format('Y-m-d') : '';
         $this->purchaseBalancePayments = $v->purchaseBalancePayments->map(fn($p) => [
             'id' => $p->id, 'amount' => (string)$p->amount,
@@ -8978,8 +9032,18 @@ function vehicleColumnsToggle(columns, serverKnows) {
                                     class="rounded border border-rose-300 bg-white px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50">
                                 {{ __('vehicle.cancel.mark_btn') }}
                             </button>
+                        @elseif($cancelStatus === 'cancelled_closed')
+                            {{-- 마감 뒤 돈이 다 들어온 차만 되돌린다(jin 2026-10-16, 60두1818 — 마감 87초 뒤 잔금 입력). 손실이 이미 배치에 반영됐으면 서버가 막는다. --}}
+                            @if($cancelFullyPaid && auth()->user()?->canConfirmFinance())
+                            <button type="button" wire:click="reopenPurchaseCancelClosed"
+                                    wire:confirm="{{ __('vehicle.cancel.reopen_confirm') }}"
+                                    class="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-600 hover:bg-gray-50">
+                                {{ __('vehicle.cancel.reopen_btn') }}
+                            </button>
+                            @endif
                         @elseif($cancelStatus === 'cancelled')
-                            @if(auth()->user()?->canConfirmFinance())
+                            {{-- 완납(취소완료)이면 마감할 미수가 없다 — 버튼을 아예 안 그린다(서버 가드 close_no_unpaid 는 그대로). --}}
+                            @if(! $cancelFullyPaid && auth()->user()?->canConfirmFinance())
                             <button type="button" wire:click="closePurchaseCancelUnpaid"
                                     wire:confirm="{{ __('vehicle.cancel.close_confirm') }}"
                                     class="rounded border border-rose-400 bg-rose-500 px-3 py-1 text-xs font-medium text-white hover:bg-rose-600">
