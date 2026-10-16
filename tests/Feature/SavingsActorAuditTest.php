@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\SavingsStatus;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Support\ColumnLabel;
@@ -39,8 +40,13 @@ class SavingsActorAuditTest extends TestCase
 
         $earned = SavingsStatus::where('buyer_id', $buyer->id)->first();
         $this->assertSame($user->id, (int) $earned->created_by, '적립 줄에 처리자');
-        $this->assertDatabaseHas('audit_logs', ['auditable_type' => SavingsStatus::class, 'auditable_id' => $earned->id, 'action' => 'savings_earned', 'user_id' => $user->id]);
+        $this->assertDatabaseHas('audit_logs', ['auditable_type' => SavingsStatus::class, 'auditable_id' => $earned->id, 'action' => 'savings_earned', 'column_name' => 'savings_earned', 'user_id' => $user->id, 'new_value' => 'EUR +280.00 → 잔액 280.00']);
         $this->assertStringContainsString('data-savings-by>김재무', $c->html(), '적립금 목록에 처리자 열');
+        // 감사 화면 「컬럼」 드롭다운에 종류별로 뜬다(컬럼이 비면 액션 필터로만 찾을 수 있었다)
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+        $cols = Volt::test('admin.audit-logs.index')->instance()->distinctColumns;
+        $this->assertSame('적립금 적립', $cols['savings_earned'] ?? null);
+        $this->actingAs($user);   // 취소는 다시 재무로
 
         $c->call('cancelSavingsTransaction', $earned->id)->assertHasNoErrors();
         $cancelled = SavingsStatus::where('buyer_id', $buyer->id)->where('transaction_type', 'CANCELLED')->first();
@@ -78,7 +84,7 @@ class SavingsActorAuditTest extends TestCase
 
         $user = $this->finance();
         $buyer = Buyer::create(['name' => 'CASH BUYER', 'is_active' => true]);
-        \App\Models\Setting::updateOrCreate(['key' => 'buyer_cash_enabled_'.\App\Models\Setting::companyTemplateSet()], ['value' => '1', 'type' => 'boolean']);   // 현금 탭은 회사별 토글
+        Setting::updateOrCreate(['key' => 'buyer_cash_enabled_'.Setting::companyTemplateSet()], ['value' => '1', 'type' => 'boolean']);   // 현금 탭은 회사별 토글
         $this->actingAs($user);
         $c = Volt::test('erp.buyers.index')->call('openEdit', $buyer->id)
             ->set('cash_currency', 'EUR')->set('cash_amount', '500')->set('cash_date', '2026-10-16')->call('addCashReceipt');

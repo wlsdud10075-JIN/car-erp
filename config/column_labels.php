@@ -273,6 +273,13 @@ return [
         'savings' => '적립금 변동액',
         'balance' => '잔액',
         'note' => '메모',
+        'created_by' => '처리자',
+        // 💳 거래 기록 행의 컬럼 키(SavingsStatus::booted) — 감사 화면 「컬럼」 드롭다운에 종류별로 뜬다(2026-10-16).
+        'savings_earned' => '적립금 적립',
+        'savings_used' => '적립금 사용',
+        'savings_refund' => '적립금 환불(복원)',
+        'savings_cancelled' => '적립금 거래 취소',
+        'savings_adjustment' => '적립금 조정',
     ],
 
     // ─── users ──────────────────────────────────────────────────────────

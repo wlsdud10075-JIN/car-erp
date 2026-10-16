@@ -24,15 +24,26 @@ class SavingsStatus extends Model
             $row->created_by ??= auth()->id();
         });
         static::created(function (SavingsStatus $row) {
-            // 종류별 이벤트 이름 — 사전(config/column_labels.php actions)과 1:1. 가드 = SavingsActorAuditTest.
-            $action = match ($row->transaction_type) {
+            // 종류별 이름 — 액션 사전(actions)과 컬럼 사전(savings_statuses)에 같은 키로 둔다. 가드 = SavingsActorAuditTest.
+            //   컬럼을 비워 두면 감사 화면 「컬럼」 드롭다운에 안 뜬다(그 목록은 기록된 컬럼으로 만든다) — jin 2026-10-16 «적립금 적립이 없어진 것 같네».
+            $kind = match ($row->transaction_type) {
                 'EARNED' => 'savings_earned',
                 'USED' => 'savings_used',
                 'REFUND' => 'savings_refund',
                 'CANCELLED' => 'savings_cancelled',
                 default => 'savings_adjustment',
             };
-            AuditLog::recordEvent($row, $action);
+            $amount = (float) $row->savings;
+            AuditLog::create([
+                'user_id' => AuditLog::currentActorId(),
+                'auditable_type' => self::class,
+                'auditable_id' => $row->id,
+                'action' => $kind,
+                'column_name' => $kind,
+                'old_value' => null,
+                'new_value' => sprintf('%s %s%s → 잔액 %s', $row->currency, $amount >= 0 ? '+' : '', number_format($amount, 2), number_format((float) $row->balance, 2)),
+                'ip_address' => request()?->ip(),
+            ]);
         });
     }
 
