@@ -1,0 +1,7 @@
+/* 목업 공통 토큰 — ERP 코드 아님. app.css @theme·유틸을 흉내 낸 것(세 파일이 인라인으로 복사해 쓴다). */
+:root {
+  --color-primary: #7c6fcd;
+  --color-primary-hover: #6b5dbd;
+  --color-primary-light: #ece9f8;
+  --color-primary-text: #4c3fb1;
+}

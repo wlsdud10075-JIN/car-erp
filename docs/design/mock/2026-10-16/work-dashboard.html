@@ -1,0 +1,154 @@
+<!doctype html>
+<!-- 목업 · ERP 코드 아님 · 브리프 §2 업무 대시보드(「관리」 역할 시점) (docs/design/shape-2026-10-16-dashboards-receivables.md) -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>업무 대시보드 · 목업</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --primary:#7c6fcd; --primary-hover:#6b5dbd; --primary-light:#ece9f8; --primary-text:#4c3fb1; }
+  html { font-family: -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; }
+  body { background:#f5f5f7; color:#1f2937; }
+  ::selection { background: var(--primary-light); color: var(--primary-text); }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:16px; }
+  .card-tight { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:12px; }
+  .badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; line-height:1.4; white-space:nowrap; }
+  .badge-blue{background:#dbeafe;color:#1d4ed8}.badge-teal{background:#ccfbf1;color:#0f766e}.badge-purple{background:var(--primary-light);color:var(--primary-text)}
+  .badge-amber{background:#fef3c7;color:#b45309}.badge-red{background:#fee2e2;color:#b91c1c}.badge-green{background:#dcfce7;color:#15803d}.badge-gray{background:#f3f4f6;color:#4b5563}
+  .tab-pill { padding:6px 12px; border-radius:9999px; font-size:13px; color:#4b5563; border:1px solid transparent; }
+  .tab-pill.is-active { background:var(--primary-light); color:var(--primary-text); font-weight:600; }
+  .btn-primary { background:var(--primary); color:#fff; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:500; }
+  .btn-primary:hover { background:var(--primary-hover); }
+  .btn-ghost { border:1px solid #d1d5db; border-radius:8px; padding:6px 12px; font-size:13px; color:#4b5563; background:#fff; }
+  .section-header { display:flex; align-items:center; gap:6px; }
+  .section-dot { width:6px; height:6px; border-radius:9999px; }
+  .section-title { font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:#6b7280; font-weight:600; }
+  .input-base { border:1px solid #d1d5db; border-radius:8px; padding:6px 10px; font-size:13px; background:#fff; color:#1f2937; }
+  .todo { display:flex; align-items:center; gap:10px; padding:10px 12px; border-radius:8px; }
+  .todo:hover { background:#f9fafb; }
+  .todo .dot { width:8px; height:8px; border-radius:9999px; flex:none; }
+  .seg { display:inline-flex; border:1px solid #d1d5db; border-radius:8px; overflow:hidden; font-size:12px; }
+  .seg button { padding:5px 10px; color:#4b5563; background:#fff; }
+  .seg button.on { background:var(--primary-light); color:var(--primary-text); font-weight:600; }
+  table { border-collapse: collapse; }
+  th { font-weight:500; color:#6b7280; }
+  details > summary { list-style:none; cursor:pointer; }
+  details > summary::-webkit-details-marker { display:none; }
+</style>
+</head>
+<body>
+<div class="flex min-h-screen">
+  <aside class="hidden md:block w-[220px] shrink-0 bg-[#2b2a3a]"></aside>
+
+  <main class="flex-1 min-w-0 p-3 md:p-6">
+    <!-- 헤더 (현행 유지: 토글·역할 탭·담당자 드롭다운) -->
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h1 class="flex flex-wrap items-center gap-2 text-xl font-bold text-gray-800">내 관리 업무 <span class="badge badge-purple">관리</span></h1>
+        <p class="mt-0.5 text-xs text-gray-500">2026-10-16 (목) · 30초마다 갱신</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="seg" role="group" aria-label="보기 방식"><button>담당자별</button><button class="on">역할별</button></div>
+        <div class="flex flex-wrap gap-1"><button class="tab-pill">영업</button><button class="tab-pill">수출통관</button><button class="tab-pill">재무</button><button class="tab-pill is-active">관리</button></div>
+        <select class="input-base hidden" aria-label="담당자"><option>담당자 전체</option></select>
+      </div>
+    </div>
+
+    <!-- ══ 첫 블록: 처리 필요 항목 (급한 것 먼저, 행 = 링크) ══ -->
+    <section class="mt-4 card" aria-labelledby="todo-h">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="todo-h" class="text-base font-bold text-gray-800">지금 처리할 일 <span class="num">17</span>건 <span class="num text-sm font-semibold text-red-700">· 급한 것 9</span></h2>
+        <span class="text-xs text-gray-500">팀 영업 6명 · 담당 차량 94대</span>
+      </div>
+      <ul class="mt-2 divide-y divide-gray-100">
+        <li><a href="#" class="todo"><span class="dot bg-red-500"></span><span class="flex-1 text-sm text-gray-800">채권 위험 <span class="hidden text-xs text-gray-500 sm:inline">· 위험·심각 등급 차량</span></span><span class="num text-xs text-gray-500">₩61,300,000</span><span class="num rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">5</span></a></li>
+        <li><a href="#" class="todo"><span class="dot bg-amber-500"></span><span class="flex-1 text-sm text-gray-800">통관 정체 <span class="hidden text-xs text-gray-500 sm:inline">· 통관중 14일 초과</span></span><span class="num rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">3</span></a></li>
+        <li><a href="#" class="todo"><span class="dot bg-violet-500"></span><span class="flex-1 text-sm text-gray-800">승인 대기 항목 <span class="hidden text-xs text-gray-500 sm:inline">· 미입금 우회·정산 승인 요청</span></span><span class="num rounded-full bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">1</span></a></li>
+        <li><a href="#" class="todo"><span class="dot bg-violet-500"></span><span class="flex-1 text-sm text-gray-800">정산 확정 <span class="hidden text-xs text-gray-500 sm:inline">· 거래완료 후 미확정</span></span><span class="num text-xs text-gray-500">₩4,920,000</span><span class="num rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">4</span></a></li>
+        <li><a href="#" class="todo"><span class="dot bg-violet-500"></span><span class="flex-1 text-sm text-gray-800">정산 지급 <span class="hidden text-xs text-gray-500 sm:inline">· 확정 후 미지급</span></span><span class="num text-xs text-gray-500">₩2,310,000</span><span class="num rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">2</span></a></li>
+        <li><a href="#" class="todo"><span class="dot bg-amber-500"></span><span class="flex-1 text-sm text-gray-800">재고 점검 <span class="hidden text-xs text-gray-500 sm:inline">· 일반재고 3개월 경과 / 2억 초과</span></span><span class="num rounded-full bg-gray-100 px-2 py-0.5 text-xs font-semibold text-gray-700">2</span></a></li>
+      </ul>
+      <p class="mt-2 text-[11px] text-gray-400">행을 누르면 그 조건으로 걸러진 차량관리·정산관리·승인 화면이 열립니다. 0건인 항목은 숨겨집니다.</p>
+    </section>
+
+    <!-- 통장잔액 한 줄 띠 (재무·업무관리자·대표에게만) -->
+    <section class="mt-3 card-tight" aria-label="통장 마감잔액">
+      <details>
+        <summary class="flex flex-wrap items-center gap-2 text-sm">
+          <span class="font-semibold text-gray-700">통장 마감잔액</span>
+          <span class="badge badge-amber">오늘 미입력</span>
+          <span class="text-xs text-gray-500">마지막 입력 10-15 · 미입력 계좌 2개</span>
+          <span class="ml-auto text-xs text-[var(--primary-text)]">입력 ▾</span>
+        </summary>
+        <div class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-6">
+          <input class="input-base" value="2026-10-16" aria-label="기준일">
+          <select class="input-base sm:col-span-2" aria-label="계좌"><option>신한 원화 140-012-305310</option><option>하나 외화 430-910007-816638</option></select>
+          <input class="input-base num" placeholder="원화 (−허용)" aria-label="원화">
+          <input class="input-base num" placeholder="USD" aria-label="USD">
+          <button class="btn-primary">저장</button>
+        </div>
+        <p class="mt-2 text-[11px] text-gray-400">저장하면 칸은 비워지고, 그날 입력하지 않은 계좌는 마지막 값을 회색으로 이어 씁니다. 「+ 계좌 추가」·숨김은 펼친 표 아래.</p>
+      </details>
+    </section>
+
+    <!-- 단계 스트립 (아래로) -->
+    <section class="mt-3 card">
+      <div class="flex items-baseline justify-between">
+        <div class="section-header"><span class="section-dot bg-[var(--primary)]"></span><span class="section-title">진행 단계별 차량 수</span></div>
+        <span class="text-[11px] text-gray-400">팀 영업 한정</span>
+      </div>
+      <div class="mt-2 overflow-x-auto">
+        <div class="flex min-w-[720px] gap-1.5 text-xs">
+          <a href="#" class="flex-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-center">매입중<div class="num font-semibold">8</div></a>
+          <a href="#" class="flex-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-center">매입완료<div class="num font-semibold">3</div></a>
+          <a href="#" class="flex-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-center">말소완료<div class="num font-semibold">5</div></a>
+          <a href="#" class="flex-1 rounded-md border border-purple-200 bg-[var(--primary-light)] px-2 py-1.5 text-center">판매중<div class="num font-semibold">12</div></a>
+          <a href="#" class="flex-1 rounded-md border border-purple-200 bg-[var(--primary-light)] px-2 py-1.5 text-center">판매완료<div class="num font-semibold">7</div></a>
+          <a href="#" class="flex-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-center">선적중<div class="num font-semibold">2</div></a>
+          <a href="#" class="flex-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-center">선적완료<div class="num font-semibold">9</div></a>
+          <a href="#" class="flex-1 rounded-md border border-green-200 bg-green-50 px-2 py-1.5 text-center">통관중<div class="num font-semibold">6</div></a>
+          <a href="#" class="flex-1 rounded-md border border-green-200 bg-green-50 px-2 py-1.5 text-center">통관완료<div class="num font-semibold">1</div></a>
+          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-center">거래완료<div class="num font-semibold">41</div></a>
+        </div>
+      </div>
+    </section>
+
+    <!-- 환율 한 줄 -->
+    <section class="mt-3 card-tight flex flex-wrap items-center gap-x-5 gap-y-1 text-xs">
+      <span class="font-semibold text-gray-700">실시간 환율</span>
+      <span class="num">USD <b>1,392.40</b></span><span class="num">JPY(100) <b>928.15</b></span><span class="num">EUR <b>1,618.70</b></span><span class="num">GBP <b>1,841.20</b></span><span class="num">CNY <b>194.05</b></span>
+      <span class="text-gray-400">10:41 기준</span>
+      <button class="btn-ghost ml-auto py-1">새로고침</button>
+    </section>
+
+    <!-- 진행중 차량 -->
+    <section class="mt-3 card">
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="section-header"><span class="section-dot bg-gray-500"></span><span class="section-title">진행중 차량</span></div>
+        <div class="flex items-center gap-2 text-xs">
+          <select class="input-base py-1"><option>10대</option><option>30대</option><option>50대</option><option>100대</option></select>
+          <a href="#" class="text-[var(--primary-text)] hover:underline">전체 보기 →</a>
+        </div>
+      </div>
+      <div class="mt-2 overflow-x-auto">
+        <table class="w-full min-w-[720px] text-xs">
+          <thead><tr class="border-b border-gray-200 text-left">
+            <th class="py-1.5 pr-3">차량번호</th><th class="py-1.5 pr-3">차종</th><th class="py-1.5 pr-3">담당자</th><th class="py-1.5 pr-3">진행상태</th><th class="py-1.5 pr-3">바이어</th><th class="py-1.5 pr-3 text-right">미입금</th><th class="py-1.5">다음 할 일</th>
+          </tr></thead>
+          <tbody class="num divide-y divide-gray-100">
+            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">12가3456</td><td class="py-1.5 pr-3">BMW 520d</td><td class="py-1.5 pr-3">박영진</td><td class="py-1.5 pr-3"><span class="badge badge-amber">선적완료</span></td><td class="py-1.5 pr-3">AUTO BRIXH</td><td class="py-1.5 pr-3 text-right text-red-700">€2,480</td><td class="py-1.5">통관 신청</td></tr>
+            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">45나7890</td><td class="py-1.5 pr-3">Hyundai Santa Fe</td><td class="py-1.5 pr-3">김하늘</td><td class="py-1.5 pr-3"><span class="badge badge-purple">판매중</span></td><td class="py-1.5 pr-3">VIA MOTORS</td><td class="py-1.5 pr-3 text-right text-red-700">$6,100</td><td class="py-1.5">잔금 입금 확인</td></tr>
+            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">78다1234</td><td class="py-1.5 pr-3">Kia Sorento</td><td class="py-1.5 pr-3">이도윤</td><td class="py-1.5 pr-3"><span class="badge badge-green">통관중</span></td><td class="py-1.5 pr-3">EASY DRIVE</td><td class="py-1.5 pr-3 text-right text-gray-400">완납</td><td class="py-1.5">B/L 업로드</td></tr>
+            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">23라5678</td><td class="py-1.5 pr-3">Mercedes E220d</td><td class="py-1.5 pr-3">최서준</td><td class="py-1.5 pr-3"><span class="badge badge-blue">말소완료</span></td><td class="py-1.5 pr-3">-</td><td class="py-1.5 pr-3 text-right text-gray-400">-</td><td class="py-1.5">판매 등록</td></tr>
+            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">90마2468</td><td class="py-1.5 pr-3">Genesis G80</td><td class="py-1.5 pr-3">정유나</td><td class="py-1.5 pr-3"><span class="badge badge-amber">선적중</span></td><td class="py-1.5 pr-3">MAGJIS AUTO</td><td class="py-1.5 pr-3 text-right text-red-700">€11,900</td><td class="py-1.5">수출신고서 업로드</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

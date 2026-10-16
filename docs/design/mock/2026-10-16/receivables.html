@@ -1,0 +1,148 @@
+<!doctype html>
+<!-- 목업 · ERP 코드 아님 · 브리프 §3 채권관리 (docs/design/shape-2026-10-16-dashboards-receivables.md) -->
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>채권관리 · 목업</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --primary:#7c6fcd; --primary-hover:#6b5dbd; --primary-light:#ece9f8; --primary-text:#4c3fb1; }
+  html { font-family: -apple-system, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif; }
+  body { background:#f5f5f7; color:#1f2937; }
+  ::selection { background: var(--primary-light); color: var(--primary-text); }
+  :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:16px; }
+  .card-tight { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:12px; }
+  .badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; line-height:1.4; white-space:nowrap; }
+  .badge-blue{background:#dbeafe;color:#1d4ed8}.badge-teal{background:#ccfbf1;color:#0f766e}.badge-purple{background:var(--primary-light);color:var(--primary-text)}
+  .badge-amber{background:#fef3c7;color:#b45309}.badge-orange{background:#ffedd5;color:#c2410c}.badge-red{background:#fee2e2;color:#b91c1c}.badge-green{background:#dcfce7;color:#15803d}.badge-gray{background:#f3f4f6;color:#4b5563}
+  .tab-pill { padding:6px 12px; border-radius:9999px; font-size:13px; color:#4b5563; border:1px solid transparent; display:inline-flex; align-items:center; gap:6px; }
+  .tab-pill.is-active { background:var(--primary-light); color:var(--primary-text); font-weight:600; }
+  .pill-count { background:#f3f4f6; color:#4b5563; border-radius:9999px; padding:0 6px; font-size:11px; }
+  .tab-pill.is-active .pill-count { background:#fff; color:var(--primary-text); }
+  .btn-primary { background:var(--primary); color:#fff; border-radius:8px; padding:8px 16px; font-size:13px; font-weight:500; }
+  .btn-primary:hover { background:var(--primary-hover); }
+  .btn-ghost { border:1px solid #d1d5db; border-radius:8px; padding:6px 12px; font-size:13px; color:#4b5563; background:#fff; }
+  .input-base { border:1px solid #d1d5db; border-radius:8px; padding:8px 10px; font-size:13px; background:#fff; color:#1f2937; }
+  table { border-collapse: collapse; }
+  th { font-weight:500; color:#6b7280; }
+  tr.row { cursor:pointer; }
+  tr.row:hover td { background-color: rgba(124,111,205,.06); }
+  /* 행 배경 게이지 · 미납률만큼 오른쪽에서 옅은 색(현행 JS 가 그리는 것을 흉내) */
+  tr.row { background: linear-gradient(to left, rgba(245,158,11,.12) var(--ratio, 0%), transparent var(--ratio, 0%)); }
+  tr.row.critical { background: linear-gradient(to left, rgba(239,68,68,.14) var(--ratio, 0%), transparent var(--ratio, 0%)); }
+  details > summary { list-style:none; cursor:pointer; }
+  details > summary::-webkit-details-marker { display:none; }
+</style>
+</head>
+<body>
+<div class="flex min-h-screen">
+  <aside class="hidden md:block w-[220px] shrink-0 bg-[#2b2a3a]"></aside>
+
+  <main class="flex-1 min-w-0 p-3 md:p-6">
+    <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h1 class="text-xl font-bold text-gray-800">채권관리</h1>
+        <p class="mt-0.5 text-xs text-gray-500">판매 미수금의 전체 규모와 차량별 회수 · 관리자 전용 · 30초마다 갱신</p>
+      </div>
+      <div class="flex items-center gap-2 text-xs text-gray-500">
+        <span>통화</span>
+        <div class="flex gap-1"><button class="tab-pill is-active">전체(₩)</button><button class="tab-pill">USD</button><button class="tab-pill">EUR</button><button class="tab-pill">JPY</button></div>
+      </div>
+    </div>
+
+    <!-- ══ 리드: 숫자 3 + 검색 (같은 무게) ══ -->
+    <section class="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-5" aria-label="미수 현황과 찾기">
+      <div class="card lg:col-span-3">
+        <div class="flex flex-wrap items-baseline gap-x-6 gap-y-2">
+          <div>
+            <div class="text-xs text-gray-500">총 미수금 <span class="text-gray-400">· 77대 · 기간 무관</span></div>
+            <div class="num text-3xl font-bold tracking-tight text-gray-900">₩312,450,000</div>
+          </div>
+          <div class="num text-sm">
+            <div><span class="text-gray-500">선적후</span> <b class="text-gray-800">₩198,700,000</b> <span class="text-gray-400">31대</span></div>
+            <div><span class="text-gray-500">선적전</span> <b class="text-gray-800">₩113,750,000</b> <span class="text-gray-400">46대</span></div>
+          </div>
+          <div class="num text-sm">
+            <div><span class="badge badge-red">심각 5</span> <span class="badge badge-orange">위험 9</span> <span class="badge badge-amber">주의 23</span></div>
+            <div class="mt-1 text-xs text-gray-500">결제대기(채권 제외) 9대 · ₩27,900,000</div>
+          </div>
+        </div>
+        <p class="num mt-3 text-xs text-gray-500">총 매출 ₩2,418,000,000 · 총 입금 ₩2,105,550,000 (입금률 87.1%) · 미수율 12.9% · 미납률 평균 31.4%</p>
+      </div>
+      <form class="card lg:col-span-2 flex flex-col justify-center" role="search">
+        <label for="q" class="text-xs text-gray-500">차량·바이어·VIN 찾기</label>
+        <div class="mt-1 flex gap-2">
+          <input id="q" class="input-base flex-1 min-w-0" placeholder="차량번호, 바이어, 차대번호 끝 6자리">
+          <button class="btn-primary">검색</button>
+        </div>
+        <p class="mt-2 text-[11px] text-gray-400">Enter 로도 실행됩니다. 치는 동안 목록이 바뀌지 않습니다.</p>
+      </form>
+    </section>
+
+    <!-- 분류 탭 6 -->
+    <nav class="mt-4 flex flex-wrap gap-1.5" aria-label="분류">
+      <button class="tab-pill is-active">채권 전체 <span class="pill-count num">77</span></button>
+      <button class="tab-pill">결제대기 <span class="pill-count num">9</span></button>
+      <button class="tab-pill">선적전 미수 <span class="pill-count num">46</span></button>
+      <button class="tab-pill">선적후 미수 <span class="pill-count num">31</span></button>
+      <button class="tab-pill">디파짓(적립금 사용) <span class="pill-count num">4</span></button>
+      <button class="tab-pill">완납 <span class="pill-count num">233</span></button>
+    </nav>
+    <p class="mt-1 text-[11px] text-gray-400">채권 전체 = 결제대기 + 선적전 + 선적후. 기간과 무관하게 지금 남은 잔액 전부.</p>
+
+    <!-- 필터: 노출 2 + 더보기 -->
+    <section class="mt-3 card-tight">
+      <div class="flex flex-wrap items-center gap-2 text-xs">
+        <label class="text-gray-500">위험도</label>
+        <div class="flex flex-wrap gap-1"><button class="tab-pill is-active">전체</button><button class="tab-pill">결제대기</button><button class="tab-pill">안전</button><button class="tab-pill">주의</button><button class="tab-pill">위험</button><button class="tab-pill">심각</button></div>
+        <label class="ml-2 text-gray-500">담당자</label>
+        <select class="input-base py-1"><option>전체</option><option>박영진</option><option>김하늘</option><option>이도윤</option></select>
+        <details class="ml-auto">
+          <summary class="btn-ghost py-1">필터 더보기 ▾</summary>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <select class="input-base py-1"><option>바이어 전체</option></select>
+            <select class="input-base py-1"><option>진행상태 전체</option></select>
+            <select class="input-base py-1"><option>취소 구분: 전체</option><option>정상만</option><option>매입취소만</option><option>과입금만</option></select>
+            <select class="input-base py-1"><option>미납률: ALL</option><option>30%↑</option><option>50%↑</option><option>70%↑</option></select>
+            <input class="input-base py-1 w-[120px]" placeholder="판매일 시작"><input class="input-base py-1 w-[120px]" placeholder="판매일 끝">
+          </div>
+        </details>
+      </div>
+    </section>
+
+    <!-- 표 9열 -->
+    <section class="mt-3 card">
+      <div class="flex items-center justify-between text-xs text-gray-500">
+        <span class="num">77건 중 1–8</span>
+        <select class="input-base py-1"><option>10건</option><option>30건</option><option>50건</option><option>100건</option></select>
+      </div>
+      <div class="mt-2 overflow-x-auto">
+        <table class="w-full min-w-[880px] text-xs">
+          <thead><tr class="border-b border-gray-200 text-left">
+            <th class="py-2 pr-3">차량</th><th class="py-2 pr-3">담당</th><th class="py-2 pr-3">바이어</th><th class="py-2 pr-3 text-right">판매합계</th><th class="py-2 pr-3 text-right">미납금 · 미납률 ▾</th><th class="py-2 pr-3 text-right">경과일</th><th class="py-2 pr-3">위험도</th><th class="py-2 pr-3">BL</th><th class="py-2">채권담당</th>
+          </tr></thead>
+          <tbody class="num divide-y divide-gray-100">
+            <tr class="row critical" style="--ratio:100%"><td class="py-2 pr-3"><div class="font-medium text-gray-800">12가3456</div><div class="text-[11px] text-gray-500">BMW 520d · …850942</div></td><td class="py-2 pr-3">박영진</td><td class="py-2 pr-3">AUTO BRIXH</td><td class="py-2 pr-3 text-right">€14,730</td><td class="py-2 pr-3 text-right"><span class="font-semibold text-red-700">€14,730</span> <span class="text-gray-500">100%</span></td><td class="py-2 pr-3 text-right">182일</td><td class="py-2 pr-3"><span class="badge badge-red">심각</span></td><td class="py-2 pr-3"><span class="badge badge-gray">B/L ✓</span></td><td class="py-2">김하늘</td></tr>
+            <tr class="row" style="--ratio:64%"><td class="py-2 pr-3"><div class="font-medium text-gray-800">45나7890</div><div class="text-[11px] text-gray-500">Hyundai Santa Fe · …112233</div></td><td class="py-2 pr-3">김하늘</td><td class="py-2 pr-3">VIA MOTORS</td><td class="py-2 pr-3 text-right">$9,500</td><td class="py-2 pr-3 text-right"><span class="font-semibold text-red-700">$6,100</span> <span class="text-gray-500">64%</span></td><td class="py-2 pr-3 text-right">97일</td><td class="py-2 pr-3"><span class="badge badge-orange">위험</span></td><td class="py-2 pr-3"><span class="text-gray-300">-</span></td><td class="py-2">-</td></tr>
+            <tr class="row" style="--ratio:41%"><td class="py-2 pr-3"><div class="font-medium text-gray-800">78다1234</div><div class="text-[11px] text-gray-500">Kia Sorento · …778899</div></td><td class="py-2 pr-3">이도윤</td><td class="py-2 pr-3">EASY DRIVE</td><td class="py-2 pr-3 text-right">€8,803</td><td class="py-2 pr-3 text-right"><span class="font-semibold text-red-700">€3,600</span> <span class="text-gray-500">41%</span></td><td class="py-2 pr-3 text-right">38일</td><td class="py-2 pr-3"><span class="badge badge-amber">주의</span></td><td class="py-2 pr-3"><span class="text-gray-300">-</span></td><td class="py-2">김하늘</td></tr>
+            <tr class="row" style="--ratio:100%"><td class="py-2 pr-3"><div class="font-medium text-gray-800">23라5678</div><div class="text-[11px] text-gray-500">Mercedes E220d · …334455</div></td><td class="py-2 pr-3">최서준</td><td class="py-2 pr-3">MAGJIS AUTO</td><td class="py-2 pr-3 text-right">€11,900</td><td class="py-2 pr-3 text-right"><span class="font-semibold text-red-700">€11,900</span> <span class="text-gray-500">100%</span></td><td class="py-2 pr-3 text-right">6일</td><td class="py-2 pr-3"><span class="badge badge-gray">결제대기</span></td><td class="py-2 pr-3"><span class="text-gray-300">-</span></td><td class="py-2">-</td></tr>
+            <tr class="row" style="--ratio:22%"><td class="py-2 pr-3"><div class="font-medium text-gray-800">90마2468</div><div class="text-[11px] text-gray-500">Genesis G80 · …990011</div></td><td class="py-2 pr-3">정유나</td><td class="py-2 pr-3">ALBANIA CARS</td><td class="py-2 pr-3 text-right">$18,200</td><td class="py-2 pr-3 text-right"><span class="font-semibold text-red-700">$4,000</span> <span class="text-gray-500">22%</span></td><td class="py-2 pr-3 text-right">61일</td><td class="py-2 pr-3"><span class="badge badge-amber">주의</span></td><td class="py-2 pr-3"><span class="badge badge-gray">B/L ✓</span></td><td class="py-2">김하늘</td></tr>
+            <tr class="row critical" style="--ratio:100%"><td class="py-2 pr-3"><div class="font-medium text-gray-800">31바9087</div><div class="text-[11px] text-gray-500">Audi A6 40 TDI · …445566</div></td><td class="py-2 pr-3">박영진</td><td class="py-2 pr-3">AUTO BRIXH</td><td class="py-2 pr-3 text-right">€13,100</td><td class="py-2 pr-3 text-right"><span class="font-semibold text-red-700">€13,100</span> <span class="text-gray-500">100%</span></td><td class="py-2 pr-3 text-right">210일</td><td class="py-2 pr-3"><span class="badge badge-red">심각</span> <span class="badge badge-gray">취소</span></td><td class="py-2 pr-3"><span class="text-gray-300">-</span></td><td class="py-2">-</td></tr>
+            <tr class="row" style="--ratio:8%"><td class="py-2 pr-3"><div class="font-medium text-gray-800">56사1122</div><div class="text-[11px] text-gray-500">Hyundai Grandeur · …667788</div></td><td class="py-2 pr-3">김하늘</td><td class="py-2 pr-3">VIA MOTORS</td><td class="py-2 pr-3 text-right">$7,900</td><td class="py-2 pr-3 text-right"><span class="font-semibold text-red-700">$630</span> <span class="text-gray-500">8%</span></td><td class="py-2 pr-3 text-right">124일</td><td class="py-2 pr-3"><span class="badge badge-blue">안전</span></td><td class="py-2 pr-3"><span class="badge badge-gray">B/L ✓</span></td><td class="py-2">김하늘</td></tr>
+            <tr class="row" style="--ratio:55%"><td class="py-2 pr-3"><div class="font-medium text-gray-800">67아3344</div><div class="text-[11px] text-gray-500">Lexus ES300h · …223344</div></td><td class="py-2 pr-3">이도윤</td><td class="py-2 pr-3">EASY DRIVE</td><td class="py-2 pr-3 text-right">¥2,150,000</td><td class="py-2 pr-3 text-right"><span class="font-semibold text-red-700">¥1,180,000</span> <span class="text-gray-500">55%</span></td><td class="py-2 pr-3 text-right">73일</td><td class="py-2 pr-3"><span class="badge badge-orange">위험</span></td><td class="py-2 pr-3"><span class="text-gray-300">-</span></td><td class="py-2">-</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-2 text-[11px] text-gray-400">행을 누르면 오른쪽에 회수 이력 패널이 열립니다(회수 방법 6종·과입금 전환·채권담당 지정은 현행 그대로). 행 배경은 미납률만큼 칠해집니다.</p>
+      <div class="mt-3 flex items-center justify-between text-xs text-gray-500">
+        <span class="num">1–8 / 77</span>
+        <div class="flex gap-1"><button class="btn-ghost py-1">‹</button><button class="btn-ghost py-1 font-semibold text-[var(--primary-text)]">1</button><button class="btn-ghost py-1">2</button><button class="btn-ghost py-1">…</button><button class="btn-ghost py-1">8</button><button class="btn-ghost py-1">›</button></div>
+      </div>
+    </section>
+  </main>
+</div>
+</body>
+</html>
