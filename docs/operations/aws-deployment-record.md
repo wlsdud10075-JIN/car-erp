@@ -658,6 +658,13 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-16(2차) — 적립금 처리자·감사 컬럼 · 바이어 패널 표 · 과입금→회사이익 `0ad8acac` (3사 동시, 코드 4커밋, **마이그 2**)
+
+- jin 제보(heymanerp ALKEO «적립금 추가·취소 기록이 있는데 로그엔 없고 누가 했는지 안 나오네»): `savings_statuses.created_by` + `SavingsStatus::booted`(처리자·감사 행 column=종류 키·값「EUR +280.00 → 잔액 280.00」) → 감사 화면 「컬럼」에 적립/사용/환불/취소/조정. 바이어탭 적립금 「처리자」 열, 현금 탭 처리자 글자. 기존 행은 「-」.
+- 바이어 패널 표 4개 한 가족(머리줄 배경·패딩·얼룩·테두리, 580px 라 열 불변). `even:` 변형 CSS 빌드 확인.
+- 과입금 → 「회사이익으로 전환」(jin «B 맞아»): 회수방법 `company_income`(버튼 전용) + **MySQL enum 마이그** + 미수 제외 미러. 관리자 대시보드 회사 순이익에 전환일 기준 KRW 로 더하고 「+ 과입금 회사이익」 줄. 잡손실은 종전대로 기록만. 월결산 알림톡·월정산 카드엔 안 들어감.
+- dev `4077ae68`·`c1831bec`·`886cd95d`·`89ddcdcd` → master `6984bf30`·`fe461860`·`141b8e16`·`0ad8acac`(notion 삭제 유지). 로컬 병렬 전체 3,355 pass · 실패 0. deploy 런 잡 5개 success. 3사 SHA `0ad8acac`, 마이그 2 Ran, enum 에 company_income·savings_statuses.created_by 실측 확인, /login 200. 운영 쓰기 없음.
+
 ## 2026-10-16 — 통관 SET Ver.2 `adf8dc3a` (3사 동시, 코드 1커밋, 마이그 0, 양식 xlsx 3개)
 
 - jin 10-15 «서류탭 통관SET 옆에 나란히 Ver.2». 원본 = heymanerp 생성본을 jin 이 손본 xlsx(Desktop/heyman/통관SET_28머2098_20261012.xlsx). 실측 차이 = ① 차량인보이스 탭 삭제 ② 차량팩킹 상단 오른쪽 블록(Reference No.·CO·ID·Remark·L/C) 제거 + 전폭 병합 + G9 그림 제거. 나머지(값·노란칸·통화서식·도장)는 생성 흔적이라 미반영.
