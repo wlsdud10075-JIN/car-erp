@@ -658,6 +658,14 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-16(3차) — 매입취소: 취소완료=거래완료 · [마감 취소] · 마감 버튼 완납 시 숨김 · 사내직원 마감 즉시 정산됨 `f84bc87e` (3사 동시, 코드 2커밋, 마이그 0)
+
+- jin 제보(ssancarerp 60두1818 «완납인데 미수마감을 눌러버렸다»): 감사로그 실측 = 09-18 00:06:27 취소 전환 → 00:06:32 미수 마감(잔금 0건 → 손실 500,003 동결) → 00:07:59 잔금 입력. **설계대로 동작, 순서가 거꾸로**(실무자가 기억한 「안 눌린다」는 입금이 먼저일 때만 뜨는 가드). SKILLS §8 #117.
+- Vehicle cascade: `cancel_status=cancelled` + `sale_price>0` + 미수 0 → **거래완료**(위약금 없는 취소 차·미수마감 차 제외). 돈 큐($activeOnly 중 purchase_unpaid·sale_unpaid·purchase_balance_due·exchange_rate_missing)는 취소 차를 진행상태 무관하게 남김(실측 영향 0대). 목록은 「거래완료」+「취소완료」 뱃지 둘(종전 렌더 그대로, 가드 추가).
+- 차량 패널: [미수 마감] 은 미수>0 일 때만 · **[마감 취소]** = cancelled_closed + 미수 0 + `cancel_loss_settled_at` NULL → cancelled(취소완료) + 손실 NULL + 감사 `purchase_cancel_reopened`. 사내직원 마감은 프리랜서 몫 0 이라 `settlementStage()` 즉시 done(영구 「정산대기」 해소). 감사 액션 사전 2개 추가.
+- dev `fc0fa4ed`·`af128688` → master `4f22fc91`·`f84bc87e`. 로컬 병렬 전체 3,362 pass · 실패 0. deploy 런 38865329521 잡 5개 success. 3사 SHA `f84bc87e`, Pending 0, /login 200. 운영 쓰기 없음(스크립트 정정은 분류기 차단 → 화면 버튼으로).
+- **배포 뒤 할 일**: ① jin/관리 이상이 ssancarerp 60두1818 매입 탭 [마감 취소] 클릭(그 저장으로 거래완료). ② 진행상태 캐시는 05:00 `vehicles:rebuild-caches` 가 돌린다 — 예상 이동 ssancarerp 10(+60두1818 1)·heymanerp 1·karaba 0. ③ Notion 재발행(Codex): 관리 가이드 매입취소 절 + 카드 「매입」.
+
 ## 2026-10-16(2차) — 적립금 처리자·감사 컬럼 · 바이어 패널 표 · 과입금→회사이익 `0ad8acac` (3사 동시, 코드 4커밋, **마이그 2**)
 
 - jin 제보(heymanerp ALKEO «적립금 추가·취소 기록이 있는데 로그엔 없고 누가 했는지 안 나오네»): `savings_statuses.created_by` + `SavingsStatus::booted`(처리자·감사 행 column=종류 키·값「EUR +280.00 → 잔액 280.00」) → 감사 화면 「컬럼」에 적립/사용/환불/취소/조정. 바이어탭 적립금 「처리자」 열, 현금 탭 처리자 글자. 기존 행은 「-」.
