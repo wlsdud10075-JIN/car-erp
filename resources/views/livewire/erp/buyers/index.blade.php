@@ -2083,19 +2083,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
 
             {{-- 거래 내역 --}}
-            <div class="overflow-x-auto">
+            <div class="overflow-x-auto rounded-lg border border-gray-200">
                 <table class="w-full text-xs">
                     <thead>
-                        <tr class="border-b text-left text-gray-400">
-                            <th class="pb-1.5 pr-3">{{ __('buyer.savings.col_date') }}</th>
-                            <th class="pb-1.5 pr-3">{{ __('buyer.savings.col_by') }}</th>
-                            <th class="pb-1.5 pr-3">{{ __('buyer.savings.currency') }}</th>
-                            <th class="pb-1.5 pr-3">{{ __('buyer.savings.type') }}</th>
-                            <th class="pb-1.5 pr-3 text-right">{{ __('buyer.savings.col_amount') }}</th>
-                            <th class="pb-1.5 pr-3 text-right">{{ __('buyer.savings.col_balance') }}</th>
-                            <th class="pb-1.5 pr-3">{{ __('buyer.savings.col_fifo') }}</th>
-                            <th class="pb-1.5">{{ __('common.memo') }}</th>
-                            <th class="pb-1.5"></th>
+                        <tr class="bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                            <th class="px-2 py-2">{{ __('buyer.savings.col_date') }}</th>
+                            <th class="px-2 py-2">{{ __('buyer.savings.col_by') }}</th>
+                            <th class="px-2 py-2">{{ __('buyer.savings.currency') }}</th>
+                            <th class="px-2 py-2">{{ __('buyer.savings.type') }}</th>
+                            <th class="px-2 py-2 text-right">{{ __('buyer.savings.col_amount') }}</th>
+                            <th class="px-2 py-2 text-right">{{ __('buyer.savings.col_balance') }}</th>
+                            <th class="px-2 py-2">{{ __('buyer.savings.col_fifo') }}</th>
+                            <th class="px-2 py-2">{{ __('common.memo') }}</th>
+                            <th class="px-2 py-2"></th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
@@ -2113,17 +2113,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 default => 'text-amber-600',
                             };
                         @endphp
-                        <tr>
-                            <td class="py-1.5 pr-3 text-gray-400 whitespace-nowrap">{{ $t['created_at'] }}</td>
-                            <td class="py-1.5 pr-3 whitespace-nowrap text-gray-600" data-savings-by>{{ $t['by'] !== '' ? $t['by'] : '-' }}</td>
-                            <td class="py-1.5 pr-3 font-mono">{{ $t['currency'] }}</td>
-                            <td class="py-1.5 pr-3 {{ $typeColor }} font-medium">{{ $typeLabel }}</td>
-                            <td class="py-1.5 pr-3 text-right font-mono {{ $t['savings'] >= 0 ? 'text-green-600' : 'text-red-500' }}">
+                        <tr class="even:bg-gray-50/60">
+                            <td class="px-2 py-1.5 text-gray-400 whitespace-nowrap">{{ $t['created_at'] }}</td>
+                            <td class="px-2 py-1.5 whitespace-nowrap text-gray-600" data-savings-by>{{ $t['by'] !== '' ? $t['by'] : '-' }}</td>
+                            <td class="px-2 py-1.5 font-mono">{{ $t['currency'] }}</td>
+                            <td class="px-2 py-1.5 {{ $typeColor }} font-medium">{{ $typeLabel }}</td>
+                            <td class="px-2 py-1.5 text-right font-mono {{ $t['savings'] >= 0 ? 'text-green-600' : 'text-red-500' }}">
                                 {{ $t['savings'] >= 0 ? '+' : '' }}{{ number_format($t['savings'], 2) }}
                             </td>
-                            <td class="py-1.5 pr-3 text-right font-mono text-gray-700">{{ number_format($t['balance'], 2) }}</td>
+                            <td class="px-2 py-1.5 text-right font-mono text-gray-700">{{ number_format($t['balance'], 2) }}</td>
                             {{-- 선입선출 — 적립분은 "환율·잔여", 사용분은 "어느 적립분에서 얼마 나갔고 그 적립분 잔여" (jin 2026-07-29) --}}
-                            <td class="py-1.5 pr-3 whitespace-nowrap text-[11px]">
+                            <td class="px-2 py-1.5 whitespace-nowrap text-[11px]">
                                 @php $f = $t['fifo'] ?? null; @endphp
                                 @if(!$f)
                                     <span class="text-gray-300">—</span>
@@ -2162,8 +2162,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{-- 메모가 길면 잘리는데 호버해도 안 보였다(jin 2026-08-20).
                                  title 은 브라우저가 그려서 **슬라이드 패널 밖으로도 안 잘린다** —
                                  CSS 툴팁(absolute)을 쓰면 패널 overflow 에 갇힌다. --}}
-                            <td class="py-1.5 text-gray-400 max-w-[120px] truncate" title="{{ $t['note'] }}">{{ $t['note'] }}</td>
-                            <td class="py-1.5 pl-2">
+                            <td class="px-2 py-1.5 text-gray-400 max-w-[120px] truncate" title="{{ $t['note'] }}">{{ $t['note'] }}</td>
+                            <td class="px-2 py-1.5">
                                 @if($t['transaction_type'] !== 'CANCELLED')
                                 <button wire:click="cancelSavingsTransaction({{ $t['id'] }})"
                                         wire:confirm="{{ __('buyer.savings.cancel_confirm') }}"
@@ -2331,21 +2331,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                     (jin 2026-09-05 «메모는 안나오네?» — 8열이라 메모가 화면 밖에 있었다).
                     그래서 메모·기재자는 열을 따로 두지 않고 수령일 아래에 붙이고,
                     잘리는 것은 전부 title(호버)로 전문을 보여준다. --}}
-            <div class="overflow-x-auto">
+            <div class="overflow-x-auto rounded-lg border border-gray-200">
                 <table class="w-full text-xs">
                     <thead>
-                        <tr class="border-b text-left text-gray-400">
-                            <th class="pb-1.5 pr-2">{{ __('buyer.cash.col_date') }}</th>
-                            <th class="pb-1.5 pr-2 text-right">{{ __('buyer.cash.col_amount') }}</th>
-                            <th class="pb-1.5 pr-2 text-right">{{ __('buyer.cash.col_remaining') }}</th>
-                            <th class="pb-1.5 pr-2" title="{{ __('buyer.cash.used_date_title') }}">{{ __('buyer.cash.col_used') }}</th>
-                            <th class="pb-1.5"></th>
+                        <tr class="bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                            <th class="px-2 py-2">{{ __('buyer.cash.col_date') }}</th>
+                            <th class="px-2 py-2 text-right">{{ __('buyer.cash.col_amount') }}</th>
+                            <th class="px-2 py-2 text-right">{{ __('buyer.cash.col_remaining') }}</th>
+                            <th class="px-2 py-2" title="{{ __('buyer.cash.used_date_title') }}">{{ __('buyer.cash.col_used') }}</th>
+                            <th class="px-2 py-2"></th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         @forelse($cashReceiptList as $r)
-                        <tr class="align-top">
-                            <td class="py-1.5 pr-2">
+                        <tr class="align-top even:bg-gray-50/60">
+                            <td class="px-2 py-1.5">
                                 <div class="whitespace-nowrap text-gray-500">{{ $r['received_date'] }}</div>
                                 {{-- 👤 처리자를 툴팁이 아니라 글자로 (jin 2026-10-16 «누가 변경했는지 사용자를 넣어줄 수 있어?») --}}
                                 <div class="whitespace-nowrap text-[10px] text-gray-400" data-cash-by>{{ __('buyer.cash.col_by') }} {{ $r['by'] ?: '-' }}</div>
@@ -2354,17 +2354,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <div class="max-w-[130px] truncate text-[10px] text-gray-400" title="{{ $r['note'] }}">{{ $r['note'] }}</div>
                                 @endif
                             </td>
-                            <td class="py-1.5 pr-2 whitespace-nowrap text-right font-mono text-gray-700">
+                            <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono text-gray-700">
                                 {{ number_format($r['amount'], 2) }}
                                 <span class="text-[10px] text-gray-400">{{ $r['currency'] }}</span>
                             </td>
-                            <td class="py-1.5 pr-2 whitespace-nowrap text-right font-mono {{ $r['remaining'] > 0.005 ? 'text-emerald-700' : 'text-gray-400' }}">
+                            <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono {{ $r['remaining'] > 0.005 ? 'text-emerald-700' : 'text-gray-400' }}">
                                 {{ number_format($r['remaining'], 2) }}
                                 @if($r['is_next'])
                                 <span class="mt-0.5 block text-[10px] font-medium text-primary-text">↓ {{ __('buyer.cash.next_out') }}</span>
                                 @endif
                             </td>
-                            <td class="py-1.5 pr-2 text-[11px]" title="{{ $r['uses_title'] }}">
+                            <td class="px-2 py-1.5 text-[11px]" title="{{ $r['uses_title'] }}">
                                 @forelse($r['uses'] as $u)
                                 {{-- 🗓️ 날짜 = 그 잔금의 수금일(원장 수수료는 수수료일). 한 잔금이 두 입금에
                                      걸치면 같은 차량이 두 줄로 나뉘므로, 날짜가 없으면 「이 입금 날짜에
@@ -2385,7 +2385,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <span class="text-gray-300">{{ __('buyer.cash.not_used') }}</span>
                                 @endforelse
                             </td>
-                            <td class="py-1.5">
+                            <td class="px-2 py-1.5">
                                 {{-- 이미 쓰인 입금도 지울 수 있다 — 남은 다른 입금에서 다시 채운다(jin 2026-09-05).
                                      그래서 확인 문구가 갈린다. 못 채우면 서버가 막고 사유를 보여준다. --}}
                                 @if($this->canManageCash)
@@ -2408,17 +2408,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <h4 class="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ __('buyer.cash.fee_list_title') }}</h4>
                 <table class="w-full text-xs">
                     <thead>
-                        <tr class="border-b text-left text-gray-400">
-                            <th class="pb-1.5 pr-2">{{ __('buyer.cash.fee_date') }}</th>
-                            <th class="pb-1.5 pr-2 text-right">{{ __('buyer.cash.col_amount') }}</th>
-                            <th class="pb-1.5 pr-2">{{ __('buyer.cash.fee_from') }}</th>
-                            <th class="pb-1.5"></th>
+                        <tr class="bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                            <th class="px-2 py-2">{{ __('buyer.cash.fee_date') }}</th>
+                            <th class="px-2 py-2 text-right">{{ __('buyer.cash.col_amount') }}</th>
+                            <th class="px-2 py-2">{{ __('buyer.cash.fee_from') }}</th>
+                            <th class="px-2 py-2"></th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         @foreach($cashFeeList as $f)
-                        <tr class="align-top">
-                            <td class="py-1.5 pr-2">
+                        <tr class="align-top even:bg-gray-50/60">
+                            <td class="px-2 py-1.5">
                                 <div class="whitespace-nowrap text-gray-500">
                                     {{ $f['charged_date'] }}
                                     @if(! empty($f['is_savings']))
@@ -2432,15 +2432,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <div class="max-w-[130px] truncate text-[10px] text-gray-400" title="{{ $f['note'] }}">{{ $f['note'] }}</div>
                                 @endif
                             </td>
-                            <td class="py-1.5 pr-2 whitespace-nowrap text-right font-mono text-amber-700">
+                            <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono text-amber-700">
                                 −{{ number_format($f['amount'], 2) }}
                                 <span class="text-[10px] text-gray-400">{{ $f['currency'] }}</span>
                             </td>
-                            <td class="py-1.5 pr-2 text-[11px] text-gray-600">
+                            <td class="px-2 py-1.5 text-[11px] text-gray-600">
                                 {{-- title 은 **자르는 요소 자체**에 붙인다 — 부모에 붙이면 가드가 잡는다(호버 위치도 어긋난다). --}}
                                 <div class="max-w-[150px] truncate" title="{{ $f['from'] }}">{{ $f['from'] ?: '-' }}</div>
                             </td>
-                            <td class="py-1.5">
+                            <td class="px-2 py-1.5">
                                 @if($this->canManageCash)
                                 <button wire:click="deleteCashFee({{ $f['id'] }})"
                                         wire:confirm="{{ __('buyer.cash.fee_delete_confirm') }}"
@@ -2501,25 +2501,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </button>
                 @endif
 
-                <div class="mt-3 overflow-x-auto">
+                <div class="mt-3 overflow-x-auto rounded-lg border border-violet-200 bg-white">
                     <table class="w-full text-xs">
                         <thead>
-                            <tr class="border-b border-violet-100 text-left text-gray-400">
-                                <th class="pb-1.5 pr-2">{{ __('buyer.cash.col_date') }}</th>
-                                <th class="pb-1.5 pr-2">{{ __('buyer.cash.savings_col_vehicle') }}</th>
-                                <th class="pb-1.5 pr-2 text-right">{{ __('buyer.cash.col_amount') }}</th>
-                                <th class="pb-1.5">{{ __('common.memo') }}</th>
+                            <tr class="bg-violet-50 text-left text-[11px] font-semibold uppercase tracking-wide text-violet-700">
+                                <th class="px-2 py-2">{{ __('buyer.cash.col_date') }}</th>
+                                <th class="px-2 py-2">{{ __('buyer.cash.savings_col_vehicle') }}</th>
+                                <th class="px-2 py-2 text-right">{{ __('buyer.cash.col_amount') }}</th>
+                                <th class="px-2 py-2">{{ __('common.memo') }}</th>
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-violet-100">
                             @forelse($savingsUseList as $u)
-                            <tr class="align-top">
-                                <td class="py-1.5 pr-2 whitespace-nowrap text-gray-500">{{ $u['date'] }}</td>
-                                <td class="py-1.5 pr-2 whitespace-nowrap text-gray-700">{{ $u['vehicle_number'] ?? __('buyer.cash.savings_no_vehicle_label') }}</td>
-                                <td class="py-1.5 pr-2 whitespace-nowrap text-right font-mono {{ $u['amount'] < 0 ? 'text-violet-700' : 'text-emerald-700' }}">
+                            <tr class="align-top even:bg-violet-50/40">
+                                <td class="px-2 py-1.5 whitespace-nowrap text-gray-500">{{ $u['date'] }}</td>
+                                <td class="px-2 py-1.5 whitespace-nowrap text-gray-700">{{ $u['vehicle_number'] ?? __('buyer.cash.savings_no_vehicle_label') }}</td>
+                                <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono {{ $u['amount'] < 0 ? 'text-violet-700' : 'text-emerald-700' }}">
                                     {{ number_format($u['amount'], 2) }} <span class="text-[10px] text-gray-400">{{ $u['currency'] }}</span>
                                 </td>
-                                <td class="py-1.5 text-[11px] text-gray-500"><div class="max-w-[180px] truncate" title="{{ $u['note'] }}">{{ $u['note'] }}</div></td>
+                                <td class="px-2 py-1.5 text-[11px] text-gray-500"><div class="max-w-[180px] truncate" title="{{ $u['note'] }}">{{ $u['note'] }}</div></td>
                             </tr>
                             @empty
                             <tr><td colspan="4" class="py-4 text-center text-gray-400">{{ __('buyer.cash.savings_no_use') }}</td></tr>

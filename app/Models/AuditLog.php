@@ -86,6 +86,12 @@ class AuditLog extends Model
         return auth()->id() ?? self::$actorUserId;
     }
 
+    /** 모델 훅처럼 `create()` 를 직접 쓰는 곳이 같은 행위자 판정을 쓰도록 — 복제 금지(§8 #45). */
+    public static function currentActorId(): ?int
+    {
+        return self::actorId();
+    }
+
     /**
      * 🧹 **이 저장이 이 컬럼을 「실제로」 바꿨나** — 감사 기록 여부의 **단일 판정** (jin 2026-09-17).
      *
