@@ -552,6 +552,24 @@ class PurchaseCancelTest extends TestCase
         $this->assertSame(1_047_600, (int) $settled->fresh()->cancel_shortfall_krw, '배치에 반영된 손실이 지워졌다');
     }
 
+    /**
+     * 🏷️ 목록은 뱃지 **두 개** — 「거래완료」 + 「취소완료」 (jin 2026-10-16 «단순 거래완료만 표시되면
+     *    이게 취소차량이었는지 모르잖아»). 진행상태 뱃지와 취소 뱃지는 다른 축이라 나란히 그린다.
+     */
+    public function test_list_shows_both_closed_deal_and_cancel_badges(): void
+    {
+        $this->actingAs($this->admin());
+        $v = $this->cancelledFullyPaid();
+
+        $html = Volt::test('erp.vehicles.index')
+            ->set('dateFrom', '2000-01-01')->set('dateTo', '2100-01-01')
+            ->set('search', $v->vehicle_number)->call('applyFilters')
+            ->html();
+
+        $this->assertMatchesRegularExpression('/badge[^"]*"[^>]*>\s*거래완료\s*</u', $html, '진행상태 뱃지 「거래완료」가 없다');
+        $this->assertMatchesRegularExpression('/badge[^"]*"[^>]*>\s*취소완료\s*</u', $html, '취소 뱃지 「취소완료」가 없다');
+    }
+
     /** 완납(취소완료)이면 [미수 마감] 버튼을 그리지 않는다 — 미수가 남았을 때만 보인다. */
     public function test_close_button_is_hidden_when_penalty_fully_paid(): void
     {
