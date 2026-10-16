@@ -771,11 +771,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 최근 50건 거래내역 — 각 행에 "어느 적립분을 얼마 썼고 그 적립분 잔여는 얼마"를 붙인다.
         $this->txnList = SavingsStatus::where('buyer_id', $buyerId)
+            ->with('creator:id,name')
             ->orderByDesc('id')
             ->limit(50)
             ->get()
             ->map(fn($t) => [
                 'id'               => $t->id,
+                'by'               => $t->creator?->name ?? '',   // 👤 처리자(2026-10-16) — 옛 행은 빈칸
                 'currency'         => $t->currency,
                 'transaction_type' => $t->transaction_type,
                 'savings'          => $t->savings,
@@ -2086,6 +2088,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <thead>
                         <tr class="border-b text-left text-gray-400">
                             <th class="pb-1.5 pr-3">{{ __('buyer.savings.col_date') }}</th>
+                            <th class="pb-1.5 pr-3">{{ __('buyer.savings.col_by') }}</th>
                             <th class="pb-1.5 pr-3">{{ __('buyer.savings.currency') }}</th>
                             <th class="pb-1.5 pr-3">{{ __('buyer.savings.type') }}</th>
                             <th class="pb-1.5 pr-3 text-right">{{ __('buyer.savings.col_amount') }}</th>
@@ -2112,6 +2115,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endphp
                         <tr>
                             <td class="py-1.5 pr-3 text-gray-400 whitespace-nowrap">{{ $t['created_at'] }}</td>
+                            <td class="py-1.5 pr-3 whitespace-nowrap text-gray-600" data-savings-by>{{ $t['by'] !== '' ? $t['by'] : '-' }}</td>
                             <td class="py-1.5 pr-3 font-mono">{{ $t['currency'] }}</td>
                             <td class="py-1.5 pr-3 {{ $typeColor }} font-medium">{{ $typeLabel }}</td>
                             <td class="py-1.5 pr-3 text-right font-mono {{ $t['savings'] >= 0 ? 'text-green-600' : 'text-red-500' }}">
@@ -2168,7 +2172,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </td>
                         </tr>
                         @empty
-                        <tr><td colspan="8" class="py-6 text-center text-gray-400">{{ __('buyer.savings.no_history') }}</td></tr>
+                        <tr><td colspan="9" class="py-6 text-center text-gray-400">{{ __('buyer.savings.no_history') }}</td></tr>
                         @endforelse
                     </tbody>
                 </table>
@@ -2342,7 +2346,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @forelse($cashReceiptList as $r)
                         <tr class="align-top">
                             <td class="py-1.5 pr-2">
-                                <div class="whitespace-nowrap text-gray-500" title="{{ __('buyer.cash.col_by') }}: {{ $r['by'] ?: '-' }}">{{ $r['received_date'] }}</div>
+                                <div class="whitespace-nowrap text-gray-500">{{ $r['received_date'] }}</div>
+                                {{-- 👤 처리자를 툴팁이 아니라 글자로 (jin 2026-10-16 «누가 변경했는지 사용자를 넣어줄 수 있어?») --}}
+                                <div class="whitespace-nowrap text-[10px] text-gray-400" data-cash-by>{{ __('buyer.cash.col_by') }} {{ $r['by'] ?: '-' }}</div>
                                 @if($r['note'] !== '')
                                 {{-- 메모는 열이 아니라 여기 붙인다. 잘려도 호버로 전문이 보인다. --}}
                                 <div class="max-w-[130px] truncate text-[10px] text-gray-400" title="{{ $r['note'] }}">{{ $r['note'] }}</div>
@@ -2413,7 +2419,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @foreach($cashFeeList as $f)
                         <tr class="align-top">
                             <td class="py-1.5 pr-2">
-                                <div class="whitespace-nowrap text-gray-500" title="{{ __('buyer.cash.col_by') }}: {{ $f['by'] ?: '-' }}">
+                                <div class="whitespace-nowrap text-gray-500">
                                     {{ $f['charged_date'] }}
                                     @if(! empty($f['is_savings']))
                                     <span class="ml-1 rounded bg-emerald-100 px-1 text-[9px] font-medium text-emerald-700">{{ __('buyer.cash.savings_badge') }}</span>
@@ -2421,6 +2427,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     <span class="ml-1 rounded bg-amber-100 px-1 text-[9px] font-medium text-amber-700">{{ $f['is_overpay'] ? __('buyer.cash.overpay_section') : __('buyer.cash.fee_badge') }}</span>
                                     @endif
                                 </div>
+                                <div class="whitespace-nowrap text-[10px] text-gray-400" data-cash-fee-by>{{ __('buyer.cash.col_by') }} {{ $f['by'] ?: '-' }}</div>
                                 @if($f['note'])
                                 <div class="max-w-[130px] truncate text-[10px] text-gray-400" title="{{ $f['note'] }}">{{ $f['note'] }}</div>
                                 @endif

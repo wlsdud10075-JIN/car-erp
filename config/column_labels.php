@@ -428,6 +428,7 @@ return [
         'AuctionDeposit' => '경매 보증금',
         // 2026-09-04 — 바이어 현금 원장.
         'BuyerCashReceipt' => '바이어 현금 입금',
+        'SavingsStatus' => '바이어 적립금',
         'BuyerCashFee' => '바이어 현금 수수료',
     ],
 
@@ -451,6 +452,12 @@ return [
         'buyer_cash_receipt_added' => '바이어 현금 입금 기재',
         'buyer_cash_fee_added' => '바이어 현금 수수료 처리',
         'buyer_cash_to_savings' => '바이어 남은 현금 → 적립금 전환',
+        // 💳 적립금 거래 (2026-10-16) — SavingsStatus::booted 가 생성 시점에 남긴다. 취소 = 역행 추가.
+        'savings_earned' => '적립금 적립',
+        'savings_used' => '적립금 사용',
+        'savings_refund' => '적립금 환불(복원)',
+        'savings_cancelled' => '적립금 거래 취소',
+        'savings_adjustment' => '적립금 조정',
         'buyer_cash_fee_deleted' => '바이어 현금 수수료 취소',
         'buyer_cash_receipt_deleted' => '바이어 현금 입금 삭제',
         'lock_threshold_changed' => '락 수치 변경',

@@ -144,6 +144,7 @@ return [
         'rate_label' => '환율 :rate',
         'rate_none' => '환율 미입력',
         'col_fifo' => '선입선출',
+        'col_by' => '처리자',
         'lot_left' => '잔여 :amount',
         'lot_spent' => '소진',
         'take_line' => ':date 적립분에서 :amount 사용 (남은 :left)',
