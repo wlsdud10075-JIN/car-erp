@@ -142,6 +142,7 @@ return [
         'rate_label' => 'rate :rate',
         'rate_none' => 'no rate',
         'col_fifo' => 'FIFO',
+        'col_by' => 'By',
         'lot_left' => ':amount left',
         'lot_spent' => 'spent',
         'take_line' => ':amount from the :date batch (:left left)',

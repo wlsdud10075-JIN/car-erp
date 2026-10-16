@@ -9,8 +9,29 @@ class SavingsStatus extends Model
 {
     protected $fillable = [
         'buyer_id', 'vehicle_id', 'currency', 'exchange_rate', 'transaction_type',
-        'savings', 'balance', 'original_transaction_id', 'note',
+        'savings', 'balance', 'original_transaction_id', 'note', 'created_by',
     ];
+
+    /**
+     * 👤 처리자 + 감사로그 — **생성 시점에 모델이 한 번에** (jin 2026-10-16 «누가 수정했는지도 안 나오네»).
+     * 적립금 행을 만드는 경로가 다섯(바이어탭 적립·취소 / 판매탭 사용·환불 H6 / 채권관리 전환 / 현금 원장 전환)이라
+     * 경로마다 손으로 넣으면 빠진다(§8 #38). 행은 불변(수정·삭제 없음, 취소 = 역행 추가)이라 생성 이벤트 하나면 전부다.
+     * 로그인 없는 경로(배치·연동)는 created_by NULL = 감사 화면의 「시스템」.
+     */
+    protected static function booted(): void
+    {
+        static::creating(function (SavingsStatus $row) {
+            $row->created_by ??= auth()->id();
+        });
+        static::created(function (SavingsStatus $row) {
+            AuditLog::recordEvent($row, 'savings_'.strtolower((string) $row->transaction_type));
+        });
+    }
+
+    public function creator(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'created_by');
+    }
 
     /**
      * ⚠️ `exchange_rate` 는 **적립(유입) 시점 환율**이다 — 사용 시점이 아니다.
