@@ -461,6 +461,9 @@ return [
         'buyer_cash_fee_added' => '바이어 현금 수수료 처리',
         'buyer_cash_to_savings' => '바이어 남은 현금 → 적립금 전환',
         'overpay_converted_to_company_income' => '과입금 → 회사이익 전환',
+        // 🚫 매입취소 미수 마감 / 마감 취소 (2026-10-16 — 마감은 07-18 부터 찍혔는데 사전엔 없었다)
+        'purchase_cancel_closed' => '매입취소 미수 마감(손실 확정)',
+        'purchase_cancel_reopened' => '매입취소 미수 마감 취소',
         // 💳 적립금 거래 (2026-10-16) — SavingsStatus::booted 가 생성 시점에 남긴다. 취소 = 역행 추가.
         'savings_earned' => '적립금 적립',
         'savings_used' => '적립금 사용',

@@ -704,6 +704,12 @@ return [
         'close_no_unpaid' => 'No unpaid amount. A fully-paid cancellation cannot be closed.',
         'closed' => 'Closed unpaid. Loss of :amount confirmed (freelancer bears half).',
         'closed_loss' => 'Closed unpaid · loss :amount confirmed (freelancer half deducted in monthly batch loss summary)',
+        'reopen_btn' => 'Undo close',
+        'reopen_confirm' => 'The penalty has been fully received. Undo the unpaid close and clear the confirmed loss?',
+        'reopen_only_closed' => 'Only a closed (unpaid) cancellation can be reopened.',
+        'reopen_has_unpaid' => 'Penalty is still unpaid — the close cannot be undone.',
+        'reopen_already_settled' => 'This loss was already applied in a monthly settlement and cannot be undone.',
+        'reopened' => 'Unpaid close undone. Confirmed loss of :amount cleared (cancel complete).',
     ],
 
     'cancel_filter' => [
