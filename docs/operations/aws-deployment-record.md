@@ -658,6 +658,12 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-16 — 통관 SET Ver.2 `adf8dc3a` (3사 동시, 코드 1커밋, 마이그 0, 양식 xlsx 3개)
+
+- jin 10-15 «서류탭 통관SET 옆에 나란히 Ver.2». 원본 = heymanerp 생성본을 jin 이 손본 xlsx(Desktop/heyman/통관SET_28머2098_20261012.xlsx). 실측 차이 = ① 차량인보이스 탭 삭제 ② 차량팩킹 상단 오른쪽 블록(Reference No.·CO·ID·Remark·L/C) 제거 + 전폭 병합 + G9 그림 제거. 나머지(값·노란칸·통화서식·도장)는 생성 흔적이라 미반영.
+- 양식 3사 `clearance_set_v2.xlsx` = `scripts/build-clearance-set-v2.php` 가 각 세트 Ver.1 에서 빌드(노란칸·회사정보·직인 보존). 끊긴 수식 2개(팩킹 E17·Travel F29) + Excel 자동치환 4개를 구매리스트 칸으로 고정. type `clearance_v2`(ClearanceSetV2Mapping = Ver.1 config 상속), 서류탭 카드 2열, PDF·메일 첨부, StampSlots(차량인보이스 슬롯 제외), 라벨·파일명 Ver.1/Ver.2.
+- dev `7027f6f7` → master `adf8dc3a`(SKILLS·notion·karaba 파생 스크립트 삭제 유지). 로컬 병렬 전체 3,350 pass · 실패 0. deploy 런 잡 5개 success. 3사 SHA `adf8dc3a`, /login 200, 3사에서 `build-clearance-set-v2.php --verify` ✅. 운영 쓰기 없음.
+
 ## 2026-10-15(5차) — 지급 결재 결과(승인완료·반려) 알림톡 수신 확장 `fcb1114f` (3사 동시, 코드 1커밋, 마이그 0)
 
 - jin «승인완료·반려도 최고관리자에서 역할 나누었듯이 — 체크한 역할에 알림톡» → 2번안. `erp_payout_done`·`erp_payout_rejected` 가 역할 선택형(선택지 = 결재선 전원/재무/관리, 기본 결재선 전원, 제출자 항상). 결재선 전원 = steps 승인자 ∪ 실제 서명자(`payoutNoticePhones`). 요청은 종전대로 차례 1명. 템플릿 문안 무변경(BizM 재승인 불필요).
