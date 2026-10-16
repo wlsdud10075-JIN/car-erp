@@ -137,22 +137,22 @@ class ManagerPanelLifecycleE2ETest extends TestCase
             ->assertHasNoErrors();
         $this->assertSame('선적중', $v->fresh()->progress_status);
 
-        // 수출신고서 업로드 → 선적완료. is_export_cleared 미체크 상태라 doc-check 경고 모달이 뜬다
-        // (수출통관 체크↔서류 XOR). v4 에선 수출신고서만 있어도 선적완료가 정상 → 사용자가 [확인] 진행.
+        // 수출신고서 업로드 → 통관중(2026-10-16 규칙). is_export_cleared 미체크 상태라 doc-check 경고 모달이 뜬다
+        // (수출통관 체크↔서류 XOR). 수출신고서만 있어도 통관중이 정상 → 사용자가 [확인] 진행.
         $c = Volt::test('erp.vehicles.index')
             ->call('openEdit', $v->id)
             ->set('exportDeclarationDocFile', $pdf('export-decl.pdf'))
             ->call('save')
             ->assertSet('showDocCheckModal', true);
         $c->call('confirmSaveWithDocMismatch')->assertHasNoErrors();
-        $this->assertSame('선적완료', $v->fresh()->progress_status);
+        $this->assertSame('통관중', $v->fresh()->progress_status);
 
         Volt::test('erp.vehicles.index')
             ->call('openEdit', $v->id)
             ->set('is_export_cleared', true)
             ->call('save')
             ->assertHasNoErrors();
-        $this->assertSame('통관중', $v->fresh()->progress_status);
+        $this->assertSame('통관완료', $v->fresh()->progress_status);   // 체크 = 통관완료 (2026-10-16 규칙)
 
         Volt::test('erp.vehicles.index')
             ->call('openEdit', $v->id)

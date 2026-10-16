@@ -128,14 +128,14 @@ class BoardSailingApiTest extends TestCase
 
         $sailing = ['shipping_date' => now()->subDays(3)->toDateString(), 'eta_date' => now()->addDays(12)->toDateString()];
         $this->vehicle($s->id, $sailing + ['bl_document' => 'bl/a.pdf']);        // 거래완료 + 운항중
-        $this->vehicle($s->id, $sailing + ['bl_loading_location' => '평택']);     // 선적중 + 운항중
+        $this->vehicle($s->id, $sailing + ['bl_loading_location' => '평택']);     // 선적완료(반입지+선적일, 2026-10-16 규칙) + 운항중
 
         $data = $this->signedGet('/api/internal/board/sales', [
             'salesman_email' => 'both@t.test', 'sailing' => 'in_transit', 'exclude_status' => '거래완료',
         ])->assertOk()->json('data');
 
         $this->assertCount(1, $data, '운항중이면서 거래완료가 아닌 차만 남아야 한다');
-        $this->assertSame('선적중', $data[0]['progress_status']);
+        $this->assertSame('선적완료', $data[0]['progress_status']);
     }
 
     /** 출고완료 재고에도 운항 상태가 실린다 — "나갔다"만으론 배 위인지 도착인지 모른다. */

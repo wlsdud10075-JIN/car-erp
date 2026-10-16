@@ -2347,7 +2347,8 @@ class WorkflowGapTest extends TestCase
             'bl_loading_location' => '부산항',
             'export_declaration_document' => 'edoc.pdf',
         ]);
-        $this->assertSame('선적완료', $v->progress_status);
+        // 🔀 2026-10-16 규칙 — 수출신고서 = 통관중 (구: 반입지+신고서 = 선적완료). 선적완료는 반입지+선적일.
+        $this->assertSame('통관중', $v->progress_status);
     }
 
     public function test_v4_step3_export_cleared_with_bl_loading_returns_통관중(): void
@@ -2357,7 +2358,8 @@ class WorkflowGapTest extends TestCase
             'bl_loading_location' => '부산항',
             'is_export_cleared' => true,
         ]);
-        $this->assertSame('통관중', $v->progress_status);
+        // 🔀 2026-10-16 규칙 — 통관 체크 = 통관완료 (구: 반입지+체크 = 통관중, 통관완료는 도달 불가였다).
+        $this->assertSame('통관완료', $v->progress_status);
     }
 
     public function test_v4_step1_bl_document_alone_returns_거래완료(): void
@@ -2380,9 +2382,8 @@ class WorkflowGapTest extends TestCase
             'is_export_cleared' => true,
             'export_declaration_document' => 'edoc.pdf',
         ]);
-        // v4: is_export_cleared && bl_loading_location 매칭 X (bl_loading_location 없음).
-        //     bl_loading_location && export_declaration_document 매칭 X (bl_loading_location 없음).
-        //     bl_loading_location 매칭 X. → fallback 판매완료.
-        $this->assertSame('판매완료', $v->progress_status);
+        // 🔀 2026-10-16 규칙 — 통관중·통관완료는 반입지 무관(국내 서류 절차). 통관 체크가 있으니 통관완료.
+        //    선적완료·선적중만 반입지가 필요하다 (ProgressRuleV4StagesTest).
+        $this->assertSame('통관완료', $v->progress_status);
     }
 }

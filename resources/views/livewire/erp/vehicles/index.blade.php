@@ -7644,7 +7644,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <div class="flex flex-wrap gap-1">
             {{-- 안건 1 v4 (2026-05-21) — 워크플로우 순서: 선적(반입) → 통관 → B/L → 거래완료. v3 호환 키는 매핑에서 같은 라벨로 흡수 --}}
-            @foreach(['', '매입중', '매입완료', '말소완료', '판매중', '판매완료', '선적중', '선적완료', '통관중', '통관완료', '수출통관중', '수출통관완료', '거래완료'] as $val)
+            @foreach(['', '매입중', '매입완료', '말소완료', '판매중', '판매완료', '선적중', '선적완료', '통관중', '통관완료', '거래완료'] as $val)
             @php
                 if ($val === '') {
                     $isInclude = $progressFilter === '' && count($excludeStatuses) === 0;

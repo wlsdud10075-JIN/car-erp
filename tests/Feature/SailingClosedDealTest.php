@@ -59,13 +59,13 @@ class SailingClosedDealTest extends TestCase
     /**
      * ⚠️ `progress_status_cache` 는 **계산값**이다(`Vehicle::saving` 이 매 저장마다 덮어쓴다).
      *    직접 넣으면 조용히 무시되므로 v4 cascade 가 실제로 그 값을 내도록 조건을 준다.
-     *    거래완료 = B/L 서류 존재(1순위) · 선적완료 = 반입지 + 수출신고서.
+     *    거래완료 = B/L 서류 존재(1순위) · 선적완료 = 반입지 + 선적일(2026-10-16 규칙 — arrived() 가 선적일을 준다).
      */
     private function arrivedAt(string $status): Vehicle
     {
         $v = $this->arrived(match ($status) {
             '거래완료' => ['bl_document' => 'vehicles/bl-'.($this->n + 1).'.pdf'],
-            '선적완료' => ['bl_loading_location' => '인천', 'export_declaration_document' => 'vehicles/ed.pdf'],
+            '선적완료' => ['bl_loading_location' => '인천'],
             default => [],
         });
         $v->refresh();
