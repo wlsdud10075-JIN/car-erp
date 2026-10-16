@@ -109,10 +109,11 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 **v4 cascade — 우선순위 높음 → 낮음으로 평가, 첫 번째 매칭 반환**:
 1. `bl_document` → **`거래완료`** (단독, B/L 발급 = 거래완료)
 1-B. 🚢 `incoterms='FOB'` AND 포워딩사 `buyer_handles_bl`(「FOB포워더」 — 바이어가 직접 고른 포워딩사, B/L 을 바이어가 발급) AND 판매 완납 → **`거래완료`** (jin 2026-10-14. B/L 파일이 ERP 에 올 일이 없는 거래. 반입지·통관 규칙보다 앞. 판정은 이름이 아니라 플래그 — 포워딩사 관리 체크박스. 가드 = `ProgressRuleFobForwarderTest`)
-2. `bl_document` AND `is_export_cleared` → **`통관완료`** (실질 도달 불가 — #1 우선)
-3. `is_export_cleared` AND `bl_loading_location` → **`통관중`** (반입 후 통관 신청)
-4. `bl_loading_location` AND `export_declaration_document` → **`선적완료`** (반입 + 수출신고서)
+2. `is_export_cleared` → **`통관완료`** (🔀 2026-10-16 jin — 통관 체크만. 구: + B/L 파일이라 **도달 불가**였다, 3사 0대)
+3. `export_declaration_document` → **`통관중`** (🔀 수출신고서 업로드. 구: 반입지 + 통관 체크)
+4. `bl_loading_location` AND `shipping_date` → **`선적완료`** (🔀 반입 + 선적일 = 「배 날짜까지 잡힘」. 구: 반입 + 수출신고서. (가)안 — 신고서 무관)
 5. `bl_loading_location` → **`선적중`** (반입지 입력)
+> 🚢 **출항 이후는 진행상태가 아니다** — 운항중·도착예정은 `sailing_status`(선적일+ETA, ETA 당일부터 도착예정) 별도 축. 통관완료 차는 네 칸을 다 갖고 「통관완료 + 🚢」로 보인다. 해외 통관은 모른다(jin 2026-10-16 «국내에서 선적기획→통관진행→운항→도착»).
 6. `sale_price > 0` AND 판매미입금 ≤ 0 → **`판매완료`**
 7. `sale_price > 0` → **`판매중`**
 8. `is_deregistered = true` AND `deregistration_document` 존재 → **`말소완료`**

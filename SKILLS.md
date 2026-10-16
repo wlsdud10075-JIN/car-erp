@@ -41,9 +41,10 @@ public function getProgressStatusAttribute(): string
         if ($this->bl_document) return '거래완료';
         // 🚢 2026-10-14 — FOB + FOB포워더(buyer_handles_bl) + 완납 → 거래완료 (B/L 을 바이어가 발급하는 거래). 반입지·통관보다 앞.
         if ($this->incoterms === 'FOB' && in_array($this->forwarding_company_id, ForwardingCompany::buyerHandledIds()) && $this->sale_price > 0 && $this->sale_unpaid_amount <= 0) return '거래완료';
-        if ($this->bl_document && $this->is_export_cleared) return '통관완료';     // 실질 도달 불가 — #1 우선
-        if ($this->is_export_cleared && $this->bl_loading_location) return '통관중';
-        if ($this->bl_loading_location && $this->export_declaration_document) return '선적완료';
+        // 🔀 2026-10-16 (jin, 가안) — 통관완료=체크 · 통관중=신고서 · 선적완료=반입지+선적일 · 선적중=반입지. 출항 뒤는 운항 뱃지.
+        if ($this->is_export_cleared) return '통관완료';
+        if ($this->export_declaration_document) return '통관중';
+        if ($this->bl_loading_location && $this->shipping_date) return '선적완료';
         if ($this->bl_loading_location) return '선적중';
     } else {
         // v1~v3 grandfather (archive 참조)
@@ -1707,3 +1708,17 @@ jin: *「판매금 완납됐는데 미수마감을 눌러버렸다고 하더라�
 - 🧮 **곁다리 2개 — 한 차를 들여다보니 둘이 더 나왔다.** ①사내직원 마감은 프리랜서 몫 0 이라 월정산 손실 목록에 안 뜨고 → 도장이 영영 안 찍혀 → `settlementStage()` 가 **영구 「정산대기」**. 반영할 조정이 없으면 즉시 done. ②`purchase_cancel_closed` 가 07-18 부터 감사로그에 찍혔는데 **사전(`column_labels.actions`)에 없었다**(§8 #41).
 - 🏁 **취소완료 = 거래완료**(jin «판매금 받고 완납되면 그냥 끝») — cascade 에 `cancel_status=cancelled && sale_price>0 && 미수 0` 추가. ⚠️ 술어에 **`sale_price > 0` 이 있어야 한다** — 위약금을 아예 안 넣은 취소 차(ssancarerp 5대, 매입중·매입완료)는 미수 0 이지만 「받고 끝난」 게 아니다. ⚠️ 돈 큐(`purchase_unpaid` 등 $activeOnly)는 거래완료를 빼므로 **취소 차 예외**를 같이 넣었다(실측 영향 0대 — 안전망). 캐시 컬럼이라 배포만으론 안 바뀐다(§8 #101) — 05:00 `vehicles:rebuild-caches` 가 돌린다. 실측 이동 예상 = ssancarerp 10(+마감 취소 뒤 1) · heymanerp 1 · karaba 0.
 - 🚫 **운영 DB 를 스크립트로 고치려다 분류기에 막혔다** — 대신 그 정정이 곧 새 버튼이라 **배포 뒤 화면에서** 누른다. 실제 사례로 새 기능을 검증하는 효과까지 있다. 가드 = `PurchaseCancelTest` 신규 7건 · `VehicleSettlementStageColumnTest` 사내직원 케이스.
+
+### 118. 🧭 **「도달 불가한 단계」는 분포를 재면 바로 드러난다 — 단계 조건은 실무 순서로, 출항 뒤는 다른 축** (2026-10-16 진행상태 4단계 재정의)
+
+jin: *「선적중→선적완료→통관중→통관완료 조건을 다시 볼까 해」*. 3사 분포를 재니 **통관완료 0대** — 조건이 「통관 체크 + B/L 파일」인데
+B/L 파일이면 거래완료가 먼저라 **5개월간 아무도 못 들어가는 칸**이었다. 실무자는 「통관중」(ssancarerp 858대)에 전부 몰려 있었다.
+- 🔎 **단계·등급을 손대기 전엔 분포부터**(§8 #100 과 같은 결) — 「빈 칸」과 「몰린 칸」이 조건의 모순을 그대로 말한다. 이번엔 캐시별 **보유 필드 조합**까지 세서
+  (반입지·선적일·신고서·체크의 16가지) 새 규칙으로 몇 대가 어디로 가는지 **배포 전에 표로** 냈다 — jin 이 그 표로 결정했다.
+- 🚪 **겹치는 조건은 아래 칸을 죽인다.** jin 초안 「선적완료 = 신고서+선적일 / 통관중 = 신고서」는 cascade 상 통관중이 위라 선적완료가 또 빈 칸이 된다.
+  두 읽기(가/나)를 대수와 함께 보여 (가)「선적완료 = 반입지+선적일, 신고서 무관」으로 닫았다. 조건을 받으면 **위 칸이 아래 칸을 전부 삼키지 않는지** 먼저 본다.
+- 🚢 **출항 이후는 진행상태가 아니다** — jin «국내에서 선적기획→통관진행→운항→도착, 해외 통관은 모른다». 통관완료 차는 네 칸을 다 갖고 「통관완료 + 🚢」.
+  운항중/도착예정은 `sailing_status`(선적일+ETA, **ETA 당일부터** 도착예정)이고 10일은 다른 것(`alarm_eta_lead_days` ETA 임박 알람).
+- 🔁 규칙을 바꾸면 **단계 이름을 기대하는 테스트가 15파일** 빨개진다 — 전부 기대값 갱신(구 규칙 조합 → 새 이름). 할일 큐(`scopeAction`)는 필드로 판정해 무영향.
+  캐시 컬럼이라 배포 뒤 재계산 1회(§8 #101, ssancarerp 약 900대 이동). 포털(ssancar.com)은 문자열을 그대로 받으므로 **라벨 뜻이 바뀐다**고 통지.
+- 🗑️ 차량관리 pill 의 v3 라벨(수출통관중·수출통관완료)은 3사 캐시 0대 — pill 에서만 뺐고 모델 grandfather 분기는 안전망으로 둔다. 가드 = `ProgressRuleV4StagesTest`.
