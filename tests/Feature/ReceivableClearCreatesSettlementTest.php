@@ -175,7 +175,7 @@ class ReceivableClearCreatesSettlementTest extends TestCase
             'vehicle_id' => $shipped->id, 'method' => 'other', 'amount' => 255,
             'collected_at' => now()->toDateString(),
         ]);
-        $shipped->update(['bl_loading_location' => '평택', 'export_declaration_document' => 'x.pdf']);
+        $shipped->update(['bl_loading_location' => '평택', 'shipping_date' => '2026-10-01']);   // 선적완료 = 반입지+선적일 (2026-10-16 규칙)
 
         $plain = $this->almostPaid();                          // 판매완료로 남을 차
         ReceivableHistory::create([

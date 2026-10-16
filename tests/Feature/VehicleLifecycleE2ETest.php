@@ -108,19 +108,19 @@ class VehicleLifecycleE2ETest extends TestCase
         $v6->save();
         $this->assertSame('선적중', $v6->fresh()->progress_status);
 
-        // ── 7) 수출신고서 업로드 → 선적완료 ──
+        // ── 7) 수출신고서 업로드 → 통관중 (2026-10-16 규칙: 신고서 = 통관중) ──
         $v7 = Vehicle::find($v->id);
         $v7->export_declaration_document = 'fake/export-decl.pdf';
         $v7->guardStageOrderForExport();   // 50% 이상이라 통과
         $v7->save();
-        $this->assertSame('선적완료', $v7->fresh()->progress_status);
+        $this->assertSame('통관중', $v7->fresh()->progress_status);
 
-        // ── 8) 통관 처리 → 통관중 ──
+        // ── 8) 통관 처리 → 통관완료 (2026-10-16 규칙: 체크 = 통관완료) ──
         $v8 = Vehicle::find($v->id);
         $v8->is_export_cleared = true;
         $v8->guardStageOrderForExport();   // 통과
         $v8->save();
-        $this->assertSame('통관중', $v8->fresh()->progress_status);
+        $this->assertSame('통관완료', $v8->fresh()->progress_status);
 
         // ── 9) 입금 50% 상태에서 B/L 업로드 막힘 (G1 100% 게이트) → 거래완료 안 됨 ──
         $v9 = Vehicle::find($v->id);
@@ -132,7 +132,7 @@ class VehicleLifecycleE2ETest extends TestCase
             $this->assertStringContainsString('B/L 발행 차단', $e->getMessage());
             $this->assertStringContainsString('100% 미완납', $e->getMessage());
         }
-        $this->assertSame('통관중', $v9->fresh()->progress_status, 'B/L 막힘 → 통관중 유지');
+        $this->assertSame('통관완료', $v9->fresh()->progress_status, 'B/L 막힘 → 통관완료 유지');
 
         // ── 10) 입금 100% 완납 → B/L 업로드 통과 → 거래완료 ──
         $addPayment(500_000);   // 누적 100%

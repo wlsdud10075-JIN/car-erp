@@ -333,9 +333,10 @@ class BulkVehicleDocumentTest extends TestCase
 
         $this->svc()->applyShared([$v->id], 'export_declaration', $this->file(), $user, false, '테스트');
 
-        // 🔀 2026-10-15 — 기본값이 「통관 체크도 함께 켬」이라 #4 선적완료를 지나 #3 통관중까지 간다(옵션 OFF 면 선적완료, 아래 테스트).
-        $this->assertSame('통관중', $v->fresh()->progress_status);
-        $this->assertSame('통관중', $v->fresh()->progress_status_cache);
+        // 🔀 2026-10-15 — 기본값이 「통관 체크도 함께 켬」이라 신고서(통관중)를 지나 통관완료까지 간다(옵션 OFF 면 통관중, 아래 테스트).
+        //    (2026-10-16 규칙 재정의: 통관중=신고서 · 통관완료=체크)
+        $this->assertSame('통관완료', $v->fresh()->progress_status);
+        $this->assertSame('통관완료', $v->fresh()->progress_status_cache);
     }
 
     // ── ✅ 짝 체크박스 함께 켬 (jin 2026-10-15) ─────────────────────────
@@ -351,7 +352,7 @@ class BulkVehicleDocumentTest extends TestCase
 
         $v->refresh();
         $this->assertTrue((bool) $v->is_export_cleared, '파일과 같은 저장에 체크가 실린다');
-        $this->assertSame('통관중', $v->progress_status_cache, 'cascade #3 — 체크 없이는 선적완료에 머물렀다');
+        $this->assertSame('통관완료', $v->progress_status_cache, '체크 없이는 통관중에 머물렀다(2026-10-16 규칙)');
         $this->assertSame(1, AuditLog::where('auditable_id', $v->id)->where('action', 'bulk_document_uploaded')->count(), '일괄 출처 감사행은 그대로');
     }
 
@@ -365,7 +366,7 @@ class BulkVehicleDocumentTest extends TestCase
 
         $v->refresh();
         $this->assertFalse((bool) $v->is_export_cleared);
-        $this->assertSame('선적완료', $v->progress_status_cache);
+        $this->assertSame('통관중', $v->progress_status_cache);   // 신고서만 = 통관중 (2026-10-16 규칙)
     }
 
     public function test_deregistration_upload_ticks_is_deregistered_and_leaves_ticked_rows_alone(): void

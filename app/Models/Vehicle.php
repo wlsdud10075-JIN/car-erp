@@ -2224,11 +2224,11 @@ class Vehicle extends Model
     // 회의확장씬 안건 1 (2026-05-21) — v4 워크플로우 순서 변경:
     //   사용자 의도: 반입(선적) → 통관 → B/L → 거래완료 (v3 통관→선적→B/L 순서 정반대).
     //   '선적'의 도메인 의미 = 반입(bl_loading_location 입력). 단계명 swap (수출통관중/완료 → 통관중/완료).
-    //   v4 cascade 5단계 (우선순위 높→낮):
+    //   v4 cascade 5단계 (우선순위 높→낮) — 🔀 2026-10-16 (jin) 조건 재정의, 본문 docblock 참조:
     //     1. bl_document 단독                                     → 거래완료 (B/L 발급 = 거래완료, v3 동일)
-    //     2. bl_document AND is_export_cleared                    → 통관완료 (실질 도달 불가 — #1 우선)
-    //     3. is_export_cleared AND bl_loading_location            → 통관중   (반입 후 통관 신청)
-    //     4. bl_loading_location AND export_declaration_document  → 선적완료 (반입 + 수출신고서)
+    //     2. is_export_cleared                                    → 통관완료 (통관 체크 — 구: + B/L 파일이라 도달 불가였다)
+    //     3. export_declaration_document                          → 통관중   (수출신고서 업로드 — 구: 반입지 + 통관 체크)
+    //     4. bl_loading_location AND shipping_date                → 선적완료 (반입 + 선적일 — 구: 반입 + 수출신고서)
     //     5. bl_loading_location                                  → 선적중   (반입지 입력)
     public function getProgressStatusAttribute(): string
     {
@@ -2300,13 +2300,26 @@ class Vehicle extends Model
             if ($this->cancel_status === self::CANCEL_ACTIVE && $this->sale_price > 0 && $this->sale_unpaid_amount <= 0) {
                 return '거래완료';
             }
-            if ($this->bl_document && $this->is_export_cleared) {
+            /**
+             * 🔀 2026-10-16 (jin) — 4단계 조건 재정의 «국내에서 선적기획 → 통관진행 → 운항 → 도착».
+             *   통관완료 = 통관 체크             (구: 체크 + B/L 파일 — B/L 이면 거래완료가 먼저라 **도달 불가**, 3사 0대)
+             *   통관중   = 수출신고서 업로드      (구: 반입지 + 통관 체크)
+             *   선적완료 = 반입지 + 선적일        (구: 반입지 + 수출신고서) — 「배 날짜까지 잡혔다 = 선적 기획 끝」. 신고서 무관(가안)
+             *   선적중   = 반입지                 (같음)
+             * 출항 이후(운항중·도착예정)는 진행상태가 아니라 운항 뱃지(`sailing_status`)가 맡는다 — 통관완료 차는
+             * 반입지·선적일·신고서·체크를 다 갖고 「통관완료 + 🚢」로 보인다. 반입지 없이 통관 서류만 있는 차도
+             * 통관중·통관완료로 올라간다(jin 확인, heymanerp 판매단계 21대). 선적일만 있고 반입지 없는 차(ssancarerp 138대)는
+             * 판매 단계에 남는다 — 선적완료에 반입지가 필요하기 때문.
+             * 실측 이동(배포 전, 3사): 통관중→통관완료 ssancarerp 858 · heymanerp 47 · karaba 149, 선적완료→통관중 52·2·0.
+             * 가드 = ProgressRuleV4StagesTest. 캐시 컬럼이라 배포 뒤 재계산 1회(§8 #101).
+             */
+            if ($this->is_export_cleared) {
                 return '통관완료';
             }
-            if ($this->is_export_cleared && $this->bl_loading_location) {
+            if ($this->export_declaration_document) {
                 return '통관중';
             }
-            if ($this->bl_loading_location && $this->export_declaration_document) {
+            if ($this->bl_loading_location && $this->shipping_date) {
                 return '선적완료';
             }
             if ($this->bl_loading_location) {

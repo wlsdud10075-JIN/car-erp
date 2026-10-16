@@ -184,7 +184,7 @@ class E2eSettlementWorkflowTest extends TestCase
 
         // 5) 선적(반입)
         $v->update(['bl_loading_location' => '부산항']);
-        $this->assertSame('통관중', $v->fresh()->progress_status, '통관/선적 단계 누락(v4 통관중 기대)');
+        $this->assertSame('통관완료', $v->fresh()->progress_status, '통관/선적 단계 누락(2026-10-16 규칙: 통관 체크 = 통관완료)');
 
         // 6) B/L 발급 (완납이라 G1 100% 통과) → 거래완료
         $v->update(['bl_document' => 'bl/'.$v->id.'.pdf']);
