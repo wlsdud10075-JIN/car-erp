@@ -293,10 +293,23 @@
         </header>
         <main class="flex-1 overflow-auto bg-gray-50">
             <div class="p-3 md:p-6">
-    <!-- 헤더: 제목만. 기간·위젯 설정은 상세로(리드는 「이번 달」 고정) -->
-    <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
-        <h2 class="text-xl font-bold text-gray-800">관리자 대시보드</h2>
-        <p class="text-xs text-gray-500">○○모터스 · 2026-10-16 (목) · 30초마다 갱신</p>
+    <!-- 헤더 (가안, jin 2026-10-16): 지금 ERP 처럼 기간·[조회]·위젯 설정을 맨 위에. 리드 두 숫자는 그 아래 -->
+    <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+            <h2 class="text-xl font-bold text-gray-800">관리자 대시보드</h2>
+            <p class="text-xs text-gray-500">○○모터스 · 2026-10-16 (목) · 30초마다 갱신</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+            <select class="input-filter"><option>판매일</option><option>매입일</option><option>선적일</option><option>완료일</option></select>
+            <input type="date" class="input-filter" value="2026-10-01" aria-label="시작일">
+            <span class="text-gray-500">~</span>
+            <input type="date" class="input-filter" value="2026-10-31" aria-label="종료일">
+            <button type="button" class="btn-primary">조회</button>
+            <button type="button" class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">위젯 설정</button>
+        </div>
+    </div>
+    <div class="mt-2 flex flex-wrap gap-1.5">
+        <button type="button" class="tab-pill is-active">이번달</button><button type="button" class="tab-pill">지난달</button><button type="button" class="tab-pill">올해</button><button type="button" class="tab-pill">작년</button>
     </div>
 
     <!-- ══ 리드 2칸 ══ -->
@@ -347,25 +360,12 @@
         <a href="#" class="ml-1 text-xs text-primary-text hover:underline">자금 현황 →</a>
     </p>
 
-    <!-- ══ 상세: 탭·기간·위젯 설정 ══ -->
-    <div class="mt-6 flex flex-col gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex flex-wrap gap-1.5">
-            <button type="button" class="tab-pill is-active">영업</button>
-            <button type="button" class="tab-pill">수출통관</button>
-            <button type="button" class="tab-pill">재무</button>
-            <button type="button" class="tab-pill">채권</button>
-        </div>
-        <div class="flex flex-wrap items-center gap-2 text-xs">
-            <select class="input-filter"><option>판매일</option><option>매입일</option><option>선적일</option><option>완료일</option></select>
-            <input type="date" class="input-filter" value="2026-10-01" aria-label="시작일">
-            <span class="text-gray-500">~</span>
-            <input type="date" class="input-filter" value="2026-10-31" aria-label="종료일">
-            <button type="button" class="btn-primary">조회</button>
-            <button type="button" class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">위젯 설정</button>
-        </div>
-    </div>
-    <div class="mt-2 flex flex-wrap gap-1.5">
-        <button type="button" class="tab-pill is-active">이번달</button><button type="button" class="tab-pill">지난달</button><button type="button" class="tab-pill">올해</button><button type="button" class="tab-pill">작년</button>
+    <!-- ══ 상세: 탭 (기간·조회는 위 헤더로 되돌림 — 가안) ══ -->
+    <div class="mt-6 flex flex-wrap gap-1.5 border-t border-gray-200 pt-4">
+        <button type="button" class="tab-pill is-active">영업</button>
+        <button type="button" class="tab-pill">수출통관</button>
+        <button type="button" class="tab-pill">재무</button>
+        <button type="button" class="tab-pill">채권</button>
     </div>
 
     <div class="mt-3 card">
