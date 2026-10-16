@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- 목업 · ERP 코드 아님 · 브리프 §1 관리자 대시보드 (docs/design/shape-2026-10-16-dashboards-receivables.md) -->
+<!-- 목업 · ERP 코드 아님 · 브리프 §1 관리자 대시보드 (docs/design/shape-2026-10-16-dashboards-receivables.md) · distill 적용 2026-10-16 -->
 <html lang="ko">
 <head>
 <meta charset="utf-8">
@@ -14,21 +14,19 @@
   :focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
   .num { font-variant-numeric: tabular-nums; }
   .card { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:16px; }
-  .card-tight { background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:12px; }
-  .badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:9999px; font-size:11px; font-weight:500; line-height:1.4; white-space:nowrap; }
-  .badge-blue{background:#dbeafe;color:#1d4ed8}.badge-teal{background:#ccfbf1;color:#0f766e}.badge-purple{background:var(--primary-light);color:var(--primary-text)}
-  .badge-amber{background:#fef3c7;color:#b45309}.badge-red{background:#fee2e2;color:#b91c1c}.badge-green{background:#dcfce7;color:#15803d}.badge-gray{background:#f3f4f6;color:#4b5563}
   .tab-pill { padding:6px 12px; border-radius:9999px; font-size:13px; color:#4b5563; border:1px solid transparent; }
   .tab-pill.is-active { background:var(--primary-light); color:var(--primary-text); font-weight:600; }
   .btn-primary { background:var(--primary); color:#fff; border-radius:8px; padding:7px 14px; font-size:13px; font-weight:500; }
   .btn-primary:hover { background:var(--primary-hover); }
   .btn-ghost { border:1px solid #d1d5db; border-radius:8px; padding:6px 12px; font-size:13px; color:#4b5563; background:#fff; }
   .btn-ghost:hover { background:#f9fafb; }
-  .section-header { display:flex; align-items:center; gap:6px; }
-  .section-dot { width:6px; height:6px; border-radius:9999px; }
-  .section-title { font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:#6b7280; font-weight:600; }
+  .section-title { font-size:12px; font-weight:600; color:#374151; }
   .input-base { border:1px solid #d1d5db; border-radius:8px; padding:6px 10px; font-size:13px; background:#fff; color:#1f2937; }
   .chart-ph { height:200px; border:1px dashed #d1d5db; border-radius:8px; background:#f9fafb; display:flex; align-items:center; justify-content:center; color:#4b5563; font-size:12px; }
+  details > summary { cursor:pointer; list-style:none; }
+  details > summary::-webkit-details-marker { display:none; }
+  details > summary::after { content:"펼치기"; margin-left:6px; color:var(--primary-text); }
+  details[open] > summary::after { content:"접기"; }
   table { border-collapse: collapse; }
   th { font-weight:500; color:#6b7280; }
 </style>
@@ -39,18 +37,73 @@
   <aside class="hidden md:block w-[220px] shrink-0 bg-[#2b2a3a]"></aside>
 
   <main class="flex-1 min-w-0 p-3 md:p-6">
-    <!-- 헤더: 제목 + 기간(기존 필터 유지) -->
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-      <div>
-        <h1 class="text-xl font-bold text-gray-800">관리자 대시보드</h1>
-        <p class="mt-0.5 text-xs text-gray-500">○○모터스 · 2026-10-16 (목) · 30초마다 갱신</p>
+    <!-- 헤더: 제목만. 기간·위젯 설정은 상세로 내렸다(리드는 「이번 달」 고정) -->
+    <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+      <h1 class="text-xl font-bold text-gray-800">관리자 대시보드</h1>
+      <p class="text-xs text-gray-500">○○모터스 · 2026-10-16 (목) · 30초마다 갱신</p>
+    </div>
+
+    <!-- ══ 리드 2칸: 3초에 읽을 둘. 큰 숫자 하나 + 한 줄 근거. 나머지는 접힘 ══ -->
+    <section class="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2" aria-label="이번 달 핵심">
+      <div class="card">
+        <div class="flex items-baseline justify-between gap-2">
+          <h2 class="text-sm font-semibold text-gray-700">이번 달 회사 순이익</h2>
+          <a href="#" class="text-xs text-[var(--primary-text)] hover:underline">정산관리 →</a>
+        </div>
+        <div class="num mt-3 text-5xl font-bold tracking-tight text-gray-900">₩48,320,000</div>
+        <p class="num mt-2 text-sm text-gray-600">총마진 ₩96,500,000 − 실지급 ₩41,180,000 − 발송비·공통 인건비 ₩7,000,000</p>
+        <details class="mt-3 text-xs text-gray-600">
+          <summary class="text-gray-500">마진율 18.4% · 거래완료 27대 · 월정산 승인 10-10 ·</summary>
+          <dl class="num mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
+            <div><dt class="text-gray-500">총마진</dt><dd class="font-medium text-gray-800">₩96,500,000</dd></div>
+            <div><dt class="text-gray-500">실지급(급여 포함)</dt><dd class="font-medium text-gray-800">₩41,180,000</dd></div>
+            <div><dt class="text-gray-500">발송비</dt><dd class="font-medium text-gray-800">₩1,320,000</dd></div>
+            <div><dt class="text-gray-500">공통 인건비</dt><dd class="font-medium text-gray-800">₩5,680,000</dd></div>
+          </dl>
+        </details>
       </div>
+
+      <div class="card">
+        <div class="flex items-baseline justify-between gap-2">
+          <h2 class="text-sm font-semibold text-gray-700">받을 돈</h2>
+          <a href="#" class="text-xs text-[var(--primary-text)] hover:underline">채권관리 →</a>
+        </div>
+        <div class="num mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+          <span class="text-5xl font-bold tracking-tight text-gray-900">₩312,450,000</span>
+          <a href="#" class="text-base font-semibold text-red-700 hover:underline">위험·심각 14대 →</a>
+        </div>
+        <p class="num mt-2 text-sm text-gray-600">선적후 ₩198,700,000 (31대) · 선적전 ₩113,750,000 (46대) · 기간 무관</p>
+        <details class="mt-3 text-xs text-gray-600">
+          <summary class="text-gray-500">결제대기·매입취소·등급별 ·</summary>
+          <dl class="num mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4">
+            <div><dt class="text-gray-500">결제대기 (채권 제외)</dt><dd class="font-medium text-gray-800">₩27,900,000 · 9대</dd></div>
+            <div><dt class="text-gray-500">매입취소</dt><dd class="font-medium text-gray-800">₩4,100,000 · 2대</dd></div>
+            <div><dt class="text-gray-500">주의 · 위험 · 심각</dt><dd class="font-medium text-gray-800">23 · 9 · 5</dd></div>
+            <div><dt class="text-gray-500">지난주 대비</dt><dd class="font-medium text-gray-800">−₩12,000,000</dd></div>
+          </dl>
+        </details>
+      </div>
+    </section>
+
+    <!-- ══ 근거: 한 줄 글자. 카드 아님 ══ -->
+    <p class="num mt-3 text-sm text-gray-600" aria-label="자금 근거">
+      통장 현금 <b class="font-semibold text-gray-800">₩4.2억</b> (마통 −0.8억) · 굴리는 총 자금 <b class="font-semibold text-gray-800">₩18.6억</b> · 원금 대비 번 돈 <b class="font-semibold text-gray-800">+₩2.1억</b> · 이달 판매 <b class="font-semibold text-gray-800">₩6.8억 · 34대</b> · 이달 현금 회수 <b class="font-semibold text-gray-800">₩5.9억</b>
+      <a href="#" class="ml-1 text-xs text-[var(--primary-text)] hover:underline">자금 현황 →</a>
+    </p>
+
+    <!-- ══ 상세: 기간·위젯 설정·탭 4 (리드 아래) ══ -->
+    <div class="mt-6 flex flex-col gap-2 border-t border-gray-200 pt-4 sm:flex-row sm:items-center sm:justify-between">
+      <nav class="flex flex-wrap gap-1.5" aria-label="상세 탭">
+        <button class="tab-pill is-active">영업</button>
+        <button class="tab-pill">수출통관</button>
+        <button class="tab-pill">재무</button>
+        <button class="tab-pill">채권</button>
+      </nav>
       <div class="flex flex-wrap items-center gap-2 text-xs">
-        <span class="text-gray-500">상세 기간</span>
         <select class="input-base"><option>판매일</option><option>매입일</option><option>선적일</option><option>완료일</option></select>
-        <input class="input-base w-[120px]" value="2026-10-01">
-        <span class="text-gray-400">~</span>
-        <input class="input-base w-[120px]" value="2026-10-31">
+        <input class="input-base w-[120px]" value="2026-10-01" aria-label="시작일">
+        <span class="text-gray-500">~</span>
+        <input class="input-base w-[120px]" value="2026-10-31" aria-label="종료일">
         <button class="btn-primary">조회</button>
         <button class="btn-ghost">위젯 설정</button>
       </div>
@@ -59,105 +112,50 @@
       <button class="tab-pill is-active">이번달</button><button class="tab-pill">지난달</button><button class="tab-pill">올해</button><button class="tab-pill">작년</button>
     </div>
 
-    <!-- ══ 리드 2칸: 3초에 읽을 둘 ══ -->
-    <section class="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2" aria-label="이번 달 핵심">
-      <a href="#" class="card block hover:border-[var(--primary)] transition">
-        <div class="flex items-baseline justify-between">
-          <h2 class="text-sm font-semibold text-gray-700">회사 순이익 (급여 차감 후)</h2>
-          <span class="text-xs text-gray-500">2026년 10월 · 정산관리 →</span>
-        </div>
-        <div class="num mt-2 text-4xl font-bold tracking-tight text-emerald-700">₩48,320,000</div>
-        <dl class="num mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600 sm:grid-cols-4">
-          <div><dt class="text-gray-500">총마진</dt><dd class="font-medium text-gray-800">₩96,500,000</dd></div>
-          <div><dt class="text-gray-500">− 실지급(급여 포함)</dt><dd class="font-medium text-gray-800">₩41,180,000</dd></div>
-          <div><dt class="text-gray-500">− 발송비</dt><dd class="font-medium text-gray-800">₩1,320,000</dd></div>
-          <div><dt class="text-gray-500">− 공통 인건비</dt><dd class="font-medium text-gray-800">₩5,680,000</dd></div>
-        </dl>
-        <p class="mt-2 text-xs text-gray-500">마진율 18.4% · 거래완료 27대 · 월정산 승인 완료 10-10</p>
-      </a>
-
-      <a href="#" class="card block hover:border-[var(--primary)] transition">
-        <div class="flex items-baseline justify-between">
-          <h2 class="text-sm font-semibold text-gray-700">받을 돈 (총 미수금)</h2>
-          <span class="text-xs text-gray-500">기간 무관 · 채권관리 →</span>
-        </div>
-        <div class="flex flex-wrap items-baseline gap-x-4">
-          <div class="num mt-2 text-4xl font-bold tracking-tight text-gray-900">₩312,450,000</div>
-          <div class="num text-sm font-semibold text-red-700">위험·심각 14대</div>
-        </div>
-        <dl class="num mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600 sm:grid-cols-4">
-          <div><dt class="text-gray-500">선적후 미수</dt><dd class="font-medium text-gray-800">₩198,700,000 · 31대</dd></div>
-          <div><dt class="text-gray-500">선적전 미수</dt><dd class="font-medium text-gray-800">₩113,750,000 · 46대</dd></div>
-          <div><dt class="text-gray-500">결제대기 (채권 제외)</dt><dd class="font-medium text-gray-800">₩27,900,000 · 9대</dd></div>
-          <div><dt class="text-gray-500">매입취소</dt><dd class="font-medium text-gray-800">₩4,100,000 · 2대</dd></div>
-        </dl>
-        <p class="mt-2 text-xs text-gray-500">주의 23 · 위험 9 · 심각 5 · 지난주 대비 미수 −₩12,000,000</p>
-      </a>
-    </section>
-
-    <!-- ══ 근거 띠: 한 줄 크기 ══ -->
-    <section class="mt-3 card-tight" aria-label="근거">
-      <div class="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 lg:grid-cols-7">
-        <div><div class="text-[11px] text-gray-500">통장 현금</div><div class="num text-sm font-semibold">₩4.2억 <span class="text-xs font-normal text-gray-500">(마통 −0.8억)</span></div></div>
-        <div><div class="text-[11px] text-gray-500">굴리는 총 자금</div><div class="num text-sm font-semibold">₩18.6억</div></div>
-        <div><div class="text-[11px] text-gray-500">원금 대비 번 돈</div><div class="num text-sm font-semibold text-emerald-700">+₩2.1억</div></div>
-        <div><div class="text-[11px] text-gray-500">이달 판매(발생)</div><div class="num text-sm font-semibold">₩6.8억 · 34대</div></div>
-        <div><div class="text-[11px] text-gray-500">이달 현금 회수</div><div class="num text-sm font-semibold">₩5.9억</div></div>
-        <div><div class="text-[11px] text-gray-500">이달 미수금</div><div class="num text-sm font-semibold">₩0.9억</div></div>
-        <div><div class="text-[11px] text-gray-500">차량 수 · 매입가 합계</div><div class="num text-sm font-semibold">412대 · ₩71.3억</div></div>
-      </div>
-      <p class="mt-2 text-[11px] text-gray-400">청산가치 = 통장 현금 + 재고 매입가 + 미수 − 미지급 − 가수금 · 자금 추이와 보고서는 아래 「재무」 탭</p>
-    </section>
-
-    <!-- ══ 상세: 탭 4 (기존 그대로, 리드 아래로) ══ -->
-    <nav class="mt-5 flex flex-wrap gap-1.5" aria-label="상세 탭">
-      <button class="tab-pill is-active">영업</button>
-      <button class="tab-pill">수출통관</button>
-      <button class="tab-pill">재무</button>
-      <button class="tab-pill">채권</button>
-    </nav>
-
     <section class="mt-3 card">
-      <div class="section-header"><span class="section-dot bg-[var(--primary)]"></span><span class="section-title">진행 단계별 차량 수</span></div>
+      <div class="flex items-baseline justify-between gap-2">
+        <h3 class="section-title">진행 단계별 차량 수</h3>
+        <span class="num text-xs text-gray-500">412대 · 매입가 합계 ₩71.3억</span>
+      </div>
       <div class="mt-2 overflow-x-auto">
         <div class="flex min-w-[720px] gap-1.5 text-xs">
-          <a href="#" class="flex-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-center hover:bg-blue-100">매입중<div class="num font-semibold">31</div></a>
-          <a href="#" class="flex-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-center hover:bg-blue-100">매입완료<div class="num font-semibold">12</div></a>
-          <a href="#" class="flex-1 rounded-md border border-blue-200 bg-blue-50 px-2 py-1.5 text-center hover:bg-blue-100">말소완료<div class="num font-semibold">18</div></a>
-          <a href="#" class="flex-1 rounded-md border border-purple-200 bg-[var(--primary-light)] px-2 py-1.5 text-center">판매중<div class="num font-semibold">44</div></a>
-          <a href="#" class="flex-1 rounded-md border border-purple-200 bg-[var(--primary-light)] px-2 py-1.5 text-center">판매완료<div class="num font-semibold">23</div></a>
-          <a href="#" class="flex-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-center">선적중<div class="num font-semibold">9</div></a>
-          <a href="#" class="flex-1 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-center">선적완료<div class="num font-semibold">27</div></a>
-          <a href="#" class="flex-1 rounded-md border border-green-200 bg-green-50 px-2 py-1.5 text-center">통관중<div class="num font-semibold">15</div></a>
-          <a href="#" class="flex-1 rounded-md border border-green-200 bg-green-50 px-2 py-1.5 text-center">통관완료<div class="num font-semibold">6</div></a>
-          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-center">거래완료<div class="num font-semibold">227</div></a>
+          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-center text-gray-600 hover:bg-gray-50">매입중<div class="num text-sm font-semibold text-gray-900">31</div></a>
+          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-center text-gray-600 hover:bg-gray-50">매입완료<div class="num text-sm font-semibold text-gray-900">12</div></a>
+          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-center text-gray-600 hover:bg-gray-50">말소완료<div class="num text-sm font-semibold text-gray-900">18</div></a>
+          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-center text-gray-600 hover:bg-gray-50">판매중<div class="num text-sm font-semibold text-gray-900">44</div></a>
+          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-center text-gray-600 hover:bg-gray-50">판매완료<div class="num text-sm font-semibold text-gray-900">23</div></a>
+          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-center text-gray-600 hover:bg-gray-50">선적중<div class="num text-sm font-semibold text-gray-900">9</div></a>
+          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-center text-gray-600 hover:bg-gray-50">선적완료<div class="num text-sm font-semibold text-gray-900">27</div></a>
+          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-center text-gray-600 hover:bg-gray-50">통관중<div class="num text-sm font-semibold text-gray-900">15</div></a>
+          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-center text-gray-600 hover:bg-gray-50">통관완료<div class="num text-sm font-semibold text-gray-900">6</div></a>
+          <a href="#" class="flex-1 rounded-md border border-gray-200 bg-gray-50 px-2 py-1.5 text-center text-gray-600 hover:bg-gray-100">거래완료<div class="num text-sm font-semibold text-gray-900">227</div></a>
         </div>
       </div>
-      <p class="mt-1 text-[11px] text-gray-400">분포표 · 차량 1대는 한 칸에만. 「매입중」 필터는 차량관리에서 더 넓게 잡힙니다.</p>
+      <p class="mt-1 text-xs text-gray-500">분포표 · 차량 1대는 한 칸에만. 「매입중」 필터는 차량관리에서 더 넓게 잡힙니다.</p>
     </section>
 
     <section class="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2">
       <div class="card">
-        <div class="section-header"><span class="section-dot bg-blue-500"></span><span class="section-title">월별 차량 대수</span></div>
+        <h3 class="section-title">월별 차량 대수</h3>
         <div class="chart-ph mt-2">막대 차트 (1~12월)</div>
       </div>
       <div class="card">
-        <div class="section-header"><span class="section-dot bg-blue-500"></span><span class="section-title">월별 판매가 합계</span></div>
+        <h3 class="section-title">월별 판매가 합계</h3>
         <div class="chart-ph mt-2">막대 차트 (1~12월, ₩)</div>
       </div>
       <div class="card">
-        <div class="section-header"><span class="section-dot bg-purple-500"></span><span class="section-title">담당자별 판매 대수 (상위 10)</span></div>
+        <h3 class="section-title">담당자별 판매 대수 (상위 10)</h3>
         <div class="chart-ph mt-2">가로 막대</div>
       </div>
       <div class="card">
-        <div class="section-header"><span class="section-dot bg-purple-500"></span><span class="section-title">담당자별 판매 금액 (상위 10)</span></div>
+        <h3 class="section-title">담당자별 판매 금액 (상위 10)</h3>
         <div class="chart-ph mt-2">가로 막대 (₩)</div>
       </div>
     </section>
 
     <section class="mt-3 card">
       <div class="flex items-center justify-between">
-        <div class="section-header"><span class="section-dot bg-violet-500"></span><span class="section-title">인원별 회사기여 (이번 달)</span></div>
+        <h3 class="section-title">인원별 회사기여 (이번 달)</h3>
         <a href="#" class="text-xs text-[var(--primary-text)] hover:underline">정산관리 →</a>
       </div>
       <div class="mt-2 overflow-x-auto">
@@ -166,17 +164,17 @@
             <th class="py-1.5 pr-3">담당자</th><th class="py-1.5 pr-3 text-right">건수</th><th class="py-1.5 pr-3 text-right">총마진</th><th class="py-1.5 pr-3 text-right">실지급</th><th class="py-1.5 pr-3 text-right">회사이익</th><th class="py-1.5 pr-3 text-right">지분</th><th class="py-1.5 text-right">이익배수</th>
           </tr></thead>
           <tbody class="divide-y divide-gray-100">
-            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">박영진</td><td class="py-1.5 pr-3 text-right">9</td><td class="py-1.5 pr-3 text-right">₩31,200,000</td><td class="py-1.5 pr-3 text-right">₩14,600,000</td><td class="py-1.5 pr-3 text-right font-semibold text-emerald-700">+₩16,600,000</td><td class="py-1.5 pr-3 text-right">34.4%</td><td class="py-1.5 text-right">-</td></tr>
-            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">김하늘</td><td class="py-1.5 pr-3 text-right">7</td><td class="py-1.5 pr-3 text-right">₩24,800,000</td><td class="py-1.5 pr-3 text-right">₩6,700,000</td><td class="py-1.5 pr-3 text-right font-semibold text-emerald-700">+₩18,100,000</td><td class="py-1.5 pr-3 text-right">37.5%</td><td class="py-1.5 text-right">2.7</td></tr>
-            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">이도윤</td><td class="py-1.5 pr-3 text-right">5</td><td class="py-1.5 pr-3 text-right">₩17,900,000</td><td class="py-1.5 pr-3 text-right">₩9,100,000</td><td class="py-1.5 pr-3 text-right font-semibold text-emerald-700">+₩8,800,000</td><td class="py-1.5 pr-3 text-right">18.2%</td><td class="py-1.5 text-right">-</td></tr>
-            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">최서준</td><td class="py-1.5 pr-3 text-right">4</td><td class="py-1.5 pr-3 text-right">₩12,100,000</td><td class="py-1.5 pr-3 text-right">₩6,900,000</td><td class="py-1.5 pr-3 text-right font-semibold text-emerald-700">+₩5,200,000</td><td class="py-1.5 pr-3 text-right">10.8%</td><td class="py-1.5 text-right">1.8</td></tr>
-            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">정유나</td><td class="py-1.5 pr-3 text-right">2</td><td class="py-1.5 pr-3 text-right">₩10,500,000</td><td class="py-1.5 pr-3 text-right">₩3,880,000</td><td class="py-1.5 pr-3 text-right font-semibold text-red-700">-₩400,000</td><td class="py-1.5 pr-3 text-right">−0.8%</td><td class="py-1.5 text-right">0.4</td></tr>
+            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">박영진</td><td class="py-1.5 pr-3 text-right">9</td><td class="py-1.5 pr-3 text-right">₩31,200,000</td><td class="py-1.5 pr-3 text-right">₩14,600,000</td><td class="py-1.5 pr-3 text-right font-semibold text-gray-900">+₩16,600,000</td><td class="py-1.5 pr-3 text-right">34.4%</td><td class="py-1.5 text-right">-</td></tr>
+            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">김하늘</td><td class="py-1.5 pr-3 text-right">7</td><td class="py-1.5 pr-3 text-right">₩24,800,000</td><td class="py-1.5 pr-3 text-right">₩6,700,000</td><td class="py-1.5 pr-3 text-right font-semibold text-gray-900">+₩18,100,000</td><td class="py-1.5 pr-3 text-right">37.5%</td><td class="py-1.5 text-right">2.7</td></tr>
+            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">이도윤</td><td class="py-1.5 pr-3 text-right">5</td><td class="py-1.5 pr-3 text-right">₩17,900,000</td><td class="py-1.5 pr-3 text-right">₩9,100,000</td><td class="py-1.5 pr-3 text-right font-semibold text-gray-900">+₩8,800,000</td><td class="py-1.5 pr-3 text-right">18.2%</td><td class="py-1.5 text-right">-</td></tr>
+            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">최서준</td><td class="py-1.5 pr-3 text-right">4</td><td class="py-1.5 pr-3 text-right">₩12,100,000</td><td class="py-1.5 pr-3 text-right">₩6,900,000</td><td class="py-1.5 pr-3 text-right font-semibold text-gray-900">+₩5,200,000</td><td class="py-1.5 pr-3 text-right">10.8%</td><td class="py-1.5 text-right">1.8</td></tr>
+            <tr><td class="py-1.5 pr-3 font-medium text-gray-800">정유나</td><td class="py-1.5 pr-3 text-right">2</td><td class="py-1.5 pr-3 text-right">₩10,500,000</td><td class="py-1.5 pr-3 text-right">₩3,880,000</td><td class="py-1.5 pr-3 text-right font-semibold text-red-700">−₩400,000</td><td class="py-1.5 pr-3 text-right">−0.8%</td><td class="py-1.5 text-right">0.4</td></tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <p class="mt-4 text-[11px] text-gray-400">미수는 기간과 무관하게 현재 남은 잔액 전부입니다. 채권관리·대표 알림톡과 같은 숫자입니다.</p>
+    <p class="mt-4 text-xs text-gray-500">미수는 기간과 무관하게 현재 남은 잔액 전부입니다. 채권관리·대표 알림톡과 같은 숫자입니다.</p>
   </main>
 </div>
 </body>
