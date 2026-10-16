@@ -88,6 +88,7 @@ return [
     'inv_preship' => 'Pre-shipping',
     'company_net_breakdown' => 'Total margin ₩:margin − take-home ₩:payout (incl. payroll & incentives) − shipping ₩:shipping − common labor ₩:labor',
     'company_fx_absorbed' => 'Employee FX absorbed by company: ₩:fx',
+    'company_overpay_income' => '+ overpayment booked as company income ₩:amount (converted in Receivables, by conversion date in this period)',
     'company_contrib_title' => 'Company contribution by person (top 10)',
     'company_contrib_empty' => 'No paid settlements in this period.',
     'company_contrib_note' => 'Contribution = total margin − take-home (incl. payroll & incentives) − shipping. Share = contribution ÷ sum (negatives stay negative). Click a name to open that person\'s card in Settlements.',

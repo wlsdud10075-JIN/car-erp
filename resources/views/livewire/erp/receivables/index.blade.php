@@ -82,6 +82,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private const OVERPAY_TO_MISC_LOSS = 'misc_loss';
 
+    /** 과입금 → 회사이익 (jin 2026-10-16 «잡손실같이 떨구는 게 아니라 회사이익으로 전환») — 관리자 대시보드 회사 순이익에 더해진다(B안). */
+    private const OVERPAY_TO_COMPANY_INCOME = 'company_income';
+
     // 회수 이력 입력 폼
     public ?int $historyEditId = null;
     public string $hCollectedAt = '';
@@ -735,6 +738,18 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
+     * 과입금 → 회사이익 전환 (jin 2026-10-16 «B 맞아»).
+     *
+     * 잡손실과 같은 배관(잔금 감액 → 원장 되돌림 → 회수이력 한 줄)이지만 **뜻이 다르다** — 잡손실은 「기록만」이고
+     * 회사이익은 관리자 대시보드 회사 순이익에 「과입금 회사이익 +N」 줄로 **더해진다**(`admin/dashboard` computeCompanyProfit).
+     * 월결산 알림톡·월정산 카드는 정산 단위라 안 들어간다(화면 하나에만 반영 — 그 비대칭은 jin 이 알고 골랐다).
+     */
+    public function convertOverpayToCompanyIncome(): void
+    {
+        $this->resolveOverpay(self::OVERPAY_TO_COMPANY_INCOME);
+    }
+
+    /**
      * 과입금 정리 **단일 출처** — 두 버튼이 이 하나를 쓴다 (2026-09-09 통합).
      *
      * ① 초과분만큼 확정 잔금(FinalPayment) 감액 → received 감소 → 미수 0.
@@ -869,20 +884,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                     app(BuyerCashService::class)->chargeFee($fee);
                 }
 
-                // ③ 갈림
+                // ③ 갈림 — 적립금(바이어 크레딧) / 잡손실(기록만) / 회사이익(대시보드 회사 순이익에 더함)
                 if ($mode === self::OVERPAY_TO_SAVINGS) {
                     $vehicle->syncSavingsDeposit($excess);
                 } else {
-                    // 잡손실 — 회수이력에 항목으로 남긴다(회계실사 매칭용). 미수 계산에서는 제외된다
+                    // 잡손실·회사이익 — 회수이력에 항목으로 남긴다(회계실사 매칭용). 미수 계산에서는 제외된다
                     //   (`Vehicle::MIRRORED_RECEIVABLE_METHODS`) — 안 그러면 0 으로 만든 미수가 다시 음수가 된다.
                     ReceivableHistory::create([
                         'vehicle_id' => $vehicle->id,
                         'collected_at' => today(),
                         'collector_id' => $user->salesman?->id,
-                        'method' => 'misc_loss',
+                        'method' => $mode,   // 'misc_loss' | 'company_income'
                         'amount' => $excess,
                         'exchange_rate' => $isForeign ? $vehicle->exchange_rate : null,
-                        'note' => __('receivable.overpay.misc_loss_note'),
+                        'note' => $mode === self::OVERPAY_TO_COMPANY_INCOME ? __('receivable.overpay.company_income_note') : __('receivable.overpay.misc_loss_note'),
                     ]);
                 }
 
@@ -891,10 +906,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'user_id' => $user->id,
                     'auditable_type' => Vehicle::class,
                     'auditable_id' => $vehicle->id,
-                    'action' => $mode === self::OVERPAY_TO_SAVINGS
-                        ? 'overpay_converted_to_savings'
-                        : 'overpay_converted_to_misc_loss',
-                    'column_name' => $mode === self::OVERPAY_TO_SAVINGS ? 'savings_earned' : 'misc_loss',
+                    'action' => match ($mode) {
+                        self::OVERPAY_TO_SAVINGS => 'overpay_converted_to_savings',
+                        self::OVERPAY_TO_COMPANY_INCOME => 'overpay_converted_to_company_income',
+                        default => 'overpay_converted_to_misc_loss',
+                    },
+                    'column_name' => $mode === self::OVERPAY_TO_SAVINGS ? 'savings_earned' : $mode,
                     // 마감 후 전환이면 사유를 남긴다 — 「왜 지급 끝난 차를 건드렸나」가 여기서만 보인다.
                     'old_value' => $closed ? mb_substr($reason, 0, 500) : null,
                     'new_value' => $vehicle->currency.' '.$excess,
@@ -915,9 +932,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->overpayReason = '';
         unset($this->selectedVehicle, $this->vehicles, $this->summary);
         $amountLabel = $vehicle->currency.' '.number_format($excess, $isForeign ? 2 : 0);
-        session()->flash('panel_success', $mode === self::OVERPAY_TO_SAVINGS
-            ? __('receivable.overpay.done', ['amount' => $amountLabel])
-            : __('receivable.overpay.done_misc_loss', ['amount' => $amountLabel]));
+        session()->flash('panel_success', match ($mode) {
+            self::OVERPAY_TO_SAVINGS => __('receivable.overpay.done', ['amount' => $amountLabel]),
+            self::OVERPAY_TO_COMPANY_INCOME => __('receivable.overpay.done_company_income', ['amount' => $amountLabel]),
+            default => __('receivable.overpay.done_misc_loss', ['amount' => $amountLabel]),
+        });
     }
 
     /**
@@ -1590,6 +1609,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @disabled(! $overpayAllowed)
                             class="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-700 disabled:cursor-not-allowed disabled:bg-gray-300">
                         {{ __('receivable.overpay.btn') }}
+                    </button>
+                    <button type="button" wire:click="convertOverpayToCompanyIncome" data-overpay-company-income
+                            wire:confirm="{{ __('receivable.overpay.confirm_company_income', ['amount' => $overpayLabel]) }}"
+                            @disabled(! $overpayAllowed)
+                            class="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-gray-300">
+                        {{ __('receivable.overpay.btn_company_income') }}
                     </button>
                     <button type="button" wire:click="convertOverpayToMiscLoss"
                             wire:confirm="{{ __('receivable.overpay.confirm_misc_loss', ['amount' => $overpayLabel]) }}"

@@ -111,6 +111,7 @@ return [
         'c_no' => '컨테이너 번호',
         'savings_earned' => '적립금 적립액',
         'misc_loss' => '잡손실(과입금 정리)',
+        'company_income' => '회사이익(과입금 전환)',
         'purchase_fee_holder' => '매도비 예금주',
         'purchase_fee_bank' => '매도비 은행',
         'purchase_fee_account' => '매도비 계좌번호',
@@ -459,6 +460,7 @@ return [
         'buyer_cash_receipt_added' => '바이어 현금 입금 기재',
         'buyer_cash_fee_added' => '바이어 현금 수수료 처리',
         'buyer_cash_to_savings' => '바이어 남은 현금 → 적립금 전환',
+        'overpay_converted_to_company_income' => '과입금 → 회사이익 전환',
         // 💳 적립금 거래 (2026-10-16) — SavingsStatus::booted 가 생성 시점에 남긴다. 취소 = 역행 추가.
         'savings_earned' => '적립금 적립',
         'savings_used' => '적립금 사용',

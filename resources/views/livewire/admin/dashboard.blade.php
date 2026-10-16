@@ -734,6 +734,22 @@ new #[Layout('components.layouts.app')] class extends Component
                 $byPerson[$sid]['payroll'] = $t;
             }
         }
+        // 💰 과입금 → 회사이익 전환 (jin 2026-10-16 B안) — 정산·급여 밖의 회사 수입. 기간은 전환일(collected_at), KRW 는 행 환율(없으면 차량 환율, KRW 는 그대로).
+        //    담당자 스코프는 차량 담당자로 건다. 잡손실(misc_loss)은 종전대로 안 더한다(기록만). 사람별 기여엔 안 넣는다(누구의 성과가 아니다).
+        $overpayIncome = 0;
+        \App\Models\ReceivableHistory::query()
+            ->where('method', 'company_income')
+            ->when($this->dateFrom, fn ($q) => $q->where('collected_at', '>=', $this->dateFrom))
+            ->when($this->dateTo, fn ($q) => $q->where('collected_at', '<=', $this->dateTo))
+            ->when($ids !== null, fn ($q) => $q->whereHas('vehicle', fn ($v) => $v->whereIn('salesman_id', $ids)))
+            ->with('vehicle:id,currency,exchange_rate')
+            ->get()
+            ->each(function ($h) use (&$overpayIncome) {
+                $rate = $h->vehicle?->currency === 'KRW' ? 1 : (float) ($h->exchange_rate ?: ($h->vehicle?->exchange_rate ?: 0));
+                $overpayIncome += (int) round((float) $h->amount * $rate);
+            });
+        $companyNet += $overpayIncome;
+
         $contributionSum = (int) array_sum(array_column($byPerson, 'contribution'));
         $lastMonth = $payrollMonths->sort()->last();
 
@@ -771,6 +787,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'fx_absorbed' => $fxAbsorbed,
             'payroll_sum' => $payrollSum,
             'common_labor' => $commonLabor,
+            'overpay_income' => $overpayIncome,
             'contribution_sum' => $contributionSum,
             'ranking' => $ranking,
         ];
@@ -1544,6 +1561,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 </p>
                 @if($cp['fx_absorbed'] !== 0)
                 <p class="mt-0.5 text-[11px] text-gray-400">{{ __('admin_dash.company_fx_absorbed', ['fx' => number_format($cp['fx_absorbed'])]) }}</p>
+                @endif
+                @if(($cp['overpay_income'] ?? 0) !== 0)
+                <p class="mt-0.5 text-[11px] text-emerald-600" data-overpay-income>{{ __('admin_dash.company_overpay_income', ['amount' => number_format($cp['overpay_income'])]) }}</p>
                 @endif
             </div>
         </div>
