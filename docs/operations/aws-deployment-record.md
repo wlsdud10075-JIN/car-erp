@@ -662,7 +662,7 @@ cherry-pick(.md 제외). 마이그 없음.
 
 - jin «선적중→선적완료→통관중→통관완료 조건을 다시 볼까 해». 실측 3사 분포로 「통관완료 0대(도달 불가)·통관중 몰림(ssancarerp 858)」을 드러내고, 보유 필드 조합별 재분류 매트릭스로 결정. (가)안 = 선적중=반입지 · 선적완료=반입지+선적일(신고서 무관) · 통관중=수출신고서 · 통관완료=통관 체크 · 거래완료=B/L. 출항 이후는 운항 뱃지(ETA 당일부터 도착예정). 차량관리 pill 에서 v3 라벨(수출통관중/완료) 제거(3사 캐시 0대). next_action 라벨 ko/en 갱신. SKILLS §8 #118.
 - dev `eb9673fc` → master `40888fe8`. 로컬 병렬 전체 3,368 pass · 실패 0(구 규칙 기대 테스트 9파일 갱신 + ProgressRuleV4StagesTest 5). deploy 런 38898180314 잡 5개 success. 3사 SHA `40888fe8`, Pending 0, /login 200. 운영 쓰기 없음.
-- **배포 뒤**: 캐시 컬럼이라 05:00 `vehicles:rebuild-caches` 뒤 반영 — 예상 이동 ssancarerp 통관중→통관완료 858·선적완료→통관중 52 / heymanerp 47·2(+판매단계 21대가 통관중·완료로) / karaba 149. ssancar.com 세션에 통지(htdocs-b9, 19:xx) → 그쪽 할 일 2건 = 포털 레일 7/8/9 재번호(선적완료 7·통관중 8·통관완료 9, 05:00 전 배포 권장) · `pm_row` 에 cancel_status 노출+표시 규칙 — 둘 다 jin 승인 대기. Notion 재발행(Codex): 「진행상태 10단계」 카드.
+- **배포 뒤**: 캐시 컬럼이라 05:00 `vehicles:rebuild-caches` 뒤 반영 — 예상 이동 ssancarerp 통관중→통관완료 858·선적완료→통관중 52 / heymanerp 47·2(+판매단계 21대가 통관중·완료로) / karaba 149. ssancar.com 세션에 통지(htdocs-b9, 19:xx) → 그쪽 할 일 2건 = 포털 레일 7/8/9 재번호(선적완료 7·통관중 8·통관완료 9) → ✅ 같은 날 밤 ssancar.com 배포 완료(`portal_mirror.php`·`portal_data.php`, 05:00 전) · `pm_row` 에 cancel_status 노출+표시 규칙(진행상태 칩+취소 칩 나란히 제안 예정) — jin 답 대기. Notion 재발행(Codex): 「진행상태 10단계」 카드.
 - 곁다리: jin 이 ssancarerp 60두1818 [마감 취소] 실행 확인(closed 4→3).
 
 ## 2026-10-16(3차) — 매입취소: 취소완료=거래완료 · [마감 취소] · 마감 버튼 완납 시 숨김 · 사내직원 마감 즉시 정산됨 `f84bc87e` (3사 동시, 코드 2커밋, 마이그 0)
