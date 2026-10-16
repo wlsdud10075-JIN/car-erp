@@ -321,14 +321,31 @@
             </div>
             <div class="mt-3 text-4xl font-bold tracking-tight text-gray-900 tabular-nums">₩48,320,000</div>
             <p class="mt-2 text-sm text-gray-600 tabular-nums">총마진 ₩96,500,000 − 실지급 ₩41,180,000 − 발송비·공통 인건비 ₩7,000,000</p>
-            <details class="mt-3 text-xs text-gray-600 mock-details">
+            <details class="mt-3 text-xs text-gray-600 mock-details" open>
                 <summary class="cursor-pointer text-gray-500">마진율 18.4% · 거래완료 27대 · 월정산 승인 10-10 ·</summary>
-                <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4 tabular-nums">
-                    <div><dt class="text-gray-500">총마진</dt><dd class="font-medium text-gray-800">₩96,500,000</dd></div>
-                    <div><dt class="text-gray-500">실지급(급여 포함)</dt><dd class="font-medium text-gray-800">₩41,180,000</dd></div>
-                    <div><dt class="text-gray-500">발송비</dt><dd class="font-medium text-gray-800">₩1,320,000</dd></div>
-                    <div><dt class="text-gray-500">공통 인건비</dt><dd class="font-medium text-gray-800">₩5,680,000</dd></div>
-                </dl>
+                <!-- jin 2026-10-16: 펼침 내용은 표로 — 머리줄(항목)과 값 줄을 나눈다. 공식 순서대로 읽히게 마지막 칸 = 회사 순이익 -->
+                <div class="mt-2 overflow-x-auto rounded-lg border border-gray-200">
+                    <table class="w-full text-xs tabular-nums">
+                        <thead>
+                            <tr class="bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                                <th class="px-2 py-1.5 text-right">총마진</th>
+                                <th class="px-2 py-1.5 text-right">− 실지급(급여 포함)</th>
+                                <th class="px-2 py-1.5 text-right">− 발송비</th>
+                                <th class="px-2 py-1.5 text-right">− 공통 인건비</th>
+                                <th class="px-2 py-1.5 text-right">= 회사 순이익</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="whitespace-nowrap text-gray-800">
+                                <td class="px-2 py-1.5 text-right">₩96,500,000</td>
+                                <td class="px-2 py-1.5 text-right">₩41,180,000</td>
+                                <td class="px-2 py-1.5 text-right">₩1,320,000</td>
+                                <td class="px-2 py-1.5 text-right">₩5,680,000</td>
+                                <td class="px-2 py-1.5 text-right font-semibold">₩48,320,000</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </details>
         </div>
 
@@ -342,14 +359,47 @@
                 <a href="#" class="text-base font-semibold text-red-700 hover:underline">위험·심각 14대 →</a>
             </div>
             <p class="mt-2 text-sm text-gray-600 tabular-nums">선적후 ₩198,700,000 (31대) · 선적전 ₩113,750,000 (46대) · 기간 무관</p>
-            <details class="mt-3 text-xs text-gray-600 mock-details">
+            <details class="mt-3 text-xs text-gray-600 mock-details" open>
                 <summary class="cursor-pointer text-gray-500">결제대기·매입취소·등급별 ·</summary>
-                <dl class="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 sm:grid-cols-4 tabular-nums">
-                    <div><dt class="text-gray-500">결제대기 (채권 제외)</dt><dd class="font-medium text-gray-800">₩27,900,000 · 9대</dd></div>
-                    <div><dt class="text-gray-500">매입취소</dt><dd class="font-medium text-gray-800">₩4,100,000 · 2대</dd></div>
-                    <div><dt class="text-gray-500">주의 · 위험 · 심각</dt><dd class="font-medium text-gray-800">23 · 9 · 5</dd></div>
-                    <div><dt class="text-gray-500">지난주 대비</dt><dd class="font-medium text-gray-800">−₩12,000,000</dd></div>
-                </dl>
+                <div class="mt-2 overflow-x-auto rounded-lg border border-gray-200">
+                    <table class="w-full text-xs tabular-nums">
+                        <thead>
+                            <tr class="bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                                <th class="px-2 py-1.5 text-left">구분</th>
+                                <th class="px-2 py-1.5 text-right">선적후</th>
+                                <th class="px-2 py-1.5 text-right">선적전</th>
+                                <th class="px-2 py-1.5 text-right">결제대기</th>
+                                <th class="px-2 py-1.5 text-right">매입취소</th>
+                                <th class="px-2 py-1.5 text-right">주의</th>
+                                <th class="px-2 py-1.5 text-right">위험</th>
+                                <th class="px-2 py-1.5 text-right">심각</th>
+                            </tr>
+                        </thead>
+                        <tbody class="whitespace-nowrap text-gray-800">
+                            <tr class="border-b border-gray-100">
+                                <td class="px-2 py-1.5 text-left text-gray-500">금액</td>
+                                <td class="px-2 py-1.5 text-right">₩198,700,000</td>
+                                <td class="px-2 py-1.5 text-right">₩113,750,000</td>
+                                <td class="px-2 py-1.5 text-right">₩27,900,000</td>
+                                <td class="px-2 py-1.5 text-right">₩4,100,000</td>
+                                <td class="px-2 py-1.5 text-right">₩61,000,000</td>
+                                <td class="px-2 py-1.5 text-right">₩48,500,000</td>
+                                <td class="px-2 py-1.5 text-right text-red-700">₩39,200,000</td>
+                            </tr>
+                            <tr>
+                                <td class="px-2 py-1.5 text-left text-gray-500">대수</td>
+                                <td class="px-2 py-1.5 text-right">31</td>
+                                <td class="px-2 py-1.5 text-right">46</td>
+                                <td class="px-2 py-1.5 text-right">9</td>
+                                <td class="px-2 py-1.5 text-right">2</td>
+                                <td class="px-2 py-1.5 text-right">23</td>
+                                <td class="px-2 py-1.5 text-right">9</td>
+                                <td class="px-2 py-1.5 text-right text-red-700">5</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="mt-1 text-[11px] text-gray-500">결제대기·매입취소는 채권 전체에서 제외 · 지난주 대비 −₩12,000,000</p>
             </details>
         </div>
     </div>
