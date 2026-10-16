@@ -293,7 +293,20 @@
         </header>
         <main class="flex-1 overflow-auto bg-gray-50">
             <div class="p-3 md:p-6">
-<div class="mb-4 rounded-lg border border-dashed border-violet-300 bg-violet-50/40 px-3 py-2 text-[12px] text-violet-800">목업 · 업무 대시보드 「현재 상태」 — 담당자별 1개 + 역할별 4개 = 실제 ERP 화면 5개를 한 페이지에 전부 펼쳤다. 각 ■ 섹션이 화면 하나다. 숫자는 로컬 샘플 DB. (distill 입력용, 2026-10-16)</div>
+<!--
+  DISTILL / REVIEWER INSTRUCTIONS (read before judging this page)
+  This file is NOT one long landing page. It is ONE screen (/erp/dashboard, the work dashboard) shown in its FIVE states:
+  "By salesman (all)" and "By role: Sales / Export clearance / Finance / Management". Each <section data-variant> is the
+  same screen as a different user would see it. The real app shows exactly one of them at a time, switched by the
+  mode/role pills at the top of each section.
+  - Treat the five sections as STATE VARIANTS of a single surface, not as five pages and not as repetition to remove.
+  - Distill the shared skeleton once (header / pipeline strip / KPI cards / FX rates / closing balance / action items /
+    active vehicles), then say what should differ per role. Do not merge the sections into one, and do not delete
+    blocks just because they appear in several sections.
+  - Numbers come from a local sample DB; ignore their values. Korean UI is required (admin UI must stay Korean).
+  - Purpose (jin 2026-10-16): work dashboard = action-oriented. Managers / work managers / finance see what they missed.
+-->
+<div class="mb-4 rounded-lg border border-dashed border-violet-300 bg-violet-50/40 px-3 py-2 text-[12px] text-violet-800">목업 · 업무 대시보드 「현재 상태」 — <b>한 화면의 5가지 상태</b>(담당자별 1 + 역할별 4)를 위아래로 펼친 것이다. 각 ■ 섹션은 별개 페이지가 아니라 같은 화면을 다른 역할로 본 것이며, 실제 ERP 는 한 번에 하나만 보인다. 공통 뼈대는 한 번만 distill 하고 역할별로 달라져야 할 블록만 가려낼 것. 섹션을 합치거나 「중복」으로 지우지 말 것. 숫자는 로컬 샘플 DB. (2026-10-16)</div>
 <section data-variant="salesman" class="mb-12">
 <h2 class="mb-3 border-b-2 border-violet-400 pb-1 text-base font-bold text-violet-800">■ 담당자별 (전체) 로 본 화면</h2>
 <div>
