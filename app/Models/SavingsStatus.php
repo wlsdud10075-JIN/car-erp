@@ -24,7 +24,15 @@ class SavingsStatus extends Model
             $row->created_by ??= auth()->id();
         });
         static::created(function (SavingsStatus $row) {
-            AuditLog::recordEvent($row, 'savings_'.strtolower((string) $row->transaction_type));
+            // 종류별 이벤트 이름 — 사전(config/column_labels.php actions)과 1:1. 가드 = SavingsActorAuditTest.
+            $action = match ($row->transaction_type) {
+                'EARNED' => 'savings_earned',
+                'USED' => 'savings_used',
+                'REFUND' => 'savings_refund',
+                'CANCELLED' => 'savings_cancelled',
+                default => 'savings_adjustment',
+            };
+            AuditLog::recordEvent($row, $action);
         });
     }
 
