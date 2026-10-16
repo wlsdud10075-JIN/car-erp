@@ -27,7 +27,7 @@ class ReceivableHistory extends Model
      *    로컬 SQLite 는 enum 을 강제하지 않아 테스트로도 안 잡힌다([[project_db_tier_mismatch]]).
      *    가드 = ReceivableMethodEnumTest (이 상수 ↔ 마이그레이션 enum 문자열 대조).
      */
-    public const METHODS = ['deposit', 'cash', 'offset', 'other', 'write_off', 'savings', 'misc_loss'];
+    public const METHODS = ['deposit', 'cash', 'offset', 'other', 'write_off', 'savings', 'misc_loss', 'company_income'];   // company_income = 과입금 → 회사이익 전환(2026-10-16, 버튼 전용)
 
     /**
      * 사람이 회수이력 폼에서 **직접 고를 수 있는** 방법 — 검증이 이 목록을 쓴다.

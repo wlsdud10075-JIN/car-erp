@@ -92,6 +92,7 @@ return [
     // 월정산 v3 (2026-10-09) — 급여·인센티브까지 뺀 회사 순이익. 옛 「+ 사내직원 환차」 문구는 08-06 공식 변경 뒤 코드와 어긋나 있었다.
     'company_net_breakdown' => '총마진 ₩:margin − 실지급 ₩:payout(급여·인센티브 포함) − 발송비 ₩:shipping − 공통 인건비 ₩:labor',
     'company_fx_absorbed' => '사내직원 환차 회사 흡수: ₩:fx',
+    'company_overpay_income' => '+ 과입금 회사이익 ₩:amount (채권관리에서 전환한 것, 이 기간 전환일 기준)',
     'company_contrib_title' => '인원별 회사기여 (상위 10명)',
     'company_contrib_empty' => '기간 내 지급완료 정산이 없습니다.',
     'company_contrib_note' => '회사 기여 = 총마진 − 실지급(급여·인센티브 포함) − 발송비. 지분율 = 기여 ÷ 기여 합(음수는 음수로). 이름을 누르면 정산관리의 그 담당자 카드로 갑니다.',

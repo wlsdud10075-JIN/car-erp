@@ -869,7 +869,7 @@ class Vehicle extends Model
      * · `misc_loss` = **과입금 정리의 기록**(2026-09-09). 🚨 여기 안 넣으면 정리 직후 미수가
      *   다시 음수로 돌아간다 — 잔금을 감액해 0 으로 만든 만큼을 이 행이 또 빼기 때문이다.
      */
-    public const MIRRORED_RECEIVABLE_METHODS = ['deposit', 'savings', 'misc_loss'];
+    public const MIRRORED_RECEIVABLE_METHODS = ['deposit', 'savings', 'misc_loss', 'company_income'];   // company_income(2026-10-16) = 과입금 → 회사이익 기록, misc_loss 와 같은 이유로 제외
 
     /**
      * 판매탭發 savings_used 변경 시 회수이력 미러 행 생성을 건너뛰는 플래그 (2026-07-28).
