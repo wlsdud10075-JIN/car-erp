@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Livewire;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -38,8 +39,20 @@ class AdminDashboardLeadTest extends TestCase
     {
         $this->actingAs($this->admin());
         $this->get(route('admin.dashboard', ['dateType' => 'purchase']))->assertOk()->assertSee('data-period-basis', false);
-        $c = Volt::test('admin.dashboard')->set('dateType', 'purchase');
-        $this->assertSame('purchase', $c->get('dateType'));
+        $this->assertSame('purchase', Livewire::withQueryParams(['dateType' => 'purchase'])->test('admin.dashboard')->get('dateType'), 'URL 의 dateType 은 탭이 덮지 않는다');
+        $this->assertSame('sale', Livewire::withQueryParams([])->test('admin.dashboard')->get('dateType'), '없으면 탭(영업) 기준 = 판매일');
+    }
+
+    /** 탭 전환은 캐시 salt 를 안 올린다 — remembered 키에 dateType 이 있어 되돌아온 탭은 캐시 히트(회사이익 10초 재계산 방지). */
+    public function test_switching_tabs_does_not_bust_the_cache(): void
+    {
+        $this->actingAs($this->admin());
+        $c = Volt::test('admin.dashboard');
+        $salt = $c->get('cacheSalt');
+        $c->set('tab', 'receivable')->set('tab', 'sales');
+        $this->assertSame($salt, $c->get('cacheSalt'));
+        $c->call('applyFilters');
+        $this->assertSame($salt + 1, $c->get('cacheSalt'), '[조회]는 종전대로 새로 센다');
     }
 
     /** 리드 2카드(회사 순이익·받을 돈)가 탭 위에 있고, 기준일 select 와 채권 탭의 중복 미수 카드는 없다. */
