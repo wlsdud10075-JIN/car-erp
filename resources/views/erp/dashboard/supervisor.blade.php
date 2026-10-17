@@ -1,7 +1,8 @@
 {{-- 업무 대시보드 · 업무관리자 뷰 (jin 2026-10-17: 결재는 대표 — 여기는 올릴 것·멈춘 것·팀별 미처리·보고용 숫자). $this = erp.dashboard 컴포넌트. --}}
 @php
     $s = $this->submissionStatus;
-    $stuck = $this->stuckVehicles;
+    $sp = $this->stuckPaged;
+    $stuck = $sp['rows'];
     $teams = $this->managerTeams;
     $report = $this->reportNumbers;
     $managerNames = $this->managerNames;
@@ -61,7 +62,7 @@
 {{-- 오래 멈춘 차 --}}
 <div class="card" data-supervisor-stuck>
     <div class="flex items-center justify-between">
-        <div class="section-header"><span class="section-dot bg-red-500"></span><span class="section-title">{{ $t('stuck.title') }}</span></div>
+        <div class="section-header"><span class="section-dot bg-red-500"></span><span class="section-title">{{ $t('stuck.title') }}</span>@if($sp['total']) <span class="pill-count">{{ $t('stuck.total', ['n' => $sp['total']]) }}</span>@endif</div>
         <span class="text-xs text-gray-500">{{ $t('stuck.sub') }}</span>
     </div>
     @if($stuck->isEmpty())
@@ -88,6 +89,17 @@
             </tbody>
         </table>
     </div>
+    @if($sp['pages'] > 1)
+    {{-- 15대씩 — 페이지 상태는 Livewire 프로퍼티(stuckPage). 공용 paginator 는 ?page= 링크라 안 쓴다. --}}
+    <div class="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-gray-500" data-supervisor-stuck-pager>
+        <span>{{ $t('stuck.page', ['from' => $sp['from'], 'to' => $sp['to'], 'total' => $sp['total']]) }}</span>
+        <div class="flex items-center gap-1">
+            <button type="button" wire:click="moveStuckPage(-1)" class="rounded border border-gray-300 bg-white px-2 py-1 text-gray-700 hover:bg-gray-50 {{ $sp['page'] <= 1 ? 'pointer-events-none opacity-40' : '' }}">‹ {{ $t('stuck.prev') }}</button>
+            <span class="px-1 tabular-nums">{{ $sp['page'] }} / {{ $sp['pages'] }}</span>
+            <button type="button" wire:click="moveStuckPage(1)" class="rounded border border-gray-300 bg-white px-2 py-1 text-gray-700 hover:bg-gray-50 {{ $sp['page'] >= $sp['pages'] ? 'pointer-events-none opacity-40' : '' }}">{{ $t('stuck.next') }} ›</button>
+        </div>
+    </div>
+    @endif
     @endif
 </div>
 

@@ -26,6 +26,14 @@ use Illuminate\Support\Facades\DB;
  */
 class WorkDashboardData
 {
+    /** 오래 멈춘 차 큐 — 멈춘 곳 => [action 키, 기준 날짜 컬럼, 추가 스코프명]. 단일 출처(목록·대수가 같이 본다). 「떠났나」는 Vehicle::notDeparted() 를 부른다(조건 복사 금지). */
+    public const STUCK_QUEUES = [
+        'clearance' => ['clearance_stuck', 'sale_date', null],
+        'deregistration' => ['deregistration_due', 'purchase_date', null],
+        'receivable' => ['receivable_danger', 'sale_date', 'notDeparted'],
+        'eta' => ['eta_missing', 'shipping_date', null],
+    ];
+
     private string $today;
 
     public function __construct()
@@ -268,27 +276,42 @@ class WorkDashboardData
     }
 
     /**
-     * 오래 멈춘 차 — 이미 있는 정체 큐 4개를 합쳐 오래된 순.
-     * 통관 정체(판매 후 30일·면장 없음) · 말소 기한(매입 완납 후 N일) · 미수 stale(안 떠났는데 판매 후 N일, danger) · ETA 없음(선적일 있음).
+     * 오래 멈춘 차 — 기존 정체 큐 4개(통관 정체 30일 · 말소 기한 · 미수 stale(안 떠남) · ETA 없음)를 합쳐 오래된 순.
+     * 🚫 새 N일 기준을 만들지 않는다(jin 2026-10-17). 같은 차가 두 큐에 걸리면 두 줄(멈춘 곳이 다르다).
+     * 전량을 돌려준다 — 페이지는 호출자가 자른다(jin 10-17 «너무 많아지면 아래로 쭉 나열될 순 없잖아»).
+     * 실측 ssancarerp 10-17 = 399줄 · 전량 로드 0.08초라 PHP 에서 잘라도 된다. $limit 은 옛 호출 호환(상위 N줄).
      *
-     * @return Collection<int, array{vehicle: Vehicle, where: string, days: int|null}>
+     * @return Collection<int, array{vehicle: Vehicle, where: string, days: ?int}>
      */
-    public function stuckVehicles(?array $sids = null, int $limit = 15): Collection
+    public function stuckVehicles(?array $sids = null, ?int $limit = null): Collection
     {
-        $pick = fn (string $action, string $where, string $dateCol, ?callable $extra = null) => $this->base($sids)->action($action)
-            ->when($extra, fn ($q) => $extra($q))
-            ->with(['salesman:id,name'])
-            ->orderByRaw($dateCol.' IS NULL, '.$dateCol.' ASC')->limit($limit)->get()
-            ->map(fn (Vehicle $v) => ['vehicle' => $v, 'where' => $where, 'days' => $this->daysSince($v->{$dateCol})]);
+        $rows = collect();
+        foreach (self::STUCK_QUEUES as $where => [$action, $dateCol, $scope]) {
+            $rows = $rows->merge($this->stuckQuery($sids, $action, $scope)
+                ->with(['salesman:id,name'])
+                ->orderByRaw($dateCol.' IS NULL, '.$dateCol.' ASC')->get()
+                ->map(fn (Vehicle $v) => ['vehicle' => $v, 'where' => $where, 'days' => $this->daysSince($v->{$dateCol})]));
+        }
 
-        $rows = collect()
-            ->merge($pick('clearance_stuck', 'clearance', 'sale_date'))
-            ->merge($pick('deregistration_due', 'deregistration', 'purchase_date'))
-            ->merge($pick('receivable_danger', 'receivable', 'sale_date', fn ($q) => $q->notDeparted()))
-            ->merge($pick('eta_missing', 'eta', 'shipping_date'));
+        $rows = $rows->unique(fn ($r) => $r['vehicle']->id.'|'.$r['where'])->sortByDesc('days')->values();
 
-        return $rows->unique(fn ($r) => $r['vehicle']->id.'|'.$r['where'])
-            ->sortByDesc('days')->take($limit)->values();
+        return $limit === null ? $rows : $rows->take($limit)->values();
+    }
+
+    /** 오래 멈춘 차 대수 — 모델을 안 띄우고 센다(관리별 팀 표). 큐마다 「멈춘 곳」이 달라 합이 곧 줄 수다. */
+    public function stuckCount(?array $sids = null): int
+    {
+        $n = 0;
+        foreach (self::STUCK_QUEUES as [$action, $dateCol, $scope]) {
+            $n += $this->stuckQuery($sids, $action, $scope)->count();
+        }
+
+        return $n;
+    }
+
+    private function stuckQuery(?array $sids, string $action, ?string $scope): Builder
+    {
+        return $this->base($sids)->action($action)->when($scope, fn ($q) => $q->{$scope}());
     }
 
     /**
@@ -354,7 +377,7 @@ class WorkDashboardData
             'risk_count' => $totals['risk_count'],
             'purchase_krw' => $totals['purchase_krw'],
             'held' => Settlement::query()->payoutHeldByUnpaid()->whereIn('salesman_id', $sids)->count(),
-            'stuck' => $this->stuckVehicles($sids, 200)->count(),
+            'stuck' => $this->stuckCount($sids),
         ];
     }
 
