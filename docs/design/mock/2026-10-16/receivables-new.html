@@ -1,0 +1,332 @@
+<!doctype html>
+<!-- 목업 · ERP 코드 아님 · 채권관리를 브리프 §3 + 역할 모델(10-17, 관리 = 담당 영업 범위)로 새로 그린 것 · 실제 빌드 CSS·사이드바 · 숫자는 샘플 · 2026-10-17 -->
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>채권관리 · 새 모양</title>
+<link rel="preconnect" href="https://fonts.bunny.net">
+<link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
+<link rel="stylesheet" href="../../../../public/build/assets/app-Dle1_J6q.css" />
+<style>
+  /* 빌드 CSS 에 없어 보충한 것(목업 전용): mock-side(폰에서 사이드바 숨김·md 이상 flex) · mock-chart(차트 자리) · mock-details(펼치기 표식). section-dot 은 bg-gray-300(빌드에 400 없음) */
+  .mock-side{display:none}@media (min-width:768px){.mock-side{display:flex}}
+  .mock-chart{height:200px;border:1px dashed #d1d5db;border-radius:8px;background:#f9fafb;display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:12px}
+  .mock-details>summary{list-style:none}.mock-details>summary::-webkit-details-marker{display:none}
+  .mock-details>summary::after{content:"펼치기";margin-left:6px;color:var(--color-primary-text)}.mock-details[open]>summary::after{content:"접기"}
+  .badge-orange{background:#ffedd5;color:#c2410c}
+  .mk-rows>*+*{border-top:1px solid #f3f4f6} .mk-sep{margin:0 12px;color:#d1d5db} .list-disc{list-style:disc}
+  .mk-row{background:linear-gradient(90deg,rgba(239,68,68,.10) var(--ratio,0%),transparent var(--ratio,0%))}
+  .mk-row.critical{background:linear-gradient(90deg,rgba(239,68,68,.18) var(--ratio,0%),transparent var(--ratio,0%))}
+  .mk-grid5{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}@media (max-width:1000px){.mk-grid5{grid-template-columns:1fr}.mk-span3,.mk-span2{grid-column:auto}}
+  .mk-span3{grid-column:span 3} .mk-span2{grid-column:span 2} .mk-lead{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 32px}
+</style>
+</head>
+<body class="min-h-screen bg-gray-50">
+<div class="flex min-h-screen">
+    <aside class="app-sidebar mock-side flex-col text-white shrink-0 sticky top-0 h-screen" style="width:220px">
+        <div class="flex items-center h-12 px-2 border-b border-white/5 shrink-0">
+            <a href="#"
+               class="flex items-center gap-2 overflow-hidden w-full">
+                <span class="flex items-center justify-center w-7 h-7 rounded-md text-white text-[10px] font-bold shrink-0"
+                      style="background-color: var(--color-primary);">ERP</span>
+                <span class="flex-1 min-w-0 truncate text-[13px] font-medium text-white">SSANCAR ERP</span>
+            </a>
+        </div>
+        <div class="px-3 py-3 border-b border-white/5 shrink-0 overflow-hidden">
+            <div>
+                <div class="text-[13px] font-medium text-white truncate">시스템관리자</div>
+                <div class="text-[11px]" style="color: var(--color-sidebar-text);">시스템관리자</div>
+            </div>
+        </div>
+        <nav class="flex-1 overflow-y-auto py-3 space-y-3">
+                                                    <div>
+                        <button type="button"
+                                class="sidebar-section-label flex w-full items-center justify-between hover:text-white">
+                            <span>메인</span>
+                            <svg class="h-3 w-3 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/></svg>
+                                    <span class="flex-1 truncate">대시보드</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 17v-6m6 6V7m6 10v-4m6 4V5"/></svg>
+                                    <span class="flex-1 truncate">관리자 대시보드</span>
+                                                                    </a>
+                                                    </div>
+                    </div>
+                                                    <div>
+                        <button type="button"
+                                class="sidebar-section-label flex w-full items-center justify-between hover:text-white">
+                            <span>업무</span>
+                            <svg class="h-3 w-3 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 17h8m-8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 11-4 0 2 2 0 014 0zM3 4h10v13H3V4zm10 4h4l3 4v5h-7V8z"/></svg>
+                                    <span class="flex-1 truncate">차량 관리</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 21V5a2 2 0 012-2h12a2 2 0 012 2v16M4 21h16M9 7h6m-6 4h6m-6 4h6m-3 6v-4"/></svg>
+                                    <span class="flex-1 truncate">재고관리</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2zm5 5a2 2 0 11-4 0 2 2 0 014 0zm-2 4a4 4 0 00-4 4h8a4 4 0 00-4-4zm6-3h6m-6 4h6"/></svg>
+                                    <span class="flex-1 truncate">수출통관</span>
+                                                                        <span
+                                          class="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                        65
+                                    </span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item is-active">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 8h18v8H3V8zm9 4a2 2 0 11-4 0 2 2 0 014 0zm-9 0h.01M21 12h.01"/></svg>
+                                    <span class="flex-1 truncate">채권관리</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 5V3a2 2 0 012-2h2a2 2 0 012 2v2m-7 0h12a2 2 0 012 2v11a2 2 0 01-2 2H4a2 2 0 01-2-2V7a2 2 0 012-2h3z"/></svg>
+                                    <span class="flex-1 truncate">사내직원관리</span>
+                                                                    </a>
+                                                    </div>
+                    </div>
+                                                    <div>
+                        <button type="button"
+                                class="sidebar-section-label flex w-full items-center justify-between hover:text-white">
+                            <span>통관·선적</span>
+                            <svg class="h-3 w-3 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                                    <span class="flex-1 truncate">알림</span>
+                                                                        <span
+                                          class="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                        10
+                                    </span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 17h8m-8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 11-4 0 2 2 0 014 0zM3 4h10v13H3V4zm10 4h4l3 4v5h-7V8z"/></svg>
+                                    <span class="flex-1 truncate">선적요청</span>
+                                                                        <span
+                                          class="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                        2
+                                    </span>
+                                                                    </a>
+                                                    </div>
+                    </div>
+                                                    <div>
+                        <button type="button"
+                                class="sidebar-section-label flex w-full items-center justify-between hover:text-white">
+                            <span>고객관리</span>
+                            <svg class="h-3 w-3 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                    <span class="flex-1 truncate">바이어</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 8h18v8H3V8zm9 4a2 2 0 11-4 0 2 2 0 014 0zm-9 0h.01M21 12h.01"/></svg>
+                                    <span class="flex-1 truncate">바이어 정산현황</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2zm5 5a2 2 0 11-4 0 2 2 0 014 0zm-2 4a4 4 0 00-4 4h8a4 4 0 00-4-4zm6-3h6m-6 4h6"/></svg>
+                                    <span class="flex-1 truncate">컨사이니</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 21V5a2 2 0 012-2h12a2 2 0 012 2v16M4 21h16M9 7h6m-6 4h6m-6 4h6m-3 6v-4"/></svg>
+                                    <span class="flex-1 truncate">포워딩사</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 21V5a2 2 0 012-2h12a2 2 0 012 2v16M4 21h16M9 7h6m-6 4h6m-6 4h6m-3 6v-4"/></svg>
+                                    <span class="flex-1 truncate">항구 정보</span>
+                                                                    </a>
+                                                    </div>
+                    </div>
+                                                    <div>
+                        <button type="button"
+                                class="sidebar-section-label flex w-full items-center justify-between hover:text-white">
+                            <span>결제·승인</span>
+                            <svg class="h-3 w-3 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 7h6m-6 4h6m-6 4h6m-9 5h12a2 2 0 002-2V5a2 2 0 00-2-2H6a2 2 0 00-2 2v14a2 2 0 002 2z"/></svg>
+                                    <span class="flex-1 truncate">정산 처리</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    <span class="flex-1 truncate">승인 큐</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 8h18v8H3V8zm9 4a2 2 0 11-4 0 2 2 0 014 0zm-9 0h.01M21 12h.01"/></svg>
+                                    <span class="flex-1 truncate">월정산 지급</span>
+                                                                        <span
+                                          class="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                        1
+                                    </span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 8h18v8H3V8zm9 4a2 2 0 11-4 0 2 2 0 014 0zm-9 0h.01M21 12h.01"/></svg>
+                                    <span class="flex-1 truncate">재무 처리</span>
+                                                                        <span
+                                          class="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                        23
+                                    </span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 8h18v8H3V8zm9 4a2 2 0 11-4 0 2 2 0 014 0zm-9 0h.01M21 12h.01"/></svg>
+                                    <span class="flex-1 truncate">예치·가수금</span>
+                                                                    </a>
+                                                    </div>
+                    </div>
+                                                    <div>
+                        <button type="button"
+                                class="sidebar-section-label flex w-full items-center justify-between hover:text-white">
+                            <span>기타관리</span>
+                            <svg class="h-3 w-3 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+                                    <span class="flex-1 truncate">사용자 관리</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                                    <span class="flex-1 truncate">기능 설정</span>
+                                                                    </a>
+                                                    </div>
+                    </div>
+                                                    <div>
+                        <button type="button"
+                                class="sidebar-section-label flex w-full items-center justify-between hover:text-white">
+                            <span>로그</span>
+                            <svg class="h-3 w-3 shrink-0 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+                        <div>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2zm5 5a2 2 0 11-4 0 2 2 0 014 0zm-2 4a4 4 0 00-4 4h8a4 4 0 00-4-4zm6-3h6m-6 4h6"/></svg>
+                                    <span class="flex-1 truncate">문서 접근 로그</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                    <span class="flex-1 truncate">감사 로그</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                                    <span class="flex-1 truncate">알림톡 로그</span>
+                                                                        <span
+                                          class="ml-auto rounded-full bg-amber-500 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                                        1
+                                    </span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                                    <span class="flex-1 truncate">알림톡 안내</span>
+                                                                    </a>
+                                                            <a href="#"
+                                   class="sidebar-item ">
+                                    <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></svg>
+                                    <span class="flex-1 truncate">메일 발송 로그</span>
+                                                                    </a>
+                                                    </div>
+                    </div>
+                                    </nav>
+        <div class="border-t border-white/5 py-2 shrink-0">
+            <a href="#"
+               class="sidebar-item">
+                <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+                <span class="flex-1 truncate">업무 가이드</span>
+                <svg class="ml-auto h-3 w-3 opacity-60 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5h5m0 0v5m0-5L10 14M9 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-3"/>
+                </svg>
+            </a>
+            <a href="#"
+               class="sidebar-item ">
+                <svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                <span class="truncate">내 설정</span>
+            </a>
+            <a href="#" class="sidebar-item"><svg class="sidebar-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg><span class="truncate">로그아웃</span></a>
+        </div>
+    </aside>
+    <div class="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <header class="flex items-center h-11 bg-white border-b border-gray-200 px-3 shrink-0">
+            <button type="button" class="flex items-center justify-center w-8 h-8 rounded text-gray-600 hover:bg-gray-100 transition" aria-label="사이드바 토글">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 6h16M4 12h16M4 18h16"/></svg>
+            </button>
+            <div class="ml-2 text-[13px] text-gray-700 truncate">채권관리</div>
+            <div class="flex-1"></div>
+        </header>
+        <main class="flex-1 overflow-auto bg-gray-50">
+            <div class="p-3 md:p-6">
+<details class="mock-details mb-3 rounded-lg border border-dashed border-violet-300 bg-violet-50/40 px-3 py-1.5 text-[12px] text-violet-800"><summary class="cursor-pointer font-semibold">목업 · 채권관리 <b>새 모양</b> — 이 화면이 묻는 질문과 구성</summary><ul class="mt-1 list-disc pl-5"><li>질문 = 「미수가 전부 얼마고, 이 차·이 바이어는 어디 있나」 → 맨 위 = <b>리드 숫자(총 미수 · 선적후/선적전 · 위험 등급 대수)</b> 와 <b>검색창</b>을 같은 무게로</li><li>🆕 역할 모델(10-17): <b>관리는 기본이 「내 담당 영업」 범위</b>(칩으로 전체 ↔ 영업 한 명) — 지금 ERP 채권관리는 관리도 전체를 본다(<code>receivables/index:99</code>). 재무·업무관리자·대표는 전체가 기본</li><li>KPI 카드 5장 → 리드 한 줄(총 매출·총 입금·미수율은 작은 글씨) · 필터 8종 중 <b>위험도·담당자만 노출</b>, 나머지는 「필터 더보기」</li><li>표 14열 → <b>9열</b>: 차량(번호 + 브랜드·VIN 끝 6) · 담당 · 바이어 · 판매합계 · 미납금+% · 경과일 · 위험도 · BL · 채권담당. 번호 열 제거. 주의(amber)/위험(orange) 색을 가름. 행 배경 게이지 유지(범례 없음)</li><li>분류 탭 6 · 통화 pill · 조건부 띠 · 회수 이력 패널(행 클릭)은 <b>불변</b> — 이 목업엔 패널을 안 그렸다</li></ul></details>
+<div class="flex flex-wrap items-end justify-between gap-3">
+    <div><h2 class="text-xl font-bold text-gray-800">채권관리</h2><p class="text-xs text-gray-500">판매 미수금의 전체 규모와 차량별 회수 · 관리 최영숙 · 2026년 10월 17일</p></div>
+    <div class="flex items-center gap-2 text-xs text-gray-500"><span>통화</span><div class="flex items-center gap-1"><button type="button" class="tab-pill is-active px-3 py-1 text-xs">전체(₩)</button><button type="button" class="tab-pill px-3 py-1 text-xs">USD</button><button type="button" class="tab-pill px-3 py-1 text-xs">EUR</button><button type="button" class="tab-pill px-3 py-1 text-xs">JPY</button></div></div>
+</div>
+<div class="mt-2 flex flex-wrap items-center gap-1"><span class="mr-1 text-xs text-gray-500">범위</span><button type="button" class="tab-pill is-active px-3 py-1 text-xs">내 담당 영업 4명</button><button type="button" class="tab-pill px-3 py-1 text-xs">김영업</button><button type="button" class="tab-pill px-3 py-1 text-xs">박영진</button><button type="button" class="tab-pill px-3 py-1 text-xs">이도현</button><button type="button" class="tab-pill px-3 py-1 text-xs">강민수 <span class="text-[10px] text-gray-400">(위임)</span></button><button type="button" class="tab-pill px-3 py-1 text-xs">회사 전체</button><span class="ml-2 text-[11px] text-gray-400">관리는 담당 영업이 기본 · 재무·업무관리자·대표는 전체가 기본</span></div><div class="mt-4 mk-grid5">
+  <div class="card mk-span3">
+    <div class="mk-lead">
+      <div><div class="text-xs text-gray-500">총 미수금 <span class="text-gray-400">· 27대 · 기간 무관 · 내 담당 영업</span></div><div class="text-3xl font-bold tracking-tight text-gray-900 tabular-nums">₩312,600,000</div></div>
+      <div class="text-sm tabular-nums"><div><span class="text-gray-500">선적후</span> <b class="text-gray-800">₩198,700,000</b> <span class="text-gray-400">11대</span></div><div><span class="text-gray-500">선적전</span> <b class="text-gray-800">₩113,900,000</b> <span class="text-gray-400">16대</span></div></div>
+      <div class="text-sm"><div class="flex gap-1"><span class="badge whitespace-nowrap badge-red">심각 3</span> <span class="badge whitespace-nowrap badge-orange">위험 6</span> <span class="badge whitespace-nowrap badge-amber">주의 9</span></div><div class="mt-1 text-xs text-gray-500">결제대기(채권 제외) 4대 · ₩27,900,000</div></div>
+    </div>
+    <p class="mt-3 text-xs text-gray-500 tabular-nums">총 매출 ₩2,418,000,000 · 총 입금 ₩2,105,400,000 (입금률 87.1%) · 미수율 12.9% · 미납률 평균 31.4%</p>
+  </div>
+  <div class="card mk-span2 flex flex-col justify-center">
+    <label class="text-xs text-gray-500">차량·바이어·VIN 찾기</label>
+    <div class="mt-1 flex gap-2"><input class="input-base flex-1 min-w-0" placeholder="차량번호, 바이어, 차대번호 끝 6자리"><button type="button" class="btn-primary px-3 py-1.5 text-xs">검색</button></div>
+    <p class="mt-2 text-[11px] text-gray-400">Enter 로도 실행됩니다. 치는 동안 목록이 바뀌지 않습니다.</p>
+  </div>
+</div><div class="mt-4 flex flex-wrap items-center gap-1"><button type="button" class="tab-pill is-active px-3 py-1 text-xs">채권 전체 <span class="pill-count">27</span></button><button type="button" class="tab-pill px-3 py-1 text-xs">결제대기 <span class="pill-count">4</span></button><button type="button" class="tab-pill px-3 py-1 text-xs">선적전 미수 <span class="pill-count">16</span></button><button type="button" class="tab-pill px-3 py-1 text-xs">선적후 미수 <span class="pill-count">11</span></button><button type="button" class="tab-pill px-3 py-1 text-xs">디파짓(적립금 사용) <span class="pill-count">2</span></button><button type="button" class="tab-pill px-3 py-1 text-xs">완납 <span class="pill-count">118</span></button></div><p class="mt-1 text-[11px] text-gray-400">채권 전체 = 결제대기 + 선적전 + 선적후. 기간과 무관하게 지금 남은 잔액 전부.</p><div class="mt-3 card-tight card"><div class="flex flex-wrap items-center gap-2 text-xs">
+  <span class="text-gray-500">위험도</span><div class="flex flex-wrap gap-1"><button type="button" class="tab-pill is-active px-3 py-1 text-xs">전체</button><button type="button" class="tab-pill px-3 py-1 text-xs">결제대기</button><button type="button" class="tab-pill px-3 py-1 text-xs">안전</button><button type="button" class="tab-pill px-3 py-1 text-xs">주의</button><button type="button" class="tab-pill px-3 py-1 text-xs">위험</button><button type="button" class="tab-pill px-3 py-1 text-xs">심각</button></div>
+  <span class="ml-2 text-gray-500">담당자</span><select class="input-filter"><option>내 담당 영업 전체</option><option>김영업</option><option>박영진</option><option>이도현</option><option>강민수</option></select>
+  <details class="ml-auto"><summary class="cursor-pointer rounded border border-gray-300 bg-white px-2 py-1 text-gray-700">필터 더보기 ▾</summary>
+  <div class="mt-2 flex flex-wrap gap-2"><select class="input-filter"><option>바이어 전체</option></select><select class="input-filter"><option>진행상태 전체</option></select><select class="input-filter"><option>취소 구분: 전체</option><option>정상만</option><option>매입취소만</option><option>과입금만</option></select><select class="input-filter"><option>미납률: ALL</option><option>30%↑</option><option>50%↑</option><option>70%↑</option></select><input class="input-base w-28" placeholder="판매일 시작"><input class="input-base w-28" placeholder="판매일 끝"></div></details>
+</div></div><div class="mt-3 card"><div class="flex items-center justify-between text-xs text-gray-500"><span>27건 중 1–8 · 미납금 많은 순 <a href="#" class="ml-2 text-primary-text">오래된 순으로 →</a></span><select class="input-filter"><option>10건</option><option>30건</option><option>50건</option><option>100건</option></select></div><div class="mt-2 overflow-x-auto rounded-lg border border-gray-200"><table class="w-full min-w-[880px] text-xs tabular-nums"><thead><tr class="bg-gray-50 text-[11px] font-semibold uppercase tracking-wide text-gray-500"><th class="px-2 py-1.5 text-left">차량</th><th class="px-2 py-1.5 text-left">담당</th><th class="px-2 py-1.5 text-left">바이어</th><th class="px-2 py-1.5 text-right">판매합계</th><th class="px-2 py-1.5 text-right">미납금 · 미납률 ▾</th><th class="px-2 py-1.5 text-right">경과일</th><th class="px-2 py-1.5 text-left">위험도</th><th class="px-2 py-1.5 text-left">BL</th><th class="px-2 py-1.5 text-left">채권담당</th></tr></thead><tbody class="mk-rows whitespace-nowrap text-gray-800"><tr class="mk-row" style="--ratio:62%"><td class="px-2 py-2"><div class="font-medium text-gray-900">66가5363</div><div class="text-[11px] text-gray-500">BMW 520d · …850942</div></td><td class="px-2 py-2">김영업</td><td class="px-2 py-2">AUTO BRIXH</td><td class="px-2 py-2 text-right">€16,230</td><td class="px-2 py-2 text-right"><span class="font-semibold text-red-700">€10,060</span> <span class="text-gray-500">62%</span></td><td class="px-2 py-2 text-right">64일</td><td class="px-2 py-2"><span class="badge whitespace-nowrap badge-orange">위험</span></td><td class="px-2 py-2"><span class="text-gray-300">-</span></td><td class="px-2 py-2">최영숙</td></tr><tr class="mk-row critical" style="--ratio:100%"><td class="px-2 py-2"><div class="font-medium text-gray-900">45로1177</div><div class="text-[11px] text-gray-500">Kia Sorento · …778899</div></td><td class="px-2 py-2">김영업</td><td class="px-2 py-2">EASY DRIVE</td><td class="px-2 py-2 text-right">€9,500</td><td class="px-2 py-2 text-right"><span class="font-semibold text-red-700">€9,500</span> <span class="text-gray-500">100%</span></td><td class="px-2 py-2 text-right">38일</td><td class="px-2 py-2"><span class="badge whitespace-nowrap badge-red">심각</span></td><td class="px-2 py-2"><span class="badge whitespace-nowrap badge-gray">B/L ✓</span></td><td class="px-2 py-2">최영숙</td></tr><tr class="mk-row" style="--ratio:40%"><td class="px-2 py-2"><div class="font-medium text-gray-900">12너4481</div><div class="text-[11px] text-gray-500">Hyundai Santa Fe · …112233</div></td><td class="px-2 py-2">김영업</td><td class="px-2 py-2">AUTO BRIXH</td><td class="px-2 py-2 text-right">€12,000</td><td class="px-2 py-2 text-right"><span class="font-semibold text-red-700">€4,800</span> <span class="text-gray-500">40%</span></td><td class="px-2 py-2 text-right">97일</td><td class="px-2 py-2"><span class="badge whitespace-nowrap badge-orange">위험</span></td><td class="px-2 py-2"><span class="text-gray-300">-</span></td><td class="px-2 py-2">-</td></tr><tr class="mk-row" style="--ratio:50%"><td class="px-2 py-2"><div class="font-medium text-gray-900">19더9065</div><div class="text-[11px] text-gray-500">Mercedes E220d · …334455</div></td><td class="px-2 py-2">박영진</td><td class="px-2 py-2">VIA MOTORS</td><td class="px-2 py-2 text-right">€12,000</td><td class="px-2 py-2 text-right"><span class="font-semibold text-red-700">€6,000</span> <span class="text-gray-500">50%</span></td><td class="px-2 py-2 text-right">41일</td><td class="px-2 py-2"><span class="badge whitespace-nowrap badge-amber">주의</span></td><td class="px-2 py-2"><span class="text-gray-300">-</span></td><td class="px-2 py-2">최영숙</td></tr><tr class="mk-row" style="--ratio:15%"><td class="px-2 py-2"><div class="font-medium text-gray-900">88모2203</div><div class="text-[11px] text-gray-500">Genesis G80 · …556677</div></td><td class="px-2 py-2">박영진</td><td class="px-2 py-2">VIA MOTORS</td><td class="px-2 py-2 text-right">€9,000</td><td class="px-2 py-2 text-right"><span class="font-semibold text-red-700">€1,350</span> <span class="text-gray-500">15%</span></td><td class="px-2 py-2 text-right">22일</td><td class="px-2 py-2"><span class="badge whitespace-nowrap badge-amber">주의</span></td><td class="px-2 py-2"><span class="text-gray-300">-</span></td><td class="px-2 py-2">-</td></tr><tr class="mk-row" style="--ratio:10%"><td class="px-2 py-2"><div class="font-medium text-gray-900">70루8808</div><div class="text-[11px] text-gray-500">Toyota Camry · …998877</div></td><td class="px-2 py-2">이도현</td><td class="px-2 py-2">KORA TRADE</td><td class="px-2 py-2 text-right">$9,800</td><td class="px-2 py-2 text-right"><span class="font-semibold text-red-700">$980</span> <span class="text-gray-500">10%</span></td><td class="px-2 py-2 text-right">19일</td><td class="px-2 py-2"><span class="badge whitespace-nowrap badge-amber">주의</span></td><td class="px-2 py-2"><span class="text-gray-300">-</span></td><td class="px-2 py-2">-</td></tr><tr class="mk-row critical" style="--ratio:1%"><td class="px-2 py-2"><div class="font-medium text-gray-900">21소0281</div><div class="text-[11px] text-gray-500">Audi A6 · …221100</div></td><td class="px-2 py-2">이도현</td><td class="px-2 py-2">RUDI AUTO</td><td class="px-2 py-2 text-right">€8,803</td><td class="px-2 py-2 text-right"><span class="font-semibold text-red-700">€87</span> <span class="text-gray-500">1%</span></td><td class="px-2 py-2 text-right">182일</td><td class="px-2 py-2"><span class="badge whitespace-nowrap badge-red">심각</span></td><td class="px-2 py-2"><span class="badge whitespace-nowrap badge-gray">B/L ✓</span></td><td class="px-2 py-2">최영숙</td></tr><tr class="mk-row" style="--ratio:30%"><td class="px-2 py-2"><div class="font-medium text-gray-900">58도7720</div><div class="text-[11px] text-gray-500">Hyundai Tucson · …443322</div></td><td class="px-2 py-2">강민수</td><td class="px-2 py-2">ATLAS GROUP</td><td class="px-2 py-2 text-right">€8,000</td><td class="px-2 py-2 text-right"><span class="font-semibold text-red-700">€2,400</span> <span class="text-gray-500">30%</span></td><td class="px-2 py-2 text-right">8일</td><td class="px-2 py-2"><span class="badge whitespace-nowrap badge-blue">결제대기</span></td><td class="px-2 py-2"><span class="text-gray-300">-</span></td><td class="px-2 py-2">-</td></tr></tbody></table></div><p class="mt-2 text-[11px] text-gray-400">행을 누르면 회수 이력 패널(회수 기록 · 방법 6종 · 과입금 전환 · 채권담당 지정)이 열립니다 — 현행 그대로.</p></div>
+            </div>
+        </main>
+    </div>
+</div>
+</body>
+</html>
