@@ -364,6 +364,31 @@ select:focus[data-flux-control] {
     transition: width 0.22s ease;
 }
 
+/* 메뉴가 창 높이를 넘으면 nav 가 스크롤되는데(05-08 이식 때부터), 메뉴 26개 = 1166px 라 보통 모니터에서 흰 스크롤바가
+   드러난다(jin 2026-10-17 «원래 안 보였던 걸로 기억 — 눈에 안 띄게»). 동작은 그대로 두고 가늘고 어둡게만. */
+.app-sidebar nav,
+.sidebar-mobile {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+.app-sidebar nav::-webkit-scrollbar,
+.sidebar-mobile::-webkit-scrollbar {
+    width: 6px;
+}
+.app-sidebar nav::-webkit-scrollbar-track,
+.sidebar-mobile::-webkit-scrollbar-track {
+    background: transparent;
+}
+.app-sidebar nav::-webkit-scrollbar-thumb,
+.sidebar-mobile::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 9999px;
+}
+.app-sidebar nav::-webkit-scrollbar-thumb:hover,
+.sidebar-mobile::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.28);
+}
+
 .sidebar-section-label {
     padding: 0 14px;
     margin-bottom: 6px;
