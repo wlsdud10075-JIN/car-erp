@@ -135,4 +135,53 @@ class WorkDashboardRoleViewsTest extends TestCase
         $this->assertSame('eta', $byNo['44라4444']['where'] ?? null);
         $this->assertSame(12, $byNo['44라4444']['days']);
     }
+
+    /** 오래 멈춘 차는 15대씩 넘겨 본다(jin 10-17) — 전량이 잡히고(옛 큐당 15·팀 표 200 상한 없음), 페이지는 경계에서 조여진다. */
+    public function test_stuck_vehicles_are_paged_fifteen_at_a_time(): void
+    {
+        $sm = Salesman::create(['name' => 'PAGE 영업', 'is_active' => true]);
+        foreach (range(1, 17) as $i) {
+            $this->vehicle(['salesman_id' => $sm->id, 'vehicle_number' => sprintf('%02d페%04d', $i, $i), 'sale_price' => 100,
+                'shipping_date' => now()->subDays(10 + $i)->toDateString(), 'eta_date' => null, 'purchase_price' => 100]);
+        }
+        $data = app(WorkDashboardData::class);
+        $this->assertCount(17, $data->stuckVehicles(), '전량 — 큐당 상한 없음');
+        $this->assertSame(17, $data->stuckCount());
+        $this->assertSame(17, $data->stuckCount([$sm->id]));
+        $this->assertSame(17, collect($data->managerTeams())->sum('stuck'), '관리별 팀 표의 멈춘 차 대수도 같은 출처');
+
+        $this->actingAs($this->user('admin'));
+        $c = Volt::test('erp.dashboard')->set('roleView', '업무관리자');
+        $p = $c->instance()->stuckPaged;
+        $this->assertSame([17, 1, 2, 1, 15], [$p['total'], $p['page'], $p['pages'], $p['from'], $p['to']]);
+        $this->assertCount(15, $p['rows']);
+        $this->assertSame(27, $p['rows'][0]['days'], '오래된 순 — 첫 줄이 가장 오래 멈춘 차');
+        $c->assertSee('data-supervisor-stuck-pager', false)->assertSee('17페0017')->assertDontSee('01페0001');
+
+        $c->call('moveStuckPage', 1);
+        $p = $c->instance()->stuckPaged;
+        $this->assertSame([2, 16, 17], [$p['page'], $p['from'], $p['to']]);
+        $this->assertCount(2, $p['rows']);
+        $c->assertSee('01페0001')->assertDontSee('17페0017');
+
+        $c->call('moveStuckPage', 5);
+        $this->assertSame(2, $c->instance()->stuckPaged['page'], '끝을 넘기면 마지막 페이지에 조인다');
+        $c->call('moveStuckPage', -9);
+        $this->assertSame(1, $c->instance()->stuckPaged['page']);
+    }
+
+    /** 영업별 카드는 접힌 한 줄이 기본 — 숫자(미수·미지급·입금률)는 접혀도 보이고, 급한 차 3대는 펼쳐야 나온다(렌더는 되어 있다, x-show). */
+    public function test_team_cards_fold_into_one_line_by_default(): void
+    {
+        $sm = Salesman::create(['name' => 'FOLD 영업', 'is_active' => true, 'type' => 'freelance']);
+        $this->vehicle(['salesman_id' => $sm->id, 'vehicle_number' => '55마5555', 'sale_price' => 10000, 'currency' => 'USD', 'exchange_rate' => 1300, 'purchase_price' => 5_000_000]);
+
+        $this->actingAs($this->user('admin'));
+        $html = Volt::test('erp.dashboard')->set('roleView', '영업')->html();
+        $this->assertStringContainsString('data-team-cards-toggle', $html, '전부 펼치기/접기');
+        $this->assertStringContainsString('data-team-card="'.$sm->id.'"', $html);
+        $this->assertMatchesRegularExpression('/x-show="isOpen\('.$sm->id.'\)"[^>]*x-collapse[^>]*x-cloak[^>]*data-team-card-detail/', $html, '상세는 접힘(x-show) — 기본은 닫힘');
+        $this->assertStringContainsString('55마5555', $html, '급한 차는 렌더돼 있다(접혀 있을 뿐)');
+        $this->assertStringContainsString('wire:key="team-card-'.$sm->id.'"', $html, 'wire:poll 모프를 넘기는 키');
+    }
 }

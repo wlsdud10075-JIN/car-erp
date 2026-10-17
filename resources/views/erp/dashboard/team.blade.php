@@ -16,51 +16,60 @@
     <span>{{ $t('totals.active') }} <b class="text-base text-gray-900">{{ $tt['active_count'] }}{{ __('dashboard.unit_vehicle') }}</b></span>
 </div>
 
-{{-- 영업별 카드 --}}
+{{-- 영업별 카드 — 접힌 한 줄(이름 · 미수 · 미지급 · 입금률)이 기본, 누르면 급한 차 3대 (jin 2026-10-17 «너무 많이 차지한다»).
+     접힘 상태는 Alpine(브라우저) — 「전부 펼치기」만 localStorage 에 남긴다. wire:poll 모프를 넘기도록 카드마다 wire:key. --}}
 @if(count($cards))
-<div class="grid grid-cols-1 gap-3 lg:grid-cols-2" data-team-cards>
+<div data-team-cards wire:key="team-cards" x-data="{
+    all: (() => { try { return localStorage.getItem('erp_dashboard_team_cards_all') === '1'; } catch (e) { return false; } })(),
+    open: {},
+    isOpen(id) { return id in this.open ? this.open[id] : this.all; },
+    toggle(id) { this.open[id] = ! this.isOpen(id); },
+    setAll(v) { this.all = v; this.open = {}; try { localStorage.setItem('erp_dashboard_team_cards_all', v ? '1' : '0'); } catch (e) {} }
+}">
+    <div class="mb-1 flex items-center justify-between text-xs text-gray-500">
+        <span>{{ $t('cards_title', ['n' => count($cards)]) }} <span class="text-gray-400">· {{ $t('card_hint') }}</span></span>
+        <button type="button" data-team-cards-toggle x-on:click="setAll(! all)" x-text="all ? @js($t('collapse_all')) : @js($t('expand_all'))" class="text-primary-text hover:underline"></button>
+    </div>
+    <div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
     @foreach($cards as $c)
     @php $sm = $c['salesman']; $pct = $c['paid_pct']; @endphp
-    <div class="card" data-team-card="{{ $sm->id }}">
-        <div class="flex items-center justify-between">
-            <div><span class="font-semibold text-gray-900">{{ $sm->name }}</span>
-                <span class="badge badge-gray ml-1">{{ $sm->type === 'freelance' ? __('salesman.type.freelance') : __('salesman.type.employee') }}</span></div>
+    <div class="card card-tight" data-team-card="{{ $sm->id }}" wire:key="team-card-{{ $sm->id }}">
+        <button type="button" x-on:click="toggle({{ $sm->id }})" class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 text-left text-sm">
+            <svg class="h-4 w-4 shrink-0 text-gray-400 transition-transform" :class="isOpen({{ $sm->id }}) && 'rotate-90'" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z" clip-rule="evenodd"/></svg>
+            <span class="font-semibold text-gray-900">{{ $sm->name }}</span>
+            <span class="badge badge-gray">{{ $sm->type === 'freelance' ? __('salesman.type.freelance') : __('salesman.type.employee') }}</span>
             <span class="text-xs text-gray-500">{{ $t('card.active', ['n' => $c['active_count']]) }}</span>
-        </div>
-        <div class="mt-2 grid grid-cols-2 gap-2 text-sm">
-            <div>
-                <div class="text-[11px] text-gray-500">{{ $t('card.unpaid') }}</div>
-                <div class="font-bold {{ $c['unpaid_krw'] > 0 ? 'text-red-700' : 'text-gray-400' }}">{{ $c['unpaid_krw'] > 0 ? $this->krw($c['unpaid_krw']) : $t('card.no_unpaid') }}</div>
-                <div class="text-[11px] text-gray-500">{{ $t('card.risk', ['n' => $c['risk_count']]) }}</div>
+            <span class="ml-auto flex items-center gap-x-3 whitespace-nowrap text-xs tabular-nums">
+                <span><span class="text-gray-500">{{ $t('card.unpaid') }}</span> <b class="{{ $c['unpaid_krw'] > 0 ? 'text-red-700' : 'text-gray-400' }}">{{ $c['unpaid_krw'] > 0 ? $this->krw($c['unpaid_krw']) : '—' }}</b>@if($c['risk_count'] > 0) <span class="text-red-600">({{ $t('card.risk', ['n' => $c['risk_count']]) }})</span>@endif</span>
+                <span><span class="text-gray-500">{{ $t('card.purchase') }}</span> <b class="text-gray-900">{{ $this->krw($c['purchase_krw']) }}</b></span>
+                @if($pct !== null)<span><span class="text-gray-500">{{ $t('card.paid_pct') }}</span> <b class="{{ $pct < 50 ? 'text-red-700' : 'text-gray-900' }}">{{ $pct }}%</b></span>@endif
+            </span>
+        </button>
+        <div x-show="isOpen({{ $sm->id }})" x-collapse x-cloak data-team-card-detail>
+            @if($pct !== null)
+            <div class="mt-2 flex items-center gap-2">
+                <span class="text-[11px] text-gray-500">{{ $t('card.paid_pct') }}</span>
+                <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200"><div class="h-full {{ $pct < 50 ? 'bg-red-500' : 'bg-emerald-500' }}" style="width: {{ $pct }}%"></div></div>
             </div>
-            <div>
-                <div class="text-[11px] text-gray-500">{{ $t('card.purchase') }}</div>
-                <div class="font-bold text-gray-900">{{ $this->krw($c['purchase_krw']) }}</div>
-                <div class="text-[11px] text-gray-500">{{ $t('card.count', ['n' => $c['purchase_count']]) }}</div>
+            @endif
+            <div class="mt-1 text-[11px] text-gray-500">{{ $t('card.purchase') }} {{ $t('card.count', ['n' => $c['purchase_count']]) }}</div>
+            @if($c['top']->isNotEmpty())
+            <div class="mt-1 divide-y divide-gray-100 text-xs">
+                @foreach($c['top'] as $v)
+                @php $ratio = $v->unpaid_ratio; $paid = $ratio === null ? null : (int) round((1 - $ratio) * 100); @endphp
+                <div class="flex items-center gap-2 py-1 whitespace-nowrap">
+                    <a href="{{ $this->vehicleLink($v->id) }}" wire:navigate class="w-20 font-medium text-gray-900 hover:text-violet-700">{{ $v->vehicle_number }}</a>
+                    <span class="badge {{ $this->progressBadge($v->progress_status_cache) }}">{{ $v->progress_status_label }}</span>
+                    <span class="min-w-0 flex-1 truncate text-gray-600">{{ $v->buyer?->name ?? '—' }}@if($paid !== null) · {{ $t('card.paid_pct') }} {{ $paid }}%@endif @if($v->days_since_sale !== null) · {{ $v->days_since_sale }}{{ __('dashboard.v.unit_day') }}@endif</span>
+                    <span class="font-semibold text-red-700">{{ number_format($v->sale_unpaid_amount, 0) }} <span class="font-normal text-gray-500">{{ $v->currency }}</span></span>
+                </div>
+                @endforeach
             </div>
+            @endif
         </div>
-        @if($pct !== null)
-        <div class="mt-2 flex items-center gap-2">
-            <span class="text-[11px] text-gray-500">{{ $t('card.paid_pct') }}</span>
-            <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-gray-200"><div class="h-full {{ $pct < 50 ? 'bg-red-500' : 'bg-emerald-500' }}" style="width: {{ $pct }}%"></div></div>
-            <span class="w-10 text-right text-[11px] text-gray-500">{{ $pct }}%</span>
-        </div>
-        @endif
-        @if($c['top']->isNotEmpty())
-        <div class="mt-2 divide-y divide-gray-100 text-xs">
-            @foreach($c['top'] as $v)
-            @php $ratio = $v->unpaid_ratio; $paid = $ratio === null ? null : (int) round((1 - $ratio) * 100); @endphp
-            <div class="flex items-center gap-2 py-1 whitespace-nowrap">
-                <a href="{{ $this->vehicleLink($v->id) }}" wire:navigate class="w-20 font-medium text-gray-900 hover:text-violet-700">{{ $v->vehicle_number }}</a>
-                <span class="badge {{ $this->progressBadge($v->progress_status_cache) }}">{{ $v->progress_status_label }}</span>
-                <span class="min-w-0 flex-1 truncate text-gray-600">{{ $v->buyer?->name ?? '—' }}@if($paid !== null) · {{ $t('card.paid_pct') }} {{ $paid }}%@endif @if($v->days_since_sale !== null) · {{ $v->days_since_sale }}{{ __('dashboard.v.unit_day') }}@endif</span>
-                <span class="font-semibold text-red-700">{{ number_format($v->sale_unpaid_amount, 0) }} <span class="font-normal text-gray-500">{{ $v->currency }}</span></span>
-            </div>
-            @endforeach
-        </div>
-        @endif
     </div>
     @endforeach
+    </div>
 </div>
 @endif
 

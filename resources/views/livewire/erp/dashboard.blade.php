@@ -19,6 +19,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public int $selectedSalesmanId = 0;
     public int $perPage = 10;
+    public const STUCK_PER_PAGE = 15;
+
+    /** 업무관리자 뷰 「오래 멈춘 차」 현재 페이지 — Livewire 프로퍼티라 30초 폴링을 넘겨도 남는다. */
+    public int $stuckPage = 1;
     // 역할 뷰 (jin 2026-10-17 역할별 새 모양 적용) — localStorage 연동.
     //   '영업' = 담당 영업(관리가 자기 담당 영업들의 돈을 묶어 본다 — 영업은 로그인하지 않는다)
     //   '수출통관' = 서류 칸반 + 이번 주 배 / '재무' = 받을 돈·줄 돈 + 정산 진행줄 + 통장잔액
@@ -385,7 +389,26 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed] public function settlementSteps(): array { return $this->data()->settlementSteps(); }
     #[Computed] public function riskTable() { return $this->data()->riskTable(null, $this->perPage); }
     #[Computed] public function submissionStatus(): array { return $this->data()->submissionStatus(); }
-    #[Computed] public function stuckVehicles() { return $this->data()->stuckVehicles(null, 15); }
+    #[Computed] public function stuckVehicles() { return $this->data()->stuckVehicles(null); }
+
+    /** 오래 멈춘 차 — 한 페이지 분량 + 자리 정보 (jin 10-17 «너무 많아지면 아래로 쭉 나열될 순 없잖아»). 폴링으로 줄어들면 마지막 페이지로 조인다. */
+    #[Computed] public function stuckPaged(): array
+    {
+        $all = $this->stuckVehicles;
+        $total = $all->count();
+        $pages = max(1, (int) ceil($total / self::STUCK_PER_PAGE));
+        $page = min(max(1, $this->stuckPage), $pages);
+        $from = ($page - 1) * self::STUCK_PER_PAGE;
+
+        return ['rows' => $all->slice($from, self::STUCK_PER_PAGE)->values(), 'total' => $total, 'page' => $page, 'pages' => $pages,
+            'from' => $total ? $from + 1 : 0, 'to' => min($total, $from + self::STUCK_PER_PAGE)];
+    }
+
+    public function moveStuckPage(int $delta): void
+    {
+        $this->stuckPage = max(1, $this->stuckPaged['page'] + $delta);
+        unset($this->stuckPaged);
+    }
     #[Computed] public function managerNames(): array { return $this->data()->managerNamesBySalesman(); }
     #[Computed] public function managerTeams(): array { return $this->data()->managerTeams(); }
     #[Computed] public function reportNumbers(): array { return $this->data()->reportNumbers(); }
