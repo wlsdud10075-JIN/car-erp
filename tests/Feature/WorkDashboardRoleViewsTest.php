@@ -170,6 +170,41 @@ class WorkDashboardRoleViewsTest extends TestCase
         $this->assertSame(1, $c->instance()->stuckPaged['page']);
     }
 
+    /** 멈춘 곳 칩(jin 10-17) — 하나만 고르면 그 큐만, 숫자는 목록과 같고, 고르면 1페이지로 돌아오고, 같은 칩을 다시 누르면 전체. */
+    public function test_stuck_chips_filter_one_queue_at_a_time(): void
+    {
+        $sm = Salesman::create(['name' => 'CHIP 영업', 'is_active' => true]);
+        foreach (range(1, 16) as $i) {
+            $this->vehicle(['salesman_id' => $sm->id, 'vehicle_number' => sprintf('%02d칩%04d', $i, $i), 'sale_price' => 100,
+                'shipping_date' => now()->subDays(10 + $i)->toDateString(), 'eta_date' => null, 'purchase_price' => 100]);
+        }
+        $stuck = $this->vehicle(['salesman_id' => $sm->id, 'vehicle_number' => '66바6666', 'sale_price' => 100, 'sale_date' => now()->subDays(45)->toDateString(), 'purchase_price' => 100]);
+        $stuck->finalPayments()->create(['type' => 'balance', 'amount' => 100, 'payment_date' => now()->subDays(44)->toDateString(), 'confirmed_at' => now(), 'exchange_rate' => 1]);
+        $stuck->refresh()->refreshProgressCache();
+
+        $this->actingAs($this->user('admin'));
+        $c = Volt::test('erp.dashboard')->set('roleView', '업무관리자');
+        $p = $c->instance()->stuckPaged;
+        $this->assertSame(['', 17, 17, 2], [$p['where'], $p['all'], $p['total'], $p['pages']]);
+        $this->assertSame([16, 1], [$p['counts']['eta'], $p['counts']['clearance']], '칩 숫자 = 목록과 같은 줄 수');
+        $c->assertSee('data-supervisor-stuck-chips', false)->assertSee('data-stuck-chip="clearance"', false);
+
+        $c->call('moveStuckPage', 1)->call('setStuckWhere', 'clearance');
+        $p = $c->instance()->stuckPaged;
+        $this->assertSame(['clearance', 17, 1, 1, 1], [$p['where'], $p['all'], $p['total'], $p['pages'], $p['page']], '고르면 그 큐만 · 1페이지로');
+        $this->assertSame('66바6666', $p['rows'][0]['vehicle']->vehicle_number);
+        $c->assertSee('66바6666')->assertDontSee('01칩0001')->assertDontSee('data-supervisor-stuck-pager', false);
+
+        $c->call('setStuckWhere', 'deregistration');
+        $this->assertSame(0, $c->instance()->stuckPaged['total']);
+        $c->assertSee(__('dashboard.v.supervisor.stuck.empty_here'))->assertSee('data-supervisor-stuck-chips', false);
+
+        $c->call('setStuckWhere', 'deregistration');
+        $this->assertSame('', $c->instance()->stuckPaged['where'], '같은 칩을 다시 누르면 전체');
+        $c->call('setStuckWhere', 'bogus');
+        $this->assertSame('', $c->get('stuckWhere'));
+    }
+
     /** 영업별 카드는 접힌 한 줄이 기본 — 숫자(미수·미지급·입금률)는 접혀도 보이고, 급한 차 3대는 펼쳐야 나온다(렌더는 되어 있다, x-show). */
     public function test_team_cards_fold_into_one_line_by_default(): void
     {
