@@ -44,7 +44,8 @@ class OverdraftBalanceTest extends TestCase
     /** 원화 칸은 부호 있는 금액칸(data-money-signed)이어야 − 를 칠 수 있다 — 포매터가 지우면 음수를 영영 못 넣는다(§8 #58). */
     public function test_krw_field_is_a_signed_money_input(): void
     {
-        $src = file_get_contents(resource_path('views/livewire/erp/dashboard.blade.php'));
+        // 10-17 역할 뷰 분리 — 통장잔액 카드는 erp/dashboard/_cash.blade.php 조각으로 옮겨졌다(마크업 불변).
+        $src = file_get_contents(resource_path('views/erp/dashboard/_cash.blade.php'));
         $this->assertMatchesRegularExpression('/wire:model="cashKrw"[^>]*data-money-signed/', $src);
         $this->assertStringNotContainsString('cashKrwNegative', $src, '± 토글은 2026-10-14 폐지');
     }
