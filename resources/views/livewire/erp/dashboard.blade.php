@@ -8,6 +8,7 @@ use App\Models\Settlement;
 use App\Models\Vehicle;
 use App\Services\CapitalStatusService;
 use App\Services\CashAccountBalanceService;
+use App\Services\Dashboard\WorkDashboardData;
 use App\Services\ExchangeRateService;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
@@ -18,12 +19,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public int $selectedSalesmanId = 0;
     public int $perPage = 10;
-    // role=전체/관리/admin 사용자의 뷰 토글 — localStorage 연동
+    // 역할 뷰 (jin 2026-10-17 역할별 새 모양 적용) — localStorage 연동.
+    //   '영업' = 담당 영업(관리가 자기 담당 영업들의 돈을 묶어 본다 — 영업은 로그인하지 않는다)
+    //   '수출통관' = 서류 칸반 + 이번 주 배 / '재무' = 받을 돈·줄 돈 + 정산 진행줄 + 통장잔액
+    //   '관리' = 수출통관 + 재무 합본(「오늘 먼저」) / '업무관리자' = 제출·감독(결재는 대표 — admin·업무관리자만 연다)
+    //   🔀 구 「담당자별/역할별」 모드 토글(viewMode)은 폐지 — 담당 영업 뷰가 그 둘을 합쳤다.
     public string $roleView = '영업';
-    // 큐 5 — 업무 대시보드 모드 토글 (admin/role∈{전체,관리}만 의미).
-    //   'salesman' = 담당자별 보기 (담당자 드롭다운 + 영업 시각 고정)
-    //   'role'     = 역할별 보기 (역할 탭 영업/통관/정산 + 전체 차량)
-    public string $viewMode = 'salesman';
+
+    public const ROLE_VIEWS = ['영업', '수출통관', '재무', '관리'];
+
+    public const SUPERVISOR_VIEW = '업무관리자';
 
     // 자금 현황 — 통장 마감잔액 입력 (재무·[관리]·업무관리자). 손익은 관리자 대시보드(대표) 전용.
     public string $cashDate = '';   // 기준일 (기본 오늘, 소급 입력 허용)
@@ -148,11 +153,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $this->selectedSalesmanId = $salesman->id;
             }
             // 본인 role이 영업/통관/정산/관리면 그것을 초기 뷰로 (큐 14-2: '관리' 추가)
-            if (in_array($user->role, ['영업', '수출통관', '재무', '관리'], true)) {
+            if (in_array($user->role, self::ROLE_VIEWS, true)) {
                 $this->roleView = $user->role;
             }
-            // 비-admin: viewMode는 본인 role로 자연 결정 (영업이면 salesman, 그 외엔 role)
-            $this->viewMode = $user->role === '영업' ? 'salesman' : 'role';
+        } else {
+            // 최고관리자·업무관리자의 첫 화면 = 업무관리자(제출·감독). localStorage 에 저장된 뷰가 있으면 그걸로 복원된다.
+            $this->roleView = self::SUPERVISOR_VIEW;
         }
 
         // 자금 현황 입력 카드 — 입력칸은 항상 빈칸으로 시작 (jin 2026-07-24).
@@ -202,29 +208,18 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
 
-    // 큐 5 — viewMode 변경 시 동기화.
-    //   'salesman'으로 전환: roleView='영업' 강제 (담당자별 = 영업 시각 고정 정책)
-    //   'role'로 전환: selectedSalesmanId 비움 (전체 차량 시각)
-    public function updatedViewMode(): void
+    /** 이 사용자가 열 수 있는 역할 뷰 — 최고관리자·업무관리자 = 5개 / 관리 = 4개 / 그 외 = 본인 role 하나. */
+    public function allowedRoleViews(): array
     {
         $user = auth()->user();
-        $canToggle = $user->isAdmin() || $user->isManager() || $user->role === '관리';
-        if (! $canToggle) {
-            $this->viewMode = $user->role === '영업' ? 'salesman' : 'role';
+        if ($user->isAdmin() || $user->isManager()) {
+            return [...self::ROLE_VIEWS, self::SUPERVISOR_VIEW];
+        }
+        if ($user->role === '관리') {
+            return self::ROLE_VIEWS;
+        }
 
-            return;
-        }
-        if (! in_array($this->viewMode, ['salesman', 'role'], true)) {
-            $this->viewMode = 'salesman';
-        }
-        if ($this->viewMode === 'salesman') {
-            $this->roleView = '영업';
-        } else {
-            // 'role' 모드 — admin/업무관리자/관리는 selectedSalesmanId 비움 (전체 차량 시각)
-            if ($user->isAdmin() || $user->isManager() || $user->role === '관리') {
-                $this->selectedSalesmanId = 0;
-            }
-        }
+        return [in_array($user->role, self::ROLE_VIEWS, true) ? $user->role : '영업'];
     }
 
     // M2 보안: 비-admin·비-관리가 selectedSalesmanId 변경 시 본인 ID로 즉시 복귀.
@@ -240,16 +235,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     // M3 가드: 토글 권한 없는 user가 roleView 변경 시도 → 본인 role로 강제 복귀.
     public function updatedRoleView(): void
     {
-        $user = auth()->user();
-        $canToggle = $user->isAdmin() || $user->isManager() || $user->role === '관리';
-        if (! $canToggle) {
-            $this->roleView = in_array($user->role, ['영업', '수출통관', '재무', '관리'], true) ? $user->role : '영업';
-
-            return;
-        }
-        // 큐 14-2 — '관리' 4번째 탭 허용
-        if (! in_array($this->roleView, ['영업', '수출통관', '재무', '관리'], true)) {
-            $this->roleView = '영업';
+        $allowed = $this->allowedRoleViews();
+        if (! in_array($this->roleView, $allowed, true)) {
+            // 토글 권한 없는 사용자는 본인 role 로, 권한자가 없는 값을 넣으면 첫 뷰로.
+            $this->roleView = $allowed[0];
         }
     }
 
@@ -281,6 +270,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         return $user->salesman?->id;
+    }
+
+    /**
+     * 큐·목록·스트립의 담당자 범위(Salesman.id 배열, null = 전체) — 담당 영업 뷰에서만 좁힌다.
+     *   effectiveSalesmanId() 는 「고른 한 명」이고, 관리는 아무도 안 고르면 **담당 영업 전원**이 범위다(teamScope).
+     */
+    private function scopeIds(): ?array
+    {
+        return $this->roleView === '영업' ? $this->teamScope() : null;
     }
 
     // 회의확장씬 #7 (2026-05-22) — 실시간 환율 (네이버 marketindex 1h 캐시).
@@ -318,7 +316,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return match ($this->roleView) {
             '수출통관' => $this->buildClearanceKpis(),
             '재무' => $this->buildSettlementKpis(),
-            '관리' => $this->buildManagementKpis(),
+            '관리', self::SUPERVISOR_VIEW => $this->buildManagementKpis(),
             default => $this->buildSalesKpis(),
         };
     }
@@ -329,15 +327,106 @@ new #[Layout('components.layouts.app')] class extends Component {
         return match ($this->roleView) {
             '수출통관' => $this->buildClearanceActions(),
             '재무' => $this->buildSettlementActions(),
-            '관리' => $this->buildManagementActions(),
+            // 관리 = 수출통관 + 재무 겸직 → 두 큐를 「오늘 먼저」 한 줄로(긴급 먼저). 결재·감독 큐는 업무관리자 몫.
+            '관리' => $this->buildManageTodayActions(),
+            self::SUPERVISOR_VIEW => $this->buildManagementActions(),
             default => $this->buildSalesActions(),
         };
+    }
+
+    // ── 역할 뷰 데이터 (jin 2026-10-17) — 쿼리는 전부 WorkDashboardData, 여기선 범위만 정한다 ──
+
+    /**
+     * 담당 영업 뷰의 범위 = Salesman.id 배열. null = 전체.
+     *   최고관리자·업무관리자 = 고른 담당자 또는 전체 / 관리 = 담당 영업(고르면 그중 하나) / 영업 = 본인.
+     */
+    public function teamScope(): ?array
+    {
+        $user = auth()->user();
+        if ($user->isAdmin() || $user->isManager()) {
+            return $this->selectedSalesmanId ? [$this->selectedSalesmanId] : null;
+        }
+        if ($user->role === '관리') {
+            $team = $user->getSubordinateSalesmanIds();
+            if ($this->selectedSalesmanId && in_array($this->selectedSalesmanId, $team, true)) {
+                return [$this->selectedSalesmanId];
+            }
+
+            return $team;
+        }
+
+        return [$user->salesman?->id ?? 0];
+    }
+
+    /** 영업별 카드에 세울 담당자 — 범위 안의 활성 영업(검차 제외). */
+    public function teamSalesmen()
+    {
+        $scope = $this->teamScope();
+
+        return Salesman::query()->where('is_active', true)->sales()->orderBy('name')
+            ->when($scope !== null, fn ($q) => $q->whereIn('id', $scope))
+            ->get(['id', 'name', 'type']);
+    }
+
+    private function data(): WorkDashboardData
+    {
+        return app(WorkDashboardData::class);
+    }
+
+    #[Computed] public function teamTotals(): array { return $this->data()->teamTotals($this->teamScope()); }
+    #[Computed] public function salesmanCards(): array { return $this->data()->salesmanCards($this->teamSalesmen()); }
+    #[Computed] public function blockedSales() { return $this->data()->blockedSales($this->teamScope(), $this->perPage); }
+    #[Computed] public function purchaseDue() { return $this->data()->purchaseDue($this->teamScope(), $this->perPage); }
+    #[Computed] public function nextStepCounts(): array { return $this->data()->nextStepCounts($this->teamScope()); }
+    #[Computed] public function documentKanban(): array { return $this->data()->documentKanban(null); }
+    #[Computed] public function weekCalendar(): array { return $this->data()->weekCalendar(null); }
+    #[Computed] public function documentTable() { return $this->data()->documentTable(null, $this->perPage); }
+    #[Computed] public function moneyOverview(): array { return $this->data()->moneyOverview(); }
+    #[Computed] public function settlementSteps(): array { return $this->data()->settlementSteps(); }
+    #[Computed] public function riskTable() { return $this->data()->riskTable(null, $this->perPage); }
+    #[Computed] public function submissionStatus(): array { return $this->data()->submissionStatus(); }
+    #[Computed] public function stuckVehicles() { return $this->data()->stuckVehicles(null, 15); }
+    #[Computed] public function managerNames(): array { return $this->data()->managerNamesBySalesman(); }
+    #[Computed] public function managerTeams(): array { return $this->data()->managerTeams(); }
+    #[Computed] public function reportNumbers(): array { return $this->data()->reportNumbers(); }
+
+    /** 관리 뷰 「오늘 먼저」 — 수출통관·재무 큐 중 건수 있는 것을 긴급(빨강) 먼저, 같은 급은 건수 많은 순. */
+    private function buildManageTodayActions(): array
+    {
+        $rows = array_merge($this->buildSettlementActions(), $this->buildClearanceActions());
+        $rank = fn (array $r) => ($r['urgent'] ? 0 : 1).'|'.str_pad((string) (999999 - $r['count']), 6, '0', STR_PAD_LEFT);
+        usort($rows, fn ($a, $b) => strcmp($rank($a), $rank($b)));
+
+        return $rows;
+    }
+
+    /** 한 차량의 편집 패널로 가는 링크 — 알람함과 같은 방식(`?openVehicle=`). */
+    public function vehicleLink(int $id): string
+    {
+        return route('erp.vehicles.index', ['openVehicle' => $id]);
+    }
+
+    /** 진행상태 뱃지 색 — SKILLS §10 매핑 단일 출처(이 화면 안). */
+    public function progressBadge(?string $status): string
+    {
+        return match (true) {
+            in_array($status, ['매입중', '매입완료', '말소완료'], true) => 'badge-blue',
+            in_array($status, ['판매중', '판매완료'], true) => 'badge-purple',
+            in_array($status, ['선적중', '선적완료', '수출통관중', '수출통관완료'], true) => 'badge-amber',
+            in_array($status, ['통관중', '통관완료'], true) => 'badge-green',
+            default => 'badge-gray',
+        };
+    }
+
+    public function krw(int|float|null $v): string
+    {
+        return '₩'.\App\Support\Money::krw((int) ($v ?? 0));
     }
 
     #[Computed]
     public function activeVehicles()
     {
-        $sid = $this->effectiveSalesmanId();
+        $ids = $this->scopeIds();
 
         // 안건 J 본격 (2026-05-20) — v2/v3 호환. progress_status_cache 단일 출처.
         return Vehicle::query()
@@ -345,7 +434,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->where(fn ($q) => $q
                 ->where('progress_status_cache', '!=', '거래완료')
                 ->orWhereNull('progress_status_cache'))
-            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->with(['salesman', 'finalPayments', 'purchaseBalancePayments', 'receivableHistories'])
             ->orderBy('purchase_date', 'desc')
             ->limit($this->perPage)
@@ -357,11 +446,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function pipelineCounts(): array
     {
-        $sid = $this->effectiveSalesmanId();
+        $ids = $this->scopeIds();
 
         $counts = Vehicle::query()
             ->whereNull('deleted_at')
-            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->where('cancel_status', Vehicle::CANCEL_NONE)   // 매입취소 제외 — 파이프라인 오염 방지 (jin 2026-07-18)
             ->selectRaw('progress_status_cache, COUNT(*) as cnt')
             ->groupBy('progress_status_cache')
@@ -416,19 +505,19 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private function buildSalesActions(): array
     {
-        $sid = $this->effectiveSalesmanId();
+        $ids = $this->scopeIds();
         $base = fn (string $a) => Vehicle::query()->whereNull('deleted_at')->action($a)
-            ->when($sid, fn ($q) => $q->where('salesman_id', $sid));
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids));
 
         $pendingSettlements = Settlement::query()
-            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->where('settlement_status', 'pending')
             ->count();
 
         // 매입취소 (jin 2026-07-18) — 취소완료·미수·마감 모두 카운트(같이 표시). 클릭 시 채권관리(취소필터).
         $cancelTotal = (int) Vehicle::query()->whereNull('deleted_at')
             ->where('cancel_status', '!=', Vehicle::CANCEL_NONE)
-            ->when($sid, fn ($q) => $q->where('salesman_id', $sid))
+            ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->count();
 
         $t = fn (string $k, string $f) => __("dashboard.act.sales.$k.$f");
@@ -687,43 +776,47 @@ new #[Layout('components.layouts.app')] class extends Component {
 }; ?>
 
 {{-- UX #6 (2026-05-20) — wire:poll.30s — 사이드바 뱃지 + 페이지 데이터 30초 자동 갱신. 본인 액션은 Livewire 자체 re-render 로 즉시 반영. --}}
+{{-- 🔀 2026-10-17 (jin 「적용해줘」) — 역할별 새 모양. 뷰마다 묻는 질문이 다르다:
+     담당 영업 = 내 담당 영업들의 돈이 어디서 막혔나 / 수출통관 = 서류가 어디서 멈췄나·이번 주 배 / 재무 = 받을 돈·줄 돈·정산 진행
+     관리 = 서류와 돈 중 오늘 먼저 할 것(두 큐 합본) / 업무관리자 = 이번 달 올릴 것·오래 멈춘 차·어느 팀이 밀렸나.
+     목업 = docs/design/mock/2026-10-16/work-dashboard-role-*.html. 데이터 = App\Services\Dashboard\WorkDashboardData. --}}
 <div wire:poll.30s>
-<div class="flex h-full flex-col gap-5 p-3 md:p-6" x-data="{
+<div class="flex h-full flex-col gap-4 p-3 md:p-6" x-data="{
     roleView: @entangle('roleView').live,
-    viewMode: @entangle('viewMode').live,
+    allowed: @js($this->allowedRoleViews()),
     initView() {
-        @if(auth()->user()->isAdmin() || auth()->user()->isManager() || auth()->user()->role === '관리')
-        const savedRole = localStorage.getItem('erp_dashboard_role_view');
-        if (savedRole && ['영업','수출통관','재무','관리'].includes(savedRole)) {
-            this.roleView = savedRole;
+        if (this.allowed.length < 2) return;
+        const saved = localStorage.getItem('erp_dashboard_role_view');
+        if (saved && this.allowed.includes(saved)) {
+            this.roleView = saved;
         }
-        const savedMode = localStorage.getItem('erp_dashboard_view_mode');
-        if (savedMode && ['salesman','role'].includes(savedMode)) {
-            this.viewMode = savedMode;
-        }
-        @endif
     },
     setView(v) {
+        if (! this.allowed.includes(v)) return;
         this.roleView = v;
         localStorage.setItem('erp_dashboard_role_view', v);
-    },
-    setMode(m) {
-        this.viewMode = m;
-        localStorage.setItem('erp_dashboard_view_mode', m);
     }
 }" x-init="initView()">
 
 @php
     $user = auth()->user();
-    $canToggleView = $user->isAdmin() || $user->isManager() || $user->role === '관리';
-    $viewLabel = __('dashboard.view_label.'.(in_array($roleView, ['수출통관','재무','관리'], true) ? $roleView : '영업'));
+    $allowedViews = $this->allowedRoleViews();
+    $canToggleView = count($allowedViews) > 1;
+    $viewLabel = __('dashboard.view_label.'.$roleView);
     $viewBadge = match($roleView) {
         '수출통관' => 'badge-amber',
         '재무' => 'badge-green',
-        '관리' => 'badge-purple',
         default => 'badge-purple',
     };
+    $viewSub = match($roleView) {
+        '영업' => __('dashboard.view_sub.영업', ['n' => $this->teamSalesmen()->count()]),
+        '관리' => __('dashboard.view_sub.관리'),
+        '업무관리자' => __('dashboard.view_sub.업무관리자'),
+        default => null,
+    };
     $salesmanMissing = $user->role === '영업' && ! $user->isAdmin() && ! $user->isManager() && ! $user->salesman;
+    $showSalesmanPicker = $roleView === '영업' && ($user->isAdmin() || $user->isManager() || $user->role === '관리');
+    $showFx = in_array($roleView, ['영업', '재무', '관리'], true);
 @endphp
 
 {{-- 헤더 --}}
@@ -731,52 +824,46 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div>
         <h1 class="text-xl font-bold text-gray-800">{{ $viewLabel }}</h1>
         <p class="mt-0.5 text-xs text-gray-500">
-            <span class="badge {{ $viewBadge }}">{{ __('domain.role.'.$roleView) }}</span>
+            <span class="badge {{ $viewBadge }}">{{ __('dashboard.view_pill.'.$roleView) }}</span>
+            @if($viewSub) · {{ $viewSub }} @endif
             · {{ app()->getLocale() === 'en' ? now()->translatedFormat('M j, Y') : now()->format('Y년 m월 d일') }}
         </p>
     </div>
 
     <div class="flex flex-wrap items-center gap-3">
-        {{-- 큐 5 — 모드 토글 [담당자별]↔[역할별] (canToggleView만 노출) --}}
+        {{-- 역할 뷰 pill — 최고관리자·업무관리자 5개 / 관리 4개 / 그 외 없음 --}}
         @if($canToggleView)
-        <div class="flex items-center gap-1 rounded-lg bg-gray-100 p-0.5">
-            <button type="button"
-                @click="setMode('salesman')"
-                :class="viewMode === 'salesman' ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
-                class="rounded px-3 py-1 text-xs font-medium transition">{{ __('dashboard.mode_by_salesman') }}</button>
-            <button type="button"
-                @click="setMode('role')"
-                :class="viewMode === 'role' ? 'bg-white text-violet-700 shadow-sm' : 'text-gray-500 hover:text-gray-700'"
-                class="rounded px-3 py-1 text-xs font-medium transition">{{ __('dashboard.mode_by_role') }}</button>
-        </div>
-        @endif
-
-        {{-- M7 역할 탭 pill — 역할별 모드에서만 노출 (담당자별 모드는 영업 시각 고정) --}}
-        @if($canToggleView)
-        <div class="flex items-center gap-1" x-show="viewMode === 'role'" x-cloak>
-            @foreach(['영업','수출통관','재무','관리'] as $v)
+        <div class="flex flex-wrap items-center gap-1" data-role-pills>
+            @foreach($allowedViews as $v)
             <button type="button"
                 @click="setView('{{ $v }}')"
                 :class="roleView === '{{ $v }}' ? 'tab-pill is-active' : 'tab-pill'"
-                class="px-3 py-1 text-xs">{{ __('domain.role.'.$v) }}</button>
+                class="px-3 py-1 text-xs">{{ __('dashboard.view_pill.'.$v) }}</button>
             @endforeach
-        </div>
-        @endif
-
-        {{-- 담당자 드롭다운 — 담당자별 모드 + admin/관리만 노출 (영업 시각 고정) --}}
-        @if($user->isAdmin() || $user->isManager() || $user->role === '관리')
-        <div class="flex items-center gap-2" x-show="viewMode === 'salesman'" x-cloak>
-            <span class="text-xs text-gray-500">{{ __('dashboard.salesman') }}</span>
-            <select wire:model.live="selectedSalesmanId" class="input-filter">
-                <option value="0">{{ __('dashboard.all') }}</option>
-                @foreach($this->salesmen as $sm)
-                <option value="{{ $sm->id }}">{{ $sm->name }}</option>
-                @endforeach
-            </select>
         </div>
         @endif
     </div>
 </div>
+
+{{-- 담당자 고르기 — 담당 영업 뷰에서만. 관리는 본인 담당 영업만 목록에 나온다(salesmen computed). --}}
+@if($showSalesmanPicker)
+<div class="flex flex-wrap items-center gap-2" data-salesman-picker>
+    <span class="text-xs text-gray-500">{{ __('dashboard.salesman') }}</span>
+    @if($this->salesmen->count() <= 6)
+    <button type="button" wire:click="$set('selectedSalesmanId', 0)" class="tab-pill px-3 py-1 text-xs {{ $selectedSalesmanId === 0 ? 'is-active' : '' }}">{{ __('dashboard.all') }}</button>
+    @foreach($this->salesmen as $sm)
+    <button type="button" wire:click="$set('selectedSalesmanId', {{ $sm->id }})" class="tab-pill px-3 py-1 text-xs {{ $selectedSalesmanId === $sm->id ? 'is-active' : '' }}">{{ $sm->name }}</button>
+    @endforeach
+    @else
+    <select wire:model.live="selectedSalesmanId" class="input-filter">
+        <option value="0">{{ __('dashboard.all') }}</option>
+        @foreach($this->salesmen as $sm)
+        <option value="{{ $sm->id }}">{{ $sm->name }}</option>
+        @endforeach
+    </select>
+    @endif
+</div>
+@endif
 
 @if($salesmanMissing)
 {{-- S4 영업 user salesman 미연결 empty state --}}
@@ -791,210 +878,47 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 @else
 
-{{-- 큐 2번 — 11단계 파이프라인 카운트 스트립 --}}
-@php
-    $stripSubtitle = match(true) {
-        ($user->isAdmin() || $user->isManager()) && $this->selectedSalesmanId && $roleView === '영업'
-            => __('dashboard.subtitle_only', ['name' => $this->salesmen->firstWhere('id', $this->selectedSalesmanId)?->name ?? __('dashboard.salesman')]),
-        $roleView === '영업' && ! $user->isAdmin() && ! $user->isManager()
-            => $user->salesman?->name ? __('dashboard.subtitle_only', ['name' => $user->salesman->name]) : null,
-        default => __('dashboard.subtitle_all'),
-    };
-@endphp
-<x-erp.pipeline-strip
-    :counts="$this->pipelineCounts"
-    :url-builder="fn (string $s) => $this->pipelineUrl($s)"
-    :subtitle="$stripSubtitle" />
-
-{{-- KPI 4카드 (S2 통일 — .card + text-xl md:text-2xl + truncate) --}}
-<div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-    @foreach($this->kpis as $kpi)
-    <div class="card">
-        <p class="text-xs text-gray-500">{{ $kpi['label'] }}</p>
-        <p class="mt-1 truncate text-xl md:text-2xl font-bold text-gray-800" title="{{ $kpi['value'] }}{{ $kpi['suffix'] }}">
-            {{ $kpi['value'] }}@if($kpi['suffix'] !== '')<span class="ml-0.5 text-sm font-normal text-gray-400">{{ $kpi['suffix'] }}</span>@endif
-        </p>
-        <p class="mt-1 text-xs text-gray-400">{{ $kpi['hint'] }}</p>
-    </div>
-    @endforeach
-</div>
-
-{{-- 회의확장씬 #7 (2026-05-22) — 실시간 환율 위젯 (KRW 기준, 1h 캐시, 네이버 marketindex) --}}
+{{-- 회의확장씬 #7 (2026-05-22) — 실시간 환율 (KRW 기준, 1h 캐시, 네이버 marketindex). 10-17 부터 카드 대신 한 줄, 돈을 다루는 뷰에서만. --}}
+@if($showFx)
 @php $exchangeRates = $this->exchangeRates; @endphp
 @if($exchangeRates !== null)
-<div class="card mt-3">
-    <div class="mb-2 flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-gray-700">
-            {{ __('dashboard.fx_title') }}
-            <span class="ml-1 text-xs font-normal text-gray-400">{{ __('dashboard.fx_sub') }}</span>
-        </h2>
-        <button wire:click="refreshExchangeRates" class="text-xs text-violet-600 hover:underline">{{ __('dashboard.fx_refresh') }}</button>
-    </div>
-    <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        @foreach(['USD','JPY','EUR','GBP','CNY'] as $cur)
-        <div class="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-center">
-            <div class="text-xs text-gray-400">{{ $cur }}@if($cur === 'JPY') <span class="text-[10px]">(100)</span>@endif</div>
-            <div class="text-base font-bold text-gray-800">
-                @if(isset($exchangeRates[$cur]))
-                    ₩{{ number_format($exchangeRates[$cur], 2) }}
-                @else
-                    <span class="text-xs text-gray-400">—</span>
-                @endif
-            </div>
-        </div>
-        @endforeach
-    </div>
+<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600" data-fx-line>
+    <span class="font-medium text-gray-700">{{ __('dashboard.fx_title') }}</span>
+    @foreach(['USD','JPY','EUR','GBP','CNY'] as $cur)
+    <span>{{ $cur }}@if($cur === 'JPY')<span class="text-[10px]">(100)</span>@endif <b class="text-gray-800">{{ isset($exchangeRates[$cur]) ? '₩'.number_format($exchangeRates[$cur], 2) : '—' }}</b></span>
+    @endforeach
+    <span class="text-gray-400">{{ __('dashboard.fx_sub') }}</span>
+    <button wire:click="refreshExchangeRates" class="text-violet-600 hover:underline">{{ __('dashboard.fx_refresh') }}</button>
 </div>
 @else
-<div class="card mt-3 bg-amber-50">
-    <p class="text-xs text-amber-700">{{ __('dashboard.fx_fail') }} <button wire:click="refreshExchangeRates" class="text-violet-600 hover:underline">{{ __('dashboard.fx_refresh') }}</button></p>
-</div>
+<div class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">{{ __('dashboard.fx_fail') }} <button wire:click="refreshExchangeRates" class="text-violet-600 hover:underline">{{ __('dashboard.fx_refresh') }}</button></div>
+@endif
 @endif
 
-{{-- 자금 현황 — 통장 마감잔액 입력 (재무·[관리]·업무관리자). 손익은 관리자 대시보드(대표) 전용. --}}
-@if(auth()->user()->canEnterCashBalance())
-<div class="card mt-3">
-    <div class="mb-2 flex items-center justify-between">
-        <div class="flex items-center gap-2">
-            <span class="section-dot bg-blue-500"></span>
-            <span class="text-sm font-semibold text-gray-800">{{ __('cash.input_title') }}</span>
-        </div>
-        @if($cashSavedAt)<span class="text-xs text-gray-400">{{ __('cash.last_input') }} {{ $cashSavedAt }}</span>@endif
-    </div>
-    @if($this->cashAccounts->isNotEmpty())
-    {{-- 🏦 계좌별 입력 모드 (jin 2026-10-14) — 날짜 · 계좌 드롭다운 · 그 계좌의 통화 칸 · 저장. 아래 표 = 이 날짜에 적용되는 계좌별 값. --}}
-    @php $selAcc = $this->cashAccounts->firstWhere('id', (int) $cashAccountId); @endphp
-    <div class="flex flex-wrap items-end gap-2" data-cash-accounts>
-        <div class="w-full sm:w-40">
-            <label class="text-xs text-gray-500">{{ __('cash.date') }}</label>
-            <input type="date" wire:model.live="cashDate" max="{{ now()->toDateString() }}" class="input-base w-full" />
-        </div>
-        <div class="w-full sm:w-64">
-            <label class="text-xs text-gray-500">{{ __('cash.account.label') }}</label>
-            <select wire:model.live="cashAccountId" class="input-base w-full text-gray-800">
-                <option value="">{{ __('cash.account.pick') }}</option>
-                @foreach($this->cashAccounts as $acc)
-                <option value="{{ $acc->id }}">{{ $acc->display_name }}</option>
-                @endforeach
-            </select>
-        </div>
-        <button type="button" wire:click="$toggle('showAddAccount')" class="h-9 rounded-lg border border-dashed border-gray-300 px-3 text-xs text-gray-600 hover:bg-gray-50">{{ __('cash.account.add_row') }}</button>
-        @if($selAcc)
-            {{-- 어느 계좌든 원화·달러·유로 세 칸(jin 2026-10-14). 비운 칸은 안 건드린다(이어쓰기). 부호는 종전대로 원화 ± 토글. --}}
-            @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
-            <div class="w-full sm:w-44">
-                <label class="text-xs text-gray-500">{{ __('cash.'.strtolower($cur)) }}</label>
-                <div class="flex gap-1">
-                    @if($cur === 'KRW')
-                    {{-- 마이너스 통장은 칸에 − 를 직접 친다(data-money-signed) — 10-07 단축키 폐지로 가능해졌다(jin 2026-10-14). --}}
-                    <input type="text" wire:model="cashAmounts.{{ $cur }}" data-money data-money-signed inputmode="numeric" class="input-base w-full text-right" placeholder="0" title="{{ __('cash.sign_hint_typed') }}" />
-                    @else
-                    <input type="text" wire:model="cashAmounts.{{ $cur }}" inputmode="decimal" class="input-base w-full text-right" placeholder="0.00" />
-                    @endif
-                </div>
-            </div>
-            @endforeach
-            <button type="button" wire:click="saveAccountBalance" class="btn-primary h-9">{{ __('cash.save') }}</button>
-        @endif
-    </div>
-    @if($showAddAccount)
-    <div class="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2" data-cash-account-add>
-        <div><label class="text-xs text-gray-500">{{ __('cash.account.bank') }}</label><input type="text" wire:model="newBank" class="input-base w-28" placeholder="{{ __('cash.account.bank_ph') }}" /></div>
-        <div><label class="text-xs text-gray-500">{{ __('cash.account.number') }}</label><input type="text" wire:model="newAccountNo" class="input-base w-48" placeholder="{{ __('cash.account.number_ph') }}" /></div>
-        <div><label class="text-xs text-gray-500">{{ __('cash.account.label_opt') }}</label><input type="text" wire:model="newLabel" class="input-base w-24" placeholder="{{ __('cash.account.label_ph') }}" /></div>
-        <button type="button" wire:click="addCashAccount" class="btn-primary h-9">{{ __('cash.account.add') }}</button>
-        @error('newBank')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
-        @error('newAccountNo')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
-    </div>
-    @endif
-    @php
-        $rows = $this->cashAccountRows;
-        $sums = ['KRW' => 0.0, 'USD' => 0.0, 'EUR' => 0.0];
-        foreach ($rows as $r) { if ($r['balance'] !== null) { $sums[$r['currency']] += $r['balance']; } }
-        // 계좌 한 줄 = 통화 3칸. 한 번도 안 넣은 계좌(세 통화 전부 없음)만 센다 — 외화가 없는 계좌는 달러·유로가 비는 게 정상이다.
-        $byAccount = $rows->groupBy(fn ($r) => $r['account']->id);
-        $never = $byAccount->filter(fn ($g) => $g->every(fn ($r) => $r['balance'] === null))->count();
-    @endphp
-    {{-- 🚨 한 번도 안 넣은 계좌는 합계에 0 으로 들어간다 — 계좌 7개를 등록하고 하나만 넣은 날 청산가치가 꺼진다. 눈에 띄게 알린다. --}}
-    @if($never > 0)
-    <p class="mt-2 rounded bg-amber-50 px-3 py-1.5 text-xs text-amber-700" data-cash-never-entered>{{ __('cash.account.never_entered', ['n' => $never]) }}</p>
-    @endif
-    <div class="mt-2 overflow-x-auto">
-        <table class="w-full min-w-[520px] text-xs" data-cash-account-table>
-            <thead><tr class="border-b border-gray-200 text-left text-gray-500">
-                <th class="py-1 pr-2">{{ __('cash.account.label') }}</th>
-                <th class="py-1 pr-2 text-right">KRW</th><th class="py-1 pr-2 text-right">USD</th><th class="py-1 pr-2 text-right">EUR</th>
-                <th class="py-1 pr-2">{{ __('cash.account.as_of') }}</th><th class="py-1"></th>
-            </tr></thead>
-            <tbody class="divide-y divide-gray-100">
-            @foreach($byAccount as $accId => $g)
-                @php $acc = $g->first()['account']; $cells = $g->keyBy('currency'); $asOf = $g->pluck('as_of')->filter()->max(); $carried = $g->contains(fn ($r) => $r['carried']); @endphp
-                <tr class="text-gray-700">
-                    <td class="py-1 pr-2">{{ $acc->display_name }}</td>
-                    @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
-                    @php $c = $cells->get($cur); @endphp
-                    <td class="py-1 pr-2 text-right font-mono {{ ($c['carried'] ?? false) ? 'text-gray-400' : '' }}">{{ ($c['balance'] ?? null) === null ? '—' : ($cur === 'KRW' ? number_format($c['balance']) : number_format($c['balance'], 2)) }}</td>
-                    @endforeach
-                    <td class="py-1 pr-2 {{ $carried ? 'text-gray-400' : '' }}">{{ $asOf ?? __('cash.account.never') }}{{ $carried ? ' '.__('cash.account.carried') : '' }}</td>
-                    <td class="py-1 text-right">
-                        <button type="button" wire:click="deactivateCashAccount({{ $acc->id }})" wire:confirm="{{ __('cash.account.hide_confirm') }}" class="text-[11px] text-gray-400 hover:text-red-500">{{ __('cash.account.hide') }}</button>
-                    </td>
-                </tr>
-            @endforeach
-            </tbody>
-            <tfoot><tr class="border-t border-gray-200 font-semibold text-gray-800">
-                <td class="py-1 pr-2">{{ __('cash.account.total') }}</td>
-                <td class="py-1 pr-2 text-right font-mono">{{ number_format($sums['KRW']) }}</td>
-                <td class="py-1 pr-2 text-right font-mono">{{ number_format($sums['USD'], 2) }}</td>
-                <td class="py-1 pr-2 text-right font-mono">{{ number_format($sums['EUR'], 2) }}</td>
-                <td class="py-1" colspan="2"></td>
-            </tr></tfoot>
-        </table>
-    </div>
-    @else
-    <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
-        <div>
-            <label class="text-xs text-gray-500">{{ __('cash.date') }}</label>
-            <input type="date" wire:model="cashDate" max="{{ now()->toDateString() }}" class="input-base w-full" />
-        </div>
-        <div>
-            <label class="text-xs text-gray-500">{{ __('cash.krw') }}</label>
-            {{-- 🏦 마이너스 통장은 − 를 직접 친다(data-money-signed). 구 ± 토글(08-12)은 10-07 단축키 폐지로 불필요해져 10-14 제거(jin). --}}
-            <input type="text" wire:model="cashKrw" data-money data-money-signed inputmode="numeric" class="input-base w-full text-right" placeholder="0" title="{{ __('cash.sign_hint_typed') }}" />
-        </div>
-        <div>
-            <label class="text-xs text-gray-500">{{ __('cash.usd') }}</label>
-            <input type="text" wire:model="cashUsd" inputmode="decimal" class="input-base w-full text-right" placeholder="0.00" />
-        </div>
-        <div>
-            <label class="text-xs text-gray-500">{{ __('cash.eur') }}</label>
-            <input type="text" wire:model="cashEur" inputmode="decimal" class="input-base w-full text-right" placeholder="0.00" />
-        </div>
-        <div class="flex items-end">
-            <button type="button" wire:click="saveCashBalance" class="btn-primary w-full">{{ __('cash.save') }}</button>
-        </div>
-    </div>
-    @if(auth()->user()->canEnterCashBalance())
-    <button type="button" wire:click="$toggle('showAddAccount')" class="mt-2 rounded-lg border border-dashed border-gray-300 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50">{{ __('cash.account.add_row') }}</button>
-    @if($showAddAccount)
-    <div class="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2" data-cash-account-add>
-        <div><label class="text-xs text-gray-500">{{ __('cash.account.bank') }}</label><input type="text" wire:model="newBank" class="input-base w-28" placeholder="{{ __('cash.account.bank_ph') }}" /></div>
-        <div><label class="text-xs text-gray-500">{{ __('cash.account.number') }}</label><input type="text" wire:model="newAccountNo" class="input-base w-48" placeholder="{{ __('cash.account.number_ph') }}" /></div>
-        <div><label class="text-xs text-gray-500">{{ __('cash.account.label_opt') }}</label><input type="text" wire:model="newLabel" class="input-base w-24" placeholder="{{ __('cash.account.label_ph') }}" /></div>
-        <button type="button" wire:click="addCashAccount" class="btn-primary h-9">{{ __('cash.account.add') }}</button>
-        @error('newBank')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
-        @error('newAccountNo')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
-    </div>
-    @endif
-    @endif
-    @endif
-    <p class="mt-2 text-[11px] text-gray-400">{{ __('cash.input_note') }}</p>
-</div>
-@endif
+{{-- 역할 뷰 본문 --}}
+@switch($roleView)
+    @case('수출통관')
+        @include('erp.dashboard.clearance')
+        @break
+    @case('재무')
+        @include('erp.dashboard.finance')
+        @break
+    @case('관리')
+        @include('erp.dashboard.manage')
+        @break
+    @case('업무관리자')
+        @include('erp.dashboard.supervisor')
+        @break
+    @default
+        @include('erp.dashboard.team')
+@endswitch
 
-{{-- 할일 목록 --}}
-<div class="card">
-    <h2 class="mb-4 text-sm font-semibold text-gray-700">{{ __('dashboard.actions_title') }}</h2>
+{{-- 처리 필요 항목 — 큐 목록(모든 뷰 공통). 관리 뷰에서는 수출통관+재무 큐를 긴급순으로 합친 「오늘 먼저」다. --}}
+<div class="card" data-actions>
+    <div class="mb-3 flex items-center justify-between">
+        <h2 class="text-sm font-semibold text-gray-700">{{ $roleView === '관리' ? __('dashboard.v.manage.today.title') : __('dashboard.actions_title') }}</h2>
+        @if($roleView === '관리')<span class="text-xs text-gray-500">{{ __('dashboard.v.manage.today.sub') }}</span>@endif
+    </div>
     @php
         $totalActions = collect($this->actions)->sum('count');
         $emptyKey = in_array($roleView, ['수출통관','재무'], true) ? $roleView : 'default';
@@ -1035,112 +959,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
 </div>
 
-{{-- 진행중 차량 목록 (모든 role 공통 페어 렌더) --}}
-<div class="card">
-    <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold text-gray-700">{{ __('dashboard.active_title') }}</h2>
-        <div class="flex items-center gap-3">
-            <select wire:model.live="perPage" class="input-filter">
-                <option value="10">{{ __('dashboard.per_page', ['count' => 10]) }}</option>
-                <option value="30">{{ __('dashboard.per_page', ['count' => 30]) }}</option>
-                <option value="50">{{ __('dashboard.per_page', ['count' => 50]) }}</option>
-                <option value="100">{{ __('dashboard.per_page', ['count' => 100]) }}</option>
-            </select>
-            <a href="{{ route('erp.vehicles.index') }}" wire:navigate class="text-xs text-violet-600 hover:underline">{{ __('dashboard.view_all') }}</a>
-        </div>
-    </div>
-
-    {{-- 데스크탑 테이블 --}}
-    <div class="hidden overflow-x-auto sm:block">
-        <table class="w-full text-sm">
-            <thead>
-                <tr class="border-b border-gray-100 text-left text-xs text-gray-400">
-                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.number') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.salesman') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.status') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.next') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.purchase_date') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('dashboard.col.unpaid_purchase') }}</th>
-                    <th class="pb-2 font-medium">{{ __('dashboard.col.unpaid_sale') }}</th>
-                </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-50">
-                @forelse($this->activeVehicles as $v)
-                @php
-                    // 안건 1 v4 (2026-05-21) — 워크플로우 순서: 선적(반입) → 통관 → B/L → 거래완료
-                    // 색 매핑: 선적=amber, 통관=green (v3 amber/green 순서 유지 + 단계명만 swap)
-                    $pb = match(true) {
-                        in_array($v->progress_status, ['매입중','매입완료','말소완료']) => 'badge-blue',
-                        in_array($v->progress_status, ['판매중','판매완료'])            => 'badge-purple',
-                        in_array($v->progress_status, ['선적중','선적완료'])            => 'badge-amber',
-                        in_array($v->progress_status, ['통관중','통관완료'])            => 'badge-green',
-                        // v3 grandfather 호환 (운영 데이터 0이지만 안전망)
-                        in_array($v->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
-                        default                                                         => 'badge-gray',
-                    };
-                    $nextAction = trans()->has('domain.next_action.'.$v->progress_status)
-                        ? __('domain.next_action.'.$v->progress_status)
-                        : __('domain.next_action.none');
-                    $puAmt = $v->purchase_unpaid_amount;
-                    $suAmt = $v->sale_unpaid_amount;
-                @endphp
-                <tr class="hover:bg-gray-50">
-                    <td class="py-2.5 pr-4 font-medium text-gray-800">{{ $v->vehicle_number }}</td>
-                    <td class="py-2.5 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
-                    <td class="py-2.5 pr-4"><span class="badge {{ $pb }}">{{ $v->progress_status_label }}</span></td>
-                    <td class="py-2.5 pr-4 text-xs text-gray-500">{{ $nextAction }}</td>
-                    <td class="py-2.5 pr-4 text-gray-500">{{ $v->purchase_date?->format('m-d') ?? '-' }}</td>
-                    <td class="py-2.5 pr-4 text-xs {{ $puAmt > 0 ? 'font-medium text-red-600' : 'text-gray-300' }}">
-                        {{ $puAmt > 0 ? '₩'.number_format($puAmt) : __('dashboard.none') }}
-                    </td>
-                    <td class="py-2.5 text-xs {{ $suAmt > 0 ? 'font-medium text-amber-600' : 'text-gray-300' }}">
-                        {{ $suAmt > 0 ? number_format($suAmt, 0).' ('.$v->currency.')' : __('dashboard.none') }}
-                    </td>
-                </tr>
-                @empty
-                <tr>
-                    <td colspan="7" class="py-8 text-center text-sm text-gray-400">{{ __('dashboard.no_active') }}</td>
-                </tr>
-                @endforelse
-            </tbody>
-        </table>
-    </div>
-
-    {{-- 모바일 카드 --}}
-    <div class="block space-y-2 sm:hidden">
-        @forelse($this->activeVehicles as $v)
-        @php
-            // 안건 1 v4 (2026-05-21) — 워크플로우 순서: 선적(반입) → 통관 → B/L → 거래완료
-            $pb = match(true) {
-                in_array($v->progress_status, ['매입중','매입완료','말소완료']) => 'badge-blue',
-                in_array($v->progress_status, ['판매중','판매완료'])            => 'badge-purple',
-                in_array($v->progress_status, ['선적중','선적완료'])            => 'badge-amber',
-                in_array($v->progress_status, ['통관중','통관완료'])            => 'badge-green',
-                in_array($v->progress_status, ['수출통관중','수출통관완료'])   => 'badge-amber',
-                default                                                         => 'badge-gray',
-            };
-            $nextAction = trans()->has('domain.next_action.'.$v->progress_status)
-                ? __('domain.next_action.'.$v->progress_status)
-                : __('domain.next_action.none');
-        @endphp
-        <div class="rounded-lg border border-gray-100 px-3 py-2.5">
-            <div class="flex items-center justify-between">
-                <span class="font-medium text-gray-800">{{ $v->vehicle_number }}</span>
-                <span class="badge {{ $pb }}">{{ $v->progress_status_label }}</span>
-            </div>
-            <div class="mt-1 flex items-center justify-between">
-                <span class="text-xs text-gray-500">{{ $nextAction }}</span>
-                <span class="text-xs text-gray-400">
-                    {{ $v->purchase_date?->format('m-d') ?? '-' }}
-                    @if($v->salesman) · {{ $v->salesman->name }} @endif
-                </span>
-            </div>
-        </div>
-        @empty
-        <div class="py-8 text-center text-sm text-gray-400">{{ __('dashboard.no_active') }}</div>
-        @endforelse
-    </div>
-</div>
+{{-- 큐 2번 — 10단계 파이프라인 카운트 스트립. 분포표라 맨 아래(관리자 대시보드와 같은 것). --}}
+@php
+    $stripSubtitle = match(true) {
+        $roleView === '영업' && ($user->isAdmin() || $user->isManager()) && $this->selectedSalesmanId
+            => __('dashboard.subtitle_only', ['name' => $this->salesmen->firstWhere('id', $this->selectedSalesmanId)?->name ?? __('dashboard.salesman')]),
+        $roleView === '영업' && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업'
+            => $user->salesman?->name ? __('dashboard.subtitle_only', ['name' => $user->salesman->name]) : null,
+        $roleView === '영업' && $user->role === '관리'
+            => __('dashboard.view_sub.영업', ['n' => $this->teamSalesmen()->count()]),
+        default => __('dashboard.subtitle_all'),
+    };
+@endphp
+<x-erp.pipeline-strip
+    :counts="$this->pipelineCounts"
+    :url-builder="fn (string $s) => $this->pipelineUrl($s)"
+    :subtitle="$stripSubtitle" />
 
 @endif
 
