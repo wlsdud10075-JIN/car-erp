@@ -43,6 +43,25 @@ new #[Layout('components.layouts.app')] class extends Component
     // TODO: 추후 transaction_completed_at 컬럼 도입 시 매핑 변경.
     #[Url] public string $dateType = 'purchase';
 
+    /**
+     * 🔀 2026-10-17 (jin 「적용해줘」) — 기준일 선택기를 없애고 **탭이 기준일을 정한다**(목업 admin-dashboard-appcss.html).
+     *   영업 = 판매일 · 수출통관 = 선적일(통관완료 날짜 컬럼이 없다 — 체크 플래그뿐) · 재무 = 정산 지급일(companyProfit 이 paid_at 으로 따로 센다,
+     *   차량 기준 KPI 는 거래완료일) · 채권 = 기간 무관(receivableKpis). 기간 선택(이번달·전월·올해·직접)과 [조회]는 그대로.
+     *   `dateType` 프로퍼티는 남긴다 — URL(`?dateType=`)·테스트가 직접 넣고, 탭을 바꾸면 여기서 덮는다.
+     */
+    #[Url] public string $tab = 'sales';
+
+    public const TAB_DATE_TYPE = ['sales' => 'sale', 'clearance' => 'shipping', 'settlement' => 'completed', 'receivable' => 'purchase'];
+
+    public function updatedTab(): void
+    {
+        if (! isset(self::TAB_DATE_TYPE[$this->tab])) {
+            $this->tab = 'sales';
+        }
+        $this->dateType = self::TAB_DATE_TYPE[$this->tab];
+        $this->applyFilters();   // 탭마다 기준일이 다르므로 숫자를 다시 센다(캐시 salt 올림 + 차트 푸시)
+    }
+
     /** 자금추이 집계 단위 (jin 2026-07-25): day 일 / week 주 / month 월 / year 년. */
     #[Url] public string $trendGrain = 'day';
 
@@ -64,6 +83,10 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         $this->dateFrom = $this->dateFrom ?: now()->subMonths(2)->format('Y-m-d');
         $this->dateTo = $this->dateTo ?: now()->format('Y-m-d');
+        // 탭이 기준일을 정한다(10-17). URL 에 dateType 을 직접 실은 경우(옛 링크·테스트)는 그 값을 존중한다.
+        if (isset(self::TAB_DATE_TYPE[$this->tab]) && ! request()->has('dateType')) {
+            $this->dateType = self::TAB_DATE_TYPE[$this->tab];
+        }
     }
 
     private function dateColumn(): string
@@ -596,8 +619,20 @@ new #[Layout('components.layouts.app')] class extends Component
         return $this->remembered('companyProfit', fn () => $this->computeCompanyProfit());
     }
 
-    private function computeCompanyProfit(): array
+    /**
+     * 리드 카드용 「이번 달 회사 순이익」 — 조회 기간과 무관하게 이번 달 1일~오늘(지급일 기준). 공식은 같다(computeCompanyProfit 재사용).
+     * 브리프 2026-10-16 «리드는 「이번 달」 고정 표시, 필터는 상세에만».
+     */
+    #[Computed]
+    public function companyProfitThisMonth(): array
     {
+        return $this->remembered('companyProfitMonth', fn () => $this->computeCompanyProfit(now()->startOfMonth()->toDateString(), now()->toDateString()));
+    }
+
+    private function computeCompanyProfit(?string $from = null, ?string $to = null): array
+    {
+        $from ??= $this->dateFrom;
+        $to ??= $this->dateTo;
         $ids = $this->managerScopeSalesmanIds();
 
         $companyNet = 0;
@@ -612,8 +647,8 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
             ->where('settlement_status', 'paid')
             ->whereNotNull('paid_at')
-            ->when($this->dateFrom, fn ($q) => $q->where('paid_at', '>=', $this->dateFrom))
-            ->when($this->dateTo, fn ($q) => $q->where('paid_at', '<=', $this->dateTo.' 23:59:59'))
+            ->when($from, fn ($q) => $q->where('paid_at', '>=', $from))
+            ->when($to, fn ($q) => $q->where('paid_at', '<=', $to.' 23:59:59'))
             // 🚨 마진·지급액 accessor 가 차량의 **잔금·회수이력**을 읽는다 — 같이 싣지 않으면
             //    행마다 2쿼리가 붙는다(정산 3,815건이면 7천 쿼리). 스냅샷이 있는 행은 안 타지만
             //    **엑셀 적재분은 스냅샷이 없어** 전부 여기로 온다.
@@ -739,8 +774,8 @@ new #[Layout('components.layouts.app')] class extends Component
         $overpayIncome = 0;
         \App\Models\ReceivableHistory::query()
             ->where('method', 'company_income')
-            ->when($this->dateFrom, fn ($q) => $q->where('collected_at', '>=', $this->dateFrom))
-            ->when($this->dateTo, fn ($q) => $q->where('collected_at', '<=', $this->dateTo))
+            ->when($from, fn ($q) => $q->where('collected_at', '>=', $from))
+            ->when($to, fn ($q) => $q->where('collected_at', '<=', $to))
             ->when($ids !== null, fn ($q) => $q->whereHas('vehicle', fn ($v) => $v->whereIn('salesman_id', $ids)))
             ->with('vehicle:id,currency,exchange_rate')
             ->get()
@@ -1126,15 +1161,10 @@ new #[Layout('components.layouts.app')] class extends Component
         <div>
             <h1 class="text-2xl font-bold text-gray-800">{{ __('admin_dash.title') }}</h1>
             <p class="mt-1 text-sm text-gray-500">{{ __('admin_dash.subtitle') }}</p>
+            {{-- 🔀 10-17 — 기준일 선택기 제거, 탭이 기준일을 정한다(TAB_DATE_TYPE). 지금 무슨 기준인지는 이 한 줄로. --}}
+            <p class="mt-1 text-[11px] text-gray-400" data-period-basis>{{ __('admin_dash.period_basis') }}</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
-            {{-- 큐 4 8-1 — 기준일 컬럼 전환 (조회 버튼 클릭 시에만 반영) --}}
-            <select wire:model="dateType" class="input-filter">
-                <option value="purchase">{{ __('admin_dash.date_type.purchase') }}</option>
-                <option value="sale">{{ __('admin_dash.date_type.sale') }}</option>
-                <option value="shipping">{{ __('admin_dash.date_type.shipping') }}</option>
-                <option value="completed">{{ __('admin_dash.date_type.completed') }}</option>
-            </select>
             <input type="date" wire:model="dateFrom" class="input-filter" />
             <span class="text-xs text-gray-400">~</span>
             <input type="date" wire:model="dateTo" class="input-filter" />
@@ -1168,8 +1198,48 @@ new #[Layout('components.layouts.app')] class extends Component
         <span class="ml-2 text-gray-400">{{ __('admin_dash.quick_hint') }}</span>
     </div>
 
-    {{-- 큐 4 8-4 — role 탭. 위젯 필터만 적용 (신규 집계 없음). --}}
-    {{-- 큐 4 점검 — '전체' 탭과 '영업' 탭이 거의 같아 통합: '영업' 1개로 단일화 --}}
+    {{-- 🔀 10-17 리드 2카드 (브리프 §1) — 첫 화면에 숫자 둘: ① 이번 달 회사 순이익 ② 받을 돈(총 미수, 기간 무관).
+         둘 다 누르면 근거 화면(정산관리·채권관리). 미수 KPI 가 KPI 줄과 채권 탭에 두 번 있던 것을 여기로 합쳤다. --}}
+    @php
+        $leadProfit = $this->companyProfitThisMonth;
+        $leadRecv = $this->receivableKpis;
+        $leadCls = $leadRecv['classification'] ?? [];
+        $leadRisk = (int) ($leadRecv['risk_counts']['danger'] ?? 0) + (int) ($leadRecv['risk_counts']['critical'] ?? 0);
+    @endphp
+    <div class="grid grid-cols-1 gap-3 lg:grid-cols-2" data-lead-cards>
+        <div class="card border-violet-200 bg-violet-50/30">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-violet-700">{{ __('admin_dash.lead_profit') }} <span class="font-normal text-gray-400">{{ __('admin_dash.lead_profit_sub', ['month' => now()->format('n')]) }}</span></span>
+                <a href="{{ route('erp.settlements.index') }}" wire:navigate class="text-xs text-violet-600 hover:underline">{{ __('admin_dash.lead_profit_link') }}</a>
+            </div>
+            <div class="mt-1 text-3xl font-bold {{ $leadProfit['company_net'] < 0 ? 'text-red-600' : 'text-gray-900' }}" data-lead-profit>₩@krw($leadProfit['company_net'])</div>
+            <p class="mt-1 text-[11px] text-gray-500">{{ __('admin_dash.lead_profit_formula', ['margin' => \App\Support\Money::krw($leadProfit['margin_sum']), 'payout' => \App\Support\Money::krw($leadProfit['payout_sum']), 'ship' => \App\Support\Money::krw($leadProfit['shipping_sum'] + $leadProfit['common_labor'])]) }}@if($leadProfit['overpay_income'] > 0) · {{ __('admin_dash.lead_profit_overpay', ['amount' => \App\Support\Money::krw($leadProfit['overpay_income'])]) }}@endif</p>
+        </div>
+        <div class="card border-amber-200 bg-amber-50/30">
+            <div class="flex items-center justify-between">
+                <span class="text-xs font-semibold text-amber-700">{{ __('admin_dash.lead_recv') }} <span class="font-normal text-gray-400">{{ __('admin_dash.lead_recv_sub') }}</span></span>
+                <a href="{{ route('erp.receivables.index') }}" wire:navigate class="text-xs text-violet-600 hover:underline">{{ __('admin_dash.kpi_receivable_link') }}</a>
+            </div>
+            <div class="mt-1 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                <span class="text-3xl font-bold text-amber-600" data-lead-recv>₩@krw($leadRecv['total_unpaid'])</span>
+                <a href="{{ route('erp.receivables.index', ['riskFilter' => 'danger']) }}" wire:navigate class="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-700 hover:bg-red-200">{{ __('admin_dash.lead_recv_risk', ['count' => $leadRisk]) }}</a>
+            </div>
+            <p class="mt-1 text-[11px] text-gray-500">
+                {{ __('admin_dash.recv_after') }} <b>₩@krw($leadCls['after_shipping']['unpaid'] ?? 0)</b> ({{ $leadCls['after_shipping']['count'] ?? 0 }}) ·
+                {{ __('admin_dash.recv_before') }} ₩@krw($leadCls['before_shipping']['unpaid'] ?? 0) ({{ $leadCls['before_shipping']['count'] ?? 0 }}) ·
+                {{ __('admin_dash.recv_grace') }} ₩@krw($leadRecv['grace_unpaid']) ({{ $leadRecv['grace_count'] }}) ·
+                <a href="{{ route('erp.receivables.index').'?cancelFilter=cancelled&classification=cancelled_all' }}" wire:navigate class="hover:underline">{{ __('admin_dash.recv_cancel') }} {{ $leadRecv['cancel_active'] }}{{ __('admin_dash.recv_cancel_unit') }}</a>
+            </p>
+            {{-- 등급별 대수 — 카운트 SQL = Vehicle::scopeAction receivable_{key}. 🚫 기간을 실어 보내지 않는다(jin 2026-09-14) — vehiclesUrlAllTime. 「안전」은 없다(jin 09-14). --}}
+            <div class="mt-2 flex flex-wrap gap-1.5">
+                @foreach (['caution' => [__('receivable.risk.caution'), 'amber'], 'danger' => [__('receivable.risk.danger'), 'amber'], 'critical' => [__('receivable.risk.critical'), 'red']] as $key => [$label, $badge])
+                <a href="{{ $this->vehiclesUrlAllTime(['action' => 'receivable_'.$key]) }}" wire:navigate class="badge badge-{{ $badge }} hover:opacity-80">{{ $label }} {{ number_format($leadRecv['risk_counts'][$key] ?? 0) }}</a>
+                @endforeach
+            </div>
+        </div>
+    </div>
+
+    {{-- 큐 4 8-4 — role 탭. 🔀 10-17 탭이 기준일을 정한다 — Livewire `tab` 과 entangle, 바꾸면 updatedTab() 이 dateType 을 덮고 다시 센다. --}}
     <div class="flex flex-wrap gap-1 border-b border-gray-200">
         @foreach ([
             'sales'      => __('admin_dash.tab.sales'),
@@ -1389,67 +1459,23 @@ new #[Layout('components.layouts.app')] class extends Component
     </div>
     @endif
 
-    {{-- 매출 KPI — 차량/매입 (2 박스) + 발생/회수/미수 (3 박스) + 채권 링크 (1 박스).
-         새회의.txt #7 + 3-B (2026-05-23) — 매출 vs 현금흐름 분리 (회계 표준). --}}
-    <div id="w-kpi" x-show="isWidgetVisible('w-kpi')" class="space-y-3">
-
-        {{-- 차량/매입 KPI 2개 --}}
-        <div class="grid grid-cols-2 gap-3">
-            <a href="{{ $this->vehiclesUrl() }}" wire:navigate class="card transition hover:bg-gray-50">
-                <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-500">{{ __('admin_dash.kpi_vehicles') }}</span>
-                    <span class="text-xs text-violet-500">{{ __('admin_dash.detail') }}</span>
-                </div>
-                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->kpis['vehicles']) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_count') }}</span></div>
-            </a>
-            <a href="{{ $this->vehiclesUrl(['action' => 'has_purchase']) }}" wire:navigate class="card transition hover:bg-gray-50">
-                <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-500">{{ __('admin_dash.kpi_purchase_total') }}</span>
-                    <span class="text-xs text-violet-500">{{ __('admin_dash.detail') }}</span>
-                </div>
-                <div class="mt-1 text-2xl font-bold text-gray-800">@krw($this->kpis['purchase_total'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span></div>
-            </a>
-        </div>
-
-        {{-- 발생 매출 + 현금 회수 + 미수금 — 회계 표준 3박스 분리 (새회의 #7 + 3-B) --}}
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <a href="{{ $this->vehiclesUrl(['action' => 'has_sale']) }}" wire:navigate
-               class="card border-blue-200 bg-blue-50/30 transition hover:bg-blue-50">
-                <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-blue-700">{{ __('admin_dash.kpi_sale_accrual') }} <span class="font-normal text-gray-400">{{ __('admin_dash.kpi_sale_accrual_sub') }}</span></span>
-                    <span class="text-xs text-violet-500">{{ __('admin_dash.kpi_sale_count_link', ['count' => $this->kpis['sale_count']]) }}</span>
-                </div>
-                <div class="mt-1 text-2xl font-bold text-blue-600">₩@krw($this->kpis['sale_total_krw'])</div>
-                <p class="mt-0.5 text-[11px] text-gray-500">{{ __('admin_dash.kpi_sale_accrual_note') }}</p>
-            </a>
-            <a href="{{ $this->vehiclesUrl(['action' => 'has_sale']) }}" wire:navigate
-               class="card border-emerald-200 bg-emerald-50/30 transition hover:bg-emerald-50">
-                <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-emerald-700">{{ __('admin_dash.kpi_cash') }} <span class="font-normal text-gray-400">{{ __('admin_dash.kpi_cash_sub') }}</span></span>
-                    <span class="text-xs text-violet-500">{{ __('admin_dash.detail') }}</span>
-                </div>
-                <div class="mt-1 text-2xl font-bold text-emerald-600">₩@krw($this->kpis['cash_received_krw'])</div>
-                <p class="mt-0.5 text-[11px] text-gray-500">{{ __('admin_dash.kpi_cash_note') }}</p>
-            </a>
-            <a href="{{ route('erp.receivables.index') }}" wire:navigate
-               class="card border-amber-200 bg-amber-50/30 transition hover:bg-amber-50">
-                <div class="flex items-center justify-between">
-                    <span class="text-xs font-semibold text-amber-700">{{ __('admin_dash.kpi_unpaid') }} <span class="font-normal text-gray-400">{{ __('admin_dash.kpi_unpaid_sub') }}</span></span>
-                    <span class="text-xs text-violet-500">{{ __('admin_dash.kpi_receivable_link') }}</span>
-                </div>
-                <div class="mt-1 text-2xl font-bold text-amber-600">₩@krw($this->kpis['unpaid_krw'])</div>
-                <p class="mt-0.5 text-[11px] text-gray-500">{{ __('admin_dash.kpi_unpaid_note') }}</p>
-            </a>
-        </div>
+    @php
+        $dateTypeLabel = ['purchase' => __('admin_dash.date_type_short.purchase'), 'sale' => __('admin_dash.date_type_short.sale'), 'shipping' => __('admin_dash.date_type_short.shipping'), 'completed' => __('admin_dash.date_type_short.completed')][$dateType] ?? __('admin_dash.date_type_short.purchase');
+    @endphp
+    {{-- 매출 KPI — 새회의.txt #7 + 3-B (2026-05-23) — 매출 vs 현금흐름 분리 (회계 표준). --}}
+    {{-- 🔀 10-17 — KPI 카드 5장 → 「이 기간의 근거」 한 줄(차량 수·매입합·발생매출·현금회수). 미수 카드는 리드로 올라갔다(기간 무관이라 여기 있으면 두 번 센다). --}}
+    <div id="w-kpi" x-show="isWidgetVisible('w-kpi')" class="card flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-gray-700" data-period-line>
+        <span class="text-xs text-gray-400">{{ $dateTypeLabel }} {{ $dateFrom }} ~ {{ $dateTo }}</span>
+        <a href="{{ $this->vehiclesUrl() }}" wire:navigate class="hover:underline">{{ __('admin_dash.kpi_vehicles') }} <b class="text-gray-900">{{ number_format($this->kpis['vehicles']) }}{{ __('admin_dash.unit_count') }}</b></a>
+        <a href="{{ $this->vehiclesUrl(['action' => 'has_purchase']) }}" wire:navigate class="hover:underline">{{ __('admin_dash.kpi_purchase_total') }} <b class="text-gray-900">₩@krw($this->kpis['purchase_total'])</b></a>
+        <a href="{{ $this->vehiclesUrl(['action' => 'has_sale']) }}" wire:navigate class="hover:underline">{{ __('admin_dash.kpi_sale_accrual') }} <b class="text-blue-700">₩@krw($this->kpis['sale_total_krw'])</b> <span class="text-xs text-gray-400">{{ __('admin_dash.kpi_sale_count_link', ['count' => $this->kpis['sale_count']]) }}</span></a>
+        <a href="{{ $this->vehiclesUrl(['action' => 'has_sale']) }}" wire:navigate class="hover:underline">{{ __('admin_dash.kpi_cash') }} <b class="text-emerald-700">₩@krw($this->kpis['cash_received_krw'])</b></a>
     </div>
 
     {{-- 채널별 분포 --}}
     {{-- 큐 16 — w-channel 위젯 제거 (채널 단일화). --}}
 
-    {{-- 진행 단계별 분포 — 큐 2번 파이프라인 카운트 스트립 (선택 기준일 기준) --}}
-    @php
-        $dateTypeLabel = ['purchase' => __('admin_dash.date_type_short.purchase'), 'sale' => __('admin_dash.date_type_short.sale'), 'shipping' => __('admin_dash.date_type_short.shipping'), 'completed' => __('admin_dash.date_type_short.completed')][$dateType] ?? __('admin_dash.date_type_short.purchase');
-    @endphp
+    {{-- 진행 단계별 분포 — 큐 2번 파이프라인 카운트 스트립 (탭이 정한 기준일 기준) --}}
     <div id="w-progress" x-show="isWidgetVisible('w-progress')">
         <x-erp.pipeline-strip
             :counts="$this->kpis['by_progress']"
@@ -1694,51 +1720,8 @@ new #[Layout('components.layouts.app')] class extends Component
              대표 알림톡과 2.5배 어긋나 있었다. --}}
         <p class="text-[11px] text-gray-400">{{ __('admin_dash.recv_period_note') }}</p>
 
-        {{-- 총 미수금 + 위험도 카운트 5개 — flex-wrap (Tailwind 빌드 누락 대비) --}}
-        <div class="flex flex-wrap gap-3">
-            <div class="card min-w-[180px] flex-1 border-red-200 bg-red-50/30">
-                <div class="text-xs text-gray-500">{{ __('admin_dash.recv_total_unpaid') }}</div>
-                <div class="mt-1 text-2xl font-bold text-red-600">
-                    @krw($this->receivableKpis['total_unpaid'])<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_won') }}</span>
-                </div>
-                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_total_unpaid_note') }}</p>
-            </div>
-            {{-- 결제대기(grace) — 총미수에서 제외된 금액 별도 표시 (jin 2026-07-06) --}}
-            <div class="card min-w-[180px] flex-1 border-gray-200 bg-gray-50/50">
-                <div class="text-xs text-gray-500">{{ __('admin_dash.recv_grace') }}</div>
-                <div class="mt-1 text-2xl font-bold text-gray-500">
-                    @krw($this->receivableKpis['grace_unpaid'])<span class="ml-1 text-sm font-normal text-gray-400">{{ __('admin_dash.unit_won') }}</span>
-                </div>
-                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_grace_note', ['count' => $this->receivableKpis['grace_count']]) }}</p>
-            </div>
-            {{-- 매입취소 (jin 2026-07-18) — 진행/마감 카운트, 채권관리 취소필터로 --}}
-            <a href="{{ route('erp.receivables.index').'?cancelFilter=cancelled&classification=cancelled_all' }}" wire:navigate
-               class="card min-w-[180px] flex-1 border-rose-200 bg-rose-50/40 transition hover:bg-rose-50">
-                <div class="text-xs text-gray-500">{{ __('admin_dash.recv_cancel') }}</div>
-                <div class="mt-1 text-2xl font-bold text-rose-600">
-                    {{ number_format($this->receivableKpis['cancel_active']) }}<span class="ml-1 text-sm font-normal text-gray-400">{{ __('admin_dash.recv_cancel_unit') }}</span>
-                </div>
-                <p class="mt-1 text-[11px] text-gray-400">{{ __('admin_dash.recv_cancel_note', ['closed' => $this->receivableKpis['cancel_closed']]) }}</p>
-            </a>
-            {{-- 카운트 SQL = Vehicle::scopeAction receivable_{key} — vehicles 화면 채널 통합 라우팅.
-                 🚫 **기간을 실어 보내지 않는다**(jin 2026-09-14) — 카드가 전 기간을 세기 때문이다.
-                    vehiclesUrl() 을 쓰면 목록만 상단 조회기간에 잘려 숫자가 갈린다(실측 207 → 145).
-                 🕳️ 「안전」은 미수 0 인 차라 미수 목록 기준으로는 구조적으로 0 이었다 —
-                    아래 receivableKpis 에서 「완납된 판매차」로 뜻을 맞췄다. --}}
-            {{-- 🗑️ **「안전」 카드는 내렸다** (jin 2026-09-14) — *「안전이란 건 없지 뭐.. 채권인데..」*
-                 채권 화면은 **못 받은 돈**을 보는 곳인데 안전은 **다 받은 차**다(실측 싼카 4,252대).
-                 화면만 채우고 아무 행동도 안 만든다. 🚫 다시 넣지 말 것 — 가드가 잡는다. --}}
-            @foreach (['caution' => [__('receivable.risk.caution'), 'amber'], 'danger' => [__('receivable.risk.danger'), 'amber'], 'critical' => [__('receivable.risk.critical'), 'red']] as $key => [$label, $badge])
-            <a href="{{ $this->vehiclesUrlAllTime(['action' => 'receivable_'.$key]) }}" wire:navigate
-               class="card min-w-[160px] flex-1 transition hover:bg-gray-50">
-                <div class="flex items-center justify-between">
-                    <span class="text-xs text-gray-500">{{ $label }}</span>
-                    <span class="badge badge-{{ $badge }}">{{ $label }}</span>
-                </div>
-                <div class="mt-1 text-2xl font-bold text-gray-800">{{ number_format($this->receivableKpis['risk_counts'][$key] ?? 0) }}<span class="ml-1 text-sm font-normal text-gray-500">{{ __('admin_dash.unit_count') }}</span></div>
-            </a>
-            @endforeach
-        </div>
+        {{-- 🔀 10-17 — 총 미수·결제대기·매입취소·등급 카드 줄은 **리드 카드(받을 돈)로 올라갔다**(같은 숫자 두 번 금지).
+             등급 링크는 거기서도 vehiclesUrlAllTime 이다(jin 2026-09-14 기간 안 실음). 「안전」 카드는 09-14 에 내렸고 🚫 다시 넣지 말 것. --}}
 
         {{-- 큐 10 확장 — G3 미수 분류 카드 3개 (회의록 v5 §G3, 사용자 결정 2026-05-18) --}}
         @php $cls = $this->receivableKpis['classification'] ?? []; @endphp
@@ -1903,12 +1886,12 @@ new #[Layout('components.layouts.app')] class extends Component
                 ],
                 // 큐 4 8-4·8-5·8-7·8-8 — 탭별 노출 위젯 매핑
                 // 점검 — 전체↔영업 통합 (영업이 회사 전체 흐름을 다 포함). 활성 탭 기본=영업.
-                activeTab: 'sales',
+                activeTab: @entangle('tab').live,   // 🔀 10-17 — 서버 `tab` 과 묶는다(탭 = 기준일). localStorage 는 다음 방문의 첫 탭.
                 tabWidgets: {
                     sales:      ['w-kpi', 'w-progress', 'w-monthly', 'w-salesman'],
                     clearance:  ['w-kpi', 'w-progress', 'w-clearance'],
                     settlement: ['w-kpi', 'w-settlement'],
-                    receivable: ['w-kpi'],  // 채권 탭은 별도 안내 카드 + KPI만 (8-6 완료)
+                    receivable: [],  // 채권 탭은 기간 무관 — 기간 근거 줄도 안 보인다(10-17). 총 미수는 리드 카드.
                 },
                 chartData: {
                     monthly: @js($this->monthlyChartData),
@@ -1928,8 +1911,8 @@ new #[Layout('components.layouts.app')] class extends Component
                     if (savedTab === 'all') {
                         this.activeTab = 'sales';
                         localStorage.setItem('car_erp_admin_dashboard_tab', 'sales');
-                    } else if (savedTab && this.tabWidgets[savedTab]) {
-                        this.activeTab = savedTab;
+                    } else if (savedTab && this.tabWidgets[savedTab] && savedTab !== this.activeTab && ! window.location.search.includes('tab=')) {
+                        this.activeTab = savedTab;   // entangle 이 서버로 밀어 updatedTab() → 기준일·숫자 재계산
                     }
 
                     // 초기 차트 렌더 — DOM 안착 후 (월별 차트 위젯이 꺼져 있어도 ref는 존재)
