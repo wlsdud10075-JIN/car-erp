@@ -59,7 +59,14 @@ new #[Layout('components.layouts.app')] class extends Component
             $this->tab = 'sales';
         }
         $this->dateType = self::TAB_DATE_TYPE[$this->tab];
-        $this->applyFilters();   // 탭마다 기준일이 다르므로 숫자를 다시 센다(캐시 salt 올림 + 차트 푸시)
+        // 탭마다 기준일이 다르므로 다시 센다 — 단 **캐시 salt 는 안 올린다**(remembered 키에 dateType 이 들어 있어
+        // 새 탭 = 새 키, 되돌아온 탭 = 히트). salt 를 올리면 탭 클릭마다 회사이익 10초(ssancarerp)를 다시 돈다.
+        unset($this->kpis, $this->monthlyChartData, $this->salesmanPerformance, $this->settlementKpis, $this->receivableKpis, $this->clearanceKpis);
+        $this->dispatch('charts-refresh', data: [
+            'monthly' => $this->monthlyChartData,
+            'salesman' => $this->salesmanPerformance,
+            'settlement' => $this->settlementKpis,
+        ]);
     }
 
     /** 자금추이 집계 단위 (jin 2026-07-25): day 일 / week 주 / month 월 / year 년. */
@@ -626,7 +633,15 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Computed]
     public function companyProfitThisMonth(): array
     {
-        return $this->remembered('companyProfitMonth', fn () => $this->computeCompanyProfit(now()->startOfMonth()->toDateString(), now()->toDateString()));
+        // 조회 기간·기준일과 무관한 값이라 키도 그것들을 안 담는다(월 + 사용자 + salt — [조회]로는 새로 센다, 탭 전환으로는 안 센다).
+        $ttl = (int) config('services.admin_dashboard.cache_seconds', 60);
+        $fn = fn () => $this->computeCompanyProfit(now()->startOfMonth()->toDateString(), now()->toDateString());
+        if ($ttl <= 0) {
+            return $fn();
+        }
+        $key = 'admin-dash:companyProfitMonth:'.md5(json_encode([config('company.template_set'), auth()->id(), $this->managerScopeSalesmanIds(), now()->format('Y-m-d'), $this->cacheSalt]));
+
+        return Cache::remember($key, $ttl, $fn);
     }
 
     private function computeCompanyProfit(?string $from = null, ?string $to = null): array
