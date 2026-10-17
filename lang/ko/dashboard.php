@@ -79,6 +79,7 @@ return [
                 'title' => '오래 멈춘 차 — 누가 어디서', 'sub' => '기준 = 통관 정체 30일 · 말소 기한 · 미수 stale · ETA 없음',
                 'col' => ['vehicle' => '차량', 'salesman' => '영업', 'manager' => '담당 관리', 'where' => '멈춘 곳', 'days' => '며칠', 'action' => '조치'],
                 'where' => ['clearance' => '판매 후 면장 없음', 'deregistration' => '매입 완납 후 말소 안 함', 'receivable' => '안 떠났는데 미수 오래됨', 'eta' => '선적일 있는데 ETA 없음'],
+                'chip' => ['all' => '전체', 'clearance' => '통관 정체', 'deregistration' => '말소 기한', 'receivable' => '미수 오래됨', 'eta' => 'ETA 없음'], 'empty_here' => '이 칸에는 멈춘 차가 없습니다.',
                 'to' => ':name에게', 'unassigned' => '담당 관리 없음', 'empty' => '멈춘 차가 없습니다.'],
             'teams' => ['title' => '관리별 미처리 — 팀 단위', 'link' => '사용자관리(배정) →',
                 'col' => ['manager' => '관리', 'salesmen' => '담당 영업', 'docs' => '서류', 'unpaid' => '미수(팀)', 'risk' => '위험', 'purchase' => '미지급', 'held' => '정산 보류', 'stuck' => '멈춘 차'],

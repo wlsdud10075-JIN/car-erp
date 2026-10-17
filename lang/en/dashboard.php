@@ -79,6 +79,7 @@ return [
                 'title' => 'Stalled vehicles — who and where', 'sub' => 'Basis = clearance stuck 30 d · deregistration due · stale receivable · missing ETA',
                 'col' => ['vehicle' => 'Vehicle', 'salesman' => 'Sales', 'manager' => 'Manager', 'where' => 'Stuck at', 'days' => 'Days', 'action' => 'Action'],
                 'where' => ['clearance' => 'Sold, no declaration', 'deregistration' => 'Paid in full, not deregistered', 'receivable' => 'Not departed, receivable stale', 'eta' => 'Shipped, no ETA'],
+                'chip' => ['all' => 'All', 'clearance' => 'Clearance stuck', 'deregistration' => 'Deregistration due', 'receivable' => 'Receivable stale', 'eta' => 'No ETA'], 'empty_here' => 'No stalled vehicles here.',
                 'to' => 'To :name', 'unassigned' => 'No manager assigned', 'empty' => 'No stalled vehicles.'],
             'teams' => ['title' => 'Open items by manager — team level', 'link' => 'Users (assignment) →',
                 'col' => ['manager' => 'Manager', 'salesmen' => 'Sales team', 'docs' => 'Docs', 'unpaid' => 'Receivable (team)', 'risk' => 'At risk', 'purchase' => 'Purchase unpaid', 'held' => 'Held', 'stuck' => 'Stalled'],

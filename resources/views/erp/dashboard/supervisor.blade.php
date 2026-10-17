@@ -62,11 +62,20 @@
 {{-- 오래 멈춘 차 --}}
 <div class="card" data-supervisor-stuck>
     <div class="flex items-center justify-between">
-        <div class="section-header"><span class="section-dot bg-red-500"></span><span class="section-title">{{ $t('stuck.title') }}</span>@if($sp['total']) <span class="pill-count">{{ $t('stuck.total', ['n' => $sp['total']]) }}</span>@endif</div>
+        <div class="section-header"><span class="section-dot bg-red-500"></span><span class="section-title">{{ $t('stuck.title') }}</span>@if($sp['all']) <span class="pill-count">{{ $t('stuck.total', ['n' => $sp['all']]) }}</span>@endif</div>
         <span class="text-xs text-gray-500">{{ $t('stuck.sub') }}</span>
     </div>
+    @if($sp['all'])
+    {{-- 멈춘 곳 칩 (jin 10-17) — 하나만 고른다(다시 누르면 전체). 숫자는 목록과 같은 줄 수. --}}
+    <div class="mt-2 flex flex-wrap gap-1" data-supervisor-stuck-chips>
+        <button type="button" wire:click="setStuckWhere('')" class="tab-pill px-3 py-1 text-xs {{ $sp['where'] === '' ? 'is-active' : '' }}">{{ $t('stuck.chip.all') }} {{ $sp['all'] }}</button>
+        @foreach(array_keys(\App\Services\Dashboard\WorkDashboardData::STUCK_QUEUES) as $w)
+        <button type="button" wire:click="setStuckWhere('{{ $w }}')" data-stuck-chip="{{ $w }}" class="tab-pill px-3 py-1 text-xs {{ $sp['where'] === $w ? 'is-active' : '' }} {{ empty($sp['counts'][$w]) ? 'opacity-40' : '' }}">{{ $t('stuck.chip.'.$w) }} {{ $sp['counts'][$w] ?? 0 }}</button>
+        @endforeach
+    </div>
+    @endif
     @if($stuck->isEmpty())
-    <p class="mt-3 text-sm text-gray-400">{{ $t('stuck.empty') }}</p>
+    <p class="mt-3 text-sm text-gray-400">{{ $sp['all'] ? $t('stuck.empty_here') : $t('stuck.empty') }}</p>
     @else
     <div class="mt-2 overflow-x-auto">
         <table class="w-full min-w-[640px] text-xs tabular-nums">

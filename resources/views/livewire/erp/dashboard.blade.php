@@ -23,6 +23,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     /** 업무관리자 뷰 「오래 멈춘 차」 현재 페이지 — Livewire 프로퍼티라 30초 폴링을 넘겨도 남는다. */
     public int $stuckPage = 1;
+
+    /** 「멈춘 곳」 필터 칩 (jin 10-17) — '' = 전체, 그 외 WorkDashboardData::STUCK_QUEUES 키. 바꾸면 1페이지로. */
+    public string $stuckWhere = '';
     // 역할 뷰 (jin 2026-10-17 역할별 새 모양 적용) — localStorage 연동.
     //   '영업' = 담당 영업(관리가 자기 담당 영업들의 돈을 묶어 본다 — 영업은 로그인하지 않는다)
     //   '수출통관' = 서류 칸반 + 이번 주 배 / '재무' = 받을 돈·줄 돈 + 정산 진행줄 + 통장잔액
@@ -395,18 +398,31 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed] public function stuckPaged(): array
     {
         $all = $this->stuckVehicles;
-        $total = $all->count();
+        $counts = $all->countBy('where')->all();   // 칩 숫자 — 목록과 같은 줄을 센다(stuckCount 와 같은 큐)
+        $where = array_key_exists($this->stuckWhere, WorkDashboardData::STUCK_QUEUES) ? $this->stuckWhere : '';
+        $rows = $where === '' ? $all : $all->where('where', $where)->values();
+        $total = $rows->count();
         $pages = max(1, (int) ceil($total / self::STUCK_PER_PAGE));
         $page = min(max(1, $this->stuckPage), $pages);
         $from = ($page - 1) * self::STUCK_PER_PAGE;
 
-        return ['rows' => $all->slice($from, self::STUCK_PER_PAGE)->values(), 'total' => $total, 'page' => $page, 'pages' => $pages,
-            'from' => $total ? $from + 1 : 0, 'to' => min($total, $from + self::STUCK_PER_PAGE)];
+        return ['rows' => $rows->slice($from, self::STUCK_PER_PAGE)->values(), 'total' => $total, 'page' => $page, 'pages' => $pages,
+            'from' => $total ? $from + 1 : 0, 'to' => min($total, $from + self::STUCK_PER_PAGE),
+            'where' => $where, 'all' => $all->count(), 'counts' => $counts];
     }
 
     public function moveStuckPage(int $delta): void
     {
         $this->stuckPage = max(1, $this->stuckPaged['page'] + $delta);
+        unset($this->stuckPaged);
+    }
+
+    /** 멈춘 곳 칩 — 같은 칩을 다시 누르면 전체로. 모르는 키는 전체. */
+    public function setStuckWhere(string $where): void
+    {
+        $where = array_key_exists($where, WorkDashboardData::STUCK_QUEUES) ? $where : '';
+        $this->stuckWhere = $where === $this->stuckWhere ? '' : $where;
+        $this->stuckPage = 1;
         unset($this->stuckPaged);
     }
     #[Computed] public function managerNames(): array { return $this->data()->managerNamesBySalesman(); }
