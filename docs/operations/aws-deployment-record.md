@@ -658,6 +658,13 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-17 — 업무 대시보드 역할 뷰 5개 · 관리자 대시보드 리드 2카드/탭 기준일 · 사이드바 스크롤바 `e41e2679` (3사 동시, 코드 6커밋, 마이그 0)
+
+- dev `d48b7ef2`(사이드바 스크롤바 CSS) · `e67b5046`(업무 대시보드 역할 뷰 5개) · `0a7f606c`+`e61ba06a`(관리자 대시보드 리드 2카드·탭 기준일·캐시 salt) · `8683adc3`(카드 접힘·멈춘 차 15대씩) · `18460388`(멈춘 곳 칩) → master `0b208760`…`e41e2679`. cherry-pick 때 `CLAUDE.md`·`scripts/notion-cards/cards.json`·`docs/design/mock/*.html`·`tests/Feature/NotionGuideAudienceTest.php`(전부 master 미추적) 는 빼고 커밋(modify/delete 충돌 = 삭제로 해소).
+- deploy 런 `39016108157` 잡 5개 success. 서버 SHA 3사 `e41e2679` 실측. 전체 테스트 로컬 3,382 통과(1 skip). 가이드 `--verify`: 부서 가이드·워크플로우 정합, 카드 3장 불일치(업무·일반사용자·관리자 대시보드 — Codex 재발행 대상).
+- 배포 뒤 할 일: ssancarerp 자금보고 토글 ON(jin) · Notion 카드 재발행(Codex) · 🚫 karabaerp 자금보고 토글 켜지 말 것.
+- 🚨 **사고(내 실수)**: 배포 확인용 SSH 명령에 `php artisan down` 이 섞여 들어가 **3사 약 1분(17:1x KST) 503**. 503 을 보고 즉시 `php artisan up`, 3사 200 복귀. 데이터 무영향. 교훈 = SKILLS §8 #119.
+
 ## 2026-10-16(4차) — 진행상태 v4 4단계 조건 재정의 `40888fe8` (3사 동시, 코드 1커밋, 마이그 0)
 
 - jin «선적중→선적완료→통관중→통관완료 조건을 다시 볼까 해». 실측 3사 분포로 「통관완료 0대(도달 불가)·통관중 몰림(ssancarerp 858)」을 드러내고, 보유 필드 조합별 재분류 매트릭스로 결정. (가)안 = 선적중=반입지 · 선적완료=반입지+선적일(신고서 무관) · 통관중=수출신고서 · 통관완료=통관 체크 · 거래완료=B/L. 출항 이후는 운항 뱃지(ETA 당일부터 도착예정). 차량관리 pill 에서 v3 라벨(수출통관중/완료) 제거(3사 캐시 0대). next_action 라벨 ko/en 갱신. SKILLS §8 #118.
