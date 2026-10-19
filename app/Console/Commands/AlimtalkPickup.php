@@ -35,6 +35,13 @@ class AlimtalkPickup extends Command
     public function handle(): int
     {
         try {
+            // 🔇 꺼진 알림은 대상을 모으지도 않는다 — 「건너뜀」 행도 안 남긴다 (jin 2026-10-19, BizmAlimtalkService::canSend).
+            if (! BizmAlimtalkService::active()->canSend('erp_pickup_reminder')) {
+                $this->info('pickup: 꺼짐·미설정 — skip.');
+
+                return self::SUCCESS;
+            }
+
             $cutoff = now()->subDays(2)->toDateString();
             $candidates = Vehicle::query()
                 ->where('purchase_price', '>', 0)

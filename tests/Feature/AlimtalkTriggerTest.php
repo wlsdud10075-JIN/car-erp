@@ -114,15 +114,14 @@ class AlimtalkTriggerTest extends TestCase
             && $req->data()[0]['tmplId'] === 'T_erp_daily_summary');
     }
 
+    /** 🔇 2026-10-19 (jin) — 꺼진 알림은 대상을 모으지도, 「건너뜀」 행을 남기지도 않는다(구: 매일 사람×차마다 skipped). */
     public function test_gate_off_skips_send(): void
     {
         $this->admin('010-1111-0000');   // 수신자는 있으나 게이트 미설정
 
         $this->artisan('alimtalk:daily-summary')->assertSuccessful();
 
-        $log = AlimtalkLog::where('template_code', 'erp_daily_summary')->first();
-        $this->assertNotNull($log);
-        $this->assertSame('skipped', $log->status);
+        $this->assertSame(0, AlimtalkLog::count(), '꺼진 알림은 로그 행을 남기지 않는다');
         Http::assertNothingSent();
     }
 

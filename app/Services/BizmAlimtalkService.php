@@ -36,6 +36,17 @@ class BizmAlimtalkService
     }
 
     /**
+     * 이 알림이 지금 실제로 나갈 수 있나 — 마스터 on + 계정 설정 + 개별 토글 on + tmplId (send() 안의 게이트와 같은 판정).
+     * 🔇 2026-10-19 (jin) — 매일 도는 명령·정산 생성 훅은 **대상을 모으기 전에** 이걸 먼저 본다. 구: 꺼진 알림도 대상을
+     *    전부 모아 사람×차마다 send() 를 불러 「건너뜀」 행만 쌓았다(ssancarerp 30일 21,821행 = 로그의 93%).
+     *    버튼으로 한 번 보내는 알림(지급 결재·말소 안내 등)은 종전대로 send() 가 「건너뜀」을 남긴다 — 누른 사람이 왜 안 갔는지 봐야 한다.
+     */
+    public function canSend(string $code): bool
+    {
+        return $this->config->canSend($code);
+    }
+
+    /**
      * 알림톡 1건 발송.
      *
      * @param  string  $code  템플릿 코드(erp_*)

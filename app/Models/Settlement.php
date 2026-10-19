@@ -143,6 +143,12 @@ class Settlement extends Model
             }
             DB::afterCommit(function () {
                 try {
+                    // 🔇 꺼졌으면 대기 정산 전체를 불러오지도 않는다 (jin 2026-10-19). 구: 정산 1건 생길 때마다
+                    //    대기 전체를 차량까지 읽고 수신자마다 「건너뜀」을 남겼다(ssancarerp 하루 약 480행).
+                    $svc = BizmAlimtalkService::active();
+                    if (! $svc->canSend('erp_settle_pending')) {
+                        return;
+                    }
                     // 🎯 사람마다 **자기가 볼 수 있는 차의 정산만** 센다 (jin 2026-08-24).
                     //    영업은 본인 담당분 확정 대기 건수만 받는다.
                     $pending = self::query()->where('settlement_status', 'pending')
@@ -151,7 +157,6 @@ class Settlement extends Model
                     if ($pending->isEmpty()) {
                         return;
                     }
-                    $svc = BizmAlimtalkService::active();
                     foreach (AlimtalkRecipients::scopedFor('erp_settle_pending', $pending) as $phone => $mine) {
                         $svc->send('erp_settle_pending', $phone, ['건수' => number_format($mine->count())]);
                     }

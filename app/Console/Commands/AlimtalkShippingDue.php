@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\UnpaidExportOverride;
 use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
+use App\Services\LockThresholdResolver;
 use App\Support\AlimtalkRecipients;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -12,7 +13,9 @@ use Illuminate\Support\Facades\Log;
 /**
  * 선적 임박 미수 요약 알림톡 (erp_shipping_due) — 매일, 관리에게 목록형 1건.
  * 조건 = 선적일(shipping_date) 5일 이내 & 미완납 & B/L 미발급.
- *   <50%(입금 우회 진행)는 [50%미만·사유] 로 강조 — unpaid_ratio>0.5 + 진입 우회(clearance/shipping) 존재.
+ *   선적 진입 기준 미달(입금 우회 진행)은 [N%미만·사유] 로 강조 — 진입 우회(clearance/shipping) 존재 차량만.
+ *   🔀 2026-10-19 (jin) — 구: 50% 고정. 지금은 운영 설정 + 바이어별 재정의(LockThresholdResolver)를 그대로 읽는다.
+ *   ⚠️ 본문 끝 안내문의 「[50%미만]」은 BizM 승인 고정문구라 다음 재등록 때 변수로 바꾼다(jin «설정 문장은 변수로»).
  */
 class AlimtalkShippingDue extends Command
 {
@@ -23,6 +26,13 @@ class AlimtalkShippingDue extends Command
     public function handle(): int
     {
         try {
+            // 🔇 꺼진 알림은 대상을 모으지도 않는다 — 「건너뜀」 행도 안 남긴다 (jin 2026-10-19, BizmAlimtalkService::canSend).
+            if (! BizmAlimtalkService::active()->canSend('erp_shipping_due')) {
+                $this->info('shipping-due: 꺼짐·미설정 — skip.');
+
+                return self::SUCCESS;
+            }
+
             $today = now()->startOfDay();
             $rows = Vehicle::query()
                 ->where('sales_channel', 'export')
@@ -30,6 +40,7 @@ class AlimtalkShippingDue extends Command
                 ->whereBetween('shipping_date', [$today->toDateString(), $today->copy()->addDays(5)->toDateString()])
                 ->where('sale_unpaid_amount_krw_cache', '>', 0)
                 ->whereNull('bl_document')
+                ->with('buyer')
                 ->get();
 
             if ($rows->isEmpty()) {
@@ -45,15 +56,17 @@ class AlimtalkShippingDue extends Command
                 $pct = $ratio !== null ? round($ratio * 100) : null;
                 $line = "▶ {$v->vehicle_number} · 선적 D-{$dday}".($pct !== null ? " · 미수 {$pct}%" : '');
 
-                // <50%(입금 50% 미만 우회 진행) 강조 — 진입 우회(clearance/shipping) 사유 표시.
-                if ($ratio !== null && $ratio > 0.5) {
+                // 선적 진입 기준 미달(우회 진행) 강조 — 진입 우회(clearance/shipping) 사유 표시.
+                //   기준 = 그 바이어의 필요 입금률(재정의 없으면 전역 설정). 통관·선적 게이트와 같은 함수다.
+                if ($ratio !== null && $ratio > LockThresholdResolver::threshold($v->buyer, 'shipping_entry')) {
                     $override = UnpaidExportOverride::query()
                         ->where('vehicle_id', $v->id)
                         ->whereIn('stage', ['clearance', 'shipping'])
                         ->latest('id')->first();
                     if ($override) {
                         $reason = trim((string) $override->reason);
-                        $line .= ' [50%미만'.($reason !== '' ? '·사유: '.$reason : '').']';
+                        $pctRequired = LockThresholdResolver::requiredPaidPct($v->buyer, 'shipping_entry');
+                        $line .= " [{$pctRequired}%미만".($reason !== '' ? '·사유: '.$reason : '').']';
                     }
                 }
 
