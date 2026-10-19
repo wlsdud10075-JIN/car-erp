@@ -198,7 +198,7 @@ return [
     'buyer_undecided_badge' => 'No buyer',
     'purchase_unpaid_badge_title' => 'Purchase balance unpaid: :amount KRW - click to show only vehicles with an unpaid balance',
     'progress_pill' => [
-        'malso_hint' => 'Shows every vehicle with a deregistration date - including those already sold, shipped or completed (for preparing documents).',
+        'malso_hint' => 'Shows every vehicle with a deregistration date - including those already sold or shipped (for preparing documents; completed deals excluded).',
         'maeipjung_hint' => 'Shows every vehicle that still owes a purchase balance - including those already sold or shipped. The dashboard stage strip counts fewer because it is a distribution.',
     ],
     'date_range_ignored_hint' => 'The date basis is set to All, so the range you typed is not applied. Pick a basis (purchase date, sale date, ...) and it takes effect - for both the list and the export.',
@@ -1353,5 +1353,11 @@ return [
 Contact the system administrator.',
         'sent' => 'Tax-invoice request sent.',
         'failed' => 'Send failed (:reason)',
+    ],
+    'sort' => [
+        'shift_hint' => 'Shift+click (or click with "Stack sort" on) adds this column after the current sort. Click again: ▲ → ▼ → removed',
+        'stack_toggle' => 'Stack sort',
+        'stack_count' => 'Sorting by :n columns',
+        'stack_clear' => 'Clear stacked sort',
     ],
 ];
