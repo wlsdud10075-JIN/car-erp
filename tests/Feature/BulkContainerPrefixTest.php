@@ -158,7 +158,7 @@ class BulkContainerPrefixTest extends TestCase
         );
 
         $row = AuditLog::where('auditable_id', $v->id)
-            ->where('column_name', 'container_number')->first();
+            ->where('column_name', 'container_number')->where('action', 'updated')->first();
 
         $this->assertNotNull($row, 'container_number 가 AUDITED_COLUMNS 에 없으면 조용히 안 남는다');
         $this->assertSame('6.08_G RORO 12-33_5', $row->old_value);
