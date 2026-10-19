@@ -478,6 +478,22 @@ class PurchaseCancelTest extends TestCase
         $this->assertSame(0, $v->settlements()->count(), '매입취소 차에 정산이 생겼다');
     }
 
+    /** 🧹 정산을 안 만드는 차라 「정산 생성 필요」「운임 확정 대기」에 남으면 거짓 신호다 (jin 2026-10-19, ssancarerp 3대). */
+    public function test_closed_deal_cancel_is_not_waiting_for_a_settlement_or_freight(): void
+    {
+        $this->actingAs($this->admin());
+        $v = $this->cancelledUnpaidVehicle('NS2', 'freelance');
+        FinalPayment::create([
+            'vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 600,
+            'payment_date' => '2026-05-27', 'confirmed_at' => now(),
+        ]);
+        $v->refresh()->refreshProgressCache();
+        $this->assertSame('거래완료', $v->fresh()->progress_status_cache);
+
+        $this->assertFalse(Vehicle::query()->action('settlement_create_needed')->whereKey($v->id)->exists(), '정산 생성 필요');
+        $this->assertFalse(Vehicle::query()->action('freight_confirm_pending')->whereKey($v->id)->exists(), '운임 확정 대기');
+    }
+
     /** 💸 거래완료가 돼도 돈 큐(매입 미지급)에는 남는다 — 딜러 대금은 재무가 봐야 할 돈(jin 2026-09-09). */
     public function test_closed_deal_cancel_stays_in_purchase_unpaid_queue(): void
     {
