@@ -894,10 +894,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         @elseif(in_array($linkedUserType, ['employee', ...\App\Models\Salesman::PAYROLL_ONLY_TYPES], true) && $canEditPayroll)
         {{-- 💴 급여 항목 (월정산 v3, jin 2026-10-08) — 귀속월별 18항목 + 직접 추가. 매달 빈칸. 관리 이상 + 재무.
              구 「기본급」 한 칸을 대신한다. 금액은 data-money-signed(전월소급 등 음수). --}}
-        {{-- 금액칸은 deferred(wire:model) — 치는 동안 서버에 안 간다(SearchRequiresButtonTest). 합계 미리보기는 Alpine 이 칸을 더한다. --}}
+        {{-- 금액칸은 deferred(wire:model) — 치는 동안 서버에 안 간다(SearchRequiresButtonTest). 합계 미리보기는 Alpine 이 더한다.
+             🔧 2026-10-19 (jin «지급합계 0원», ssancarerp 굴러자 9월) — 구: 입력칸 DOM 을 읽고 @input 때만 다시 셌다.
+                패널을 열거나 귀속월을 바꿔 값이 서버에서 채워지면 아무도 안 쳐서 「₩0」에 머물렀다.
+                지금은 $wire 상태(payrollItems·payrollCustom)를 읽는다 — deferred 라도 치는 즉시 클라이언트 상태가 바뀌고,
+                서버가 월을 바꿔 채워도 바뀌므로 둘 다 자동으로 다시 센다. --}}
         <div class="rounded-lg border border-violet-200 bg-violet-50 p-3" data-payroll
-             x-data="{ tick: 0, total() { let t = 0; this.$root.querySelectorAll('[data-pay-amount]').forEach((el) => { const s = String(el.value || '').trim(); const n = parseInt(s.replace(/[^0-9]/g, ''), 10) || 0; t += s.startsWith('-') ? -n : n; }); return t.toLocaleString('en-US'); } }"
-             @input="tick++">
+             x-data="{ total() { const vals = [...Object.values($wire.payrollItems || {}), ...Object.values($wire.payrollCustom || {}).map((r) => r ? r.amount : '')]; let t = 0; vals.forEach((v) => { const s = String(v ?? '').trim(); const n = parseInt(s.replace(/[^0-9]/g, ''), 10) || 0; t += s.startsWith('-') ? -n : n; }); return t.toLocaleString('en-US'); } }">
             <div class="flex items-center justify-between gap-2">
                 <span class="text-sm font-semibold text-gray-800">{{ __('salesman.payroll.title') }}</span>
                 <select wire:model.live="payrollMonth" class="input-base w-auto py-1 text-xs text-gray-800" aria-label="{{ __('salesman.payroll.month') }}">
@@ -931,7 +934,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div class="mt-2 flex items-center justify-between">
                 <button type="button" wire:click="addPayrollRow" class="h-9 sm:h-7 text-xs text-violet-700 hover:underline">{{ __('salesman.payroll.add_row') }}</button>
-                <span class="text-sm font-semibold text-gray-800">{{ __('salesman.payroll.total') }} <span class="tabular-nums" data-payroll-total x-text="(tick, '₩' + total())">₩{{ number_format($this->payrollTotal()) }}</span></span>
+                <span class="text-sm font-semibold text-gray-800">{{ __('salesman.payroll.total') }} <span class="tabular-nums" data-payroll-total x-text="'₩' + total()">₩{{ number_format($this->payrollTotal()) }}</span></span>
             </div>
         </div>
         @endif
