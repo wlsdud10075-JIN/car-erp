@@ -57,7 +57,7 @@ class VehicleStageGapToggleTest extends TestCase
 
         $this->assertSame(['GAP-DATE-ONLY', 'GAP-DECL-ONLY', 'GAP-NONE'], $this->gap('shipping'), '반입지·선적일 중 빈 칸 — 신고서만 있는 「통관중」도 잡는다');
         $this->assertSame(['GAP-CHECK-ONLY', 'GAP-DATE-ONLY', 'GAP-DECL-ONLY', 'GAP-NONE', 'GAP-SHIP-OK'], $this->gap('clearance'), '체크·신고서 중 빈 칸');
-        $this->assertSame(['GAP-CHECK-ONLY', 'GAP-CLEARED', 'GAP-DATE-ONLY', 'GAP-DECL-ONLY', 'GAP-NONE', 'GAP-SHIP-OK'], $this->gap('bl'), 'B/L 없음');
+        $this->assertSame(['GAP-CLEARED'], $this->gap('bl'), 'B/L필요 = 통관완료 조건은 됐는데 B/L 만 없는 차 — 진행 중 전부가 아니다(jin 추천안)');
         $this->assertSame([], $this->gap('unknown'));
     }
 
