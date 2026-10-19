@@ -384,7 +384,7 @@ class BulkVehicleDocumentTest extends TestCase
         $this->assertTrue((bool) $a->fresh()->is_deregistered);
         $this->assertTrue((bool) $b->fresh()->is_deregistered);
         $this->assertSame('말소완료', $a->fresh()->progress_status_cache);
-        $this->assertSame(0, AuditLog::where('auditable_id', $b->id)->where('column_name', 'is_deregistered')->count(), '이미 켜진 차는 변경 없음');
+        $this->assertSame(0, AuditLog::where('auditable_id', $b->id)->where('column_name', 'is_deregistered')->where('action', 'updated')->count(), '이미 켜진 차는 변경 없음');
     }
 
     public function test_bl_and_checkbill_have_no_flag(): void

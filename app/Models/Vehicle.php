@@ -1144,7 +1144,19 @@ class Vehicle extends Model
         });
 
         // 큐 11-4 — 라이프사이클 + 컬럼 변경 감사 로그.
-        static::created(fn (Vehicle $vehicle) => AuditLog::recordEvent($vehicle, 'created'));
+        static::created(function (Vehicle $vehicle) {
+            AuditLog::recordEvent($vehicle, 'created');
+            // 🆕 등록 때 넣은 값도 남긴다 (jin 2026-10-19 61거7486 «로그 기록이 없고») — 종전엔 「등록됨」 한 줄뿐이라
+            //   누가 처음에 얼마를 넣었는지(판매가·환율·적립금 사용 등)는 다음 수정의 old_value 로만 짐작됐다.
+            //   빈 값·0·false 는 적지 않는다(새 차 한 대에 0 행이 수십 줄 쌓이는 소음, §8 #108).
+            foreach (array_diff(self::AUDITED_COLUMNS, ['progress_status_cache']) as $col) {   // 진행상태는 계산값 — 첫 값은 소음
+                $val = $vehicle->getAttribute($col);
+                if ($val === null || $val === '' || $val === false || (is_numeric($val) && (float) $val == 0.0)) {
+                    continue;
+                }
+                AuditLog::recordChange($vehicle, $col, null, $val, 'created');   // 「수정」과 섞이지 않게 action=created
+            }
+        });
         static::deleted(function (Vehicle $vehicle) {
             // SoftDeletes에서 소프트 삭제·강제 삭제 모두 deleted 발동 → forceDeleting과 분리.
             if (! $vehicle->isForceDeleting()) {
@@ -3167,6 +3179,14 @@ class Vehicle extends Model
      */
     public function scopeProgressStage(Builder $q, string $status): Builder
     {
+        // 📄 「말소완료」도 넓다 (jin 2026-10-19) — **말소일이 찍힌 차는 판매중~거래완료여도 말소완료**에 함께 나온다.
+        //   말소 뒤 서류 준비를 하려면 판매중·판매완료로 따로 찾아 들어가야 했고, 거기엔 말소 안 된 차가 섞여 있었다.
+        //   순수 확대 — 캐시가 말소완료인 차는 그대로 남는다. 실측 ssancarerp 9대 → 약 5,200대(거래완료 3,911 포함).
+        if ($status === '말소완료') {
+            return $q->where(fn ($q2) => $q2
+                ->where('progress_status_cache', '말소완료')
+                ->orWhereNotNull('deregistration_date'));
+        }
         if ($status !== '매입중') {
             return $q->where('progress_status_cache', $status);
         }
@@ -3186,9 +3206,13 @@ class Vehicle extends Model
      */
     public function scopeNotProgressStages(Builder $q, array $statuses): Builder
     {
-        $plain = array_values(array_diff($statuses, ['매입중']));
+        $plain = array_values(array_diff($statuses, ['매입중', '말소완료']));
         if ($plain !== []) {
             $q->whereNotIn('progress_status_cache', $plain);
+        }
+        if (in_array('말소완료', $statuses, true)) {
+            $q->where(fn ($q2) => $q2->where('progress_status_cache', '!=', '말소완료')->orWhereNull('progress_status_cache'))
+                ->whereNull('deregistration_date');
         }
         if (in_array('매입중', $statuses, true)) {
             $q->where('progress_status_cache', '!=', '매입중')

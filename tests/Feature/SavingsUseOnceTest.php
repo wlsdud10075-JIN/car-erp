@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\PurchaseBalancePayment;
 use App\Models\ReceivableHistory;
@@ -90,6 +91,11 @@ class SavingsUseOnceTest extends TestCase
         $this->assertSame([-200.0], SavingsStatus::where('vehicle_id', $v->id)->pluck('savings')->map(fn ($x) => (float) $x)->all(), '원장에 USED 200 한 줄');
         $this->assertSame(300.0, (float) SavingsStatus::where('buyer_id', $buyer->id)->orderByDesc('id')->value('balance'), '바이어 잔액 500 − 200');
         $this->assertSame([200.0], ReceivableHistory::where('vehicle_id', $v->id)->where('method', 'savings')->pluck('amount')->map(fn ($x) => (float) $x)->all(), '채권 회수이력에도 한 줄');
+
+        $logged = AuditLog::where('auditable_type', Vehicle::class)->where('auditable_id', $v->id)->whereNotNull('column_name')->pluck('new_value', 'column_name');
+        $this->assertSame(200.0, (float) $logged['savings_used'], '등록 때 넣은 적립금 사용이 감사로그에 남는다');
+        $this->assertArrayHasKey('sale_price', $logged->all());
+        $this->assertArrayNotHasKey('tax_dc', $logged->all(), '0·빈 값은 적지 않는다');
 
         // 같은 인스턴스로 다시 저장(파일·캐시 갱신 같은 후속 save) — 두 번 기록하지 않는다
         $v->memo = '후속 저장';

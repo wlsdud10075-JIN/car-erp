@@ -138,7 +138,7 @@ class AuditLog extends Model
      * 단일 컬럼 변경 기록. RRN 등 마스킹 컬럼은 값을 저장하지 않고
      * "변경 발생" 사실만 기록 (개보법 §29 — 민감정보 로그 평문 금지).
      */
-    public static function recordChange(Model $model, string $column, mixed $old, mixed $new): self
+    public static function recordChange(Model $model, string $column, mixed $old, mixed $new, string $action = 'updated'): self
     {
         if (array_key_exists($column, self::MASKED_COLUMNS)) {
             $marker = self::MASKED_COLUMNS[$column];
@@ -154,7 +154,7 @@ class AuditLog extends Model
             'approval_request_id' => self::$currentApprovalRequestId,
             'auditable_type' => $model::class,
             'auditable_id' => $model->getKey(),
-            'action' => 'updated',
+            'action' => $action,
             'column_name' => $column,
             'old_value' => $oldValue,
             'new_value' => $newValue,
