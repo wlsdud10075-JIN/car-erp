@@ -1178,39 +1178,23 @@ class Vehicle extends Model
 
         // H6 — savings_used delta 감지 → SavingsStatus(USED/REFUND) 자동 생성.
         // 이중 사용 방지 (Vehicle만 차감 표시 + buyer 잔액 미감소 → 다른 차량서 또 사용 가능).
+        // 🆕 신규 등록 때 넣은 적립금도 기록한다 (jin 2026-10-19 ssancarerp 61거7486) — insert 는 `wasChanged()` 가
+        //   늘 false 라(Laravel 은 performUpdate 에서만 changes 를 채운다) `saved` 만 보면 등록과 함께 쓴 적립금이
+        //   원장 차감·회수이력 없이 차량에만 남았다(바이어 잔액이 안 줄어 또 쓸 수 있다). `created` 는 insert 때 정확히 1번.
+        //   적재(ImportVehicles·ImportSsancarSettled)는 withoutEvents 라 여기 안 온다 — 원장을 직접 만든다.
+        static::created(function (Vehicle $vehicle) {
+            $vehicle->recordSavingsUsedDelta((float) ($vehicle->savings_used ?? 0));
+        });
         static::saved(function (Vehicle $vehicle) {
-            if (! $vehicle->wasChanged('savings_used')) {
-                return;
+            if ($vehicle->wasRecentlyCreated && ! $vehicle->wasChanged()) {
+                return;   // 방금 insert — 위 created 가 처리했다
             }
-            if (! $vehicle->buyer_id || ! $vehicle->currency) {
+            if (! $vehicle->wasChanged('savings_used')) {
                 return;
             }
             $original = (float) ($vehicle->getOriginal('savings_used') ?? 0);
             $current = (float) ($vehicle->savings_used ?? 0);
-            $delta = $current - $original;
-            if (abs($delta) < 0.01) {
-                return;
-            }
-            $vehicle->syncSavingsUsage($delta);
-
-            // 2026-07-28 (jin) — 적립금 사용을 채권관리에서도 쓰게 되면서, 판매탭에서 바뀐 분도
-            //   회수이력에 남긴다. 안 남기면 "이력 합 ≠ savings_used" 가 되고, 판매탭 사용분은
-            //   지금처럼 누가 언제 썼는지 추적이 안 된다. 채권관리發 변경은 이미 자기 행이 있으므로 skip.
-            if (! self::$skipSavingsHistory) {
-                ReceivableHistory::$skipSavingsSync = true;   // 이 행이 savings_used 를 또 건드리면 이중 반영
-                try {
-                    ReceivableHistory::create([
-                        'vehicle_id' => $vehicle->id,
-                        'collected_at' => now()->toDateString(),
-                        'collector_id' => auth()->id(),
-                        'method' => 'savings',
-                        'amount' => $delta,
-                        'note' => __('receivable.savings.auto_note'),
-                    ]);
-                } finally {
-                    ReceivableHistory::$skipSavingsSync = false;
-                }
-            }
+            $vehicle->recordSavingsUsedDelta($current - $original);
         });
 
         // 매입 저장 훅 — 미확정 매입 잔금 payment_date 동기화 (매입일 변경 시).
@@ -1349,6 +1333,36 @@ class Vehicle extends Model
         }
 
         $open->each(fn (BoardRequest $r) => $r->markDone());
+    }
+
+    /**
+     * H6 본체 — savings_used 변화량을 원장(SavingsStatus)과 회수이력 미러로 남긴다. `created`·`saved` 훅이 같이 쓴다.
+     */
+    private function recordSavingsUsedDelta(float $delta): void
+    {
+        if (! $this->buyer_id || ! $this->currency || abs($delta) < 0.01) {
+            return;
+        }
+        $this->syncSavingsUsage($delta);
+
+        // 2026-07-28 (jin) — 적립금 사용을 채권관리에서도 쓰게 되면서, 판매탭에서 바뀐 분도
+        //   회수이력에 남긴다. 안 남기면 "이력 합 ≠ savings_used" 가 되고, 판매탭 사용분은
+        //   지금처럼 누가 언제 썼는지 추적이 안 된다. 채권관리發 변경은 이미 자기 행이 있으므로 skip.
+        if (! self::$skipSavingsHistory) {
+            ReceivableHistory::$skipSavingsSync = true;   // 이 행이 savings_used 를 또 건드리면 이중 반영
+            try {
+                ReceivableHistory::create([
+                    'vehicle_id' => $this->id,
+                    'collected_at' => now()->toDateString(),
+                    'collector_id' => auth()->id(),
+                    'method' => 'savings',
+                    'amount' => $delta,
+                    'note' => __('receivable.savings.auto_note'),
+                ]);
+            } finally {
+                ReceivableHistory::$skipSavingsSync = false;
+            }
+        }
     }
 
     /**
