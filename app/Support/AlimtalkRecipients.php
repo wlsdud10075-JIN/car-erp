@@ -101,7 +101,6 @@ class AlimtalkRecipients
         'erp_settle_pending' => ['관리', 'manager'],
         'erp_eta_balance_due' => ['관리', 'manager'],
         'erp_shipping_due' => ['관리', 'manager'],
-        'erp_dealer_balance_due' => ['관리', 'manager'],
         // 🎯 스코프형 (jin 2026-08-24) — 체크 = 받을지, 역할 = 받을 범위(scopedFor).
         //   기본값은 **개편 전 동작을 그대로 보존**하도록 맞췄다. 배포 직후 조용해지면 안 된다:
         //   보증금독촉은 구 코드가 '담당 영업 본인'에게 자동 발송했으므로 '영업'을 켠 채로 시작한다.

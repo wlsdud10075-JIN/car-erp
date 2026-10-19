@@ -51,6 +51,13 @@ class AlimtalkMonthlyClosing extends Command
     public function handle(): int
     {
         try {
+            // 🔇 꺼진 알림은 대상을 모으지도 않는다 — 「건너뜀」 행도 안 남긴다 (jin 2026-10-19, BizmAlimtalkService::canSend).
+            if (! BizmAlimtalkService::active()->canSend(AlimtalkTemplates::activeCode('erp_monthly_closing'))) {
+                $this->info('monthly-closing: 꺼짐·미설정 — skip.');
+
+                return self::SUCCESS;
+            }
+
             $month = (string) ($this->argument('month') ?: now()->subMonthNoOverflow()->format('Y-m'));
 
             $recipients = AlimtalkRecipients::forBroadcast('erp_monthly_closing');
@@ -189,10 +196,17 @@ class AlimtalkMonthlyClosing extends Command
         $companyProfit = (int) $settlements->sum(fn (Settlement $s) => (int) $s->company_net);
         // 💴 월정산 v3 (jin 2026-10-08 «알림톡 문구는 그대로, 숫자만») — 그 달 급여(사내·검차)와 월정산 조정(인센티브 포함)을 뺀 회사 순이익.
         //    정의는 BatchPayoutBreakdown totals.company_net 과 같다. 3곳(대시보드·여기·승인화면)이 같은 뜻이어야 한다(§8 #72).
-        $companyProfit -= (int) PayrollEntry::query()->where('month', $month)->sum('amount');
-        $companyProfit -= (int) SettlementPayoutAdjustment::query()
-            ->whereIn('batch_id', SettlementPayoutBatch::query()->where('month', $month)->where('status', 'approved')->pluck('id'))
-            ->sum('amount');
+        $payroll = (int) PayrollEntry::query()->where('month', $month)->sum('amount');
+        $adjQ = fn () => SettlementPayoutAdjustment::query()
+            ->whereIn('batch_id', SettlementPayoutBatch::query()->where('month', $month)->where('status', 'approved')->pluck('id'));
+        $adjustments = (int) $adjQ()->sum('amount');
+        // 🚪 예치금 반환(kind=deposit)은 그 사람 돈을 돌려주는 것 — 지급총액엔 들어가고 회사이익엔 안 들어간다
+        //    (SettlementPayoutAdjustment::KIND_DEPOSIT 주석, jin 2026-10-15). 2026-10-19 전엔 여기서 같이 빼고 있었다.
+        $depositReturns = (int) $adjQ()->where('kind', SettlementPayoutAdjustment::KIND_DEPOSIT)->sum('amount');
+        $companyProfit -= $payroll + ($adjustments - $depositReturns);
+        // 💴 지급총액 = 정산 실지급 + 급여 + 월정산 조정 (jin 2026-10-19 — 대표가 「총마진 − 지급총액」으로 맞춰 볼 수 있게).
+        //    급여가 없는 회사(heymanerp)는 종전과 같다. 발송비는 실지급에서 이미 빠져 있어 별도 항이 남는다.
+        $totalPayout += $payroll + $adjustments;
 
         $perSalesman = $settlements->groupBy(fn (Settlement $s) => $s->salesman?->name ?? '미지정')
             ->map(fn ($g) => (int) $g->sum(fn (Settlement $s) => (int) $s->actual_payout))

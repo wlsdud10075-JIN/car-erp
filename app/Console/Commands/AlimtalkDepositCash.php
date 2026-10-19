@@ -30,6 +30,16 @@ class AlimtalkDepositCash extends Command
     public function handle(): int
     {
         try {
+            // 🔇 둘 다 꺼졌으면 대상을 모으지도 않는다 (jin 2026-10-19). 하나만 꺼졌으면 그쪽만 아래에서 건너뛴다.
+            $svcGate = BizmAlimtalkService::active();
+            $dueOn = $svcGate->canSend('erp_deposit_cash_due');
+            $overdueOn = $svcGate->canSend('erp_deposit_cash_overdue');
+            if (! $dueOn && ! $overdueOn) {
+                $this->info('deposit-cash: 꺼짐·미설정 — skip.');
+
+                return self::SUCCESS;
+            }
+
             // 🚨 임계는 **차량마다 그 바이어 기준**으로 해석한다 (jin 2026-08-21 바이어별 락).
             //    여기서 1회 계산해 루프에 넘기면 바이어 재정의가 통째로 무시되는데 예외도 로그도 안 난다
             //    — 07-30 에 이 cron 이 옛 pivot 을 써서 독촉이 7대 조용히 꺼져 있던 것과 같은 형태다.
@@ -95,7 +105,7 @@ class AlimtalkDepositCash extends Command
             //    구 코드는 역할 전체 발송 + 담당자 자동 발송 2중이었다. 「영업」을 체크하면
             //    영업 전원이 전체 목록을 받고 본인 목록을 또 받아 **중복 + 남의 차 유출**이 났다.
             //    이제 체크가 유일한 스위치고, 범위는 canScopeVehicle 이 정한다.
-            if ($due->isNotEmpty()) {
+            if ($dueOn && $due->isNotEmpty()) {
                 // $due 는 [Vehicle, 경과일] 쌍이라 차량만 넘기고 경과일은 id 로 되찾는다.
                 $daysById = $due->mapWithKeys(fn ($x) => [$x[0]->id => $x[1]]);
                 $targets = AlimtalkRecipients::scopedFor('erp_deposit_cash_due', $due->map(fn ($x) => $x[0]));
@@ -107,7 +117,7 @@ class AlimtalkDepositCash extends Command
             }
 
             // ② 초과 (D+10~) — 대표 처분 요청
-            if ($overdue->isNotEmpty()) {
+            if ($overdueOn && $overdue->isNotEmpty()) {
                 $ovList = $listOf($overdue->all(), false);
                 foreach (AlimtalkRecipients::forBroadcast('erp_deposit_cash_overdue') as $phone) {
                     $svc->send('erp_deposit_cash_overdue', $phone, ['초과목록' => $ovList], ['once_per_day' => true]);

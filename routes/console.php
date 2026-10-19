@@ -52,11 +52,8 @@ Schedule::command('alimtalk:receivable-status')->dailyAt('09:00')->weekdays()->w
 Schedule::command('alimtalk:weekly-summary')->weeklyOn(5, '18:00')->withoutOverlapping();
 // 대표 주간 자금/손익 보고 (2026-07-23) — 월요일 09:00. 최신 통장 스냅샷 기준. 미설정/미입력 시 내부 skip(inert).
 Schedule::command('alimtalk:capital-weekly')->weeklyOn(1, '09:00')->withoutOverlapping();
-// 월말 마감 보고 (jin 2026-07-27) — 재무가 16~17시에 마무리하므로 18:00 발송. 템플릿은 주간과 동일
-//   (erp_capital_weekly 공용, 링크 버튼으로 상세 열람).
-//   ⚠️ monthlyOn(31) 은 31일 없는 달(2·4·6·9·11월)을 통째로 건너뛴다 → 매일 18:00 에 돌리되 말일에만 실행.
-Schedule::command('alimtalk:capital-weekly')->dailyAt('18:00')->withoutOverlapping()
-    ->when(fn () => now()->isLastOfMonth());
+// 🚫 월말 마감 보고(말일 18:00, 07-27~)는 2026-10-19 jin «매주 월 09시에만, 매월 말일엔 하지 마» 로 폐지.
+//    월요일이 말일이면 같은 날 두 통이 갔다. 월 단위 결산은 월결산 알림(alimtalk:monthly-closing)이 맡는다.
 // 월결산 = **월배치 정산이 최종 승인된 때** 발송한다 (jin 2026-07-31).
 //   구: 익월 첫 영업일 무조건 발송 → 그때는 전월 정산이 아직 확정 전이라 마진·지급이 통째로 과소보고됐다.
 //   실제 발송 트리거는 SettlementPayoutBatch::approveBy 이고, 이 스케줄은 **재시도**다 —

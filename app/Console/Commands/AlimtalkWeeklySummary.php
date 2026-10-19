@@ -22,6 +22,13 @@ class AlimtalkWeeklySummary extends Command
     public function handle(): int
     {
         try {
+            // 🔇 꺼진 알림은 대상을 모으지도 않는다 — 「건너뜀」 행도 안 남긴다 (jin 2026-10-19, BizmAlimtalkService::canSend).
+            if (! BizmAlimtalkService::active()->canSend(AlimtalkTemplates::activeCode('erp_weekly_summary'))) {
+                $this->info('weekly-summary: 꺼짐·미설정 — skip.');
+
+                return self::SUCCESS;
+            }
+
             $recipients = AlimtalkRecipients::forBroadcast('erp_weekly_summary');
             if (empty($recipients)) {
                 $this->info('weekly-summary: 수신자(대표) 없음 — skip.');

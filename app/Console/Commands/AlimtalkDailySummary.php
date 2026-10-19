@@ -33,6 +33,13 @@ class AlimtalkDailySummary extends Command
     public function handle(): int
     {
         try {
+            // 🔇 꺼진 알림은 대상을 모으지도 않는다 — 「건너뜀」 행도 안 남긴다 (jin 2026-10-19, BizmAlimtalkService::canSend).
+            if (! BizmAlimtalkService::active()->canSend(AlimtalkTemplates::activeCode('erp_daily_summary'))) {
+                $this->info('daily-summary: 꺼짐·미설정 — skip.');
+
+                return self::SUCCESS;
+            }
+
             $recipients = AlimtalkRecipients::forBroadcast('erp_daily_summary');
             if (empty($recipients)) {
                 $this->info('daily-summary: 수신자(대표) 없음 — skip.');

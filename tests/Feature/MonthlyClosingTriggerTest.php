@@ -12,6 +12,7 @@ use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
@@ -35,6 +36,12 @@ class MonthlyClosingTriggerTest extends TestCase
         parent::setUp();
         // 대표(수신자) — 없으면 커맨드가 그냥 skip 해서 아무것도 검증되지 않는다.
         $this->admin = User::factory()->create(['permission' => 'admin', 'phone' => '01011112222', 'email_verified_at' => now()]);
+        // 🔇 2026-10-19 — 꺼진(미설정) 알림은 명령이 맨 앞에서 멈춘다. 마감 판정을 보려면 알림톡이 켜져 있어야 한다.
+        Http::fake(['*bizmsg.kr*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'MSG-TEST'], 'message' => 'K000']], 200)]);
+        $set = Setting::companyTemplateSet();
+        foreach (['enabled' => '1', 'itemlist' => '1', 'userid' => 'uid', 'profile' => 'prof', 'tmpl_erp_monthly_closing' => 'T_mc'] as $k => $v) {
+            Setting::updateOrCreate(['key' => "alimtalk_{$k}_{$set}"], ['value' => $v, 'type' => 'string']);
+        }
     }
 
     /** 승인 완료된 월정산 — 마감 신호. */
