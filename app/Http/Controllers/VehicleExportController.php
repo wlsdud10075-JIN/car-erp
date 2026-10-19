@@ -101,8 +101,8 @@ class VehicleExportController extends Controller
             ->when($restrictOwn, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictMgr, fn ($q) => $q->whereIn('salesman_id', $subIds))
             ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))
-            ->when($progress !== '', fn ($q) => $q->where('progress_status_cache', $progress))
-            ->when($exclude !== [], fn ($q) => $q->whereNotIn('progress_status_cache', $exclude))
+            ->when($progress !== '', fn ($q) => $q->progressStage($progress))   // 화면과 같은 스코프 — 매입중·말소완료는 넓다
+            ->when($exclude !== [], fn ($q) => $q->notProgressStages($exclude))
             // 화면 pill 과 같은 집합을 내보낸다 — 「거래완료 + 2차 마감」 제외 (jin 2026-09-10).
             //   화면은 580 인데 엑셀만 3,883 이 나오면 아무도 그 차이를 눈으로 못 잡는다.
             ->when($sailing !== '', fn ($q) => $q->sailing($sailing)->excludeClosedDeals())
