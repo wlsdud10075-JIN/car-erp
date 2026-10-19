@@ -1062,35 +1062,65 @@ new #[Layout('components.layouts.app')] class extends Component {
     ];
 
     /**
-     * 🔢 겹친 정렬 (jin 2026-10-19 «개별도 되지만 중복 적용도») — 첫 정렬(sortColumn) 다음에 붙는 2·3번째 키.
+     * 🔢 겹친 정렬 (jin 2026-10-19 «개별도 되지만 중복 적용도 — 기본적으로 되게») — 첫 정렬(sortColumn) 다음에 붙는 2·3번째 키.
      *   쓰는 장면: 말소완료 → 담당자 ▲ → 수출신고번호 ▲ 로 「담당자별로 신고번호 안 넣은 차」를 위로.
-     *   각 원소 = ['col' => 키, 'dir' => asc|desc]. 일반 클릭(setSort)은 이걸 비운다(= 종전 단일 정렬).
+     *   헤더 클릭이 **기본으로 이어 붙는다**(별도 버튼·Shift 없음). 각 원소 = ['col' => 키, 'dir' => asc|desc].
      */
     public array $sortExtra = [];
-
-    /** 「정렬 겹치기」 켜짐 — 켜져 있으면 헤더 클릭이 기존 정렬 뒤에 이어 붙는다(Shift+클릭과 같다). 폰엔 Shift 가 없어서. */
-    public bool $sortStack = false;
 
     private function sortable(string $col): bool
     {
         return in_array($col, self::SORTABLE_COLUMNS, true) || array_key_exists($col, self::SORT_EXPRESSIONS);
     }
 
-    /** 헤더 클릭 진입점 — 겹치기 모드거나 Shift 를 눌렀으면 addSort, 아니면 종전 setSort. */
-    public function clickSort(string $col, bool $shift = false): void
+    /** 기본 정렬(등록 최신순)인가 — 이 상태에서 첫 클릭은 「겹치기」가 아니라 그 칸으로 바꾼다. */
+    private function isDefaultSort(): bool
     {
-        ($shift || $this->sortStack) ? $this->addSort($col) : $this->setSort($col);
+        return $this->sortColumn === 'created_at' && $this->sortDirection === 'desc' && $this->sortExtra === [];
     }
 
-    /** 이어 붙이기 — 첫 정렬 키면 방향만 뒤집고, 겹친 키면 ▲ → ▼ → 빠짐, 처음이면 ▲ 로 맨 뒤에. */
-    public function addSort(string $col): void
+    /**
+     * 헤더 클릭 = 기본으로 겹친다. 처음(기본 정렬)이면 그 칸 ▲ 으로 시작하고, 이후 다른 칸은 뒤에 ▲ 로 붙는다.
+     * 이미 정렬에 있는 칸은 ▲ → ▼ → 빠짐. 첫 칸이 빠지면 다음 칸이 첫 정렬이 되고, 다 빠지면 기본 정렬로 돌아간다.
+     */
+    public function clickSort(string $col): void
     {
         if (! $this->sortable($col)) {
             return;
         }
-        if ($this->sortColumn === $col) {
-            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
+        if ($this->isDefaultSort()) {
+            $this->setSort($col);
 
+            return;
+        }
+        if ($this->sortColumn === $col) {
+            if ($this->sortDirection === 'asc') {
+                $this->sortDirection = 'desc';
+
+                return;
+            }
+            $next = array_shift($this->sortExtra);
+            [$this->sortColumn, $this->sortDirection] = $next
+                ? [$next['col'], ($next['dir'] ?? 'asc') === 'desc' ? 'desc' : 'asc']
+                : ['created_at', 'desc'];
+
+            return;
+        }
+        $this->addSort($col);
+    }
+
+    /** 정렬 전부 해제 — 기본(등록 최신순). */
+    public function resetSort(): void
+    {
+        $this->sortColumn = 'created_at';
+        $this->sortDirection = 'desc';
+        $this->sortExtra = [];
+    }
+
+    /** 겹친 키 이어 붙이기 — 이미 있으면 ▲ → ▼ → 빠짐, 처음이면 ▲ 로 맨 뒤에. */
+    public function addSort(string $col): void
+    {
+        if (! $this->sortable($col) || $this->sortColumn === $col) {
             return;
         }
         foreach ($this->sortExtra as $i => $k) {
@@ -1109,12 +1139,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;   // 첫 정렬 포함 5단계면 충분 — 무한히 쌓이는 걸 막는다
         }
         $this->sortExtra[] = ['col' => $col, 'dir' => 'asc'];
-    }
-
-    /** 겹친 정렬만 지운다(첫 정렬은 남김). */
-    public function clearSortExtra(): void
-    {
-        $this->sortExtra = [];
     }
 
     /** 정렬 키 하나를 쿼리에 적용 — 첫 정렬·겹친 정렬이 같은 규칙(컨사이니 폴백·계산식)을 쓴다. */
@@ -1819,7 +1843,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->reset([
             'search', 'dateType', 'progressFilter', 'excludeStatuses', 'cancelFilter', 'action',
             'salesmanId', 'ids', 'buyerId', 'shipDocIds', 'accumSearchTerm', 'accumSearchOpen',
-            'sortColumn', 'sortDirection', 'sortExtra', 'sortStack', 'freightExact', 'vinSearch', 'sailingFilter',
+            'sortColumn', 'sortDirection', 'sortExtra', 'freightExact', 'vinSearch', 'sailingFilter',
             'shipmentFilter', 'shipmentMonth', 'taskFilter',
         ]);
         // dateType='all' 로 리셋되므로 기간 필터는 무시되지만, 진입 시 기본값과 동일하게 채워둔다.
@@ -3104,6 +3128,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->cancelFilter === 'normal', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_NONE))
             // 🗑️ 말소 필요 — 조건을 옮겨 적지 말 것. scopeAction 단일 출처(§8 #44).
             ->when($this->taskFilter === 'deregistration', fn ($q) => $q->action('deregistration_due'))
+            // 🚦 선적·통관·B/L 필요 — 단계 완료 조건이 빈 차. 조건은 Vehicle::scopeStageGap 단일 출처.
+            ->when(in_array($this->taskFilter, \App\Models\Vehicle::STAGE_GAPS, true), fn ($q) => $q->stageGap($this->taskFilter))
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
             ->when($this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
@@ -4309,7 +4335,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         'search', 'dateType', 'dateFrom', 'dateTo', 'progressFilter', 'excludeStatuses', 'sailingFilter',
         'shipmentFilter', 'shipmentMonth', 'boardFilters', 'cancelFilter', 'taskFilter', 'freightExact',
         'vinSearch', 'action', 'salesmanId', 'ids', 'openVehicle', 'create', 'buyerId', 'perPage',
-        'sortColumn', 'sortDirection', 'sortExtra', 'sortStack', 'visibleColumns', 'page', 'paginators',
+        'sortColumn', 'sortDirection', 'sortExtra', 'visibleColumns', 'page', 'paginators',
     ];
 
     /** 클라이언트가 보낸 프로퍼티 갱신 — 패널이 열려 있고 폼 칸이면 dirty. */
@@ -7767,6 +7793,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                            {{ $deregOn ? 'bg-rose-600 text-white shadow-sm font-semibold' : 'bg-rose-100 text-rose-700 hover:bg-rose-200 font-medium' }}">
                 {{ $deregOn ? '✓ ' : '' }}🗑️ {{ __('vehicle.filter_dereg') }}
             </button>
+            {{-- 🚦 선적·통관·B/L 필요 (jin 2026-10-19) — 그 단계 완료 조건이 빈 차. 말소 필요와 같은 토글(하나만 켜짐). --}}
+            @foreach(\App\Models\Vehicle::STAGE_GAPS as $gap)
+                @php $gapOn = $taskFilter === $gap; @endphp
+                <button type="button" wire:click="toggleTask('{{ $gap }}')"
+                        title="{{ __('vehicle.stage_gap.'.$gap.'_hint') }}"
+                        class="rounded-full px-2.5 py-0.5 text-xs transition
+                               {{ $gapOn ? 'bg-rose-600 text-white shadow-sm font-semibold' : 'bg-rose-100 text-rose-700 hover:bg-rose-200 font-medium' }}">
+                    {{ $gapOn ? '✓ ' : '' }}{{ __('vehicle.stage_gap.'.$gap) }}
+                </button>
+            @endforeach
         </div>
 
         {{-- 서류 발송(EMS·DHL) 필터 (jin 2026-08-31) — 진행상태·운항과 또 다른 축.
@@ -7967,15 +8003,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     {{-- 컬럼 토글 드롭다운 --}}
     <div class="mb-2 flex justify-end items-center gap-2 relative">
-        {{-- 🔢 정렬 겹치기 (jin 2026-10-19) — 켜면 헤더 클릭이 앞 정렬 뒤에 이어 붙는다. Shift+클릭도 같다. --}}
-        @if($sortExtra !== [])
-            <span class="text-[11px] text-gray-500" data-sort-stack-summary>{{ __('vehicle.sort.stack_count', ['n' => count($sortExtra) + 1]) }}</span>
-            <button type="button" wire:click="clearSortExtra" class="text-[11px] text-violet-600 hover:underline">{{ __('vehicle.sort.stack_clear') }}</button>
+        {{-- 🔢 겹친 정렬 (jin 2026-10-19) — 헤더 클릭이 기본으로 이어 붙는다. 정렬이 걸려 있으면 해제 링크. --}}
+        @if(! ($sortColumn === 'created_at' && $sortDirection === 'desc' && $sortExtra === []))
+            @if($sortExtra !== [])
+                <span class="text-[11px] text-gray-500" data-sort-stack-summary>{{ __('vehicle.sort.stack_count', ['n' => count($sortExtra) + 1]) }}</span>
+            @endif
+            <button type="button" wire:click="resetSort" title="{{ __('vehicle.sort.shift_hint') }}" class="text-[11px] text-violet-600 hover:underline">{{ __('vehicle.sort.stack_clear') }}</button>
         @endif
-        <button type="button" wire:click="$toggle('sortStack')" title="{{ __('vehicle.sort.shift_hint') }}"
-                class="rounded border px-3 py-1 text-xs {{ $sortStack ? 'border-violet-500 bg-violet-50 text-violet-700' : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50' }}">
-            {{ __('vehicle.sort.stack_toggle') }} {{ $sortStack ? 'ON' : 'OFF' }}
-        </button>
         <button type="button" @click="open = !open"
                 class="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50">
             {{ __('vehicle.columns') }} <span x-text="open ? '▲' : '▼'"></span>
@@ -7999,7 +8033,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <table class="w-full text-sm border-separate border-spacing-0">
         <thead>
             @php
-                // 🔢 겹친 정렬이 있으면 순번을 붙인다(1▲ 담당자 · 2▲ 수출신고번호). Shift+클릭 또는 「정렬 겹치기」 켜고 클릭 = 이어 붙이기.
+                // 🔢 겹친 정렬이 있으면 순번을 붙인다(1▲ 담당자 · 2▲ 수출신고번호). 헤더 클릭 = 기본으로 이어 붙이기.
                 $sortKeys = array_merge([['col' => $this->sortColumn, 'dir' => $this->sortDirection]], $this->sortExtra);
                 $sortBtn = function ($col, $label, $align = 'left') use ($sortKeys) {
                     $pos = null;
@@ -8015,7 +8049,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     }
                     $alignCls = $align === 'right' ? 'justify-end ml-auto' : '';
 
-                    return '<button type="button" wire:click="clickSort(\''.$col.'\', $event.shiftKey)" title="'.e(__('vehicle.sort.shift_hint')).'" class="flex items-center gap-1 hover:text-gray-700 '.$alignCls.'">'
+                    return '<button type="button" wire:click="clickSort(\''.$col.'\')" title="'.e(__('vehicle.sort.shift_hint')).'" class="flex items-center gap-1 hover:text-gray-700 '.$alignCls.'">'
                         .htmlspecialchars($label).' <span class="whitespace-nowrap text-[10px]">'.$indicator.'</span></button>';
                 };
             @endphp
