@@ -1914,7 +1914,9 @@ class Vehicle extends Model
      */
     public function scopeAwaitingFreightConfirm($query)
     {
-        return $query->where('sale_price', '>', 0)
+        // 🚫 매입취소는 정산을 안 만드니 운임 확정을 기다릴 일도 없다(jin 2026-10-19 — 위약금 차가 영원히 남았다).
+        return $query->where('cancel_status', self::CANCEL_NONE)
+            ->where('sale_price', '>', 0)
             ->whereNotNull('sale_unpaid_amount_krw_cache')
             ->where('sale_unpaid_amount_krw_cache', '<=', 0)
             ->whereNotNull('salesman_id')
@@ -3181,11 +3183,12 @@ class Vehicle extends Model
     {
         // 📄 「말소완료」도 넓다 (jin 2026-10-19) — **말소일이 찍힌 차는 판매중~거래완료여도 말소완료**에 함께 나온다.
         //   말소 뒤 서류 준비를 하려면 판매중·판매완료로 따로 찾아 들어가야 했고, 거기엔 말소 안 된 차가 섞여 있었다.
-        //   순수 확대 — 캐시가 말소완료인 차는 그대로 남는다. 실측 ssancarerp 9대 → 약 5,200대(거래완료 3,911 포함).
+        //   순수 확대 — 캐시가 말소완료인 차는 그대로 남는다. 🚫 거래완료는 뺀다(jin «거래완료는 빼줘» — 서류 준비 대상이 아니다).
+        //   실측 ssancarerp 9대 → 약 1,300대(거래완료 3,911 제외).
         if ($status === '말소완료') {
             return $q->where(fn ($q2) => $q2
                 ->where('progress_status_cache', '말소완료')
-                ->orWhereNotNull('deregistration_date'));
+                ->orWhere(fn ($q3) => $q3->whereNotNull('deregistration_date')->where('progress_status_cache', '!=', '거래완료')));
         }
         if ($status !== '매입중') {
             return $q->where('progress_status_cache', $status);
@@ -3212,7 +3215,7 @@ class Vehicle extends Model
         }
         if (in_array('말소완료', $statuses, true)) {
             $q->where(fn ($q2) => $q2->where('progress_status_cache', '!=', '말소완료')->orWhereNull('progress_status_cache'))
-                ->whereNull('deregistration_date');
+                ->where(fn ($q2) => $q2->whereNull('deregistration_date')->orWhere('progress_status_cache', '거래완료'));
         }
         if (in_array('매입중', $statuses, true)) {
             $q->where('progress_status_cache', '!=', '매입중')
@@ -3709,8 +3712,11 @@ class Vehicle extends Model
                     ->whereNull('exchange_rate')
                     ->orWhere('exchange_rate', 0)),
             // 안건 J 본격 (2026-05-20) — v2/v3 호환. progress_status_cache 단일 출처.
+            // 🚫 매입취소는 정산을 안 만든다(settlementBlockers 'purchase_cancelled') — 「취소완료 = 거래완료」(10-16)부터
+            //    여기 영원히 남는 거짓 신호였다(jin 2026-10-19, ssancarerp 3대).
             'settlement_create_needed' => $q
                 ->where('progress_status_cache', '거래완료')
+                ->where('cancel_status', self::CANCEL_NONE)
                 ->whereDoesntHave('settlements'),
             // 2026-05-20 #2 피드백 — 거래완료지만 미수금 남은 차량 (정산 진행 차단 상태).
             'settlement_blocked_by_unpaid' => $q

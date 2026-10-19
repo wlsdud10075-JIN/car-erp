@@ -10,7 +10,7 @@ use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
- * 📄 차량관리 「말소완료」 = 말소일이 찍힌 차 전부 (jin 2026-10-19).
+ * 📄 차량관리 「말소완료」 = 말소일이 찍힌 차 전부, 거래완료만 빼고 (jin 2026-10-19).
  *   «말소완료가 된 것 중에 서류준비를 해야 하는데 토글이 말소완료 태그만 불러온다 — 판매중·판매완료로 따로 찾아 들어가야 한다».
  *   순수 확대 — 캐시가 말소완료인 차는 말소일이 없어도 그대로 남는다(§8 #55). 제외(빨강)는 정확히 그 여집합.
  */
@@ -47,7 +47,7 @@ class DeregisteredFilterWideningTest extends TestCase
     {
         $this->seedVehicles();
 
-        $this->assertSame(['CACHE-ONLY', 'DONE-DATE', 'SALE-DATE'], $this->numbers(Vehicle::query()->progressStage('말소완료')));
+        $this->assertSame(['CACHE-ONLY', 'SALE-DATE'], $this->numbers(Vehicle::query()->progressStage('말소완료')), '거래완료는 말소일이 있어도 빠진다(jin «거래완료는 빼줘»)');
         $this->assertSame(['SALE-DATE', 'SALE-NODATE'], $this->numbers(Vehicle::query()->progressStage('판매중')), '다른 단계는 종전대로 캐시 그대로');
     }
 
@@ -57,7 +57,7 @@ class DeregisteredFilterWideningTest extends TestCase
 
         $in = $this->numbers(Vehicle::query()->progressStage('말소완료'));
         $out = $this->numbers(Vehicle::query()->notProgressStages(['말소완료']));
-        $this->assertSame(['BUY-NODATE', 'SALE-NODATE'], $out);
+        $this->assertSame(['BUY-NODATE', 'DONE-DATE', 'SALE-NODATE'], $out);
         $this->assertSame([], array_intersect($in, $out));
         $this->assertCount(Vehicle::count(), array_merge($in, $out), '포함 ∪ 제외 = 전체 — 같은 pill 이 방향에 따라 다른 뜻이 되지 않는다');
     }
@@ -68,8 +68,8 @@ class DeregisteredFilterWideningTest extends TestCase
         $this->actingAs(User::factory()->create(['permission' => 'super', 'role' => '관리', 'email_verified_at' => now()]));
 
         Volt::test('erp.vehicles.index')->set('dateFrom', '')->set('dateTo', '')->call('cycleProgress', '말소완료')
-            ->assertSee('SALE-DATE')->assertSee('DONE-DATE')->assertSee('CACHE-ONLY')
-            ->assertDontSee('SALE-NODATE');
+            ->assertSee('SALE-DATE')->assertSee('CACHE-ONLY')
+            ->assertDontSee('SALE-NODATE')->assertDontSee('DONE-DATE');
     }
 
     public function test_excel_export_uses_the_same_scopes_as_the_screen(): void
