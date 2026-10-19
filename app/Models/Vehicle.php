@@ -1793,7 +1793,7 @@ class Vehicle extends Model
      * 🚦 단계 빈칸 토글 (jin 2026-10-19 «말소필요처럼 선적필요·통관필요·B/L필요») — 그 단계의 「완료 조건」이 안 채워진 차.
      *   - shipping  = 선적완료 조건(반입지 + 선적일) 중 하나라도 빈 차
      *   - clearance = 통관완료 조건(통관 체크 + 수출신고서) 중 하나라도 빈 차 — 신고서 없이 체크만 켠 차도 잡는다
-     *   - bl        = 거래완료 조건(B/L 파일)이 빈 차
+     *   - bl        = 통관완료 조건(체크+신고서)은 다 됐는데 거래완료 조건(B/L 파일)만 빈 차
      *   진행상태(cascade 첫 매칭)와 **다른 축**이다 — 칸을 순서와 다르게 채운 차(신고서만 있고 선적일 없는 「통관중」 등)를 찾는다.
      *   모수 = 판매된 차(판매가>0) · 거래완료 아님 · 매입취소 아님 · 내수 아님(수출 흐름을 안 탄다, NOT_FOR_DOMESTIC 와 같은 이유).
      *   ⚠️ 적재로 「완료」 처리됐는데 선적일이 없는 차(ssancarerp 24대)도 여기 잡힌다 — jin «실무자가 추후에 바꾸게».
@@ -1814,7 +1814,11 @@ class Vehicle extends Model
             'clearance' => $q->where(fn ($q2) => $q2
                 ->where('is_export_cleared', false)->orWhereNull('is_export_cleared')
                 ->orWhereNull('export_declaration_document')->orWhere('export_declaration_document', '')),
-            'bl' => $q->where(fn ($q2) => $q2->whereNull('bl_document')->orWhere('bl_document', '')),
+            // B/L 은 「통관완료 조건이 다 됐는데 B/L 만 없는 차」로 좁힌다(jin 2026-10-19) — 안 좁히면 진행 중 판매 차 전부(ssancarerp 1,307 = 모수 전체)라
+            //   토글이 아무것도 안 거른다. 좁히면 854대 = 실제로 B/L 을 기다리는 차.
+            'bl' => $q->where('is_export_cleared', true)
+                ->whereNotNull('export_declaration_document')->where('export_declaration_document', '!=', '')
+                ->where(fn ($q2) => $q2->whereNull('bl_document')->orWhere('bl_document', '')),
             default => $q->whereRaw('1 = 0'),
         };
     }
