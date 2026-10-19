@@ -1789,6 +1789,36 @@ class Vehicle extends Model
             ->where('buyers.is_domestic', true));
     }
 
+    /**
+     * 🚦 단계 빈칸 토글 (jin 2026-10-19 «말소필요처럼 선적필요·통관필요·B/L필요») — 그 단계의 「완료 조건」이 안 채워진 차.
+     *   - shipping  = 선적완료 조건(반입지 + 선적일) 중 하나라도 빈 차
+     *   - clearance = 통관완료 조건(통관 체크 + 수출신고서) 중 하나라도 빈 차 — 신고서 없이 체크만 켠 차도 잡는다
+     *   - bl        = 거래완료 조건(B/L 파일)이 빈 차
+     *   진행상태(cascade 첫 매칭)와 **다른 축**이다 — 칸을 순서와 다르게 채운 차(신고서만 있고 선적일 없는 「통관중」 등)를 찾는다.
+     *   모수 = 판매된 차(판매가>0) · 거래완료 아님 · 매입취소 아님 · 내수 아님(수출 흐름을 안 탄다, NOT_FOR_DOMESTIC 와 같은 이유).
+     *   ⚠️ 적재로 「완료」 처리됐는데 선적일이 없는 차(ssancarerp 24대)도 여기 잡힌다 — jin «실무자가 추후에 바꾸게».
+     */
+    public const STAGE_GAPS = ['shipping', 'clearance', 'bl'];
+
+    public function scopeStageGap(Builder $q, string $stage): Builder
+    {
+        $q->where('sale_price', '>', 0)
+            ->where(fn ($q2) => $q2->where('progress_status_cache', '!=', '거래완료')->orWhereNull('progress_status_cache'))
+            ->where('cancel_status', self::CANCEL_NONE)
+            ->notDomesticSale();
+
+        return match ($stage) {
+            'shipping' => $q->where(fn ($q2) => $q2
+                ->whereNull('bl_loading_location')->orWhere('bl_loading_location', '')
+                ->orWhereNull('shipping_date')),
+            'clearance' => $q->where(fn ($q2) => $q2
+                ->where('is_export_cleared', false)->orWhereNull('is_export_cleared')
+                ->orWhereNull('export_declaration_document')->orWhere('export_declaration_document', '')),
+            'bl' => $q->where(fn ($q2) => $q2->whereNull('bl_document')->orWhere('bl_document', '')),
+            default => $q->whereRaw('1 = 0'),
+        };
+    }
+
     /** 내수가 아닌 차 — `scopeDomesticSale` 의 **정확한 여집합**(바이어 없는 차도 여기 들어온다). */
     public function scopeNotDomesticSale(Builder $q): Builder
     {
