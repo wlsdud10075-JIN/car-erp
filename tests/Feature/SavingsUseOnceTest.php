@@ -75,6 +75,33 @@ class SavingsUseOnceTest extends TestCase
         $this->assertSame(400.0, (float) $v->fresh()->savings_used, '빈 칸 저장이 누적을 0 으로 덮지 않는다');
     }
 
+    public function test_savings_entered_when_the_vehicle_is_created_reaches_the_ledger_and_receivables(): void
+    {
+        // jin 2026-10-19 ssancarerp 61거7486 — 신규 등록 저장에 적립금 200 을 같이 넣으면 insert 라 H6 가 안 돌아
+        //   원장 차감·회수이력이 0 이었다(판매탭에만 200, 바이어 잔액은 그대로 → 또 쓸 수 있다). 운영 7대.
+        [$seed, $admin, $buyer] = $this->soldVehicle(500);
+        $this->actingAs($admin);
+
+        $v = Vehicle::create([
+            'vehicle_number' => '61거7486', 'sales_channel' => 'export', 'currency' => 'EUR', 'exchange_rate' => 1480,
+            'buyer_id' => $buyer->id, 'sale_price' => 2_549, 'sale_date' => '2026-10-15', 'savings_used' => 200,
+        ]);
+
+        $this->assertSame([-200.0], SavingsStatus::where('vehicle_id', $v->id)->pluck('savings')->map(fn ($x) => (float) $x)->all(), '원장에 USED 200 한 줄');
+        $this->assertSame(300.0, (float) SavingsStatus::where('buyer_id', $buyer->id)->orderByDesc('id')->value('balance'), '바이어 잔액 500 − 200');
+        $this->assertSame([200.0], ReceivableHistory::where('vehicle_id', $v->id)->where('method', 'savings')->pluck('amount')->map(fn ($x) => (float) $x)->all(), '채권 회수이력에도 한 줄');
+
+        // 같은 인스턴스로 다시 저장(파일·캐시 갱신 같은 후속 save) — 두 번 기록하지 않는다
+        $v->memo = '후속 저장';
+        $v->save();
+        $v->save();
+        $this->assertSame(1, SavingsStatus::where('vehicle_id', $v->id)->count(), '후속 저장이 또 차감하지 않는다');
+
+        // 그 뒤 진짜 변경은 종전대로 delta 만
+        $v->update(['savings_used' => 250]);
+        $this->assertSame([-200.0, -50.0], SavingsStatus::where('vehicle_id', $v->id)->orderBy('id')->pluck('savings')->map(fn ($x) => (float) $x)->all());
+    }
+
     public function test_using_more_than_the_balance_is_refused(): void
     {
         [$v, $admin] = $this->soldVehicle(500);
