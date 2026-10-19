@@ -7656,6 +7656,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             @endphp
             <button wire:click="cycleProgress('{{ $val }}')"
                     @if($val === '매입중') title="{{ __('vehicle.progress_pill.maeipjung_hint') }}" @endif
+                    @if($val === '말소완료') title="{{ __('vehicle.progress_pill.malso_hint') }}" @endif
                     class="rounded-full px-2.5 py-0.5 text-xs font-medium transition
                            @if($isInclude) bg-violet-600 text-white @elseif($isExclude) bg-red-500 text-white line-through @else bg-gray-100 text-gray-600 hover:bg-gray-200 @endif">
                 {{ $val === '' ? __('vehicle.filter_all') : __('domain.progress.'.$val) }}

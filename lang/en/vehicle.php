@@ -198,6 +198,7 @@ return [
     'buyer_undecided_badge' => 'No buyer',
     'purchase_unpaid_badge_title' => 'Purchase balance unpaid: :amount KRW - click to show only vehicles with an unpaid balance',
     'progress_pill' => [
+        'malso_hint' => 'Shows every vehicle with a deregistration date - including those already sold, shipped or completed (for preparing documents).',
         'maeipjung_hint' => 'Shows every vehicle that still owes a purchase balance - including those already sold or shipped. The dashboard stage strip counts fewer because it is a distribution.',
     ],
     'date_range_ignored_hint' => 'The date basis is set to All, so the range you typed is not applied. Pick a basis (purchase date, sale date, ...) and it takes effect - for both the list and the export.',
