@@ -137,14 +137,14 @@ class ManagerPanelLifecycleE2ETest extends TestCase
             ->assertHasNoErrors();
         $this->assertSame('선적중', $v->fresh()->progress_status);
 
-        // 수출신고서 업로드 → 통관중(2026-10-16 규칙). is_export_cleared 미체크 상태라 doc-check 경고 모달이 뜬다
-        // (수출통관 체크↔서류 XOR). 수출신고서만 있어도 통관중이 정상 → 사용자가 [확인] 진행.
-        $c = Volt::test('erp.vehicles.index')
+        // 수출신고서 업로드 → 선적중 그대로(2026-10-20 규칙: 반입지·신고서 = 선적중). 체크 전 신고서는 정상 단계라
+        // 체크↔서류 확인 모달이 뜨지 않는다(구: XOR 이라 떴다 — 2026-10-20 「체크했는데 신고서 없음」 한 방향만).
+        Volt::test('erp.vehicles.index')
             ->call('openEdit', $v->id)
             ->set('exportDeclarationDocFile', $pdf('export-decl.pdf'))
             ->call('save')
-            ->assertSet('showDocCheckModal', true);
-        $c->call('confirmSaveWithDocMismatch')->assertHasNoErrors();
+            ->assertSet('showDocCheckModal', false)
+            ->assertHasNoErrors();
         $this->assertSame('선적중', $v->fresh()->progress_status);   // 반입지+신고서 = 선적중 (2026-10-20 규칙)
 
         Volt::test('erp.vehicles.index')
