@@ -3,7 +3,7 @@
 // i18n — 재고관리 (erp/inventory). 진행상태는 domain.progress, 컬럼 일부 vehicle.col, 공통 common 재사용.
 return [
     'title' => '재고관리',
-    'subtitle' => '매입중 · 매입완료 · 말소완료 · 판매중 · 판매완료 차량 (선적 진입 전). 영업담당자별 그룹 정렬.',
+    'subtitle' => '매입중 · 매입완료 · 말소완료 · 판매중 · 판매완료 차량 (반입·선적 전). 영업담당자별 그룹 정렬.',
     'total' => '총 :count 대',
     'by_salesman' => '담당자별:',
     'unassigned_strip' => '미배정 :count',

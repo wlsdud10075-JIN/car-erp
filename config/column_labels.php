@@ -45,7 +45,7 @@ return [
         // 그대로 노출된다(SKILLS §8 #41 — jin 이 같은 지적을 4번 했다).
         'memo_purchase' => '매입 탭 메모',
         'memo_sale' => '판매 탭 메모',
-        'memo_clearance' => '수출통관 탭 메모',
+        'memo_clearance' => '수출 탭 통관 메모',
         'memo_shipping' => '선적 탭 메모',
         'memo_bl' => 'B/L 탭 메모',
         'purchase_remittance_memo' => '송금 메모',
@@ -122,7 +122,7 @@ return [
         'discharge_port_id' => '도착 항구',
         'incoterms' => 'Incoterms',
         'export_declaration_document' => '수출신고서',
-        'is_export_cleared' => '수출통관 완료',
+        'is_export_cleared' => '통관 완료',
 
         // 선적 / B/L
         'bl_buyer_id' => '선적 바이어',
@@ -248,7 +248,7 @@ return [
         'is_domestic' => '내수 바이어',
         'unsecured_limit_krw' => '무담보 한도',
         // 바이어별 락 필요입금률 (jin 2026-08-21) — super 전용 값이라 감사로그가 유일한 견제다.
-        'lock_shipping_entry_pct' => '통관·선적 진입 락 (%)',
+        'lock_shipping_entry_pct' => '수출 진입 락 (%)',
         'lock_purchase_registration_pct' => '매입 등록 락 (%)',
         'unsecured_limit_enabled' => '무담보 한도 기능',
         'inherited_from_salesman_id' => '승계 전 담당자',
@@ -362,12 +362,12 @@ return [
     // ─── settings (기능 설정) ────────────────────────────────────────────
     'settings' => [
         'value' => '설정값',
-        'lock_shipping_entry' => '선적 진입 락',
+        'lock_shipping_entry' => '수출 진입 락',
         'capital_principal' => '투입 원금',
         // 🚨 여기 값들은 **컬럼명이 아니라 설정 키·논리명**이다. 감사로그가 그걸 그대로 찍으므로
         //    새 설정을 감사 대상으로 만들면 **같은 커밋에 여기도 한 줄** 넣어야 화면이 한글로 뜬다.
         //    (2026-08-26 jin — 「감사로그에 영문이 계속 쌓인다」 4번째 지적)
-        'lock_threshold_shipping_entry' => '선적 진입 필요입금률',
+        'lock_threshold_shipping_entry' => '수출 진입 필요입금률',
         'lock_threshold_purchase_registration' => '매입등록 필요입금률',
         'lock_threshold_purchase_payment' => '매입지급 필요입금률',
         'unsecured_limit_enabled' => '무담보 한도 사용',

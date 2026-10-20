@@ -83,7 +83,7 @@ return [
         'lock_applied' => 'Recommended values filled in. Press Save to apply.',
         'lock_section' => 'Lock thresholds (super admin only)',
         'lock_hint' => 'Required paid ratio for this buyer only. Leave blank to follow the company-wide setting. This value takes precedence over the global one; a per-vehicle unpaid override skips both.',
-        'lock_shipping_entry' => 'Clearance / shipping entry',
+        'lock_shipping_entry' => 'Export entry',
         'lock_purchase_registration' => 'Purchase registration',
         'lock_global' => 'global :pct%',
         'lock_zero_note' => 'Note: 0 means "no lock" and is different from blank. Blank uses the global setting. Changes are recorded in the audit log.',
