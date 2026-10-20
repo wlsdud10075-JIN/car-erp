@@ -7,6 +7,7 @@ use App\Models\Buyer;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -94,9 +95,10 @@ class DepartedPivotTest extends TestCase
     public function test_departed_scope_catches_bl_without_warehouse_out_date(): void
     {
         $v = $this->sold('33가3333', 10_000_000);
-        // 선적일 없이 B/L 만 — 자동 채움이 안 걸린다
+        // 선적일 없이 B/L 만 — 2026-10-20 부터는 자동 채움(거래완료된 날)이 걸리므로, 적재·옛 데이터처럼 출고일이 빈 상태를 직접 만든다
         $v->update(['bl_document' => 'bl/x.pdf']);
-        $this->assertNull($v->fresh()->warehouse_out_date, '선적일이 없어 자동 채움이 안 된 상태');
+        DB::table('vehicles')->where('id', $v->id)->update(['warehouse_out_date' => null]);
+        $this->assertNull($v->fresh()->warehouse_out_date, '출고일이 빈 상태(옛 데이터)');
 
         $this->assertSame(1, Vehicle::query()->departed()->count(), 'B/L 만 있어도 떠난 것으로 봐야 한다');
         $this->assertSame(0, Vehicle::query()->notDeparted()->count());

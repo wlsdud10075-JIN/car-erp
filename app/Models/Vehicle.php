@@ -966,10 +966,11 @@ class Vehicle extends Model
             //   ⚠️ 판정은 **진행상태 「거래완료」** 다(jin) — `bl_document` 유무로 보면 grandfather(v1~v3) 차량에서
             //      어긋난다. 그리고 `progress_status_cache` 가 아니라 **computed `progress_status`** 를 본다:
             //      캐시는 이 훅 뒤(742행)에서 갱신되므로 여기선 아직 옛 값이라 한 박자 늦게 채워진다.
-            if ($vehicle->progress_status === '거래완료'
-                && blank($vehicle->warehouse_out_date)
-                && filled($vehicle->shipping_date)) {
-                $vehicle->warehouse_out_date = $vehicle->shipping_date;
+            //   🔀 2026-10-20 (jin «추천대로») — 선적일이 없어도 채운다: 선적일 → B/L 발행일 → 거래완료가 된 날(오늘).
+            //      FOB포워더(바이어가 직접 B/L·선적)·선적일 없이 B/L 만 올라간 차가 출고일 없이 재고 어디에도 안 보였다.
+            //      🚫 매입취소 차는 비워 둔다 — 실제로 나간 적이 없다. 판정·값 = autoWarehouseOutDate() 단일 출처(raw 갱신 경로도 같이 쓴다).
+            if ($vehicle->progress_status === '거래완료' && blank($vehicle->warehouse_out_date)) {
+                $vehicle->warehouse_out_date = $vehicle->autoWarehouseOutDate();
             }
 
             // 2026-05-20 사용자 정정 — KRW 통화 시 환율 자동 1 normalize.
@@ -2006,7 +2007,35 @@ class Vehicle extends Model
             'receivable_risk' => $this->receivable_risk_computed,
             'sale_unpaid_amount_krw_cache' => ($krw = $this->sale_unpaid_amount_krw) !== null ? (int) round($krw) : null,
             ...$this->shippingCacheValues(),
+            ...$this->autoWarehouseOutValues(),
         ]);
+    }
+
+    /**
+     * 🚚 거래완료인데 출고일이 빈 차의 자동 출고일 (jin 2026-10-20) — 선적일 → B/L 발행일 → 오늘(거래완료가 된 날).
+     *    매입취소 차는 null(실제로 나간 적이 없다). `saving` 훅과 raw 갱신 경로(refreshCaches·rebuild-caches)가 같이 쓴다 —
+     *    입금 저장으로 거래완료가 되는 FOB포워더 완납은 `FinalPayment::saved → refreshCaches()` raw update 라 훅이 안 뜬다.
+     *    ⚠️ 불리언(떠났나)으로만 쓰는 값이다 — 날짜 정밀도는 선적일 복사와 같은 수준(§14 「departed」).
+     */
+    public function autoWarehouseOutDate(): ?string
+    {
+        // ⚠️ 새 차는 cancel_status 가 DB 기본값('none')이라 훅에서 null 로 보인다(§8 #80) — null = 취소 아님.
+        if (($this->cancel_status ?? self::CANCEL_NONE) !== self::CANCEL_NONE) {
+            return null;
+        }
+
+        return ($this->shipping_date ?? $this->bl_issue_date ?? now())->toDateString();
+    }
+
+    /** raw 갱신용 — 거래완료 + 출고일 없음일 때만 컬럼을 싣는다(사람이 넣은 출고일은 안 건드린다). */
+    public function autoWarehouseOutValues(): array
+    {
+        if ($this->progress_status !== '거래완료' || filled($this->warehouse_out_date)) {
+            return [];
+        }
+        $date = $this->autoWarehouseOutDate();
+
+        return $date === null ? [] : ['warehouse_out_date' => $date];
     }
 
     /**
@@ -3158,6 +3187,38 @@ class Vehicle extends Model
             ->whereNotNull('eta_date')
             ->when($phase === 'in_transit', fn ($q) => $q->where('eta_date', '>', $endOfToday))
             ->when($phase === 'arrived', fn ($q) => $q->where('eta_date', '<=', $endOfToday));
+    }
+
+    /**
+     * 🏁 재고 「거래완료」 분류 (jin 2026-10-20 B안, board 포털 재고 탭) = 거래완료 AND 지금 운항중 아님 AND 매입취소 아님.
+     *   출고일과 **무관** — 출고일 없는 거래완료 차가 재고 4분류 어디에도 안 뜨던 빈틈을 닫는다.
+     *   운항중(배 위)인 거래완료 차는 「출고완료」에 남는다(움직이는 차가 거래완료에 묻히지 않게).
+     *   매입취소로 끝난 차는 판매·선적이 실제로 없었으므로 뺀다(jin «추천대로»).
+     *   🚫 조건을 옮겨 적지 말 것 — 출고완료(scopeInventoryShippedOut)가 이 집합의 여집합을 쓴다.
+     */
+    public function scopeInventoryCompleted(Builder $query): Builder
+    {
+        $endOfToday = now()->toDateString().' 23:59:59';   // scopeSailing('in_transit') 와 같은 경계
+
+        return $query->where('progress_status_cache', '거래완료')
+            ->where('cancel_status', self::CANCEL_NONE)
+            ->where(fn ($q) => $q->whereNull('shipping_date')->orWhereNull('eta_date')->orWhere('eta_date', '<=', $endOfToday));
+    }
+
+    /**
+     * 🚚 재고 「출고완료」 분류 (2026-10-20 B안) = 출고일 있음 AND 「거래완료」 분류가 아님.
+     *   = 거래완료 아닌(또는 진행상태 NULL) 출고차 + 운항중인 거래완료 출고차 + 출고일 있는 매입취소 차.
+     *   ⚠️ NULL 안전하게 풀어 쓴다 — `NOT(cache='거래완료' AND …)` 는 cache NULL 에서 NULL 이 되어 행이 빠진다.
+     */
+    public function scopeInventoryShippedOut(Builder $query): Builder
+    {
+        $endOfToday = now()->toDateString().' 23:59:59';
+
+        return $query->whereNotNull('warehouse_out_date')
+            ->where(fn ($q) => $q->whereNull('progress_status_cache')
+                ->orWhere('progress_status_cache', '!=', '거래완료')
+                ->orWhere('cancel_status', '!=', self::CANCEL_NONE)
+                ->orWhere(fn ($q2) => $q2->whereNotNull('shipping_date')->whereNotNull('eta_date')->where('eta_date', '>', $endOfToday)));
     }
 
     /**

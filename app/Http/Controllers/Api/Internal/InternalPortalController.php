@@ -191,15 +191,16 @@ class InternalPortalController extends Controller
         $sid = $this->salesmanId($request);
 
         $category = (string) $request->query('category', 'general');
-        if (! in_array($category, ['awaiting_payment', 'general', 'pre_ship', 'shipped_out'], true)) {
+        if (! in_array($category, ['awaiting_payment', 'general', 'pre_ship', 'shipped_out', 'completed'], true)) {
             return response()->json([
                 'error' => 'invalid_category',
-                'message' => 'category 는 awaiting_payment | general | pre_ship | shipped_out 중 하나여야 합니다.',
+                'message' => 'category 는 awaiting_payment | general | pre_ship | shipped_out | completed 중 하나여야 합니다.',
             ], 422);
         }
 
         $search = trim((string) $request->query('search', ''));
-        $isShippedOut = $category === 'shipped_out';
+        // 🏁 completed(거래완료, 2026-10-20 B안)도 누적 집합이라 shipped_out 과 같이 페이징·출고일 내림차순.
+        $isShippedOut = in_array($category, ['shipped_out', 'completed'], true);
 
         $q = $this->ownVehicles($sid)
             ->with(['buyer', 'purchaseBalancePayments'])   // purchase_unpaid_amount·warehouse_in_date accessor N+1 방지
@@ -209,7 +210,8 @@ class InternalPortalController extends Controller
             ->when($category === 'awaiting_payment', fn ($q2) => $q2->awaitingPurchasePayment())
             ->when($category === 'general', fn ($q2) => $q2->generalStock())
             ->when($category === 'pre_ship', fn ($q2) => $q2->preShippingStock())
-            ->when($isShippedOut, fn ($q2) => $q2->whereNotNull('warehouse_out_date'))
+            ->when($category === 'shipped_out', fn ($q2) => $q2->inventoryShippedOut())
+            ->when($category === 'completed', fn ($q2) => $q2->inventoryCompleted())
             // 검색 대상은 화면과 동일(소유자명 제외 — PII).
             ->when($search !== '', fn ($q2) => $q2->where(fn ($q3) => $q3
                 ->where('vehicle_number', 'like', "%{$search}%")
@@ -225,7 +227,7 @@ class InternalPortalController extends Controller
                 ->orWhereHas('buyer', fn ($q4) => $q4->where('name', 'like', "%{$search}%"))
             ))
             ->when($isShippedOut,
-                fn ($q2) => $q2->orderByDesc('warehouse_out_date')->orderByDesc('id'),
+                fn ($q2) => $q2->orderByRaw('warehouse_out_date IS NULL ASC')->orderByDesc('warehouse_out_date')->orderByDesc('id'),
                 fn ($q2) => $q2->orderByRaw('salesman_id IS NULL ASC')->orderBy('salesman_id')->orderBy('purchase_date')
             );
 

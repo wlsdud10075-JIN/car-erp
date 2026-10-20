@@ -94,7 +94,7 @@ class BoardInventoryApiTest extends TestCase
             $screen = Vehicle::query()->where('salesman_id', $sm->id)
                 ->when($cat === 'general', fn ($q) => $q->generalStock())
                 ->when($cat === 'pre_ship', fn ($q) => $q->preShippingStock())
-                ->when($cat === 'shipped_out', fn ($q) => $q->whereNotNull('warehouse_out_date'))
+                ->when($cat === 'shipped_out', fn ($q) => $q->inventoryShippedOut())
                 ->pluck('id')->sort()->values()->all();
 
             $this->assertSame($screen, $api, "category={$cat} 이 화면 scope 와 다른 집합을 돌려준다");
@@ -229,6 +229,53 @@ class BoardInventoryApiTest extends TestCase
         // 바이어는 릴레이션이라 형태가 다르다 — 양쪽 다 있는지만 본다.
         $this->assertStringContainsString("orWhereHas('buyer'", $screen, '재고 화면 검색에 바이어가 없다');
         $this->assertStringContainsString("orWhereHas('buyer'", $api, '재고 API 검색에 바이어가 없다 — 화면과 갈린다');
+    }
+
+    /**
+     * 🏁 거래완료 탭 (jin 2026-10-20 B안) — completed = 거래완료 · 운항중 아님 · 매입취소 아님 (출고일 무관).
+     *    shipped_out = 출고일 있음 · completed 아님 (운항중인 거래완료는 여기 남는다). 둘은 겹치지 않는다.
+     */
+    public function test_completed_tab_and_shipped_out_split_per_plan_b(): void
+    {
+        $sm = $this->salesman('me@a.com');
+        $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
+        $sold = ['sale_price' => 5000, 'buyer_id' => $buyer->id, 'sale_date' => '2026-08-03'];
+        $past = now()->subDays(20)->toDateString();
+        $future = now()->addDays(10)->toDateString();
+
+        $doneArrived = $this->vehicle($sm->id, $sold + ['bl_document' => 'bl/a.pdf', 'warehouse_out_date' => '2026-08-05', 'shipping_date' => $past, 'eta_date' => now()->subDay()->toDateString()]);
+        $doneSailing = $this->vehicle($sm->id, $sold + ['bl_document' => 'bl/b.pdf', 'warehouse_out_date' => '2026-08-06', 'shipping_date' => $past, 'eta_date' => $future]);
+        $doneNoOut = $this->vehicle($sm->id, $sold + ['bl_document' => 'bl/c.pdf']);          // 출고일 없는 거래완료 — 빈틈이던 차
+        $clearedOut = $this->vehicle($sm->id, $sold + ['is_export_cleared' => true, 'warehouse_out_date' => '2026-08-07']);
+
+        DB::table('vehicles')->where('id', $doneNoOut->id)->update(['warehouse_out_date' => null]);   // 자동 채움 전 상태 재현
+
+        $ids = fn (string $cat) => collect($this->signedGet('/api/internal/board/inventory', ['salesman_email' => 'me@a.com', 'category' => $cat])
+            ->assertOk()->json('data'))->pluck('vehicle_id')->sort()->values()->all();
+
+        $this->assertSame(collect([$doneArrived->id, $doneNoOut->id])->sort()->values()->all(), $ids('completed'), '거래완료 탭 = 도착한 거래완료 + 출고일 없는 거래완료');
+        $this->assertSame(collect([$doneSailing->id, $clearedOut->id])->sort()->values()->all(), $ids('shipped_out'), '출고완료 = 운항중인 거래완료 + 거래완료 아닌 출고차');
+        $this->assertSame([], array_values(array_intersect($ids('completed'), $ids('shipped_out'))), '두 탭이 겹친다');
+
+        // 화면 scope 와 같은 집합 (API 가 조건을 옮겨 적지 않았다)
+        $this->assertSame(Vehicle::where('salesman_id', $sm->id)->inventoryCompleted()->pluck('id')->sort()->values()->all(), $ids('completed'));
+
+        // 페이징·total 은 shipped_out 과 같다
+        $res = $this->signedGet('/api/internal/board/inventory', ['salesman_email' => 'me@a.com', 'category' => 'completed', 'limit' => 1])->assertOk();
+        $this->assertCount(1, $res->json('data'));
+        $this->assertSame(2, $res->json('total'));
+    }
+
+    /** 매입취소로 끝난 거래완료는 거래완료 탭에서 뺀다(판매·선적이 실제로 없었다, jin 2026-10-20 「추천대로」). */
+    public function test_cancelled_deals_stay_out_of_the_completed_tab(): void
+    {
+        $sm = $this->salesman('me@a.com');
+        $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
+        $v = $this->vehicle($sm->id, ['sale_price' => 5000, 'buyer_id' => $buyer->id, 'sale_date' => '2026-08-03', 'bl_document' => 'bl/x.pdf']);
+        DB::table('vehicles')->where('id', $v->id)->update(['cancel_status' => Vehicle::CANCEL_ACTIVE]);
+
+        $this->assertNotContains($v->id, collect($this->signedGet('/api/internal/board/inventory',
+            ['salesman_email' => 'me@a.com', 'category' => 'completed'])->json('data'))->pluck('vehicle_id')->all());
     }
 
     public function test_invalid_category_is_rejected(): void
