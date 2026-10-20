@@ -225,12 +225,19 @@ class DashboardActionCountsTest extends TestCase
         $this->assertSame(1, Vehicle::action('shipping_process_needed')->count());
     }
 
-    public function test_bl_upload_needed_when_loading_location_set_but_bl_document_null(): void
+    /** 🔀 2026-10-20 — 「B/L 차례인 차」 = 통관 체크 + B/L 없음(구: 반입지 + B/L 없음 — 선적중 차가 섞였다). 「B/L 필요」 토글과 같은 집합. */
+    public function test_bl_upload_needed_when_cleared_but_bl_document_null(): void
     {
-        $this->makeVehicle(['bl_loading_location' => '부산항', 'bl_document' => null]);
-        $this->makeVehicle(['bl_loading_location' => '부산항', 'bl_document' => 'bl.pdf']);
+        $this->makeVehicle(['sale_price' => 1000, 'deposit_down_payment' => 1000, 'bl_loading_location' => '부산항', 'is_export_cleared' => true, 'bl_document' => null]);   // ✅
+        $this->makeVehicle(['sale_price' => 1000, 'deposit_down_payment' => 1000, 'bl_loading_location' => '부산항', 'bl_document' => null]);                               // 반입지만 = 선적중 → ❌
+        $this->makeVehicle(['sale_price' => 1000, 'deposit_down_payment' => 1000, 'is_export_cleared' => true, 'bl_document' => 'bl.pdf']);                                   // 거래완료 → ❌
 
         $this->assertSame(1, Vehicle::action('bl_upload_needed')->count());
+        $this->assertSame(
+            Vehicle::query()->action('bl_upload_needed')->pluck('id')->sort()->values()->all(),
+            Vehicle::query()->stageGap('bl')->pluck('id')->sort()->values()->all(),
+            '대시보드 「B/L 업로드 필요」와 차량관리 「B/L 필요」 토글이 다른 차를 센다'
+        );
     }
 
     public function test_exchange_rate_missing_for_foreign_currency_without_rate(): void

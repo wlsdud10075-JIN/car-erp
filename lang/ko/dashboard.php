@@ -181,7 +181,7 @@ return [
             'forwarding_missing' => ['l' => '포워딩사 미지정', 'd' => '선적일 입력 → 포워딩사 없음'],
             'export_declaration_upload_needed' => ['l' => '수출신고서 업로드', 'd' => '선적일 입력 → 신고서 없음'],
             'shipping_process_needed' => ['l' => '반입지 입력 필요', 'd' => '수출신고서 있음 → 반입지 미입력'],
-            'bl_upload_needed' => ['l' => 'B/L 업로드 필요', 'd' => '반입지 입력 → B/L 미업로드'],
+            'bl_upload_needed' => ['l' => 'B/L 업로드 필요', 'd' => '통관완료 → B/L 미업로드'],
             'dhl_dispatch_needed' => ['l' => 'DHL 발송 대기', 'd' => '거래완료 → 미신청'],
         ],
         'settlement' => [

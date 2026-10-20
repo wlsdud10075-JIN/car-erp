@@ -1793,7 +1793,7 @@ class Vehicle extends Model
      * 🚦 단계 빈칸 토글 (jin 2026-10-19 «말소필요처럼 선적필요·통관필요·B/L필요») — 그 단계의 「완료 조건」이 안 채워진 차.
      *   - shipping  = 선적완료 조건(반입지 + 선적일) 중 하나라도 빈 차
      *   - clearance = 통관완료 조건(통관 체크 + 수출신고서) 중 하나라도 빈 차 — 신고서 없이 체크만 켠 차도 잡는다
-     *   - bl        = 통관완료 조건(체크+신고서)은 다 됐는데 거래완료 조건(B/L 파일)만 빈 차
+     *   - bl        = 통관 체크는 됐는데 B/L 파일만 빈 차 (2026-10-20 신고서 조건 제거 — 대시보드 「B/L 업로드 필요」와 같은 조건)
      *   진행상태(cascade 첫 매칭)와 **다른 축**이다 — 칸을 순서와 다르게 채운 차(신고서만 있고 선적일 없는 「통관중」 등)를 찾는다.
      *   모수 = 판매된 차(판매가>0) · 거래완료 아님 · 매입취소 아님 · 내수 아님(수출 흐름을 안 탄다, NOT_FOR_DOMESTIC 와 같은 이유).
      *   ⚠️ 적재로 「완료」 처리됐는데 선적일이 없는 차(ssancarerp 24대)도 여기 잡힌다 — jin «실무자가 추후에 바꾸게».
@@ -1816,8 +1816,8 @@ class Vehicle extends Model
                 ->orWhereNull('export_declaration_document')->orWhere('export_declaration_document', '')),
             // B/L 은 「통관완료 조건이 다 됐는데 B/L 만 없는 차」로 좁힌다(jin 2026-10-19) — 안 좁히면 진행 중 판매 차 전부(ssancarerp 1,307 = 모수 전체)라
             //   토글이 아무것도 안 거른다. 좁히면 854대 = 실제로 B/L 을 기다리는 차.
+            // 🔀 2026-10-20 — 신고서 조건 제거(대시보드 「B/L 업로드 필요」 큐와 같은 조건). 체크했는데 신고서가 없는 차는 「통관 필요」가 잡는다.
             'bl' => $q->where('is_export_cleared', true)
-                ->whereNotNull('export_declaration_document')->where('export_declaration_document', '!=', '')
                 ->where(fn ($q2) => $q2->whereNull('bl_document')->orWhere('bl_document', '')),
             default => $q->whereRaw('1 = 0'),
         };
@@ -3724,8 +3724,12 @@ class Vehicle extends Model
                 ->whereNull('export_declaration_document'),
             'shipping_process_needed' => $q->whereNotNull('export_declaration_document')
                 ->whereNull('bl_loading_location'),
-            'bl_upload_needed' => $q->whereNotNull('bl_loading_location')
-                ->whereNull('bl_document'),
+            // 🔀 2026-10-20 (jin «B/L 업로드가 안 된 걸 찾아야 하는 거 아냐?») — 「B/L 차례인 차」 = 통관 체크 + B/L 없음.
+            //   구: 반입지 + B/L 없음 — 반입지만 넣은 선적중 차까지 섞였다(ssancarerp 1,027 → 877). 차량관리 「B/L 필요」 토글
+            //   (scopeStageGap 'bl')과 **같은 조건** — 대시보드 숫자를 누르면 같은 대수가 나와야 한다(§8 #44).
+            'bl_upload_needed' => $q->where('sale_price', '>', 0)
+                ->where('is_export_cleared', true)
+                ->where(fn ($q2) => $q2->whereNull('bl_document')->orWhere('bl_document', '')),
             'dhl_dispatch_needed' => $q->whereNotNull('bl_document'),
 
             // 큐 4 8-7 — 통관 정체 (admin 대시보드 stuck_count와 SQL 100% 일치).
