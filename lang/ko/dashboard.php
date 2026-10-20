@@ -104,7 +104,7 @@ return [
 
     'actions_title' => '처리 필요 항목',
     'empty' => [
-        '수출통관' => ['title' => '처리 대기 항목 없음', 'sub' => '수출통관/선적/DHL 흐름 정상'],
+        '수출통관' => ['title' => '처리 대기 항목 없음', 'sub' => '수출/B·L/DHL 흐름 정상'],
         '재무' => ['title' => '회수·재무 대기 없음', 'sub' => '모든 채권/정산 정상'],
         'default' => ['title' => '처리할 항목이 없습니다', 'sub' => '모든 작업이 최신 상태입니다'],
     ],
@@ -141,9 +141,9 @@ return [
         ],
         'clearance' => [
             'derg_wait' => ['l' => '말소 대기', 'h' => '매입가 입금 완료 → 말소 미처리'],
-            'clr_req_wait' => ['l' => '통관 신청 대기', 'h' => '판매 완납 → 면장 미업로드'],
+            'clr_req_wait' => ['l' => '수출신고 대기', 'h' => '판매 완납 → 수출신고서 미업로드'],
             'decl_wait' => ['l' => '수출신고서 업로드 대기', 'h' => '선적일 있음 → 신고서 없음'],
-            'ship_wait' => ['l' => '선적 처리 대기', 'h' => '면장 완료 → 반입지 미입력'],
+            'ship_wait' => ['l' => '반입지 대기', 'h' => '수출신고서 있음 → 반입지 미입력'],
             'dhl_wait' => ['l' => 'DHL 발송 대기', 'h' => 'B/L 발행 → 미신청'],
         ],
         'settlement' => [
@@ -158,7 +158,7 @@ return [
             'appr_wait' => ['l' => '승인 대기', 'h' => '4 액션 통합 (큐 14-3에서 활성화)'],
             'settle_wait' => ['l' => '정산 대기', 'h' => 'pending + confirmed'],
             'risk' => ['l' => '채권 위험', 'h' => '위험·심각 등급'],
-            'clr_stuck' => ['l' => '통관 정체', 'h' => '판매완료 30일+ → 면장 미업로드'],
+            'clr_stuck' => ['l' => '통관 정체', 'h' => '판매완료 30일+ → 수출신고서 미업로드'],
         ],
     ],
 
@@ -166,8 +166,8 @@ return [
         'sales' => [
             'purchase_unpaid' => ['l' => '매입 미지급', 'd' => '매입가 입력 후 잔금 미지급'],
             'sale_unpaid' => ['l' => '판매 미입금', 'd' => '판매 후 미회수 금액 존재'],
-            'clearance_needed' => ['l' => '수출통관 신청 필요', 'd' => '판매 완납 → 면장서류 미업로드'],
-            'shipping_needed' => ['l' => '선적 처리 필요', 'd' => '수출통관 완료 → B/L 미처리'],
+            'clearance_needed' => ['l' => '수출신고 필요', 'd' => '판매 완납 → 수출신고서 미업로드'],
+            'shipping_needed' => ['l' => 'B/L 대기', 'd' => '수출신고서 있음 → B/L 미업로드'],
             'dhl_needed' => ['l' => 'DHL 발송 대기', 'd' => '선적 완료 → DHL 미신청'],
             'settlement_wait' => ['l' => '정산 대기', 'd' => '정산 방식 미입력 또는 확인 필요'],
             'freight_confirm' => ['l' => '인코텀즈 확정 필요', 'd' => '완납했으나 인코텀즈(FOB/CFR)·운임비 미확정 → 정산 대기'],
@@ -175,13 +175,13 @@ return [
         ],
         'clearance' => [
             'deregistration_needed' => ['l' => '말소 처리 필요', 'd' => '매입 완료 → 말소 미처리'],
-            'clearance_request_needed' => ['l' => '통관 신청 필요', 'd' => '판매 완납 → 면장 미업로드'],
+            'clearance_request_needed' => ['l' => '수출신고 필요', 'd' => '판매 완납 → 수출신고서 미업로드'],
             'clearance_info_missing' => ['l' => '통관 바이어/일자 누락', 'd' => '판매 진입 → 통관 바이어 또는 선적일 없음'],
             'eta_missing' => ['l' => '데이터 보정 — 도착일(ETA) 없음', 'd' => '선적했는데 도착일 미입력 → 채워야 통관서류 알람 예약됨'],
-            'forwarding_missing' => ['l' => '포워딩사 미지정', 'd' => '통관 진입 → forwarding 없음'],
+            'forwarding_missing' => ['l' => '포워딩사 미지정', 'd' => '선적일 입력 → 포워딩사 없음'],
             'export_declaration_upload_needed' => ['l' => '수출신고서 업로드', 'd' => '선적일 입력 → 신고서 없음'],
-            'shipping_process_needed' => ['l' => '선적 처리 필요', 'd' => '판매 완료 → 반입지 미입력'],
-            'bl_upload_needed' => ['l' => 'B/L 업로드 필요', 'd' => '통관 완료 → B/L 미업로드'],
+            'shipping_process_needed' => ['l' => '반입지 입력 필요', 'd' => '수출신고서 있음 → 반입지 미입력'],
+            'bl_upload_needed' => ['l' => 'B/L 업로드 필요', 'd' => '반입지 입력 → B/L 미업로드'],
             'dhl_dispatch_needed' => ['l' => 'DHL 발송 대기', 'd' => '거래완료 → 미신청'],
         ],
         'settlement' => [

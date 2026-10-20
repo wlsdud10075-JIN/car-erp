@@ -1521,7 +1521,7 @@ class Vehicle extends Model
         //   서류 자체는 진행상태 cascade('말소완료')와 서류 탭에서 계속 추적된다.
         if (! $this->is_deregistered) {
             throw ValidationException::withMessages([
-                'export_buyer_id' => '말소 처리를 완료해야 통관·선적 진입이 가능합니다 — 매입 탭.',
+                'export_buyer_id' => '말소 처리를 완료해야 수출 진입이 가능합니다 — 매입 탭.',
             ]);
         }
 
@@ -1558,7 +1558,7 @@ class Vehicle extends Model
             // 외화 환율 미입력 → 미수율 평가 불가
             if ($this->currency !== 'KRW' && ((float) $this->exchange_rate <= 0)) {
                 throw ValidationException::withMessages([
-                    'export_buyer_id' => '환율 미입력 외화 차량은 통관·선적 진입 불가 — 판매 탭에서 환율을 입력하세요. (또는 관리자 미입금 우회 승인.)',
+                    'export_buyer_id' => '환율 미입력 외화 차량은 수출 진입 불가 — 판매 탭에서 환율을 입력하세요. (또는 관리자 미입금 우회 승인.)',
                 ]);
             }
 
@@ -1569,7 +1569,7 @@ class Vehicle extends Model
                 $percent = number_format($ratio * 100, 1);
                 $needPaid = LockThresholdResolver::requiredPaidPct($buyerForLock, 'shipping_entry');
                 throw ValidationException::withMessages([
-                    'export_buyer_id' => "판매 입금률 < {$needPaid}% (미수율 {$percent}%) 차량은 통관·선적 진입 불가. {$needPaid}% 이상 입금 또는 관리자 승인(미입금 우회) 후 진행하세요.",
+                    'export_buyer_id' => "판매 입금률 < {$needPaid}% (미수율 {$percent}%) 차량은 수출 진입 불가. {$needPaid}% 이상 입금 또는 관리자 승인(미입금 우회) 후 진행하세요.",
                 ]);
             }
         }

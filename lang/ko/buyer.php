@@ -84,7 +84,7 @@ return [
         'lock_applied' => '권장값을 입력칸에 채웠습니다. 저장을 눌러야 반영됩니다.',
         'lock_section' => '락 기준선 (시스템관리자 전용)',
         'lock_hint' => '이 바이어에게만 적용할 필요입금률입니다. 비워두면 회사 전역 설정을 따릅니다. 여기 값이 전역보다 먼저 적용되고, 차량별 미입금 우회 승인이 있으면 그 차는 둘 다 건너뜁니다.',
-        'lock_shipping_entry' => '통관·선적 진입',
+        'lock_shipping_entry' => '수출 진입',
         'lock_purchase_registration' => '매입 등록',
         'lock_global' => '전역 :pct%',
         'lock_zero_note' => '⚠️ 0 을 넣으면 「락 없음」입니다(빈칸과 다릅니다). 빈칸 = 전역값 사용. 변경 이력은 감사로그에 남습니다.',

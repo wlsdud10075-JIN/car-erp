@@ -27,7 +27,7 @@ return [
         'code_note' => 'Berth code (number in parentheses) — leave empty if none.',
         'active_note' => 'Active (shown in dropdowns)',
         'allow_shipping_wait' => 'Allow shipping-wait route',
-        'allow_shipping_wait_note' => 'RORO vehicles bound for this discharge port bypass the clearance/shipping 50% entry gate without an override (port-wait paperwork). Receivable stays pre-shipping until a warehouse-out date is entered.',
+        'allow_shipping_wait_note' => 'RORO vehicles bound for this discharge port bypass the export entry paid-% gate without an override (port-wait paperwork). Receivable stays pre-shipping until a warehouse-out date is entered.',
     ],
 
     'badge' => [

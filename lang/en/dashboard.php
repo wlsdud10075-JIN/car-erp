@@ -104,7 +104,7 @@ return [
 
     'actions_title' => 'Action Items',
     'empty' => [
-        '수출통관' => ['title' => 'No pending items', 'sub' => 'Clearance / shipping / DHL flow is clear'],
+        '수출통관' => ['title' => 'No pending items', 'sub' => 'Export / B/L / DHL flow is clear'],
         '재무' => ['title' => 'No collection or finance items', 'sub' => 'All receivables / settlements are clear'],
         'default' => ['title' => 'No action items', 'sub' => 'Everything is up to date'],
     ],
@@ -140,7 +140,7 @@ return [
         ],
         'clearance' => [
             'derg_wait' => ['l' => 'Deregistration Pending', 'h' => 'purchase paid → not deregistered'],
-            'clr_req_wait' => ['l' => 'Clearance Request Pending', 'h' => 'sale fully paid → license not uploaded'],
+            'clr_req_wait' => ['l' => 'Export Declaration Pending', 'h' => 'sale fully paid → declaration not uploaded'],
             'decl_wait' => ['l' => 'Export Declaration Pending', 'h' => 'shipping date set → no declaration'],
             'ship_wait' => ['l' => 'Shipment Pending', 'h' => 'license done → loading location empty'],
             'dhl_wait' => ['l' => 'DHL Dispatch Pending', 'h' => 'B/L issued → not requested'],
@@ -157,7 +157,7 @@ return [
             'appr_wait' => ['l' => 'Approvals Pending', 'h' => '4 actions combined (enabled in queue 14-3)'],
             'settle_wait' => ['l' => 'Settlement Pending', 'h' => 'pending + confirmed'],
             'risk' => ['l' => 'Receivable Risk', 'h' => 'danger / critical grade'],
-            'clr_stuck' => ['l' => 'Clearance Stuck', 'h' => 'sold 30+ days → license not uploaded'],
+            'clr_stuck' => ['l' => 'Clearance Stuck', 'h' => 'sold 30+ days → declaration not uploaded'],
         ],
     ],
 
@@ -165,8 +165,8 @@ return [
         'sales' => [
             'purchase_unpaid' => ['l' => 'Unpaid Purchases', 'd' => 'purchase price set, balance unpaid'],
             'sale_unpaid' => ['l' => 'Unpaid Sales', 'd' => 'sold, amount not yet collected'],
-            'clearance_needed' => ['l' => 'Clearance Request Needed', 'd' => 'sale fully paid → license not uploaded'],
-            'shipping_needed' => ['l' => 'Shipment Needed', 'd' => 'clearance done → B/L not processed'],
+            'clearance_needed' => ['l' => 'Export Declaration Needed', 'd' => 'sale fully paid → declaration not uploaded'],
+            'shipping_needed' => ['l' => 'Awaiting B/L', 'd' => 'declaration filed → B/L not uploaded'],
             'dhl_needed' => ['l' => 'DHL Dispatch Pending', 'd' => 'loaded → DHL not requested'],
             'settlement_wait' => ['l' => 'Settlement Pending', 'd' => 'method not set or needs review'],
             'freight_confirm' => ['l' => 'Incoterms Needed', 'd' => 'fully paid but incoterms (FOB/CFR) / freight not set → settlement held'],
@@ -174,13 +174,13 @@ return [
         ],
         'clearance' => [
             'deregistration_needed' => ['l' => 'Deregistration Needed', 'd' => 'purchase done → not deregistered'],
-            'clearance_request_needed' => ['l' => 'Clearance Request Needed', 'd' => 'sale fully paid → license not uploaded'],
+            'clearance_request_needed' => ['l' => 'Export Declaration Needed', 'd' => 'sale fully paid → declaration not uploaded'],
             'clearance_info_missing' => ['l' => 'Clearance Buyer/Date Missing', 'd' => 'sale started → clearance buyer or shipping date missing'],
             'eta_missing' => ['l' => 'Data Fix — ETA Missing', 'd' => 'shipped but arrival date empty → fill it to schedule the clearance alarm'],
             'forwarding_missing' => ['l' => 'Forwarder Not Set', 'd' => 'clearance started → no forwarder'],
             'export_declaration_upload_needed' => ['l' => 'Export Declaration Upload', 'd' => 'shipping date set → no declaration'],
             'shipping_process_needed' => ['l' => 'Shipment Needed', 'd' => 'sold → loading location empty'],
-            'bl_upload_needed' => ['l' => 'B/L Upload Needed', 'd' => 'clearance done → B/L not uploaded'],
+            'bl_upload_needed' => ['l' => 'B/L Upload Needed', 'd' => 'loading location set → B/L not uploaded'],
             'dhl_dispatch_needed' => ['l' => 'DHL Dispatch Pending', 'd' => 'completed → not requested'],
         ],
         'settlement' => [

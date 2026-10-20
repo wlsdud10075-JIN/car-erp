@@ -3742,13 +3742,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 실제 업무 순서: 매입 → 말소 → 판매 → 입금 → 선적(반입) → 통관 → B/L(최종).
         // DHL 은 흐름도에서 제외(사용 불명확, 탭은 유지, jin 2026-07-04).
         return [
-            ['key' => 'purchase',       'label' => __('vehicle.panel.flow.purchase'),       'tab' => 'purchase',  'status' => $purchaseStatus,  'reason' => $purchaseReason],
-            ['key' => 'deregistration', 'label' => __('vehicle.panel.flow.deregistration'), 'tab' => 'purchase',  'status' => $deregStatus,     'reason' => $deregReason],
-            ['key' => 'sale',           'label' => __('vehicle.panel.flow.sale'),           'tab' => 'sale',      'status' => $saleStatus,      'reason' => $saleReason],
-            ['key' => 'payment',        'label' => __('vehicle.panel.flow.payment'),        'tab' => 'sale',      'status' => $paymentStatus,   'reason' => $paymentReason],
-            ['key' => 'shipping',       'label' => __('vehicle.panel.flow.shipping'),  'tab' => 'export',    'status' => $shippingStatus,  'reason' => $shippingReason],
-            ['key' => 'clearance',      'label' => __('vehicle.panel.flow.clearance'), 'tab' => 'export',    'status' => $clearanceStatus, 'reason' => $clearanceReason],
-            ['key' => 'bl',             'label' => __('vehicle.panel.flow.bl'),        'tab' => 'bl',        'status' => $blStatus,        'reason' => $blReason],
+            ['key' => 'purchase',       'label' => __('vehicle.panel.flow.purchase'),       'tab' => 'purchase',  'anchor' => 'purchase-top', 'status' => $purchaseStatus,  'reason' => $purchaseReason],
+            ['key' => 'deregistration', 'label' => __('vehicle.panel.flow.deregistration'), 'tab' => 'purchase',  'anchor' => 'purchase-dereg', 'status' => $deregStatus,     'reason' => $deregReason],
+            ['key' => 'sale',           'label' => __('vehicle.panel.flow.sale'),           'tab' => 'sale',      'anchor' => 'sale-top', 'status' => $saleStatus,      'reason' => $saleReason],
+            ['key' => 'payment',        'label' => __('vehicle.panel.flow.payment'),        'tab' => 'sale',      'anchor' => 'sale-payment', 'status' => $paymentStatus,   'reason' => $paymentReason],
+            // anchor = 그 탭 안 스크롤 위치 (jin 2026-10-20 — 흐름도 칸을 누르면 그 칸의 입력 위치가 패널 맨 위로)
+            ['key' => 'shipping',       'label' => __('vehicle.panel.flow.shipping'),  'tab' => 'export',    'anchor' => 'export-top',  'status' => $shippingStatus,  'reason' => $shippingReason],
+            ['key' => 'clearance',      'label' => __('vehicle.panel.flow.clearance'), 'tab' => 'export',    'anchor' => 'export-decl', 'status' => $clearanceStatus, 'reason' => $clearanceReason],
+            ['key' => 'bl',             'label' => __('vehicle.panel.flow.bl'),        'tab' => 'bl',        'anchor' => 'bl-top', 'status' => $blStatus,        'reason' => $blReason],
         ];
     }
 
@@ -3765,10 +3766,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $ratio = $v->unpaid_ratio;
 
+        // 🔀 2026-10-20 — 안내 박스가 「미수율 > 0.5」로 고정 판정하던 것을 실제 저장 게이트(Vehicle::guardStageOrderForExport)와
+        //   같은 기준으로: 설정 필요입금률(기본 60%) · 바이어별 재정의 · 락 OFF · 선적대기 허용 항로. 구: 입금 50~59% 차가
+        //   「진입 가능」으로 보이는데 저장하면 막혔다. 🚫 조건을 새로 만들지 말고 게이트와 같은 출처를 쓴다.
+        $lockOn = \App\Models\Setting::lockEnabled('shipping_entry') && ! $v->isShippingWaitRoute();
+        $threshold = \App\Services\LockThresholdResolver::threshold($v->buyer, 'shipping_entry');
+
         return [
             'ratio' => $ratio,   // null = 환율 미입력
             'paid_pct' => $ratio === null ? null : round((1 - $ratio) * 100, 1),
             'ratio_pct' => $ratio === null ? null : round($ratio * 100, 1),
+            'need_pct' => \App\Services\LockThresholdResolver::requiredPaidPct($v->buyer, 'shipping_entry'),
+            'blocked' => $lockOn && $ratio !== null && $ratio > $threshold,
+            'lock_on' => $lockOn,
             'entry_override' => $v->hasEntryUnpaidOverride(),
             'has_bl' => ! empty($v->bl_document),
         ];
@@ -4219,9 +4229,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 중앙 감사로그 미러링 — 전용 테이블(unpaid_export_overrides)과 별개로, 관리자 감사로그 화면
         // (AuditLog 단일 소스)에도 노출되게 한다. 잠금해제(ledger_field_unlocked)와 동일 패턴.
         //   관리자가 영문 없이 읽게: column_name=논리 라벨키(config 한글), new_value=단계 한글 + 사유.
+        // 🔀 2026-10-20 — 진입 우회는 통관·선적 하나(수출 진입)이고 필요입금률은 설정·바이어별이다(구: 「통관/선적 진입(50%)」 고정).
+        $needPct = \App\Services\LockThresholdResolver::requiredPaidPct($v->buyer, 'shipping_entry');
         $stageLabel = match ($this->overrideStage) {
-            'clearance' => '통관 진입(50%)',
-            'shipping' => '선적 진입(50%)',
+            'clearance', 'shipping' => "수출 진입({$needPct}%)",
             'bl' => 'B/L 발행(100%)',
             default => $this->overrideStage,
         };
@@ -4882,7 +4893,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($this->is_export_cleared && ! $hasExportDoc) {
             $mismatches[] = [
                 'stage' => 'export_clearance',
-                'label' => '수출통관',
+                'label' => '통관',
                 'tab' => 'export',
                 'tab_label' => __('vehicle.panel.tab.export'),
                 'checked' => $this->is_export_cleared,
@@ -8810,7 +8821,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     };
                 @endphp
                 {{-- tooltip은 native title만 사용 — 부모 overflow-x-auto가 absolute 자식 y-axis 클리핑 발동 --}}
-                <button type="button" @click="tab = '{{ $node['tab'] }}'"
+                <button type="button" @click="tab = '{{ $node['tab'] }}'@if(!empty($node['anchor'])); $nextTick(() => document.getElementById('{{ $node['anchor'] }}')?.scrollIntoView({ block: 'start', behavior: 'smooth' }))@endif"
                     @if(!empty($node['reason'])) title="{{ $node['reason'] }}" @endif
                     class="flex flex-shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs transition hover:brightness-95 {{ $statusBadge['cls'] }}">
                     <span class="font-bold">{{ $statusBadge['icon'] }}</span>
@@ -9118,7 +9129,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
         {{-- ─── 매입 탭 ──────────────────────────────────── --}}
         <div x-show="tab === 'purchase'" x-cloak>
             @php $isKaraba = \App\Models\Setting::isKaraba(); @endphp
-            <div class="section-header">
+            <div id="purchase-top" class="section-header" style="scroll-margin-top: 12px">
                 <span class="section-dot bg-blue-500"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.purchase_basic') }}</span>
             </div>
@@ -9617,7 +9628,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
             </div>
 
             <hr class="section-divider">
-            <div class="grid grid-cols-2 gap-3">
+            <div id="purchase-dereg" class="grid grid-cols-2 gap-3" style="scroll-margin-top: 12px">
                 {{-- 2026-05-19 풀회의 안건 C — 말소 [everyone]. 재무 role 제외 (canHandleDeregistration). --}}
                 @if(auth()->user()->canHandleDeregistration())
                 <div>
@@ -9705,7 +9716,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
 
         {{-- ─── 판매 탭 ──────────────────────────────────── --}}
         <div x-show="tab === 'sale'" x-cloak>
-            <div class="section-header">
+            <div id="sale-top" class="section-header" style="scroll-margin-top: 12px">
                 <span class="section-dot bg-purple-500"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.sale_basic') }}</span>
             </div>
@@ -9785,7 +9796,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
             </div>
 
             <hr class="section-divider">
-            <div class="section-header">
+            <div id="sale-payment" class="section-header" style="scroll-margin-top: 12px">
                 <span class="section-dot bg-purple-300"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.payment_status') }}</span>
             </div>
@@ -10373,7 +10384,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
              → 선적일·VSL·컨테이너 → ETA → 통관 체크. 칸·wire:model·검증·게이트는 그대로 — 위치만 옮겼다(jin «쓸데없는 UX 빼 달라»).
              컨사이니 = bl_consignee (통관 컨사이니는 save 때 이어받음). --}}
         <div x-show="tab === 'export'" x-cloak>
-            <div class="section-header">
+            <div id="export-top" class="section-header" style="scroll-margin-top: 12px">
                 <span class="section-dot bg-amber-500"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.export') }}</span>
             </div>
@@ -10383,15 +10394,15 @@ function vehicleColumnsToggle(columns, serverKnows) {
             @if($gate && ! $gate['has_bl'])
             <div class="mb-3 rounded-md border px-3 py-2 text-xs
                 {{ $gate['ratio'] === null ? 'border-amber-200 bg-amber-50 text-amber-800'
-                    : ($gate['ratio'] > 0.5
+                    : ($gate['blocked']
                         ? ($gate['entry_override'] ? 'border-blue-200 bg-blue-50 text-blue-800' : 'border-red-200 bg-red-50 text-red-800')
                         : 'border-emerald-200 bg-emerald-50 text-emerald-800') }}">
                 @if($gate['ratio'] === null)
                     {{ __('vehicle.panel.c5.rate_missing') }}
-                @elseif($gate['ratio'] > 0.5)
-                    {{ $gate['entry_override'] ? __('vehicle.panel.c5.override', ['paid' => $gate['paid_pct']]) : __('vehicle.panel.c5.blocked', ['paid' => $gate['paid_pct']]) }}
+                @elseif($gate['blocked'])
+                    {{ $gate['entry_override'] ? __('vehicle.panel.c5.override', ['paid' => $gate['paid_pct']]) : __('vehicle.panel.c5.blocked', ['paid' => $gate['paid_pct'], 'need' => $gate['need_pct']]) }}
                 @else
-                    {{ __('vehicle.panel.c5.ok', ['paid' => $gate['paid_pct']]) }}
+                    {{ __('vehicle.panel.c5.ok', ['paid' => $gate['paid_pct'], 'need' => $gate['need_pct']]) }}
                 @endif
                 <span class="mt-0.5 block text-[11px] opacity-80">{{ __('vehicle.panel.c5.bl_note') }}</span>
             </div>
@@ -10480,7 +10491,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     <input wire:model="export_declaration_amount_str" type="text" data-money class="input-base" placeholder="{{ __('vehicle.ph.export_decl_amount') }}" />
                     <p class="mt-1 text-[11px] text-gray-400">{{ __('vehicle.panel.export_decl_amount_note') }}</p>
                 </div>
-                <div class="col-span-2 sm:col-span-3">
+                <div id="export-decl" class="col-span-2 sm:col-span-3" style="scroll-margin-top: 12px">
                     <label class="label-base">{{ __('vehicle.field.export_decl_doc') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
                     <x-erp.file-drop model="exportDeclarationDocFile"
                         accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip">
@@ -10606,7 +10617,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
 
         {{-- ─── B/L 탭 (발급) — 수출통관 다음, 실제 업무 최종 단계 (2026-07-04) --}}
         <div x-show="tab === 'bl'" x-cloak>
-            <div class="section-header">
+            <div id="bl-top" class="section-header" style="scroll-margin-top: 12px">
                 <span class="section-dot bg-emerald-500"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.bl') }}</span>
             </div>
@@ -11059,7 +11070,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
             <p class="text-[11px] text-amber-700">
                 {{ __('vehicle.override.unpaid_left') }} {{ $unpaidKrw !== null ? number_format($unpaidKrw).' '.__('vehicle.override.won') : __('vehicle.override.none') }}
                 @if($existingOverrides->count() > 0)
-                · {{ __('vehicle.override.existing', ['count' => $existingOverrides->count()]) }} {{ $existingOverrides->pluck('stage')->unique()->implode(' / ') }}
+                · {{ __('vehicle.override.existing', ['count' => $existingOverrides->count()]) }} {{ $existingOverrides->pluck('stage')->map(fn ($st) => $st === 'bl' ? __('vehicle.override.stage_bl') : __('vehicle.override.stage_entry_short'))->unique()->implode(' / ') }}
                 @endif
             </p>
             <div class="mt-2 flex flex-wrap items-end gap-2">
@@ -11067,7 +11078,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     <label class="block text-[10px] text-amber-700">{{ __('vehicle.override.stage_label') }}</label>
                     <select wire:model="overrideStage" class="input-filter">
                         <option value="">{{ __('vehicle.override.stage_select') }}</option>
-                        <option value="shipping">{{ __('vehicle.override.stage_entry') }}</option>
+                        <option value="shipping">{{ __('vehicle.override.stage_entry', ['pct' => \App\Services\LockThresholdResolver::requiredPaidPct(\App\Models\Buyer::find((int) ($buyer_id_str ?: 0)), 'shipping_entry')]) }}</option>
                         <option value="bl">{{ __('vehicle.override.stage_bl') }}</option>
                     </select>
                 </div>

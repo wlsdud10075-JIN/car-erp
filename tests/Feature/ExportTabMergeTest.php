@@ -6,6 +6,7 @@ use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\ForwardingCompany;
 use App\Models\Salesman;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -51,7 +52,7 @@ class ExportTabMergeTest extends TestCase
     private Salesman $salesman;
 
     /** 판매 완납 · 말소 완료 · 컨사이니 지정 — 반입·선적·통관 게이트를 모두 통과하는 차. 통관 바이어는 일부러 비운다. */
-    private function readyVehicle(array $attrs = []): Vehicle
+    private function readyVehicle(array $attrs = [], int $paid = 2_000_000): Vehicle
     {
         $v = Vehicle::create(array_merge([
             'vehicle_number' => '12가'.random_int(1000, 9999), 'sales_channel' => 'export',
@@ -60,7 +61,7 @@ class ExportTabMergeTest extends TestCase
             'buyer_id' => $this->buyer->id, 'bl_buyer_id' => $this->buyer->id, 'bl_consignee_id' => $this->consignee->id,
             'is_deregistered' => true, 'deregistration_document' => 'vehicles/dereg.pdf', 'nice_reg_owner_rrn' => '801201-1234567',
         ], $attrs));
-        $v->finalPayments()->create(['amount' => 2_000_000, 'type' => 'deposit_down', 'confirmed_at' => now()]);
+        $v->finalPayments()->create(['amount' => $paid, 'type' => 'deposit_down', 'confirmed_at' => now()]);
 
         return $v->fresh();
     }
@@ -275,7 +276,7 @@ class ExportTabMergeTest extends TestCase
     {
         $files = array_merge(
             glob(app_path('Models/*.php')), glob(app_path('Services/*.php')) ?: [], glob(app_path('Services/*/*.php')) ?: [],
-            [lang_path('ko/vehicle.php'), lang_path('ko/dashboard.php'), resource_path('views/livewire/erp/vehicles/index.blade.php')],
+            [lang_path('ko/vehicle.php'), lang_path('ko/dashboard.php'), lang_path('ko/buyer.php'), lang_path('ko/feature_settings.php'), lang_path('ko/port.php'), resource_path('views/livewire/erp/vehicles/index.blade.php')],
         );
         $hits = [];
         foreach ($files as $f) {
@@ -285,12 +286,36 @@ class ExportTabMergeTest extends TestCase
                     continue;
                 }
                 $code = preg_replace('#\s//.*$#u', '', $code);   // 줄 끝 주석
-                if (preg_match('/(?<![가-힣])(선적|수출통관|통관|선적\(B\/L\)) 탭/u', $code)) {
+                if (preg_match('/(?<![가-힣])(선적|수출통관|통관|선적\(B\/L\)) 탭/u', $code) || preg_match('/통관·선적 진입|(?<![가-힣])선적 진입/u', $code)) {
                     $hits[] = basename($f).':'.($no + 1).' '.mb_substr($code, 0, 80);
                 }
             }
         }
         $this->assertSame([], $hits, "옛 탭 이름을 가리키는 문구:\n".implode("\n", $hits));
+    }
+
+    /**
+     * 💰 게이트 안내 박스 = 실제 저장 게이트와 같은 기준 (2026-10-20). 구: 「미수율 > 0.5」 고정이라 필요입금률 60% 회사에서
+     *    입금 55% 차가 「✓ 진입 가능」으로 보이는데 저장하면 막혔다. 우회 승인 드롭다운도 실제 % 를 보인다.
+     */
+    public function test_gate_banner_and_override_label_use_the_configured_required_percent(): void
+    {
+        Setting::updateOrCreate(['key' => 'lock_threshold_shipping_entry_'.Setting::companyTemplateSet()], ['value' => '60', 'type' => 'integer']);
+        $this->actingAs($this->manager);
+
+        $v = $this->readyVehicle([], 1_100_000);   // 55% 입금
+        $html = Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->html();
+        $this->assertStringContainsString(__('vehicle.panel.c5.blocked', ['paid' => 55, 'need' => 60]), $html, '55% < 60% 인데 진입 가능으로 보인다');
+        $this->assertStringNotContainsString('✓ '.mb_substr(__('vehicle.panel.c5.ok', ['paid' => 55, 'need' => 60]), 2), $html);
+        $this->assertStringContainsString(__('vehicle.override.stage_entry', ['pct' => 60]), $html);
+
+        // 실제 저장도 같은 판정 — 반입지를 넣으면 막힌다
+        Volt::test('erp.vehicles.index')->call('openEdit', $v->id)
+            ->set('bl_loading_location', 'PUSAN')->call('save')->assertHasErrors();
+
+        $ok = $this->readyVehicle([], 1_300_000);   // 65% 입금
+        $html = Volt::test('erp.vehicles.index')->call('openEdit', $ok->id)->html();
+        $this->assertStringContainsString(__('vehicle.panel.c5.ok', ['paid' => 65, 'need' => 60]), $html);
     }
 
     public function test_flow_nodes_for_shipping_and_clearance_open_the_export_tab(): void
@@ -301,6 +326,15 @@ class ExportTabMergeTest extends TestCase
 
         $this->assertSame('export', $flow->firstWhere('key', 'shipping')['tab']);
         $this->assertSame('export', $flow->firstWhere('key', 'clearance')['tab']);
+
+        // 앵커 (jin 2026-10-20) — 선적 = 수출 탭 맨 위, 통관 = 수출신고서 업로드 칸. 가리키는 id 가 화면에 실재해야 한다.
+        $this->assertSame('export-top', $flow->firstWhere('key', 'shipping')['anchor']);
+        $this->assertSame('export-decl', $flow->firstWhere('key', 'clearance')['anchor']);
+        $html = Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->html();
+        $this->assertStringContainsString('id="export-top"', $html);
+        $this->assertStringContainsString('id="export-decl"', $html);
+        $this->assertStringContainsString("getElementById('export-decl')?.scrollIntoView", $html);
+        $this->assertLessThan(strpos($html, 'model="exportDeclarationDocFile"'), strpos($html, 'id="export-decl"'), '앵커가 신고서 칸 앞(그 칸)에 있어야 한다');
         $tabs = ['basic', 'purchase', 'sale', 'export', 'bl', 'dhl', 'docs'];
         foreach ($flow as $node) {
             $this->assertContains($node['tab'], $tabs, "흐름도 {$node['key']} 칸이 없는 탭({$node['tab']})을 가리킨다");
