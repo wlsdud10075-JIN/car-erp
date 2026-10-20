@@ -2363,28 +2363,28 @@ class Vehicle extends Model
                 return '거래완료';
             }
             /**
-             * 🔀 2026-10-16 (jin) — 4단계 조건 재정의 «국내에서 선적기획 → 통관진행 → 운항 → 도착».
-             *   통관완료 = 통관 체크             (구: 체크 + B/L 파일 — B/L 이면 거래완료가 먼저라 **도달 불가**, 3사 0대)
-             *   통관중   = 수출신고서 업로드      (구: 반입지 + 통관 체크)
-             *   선적완료 = 반입지 + 선적일        (구: 반입지 + 수출신고서) — 「배 날짜까지 잡혔다 = 선적 기획 끝」. 신고서 무관(가안)
-             *   선적중   = 반입지                 (같음)
-             * 출항 이후(운항중·도착예정)는 진행상태가 아니라 운항 뱃지(`sailing_status`)가 맡는다 — 통관완료 차는
-             * 반입지·선적일·신고서·체크를 다 갖고 「통관완료 + 🚢」로 보인다. 반입지 없이 통관 서류만 있는 차도
-             * 통관중·통관완료로 올라간다(jin 확인, heymanerp 판매단계 21대). 선적일만 있고 반입지 없는 차(ssancarerp 138대)는
-             * 판매 단계에 남는다 — 선적완료에 반입지가 필요하기 때문.
-             * 실측 이동(배포 전, 3사): 통관중→통관완료 ssancarerp 858 · heymanerp 47 · karaba 149, 선적완료→통관중 52·2·0.
+             * 🔀 2026-10-20 (jin) — 4단계를 **실무 입력 순서**에 맞춤: 반입지·신고서 → 선적일 → ETA → 통관 체크.
+             *   통관완료 = 통관 체크                         (같음 — 단독, 앞 단계 칸 없어도 통관완료)
+             *   통관중   = 선적일 + ETA                      (구 10-16: 수출신고서)
+             *   선적완료 = 선적일                            (구 10-16: 반입지 + 선적일)
+             *   선적중   = 반입지 **또는** 수출신고서        (구 10-16: 반입지)
+             *   ⚠️ 선적일·ETA 는 반입지나 신고서가 있을 때만 단계로 친다(jin «추천 좋네») — 엑셀 적재로 선적일·ETA 만
+             *      들어간 판매 단계 차(ssancarerp 128대, 그중 미수 남은 판매중 46대)가 통관중으로 튀지 않게.
+             * 흐름 = 통관중+🚢운항중 → (서류 끝내고 체크) 통관완료+운항중 → 통관완료+도착예정(jin 2026-10-20).
+             * 근거 실측(10-20 감사로그, ssancarerp): 반입지→신고서 406:2 · 신고서→선적일 471:16 · 선적일→B/L 32:0.
              * 가드 = ProgressRuleV4StagesTest. 캐시 컬럼이라 배포 뒤 재계산 1회(§8 #101).
              */
             if ($this->is_export_cleared) {
                 return '통관완료';
             }
-            if ($this->export_declaration_document) {
+            $hasLoading = (bool) $this->bl_loading_location || (bool) $this->export_declaration_document;
+            if ($hasLoading && $this->shipping_date && $this->eta_date) {
                 return '통관중';
             }
-            if ($this->bl_loading_location && $this->shipping_date) {
+            if ($hasLoading && $this->shipping_date) {
                 return '선적완료';
             }
-            if ($this->bl_loading_location) {
+            if ($hasLoading) {
                 return '선적중';
             }
         } elseif ($v3) {

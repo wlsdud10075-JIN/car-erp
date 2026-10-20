@@ -233,8 +233,9 @@ class PipelineStripTest extends TestCase
         $this->assertSame('done', $flow[2]['status']); // 판매
         $this->assertSame('done', $flow[3]['status']); // 입금
         // 2026-07-04 — 선적/B/L 분리, DHL 흐름 제외. 순서: 선적 → 통관 → B/L
-        $this->assertSame('pending', $flow[4]['status']); // 선적 (bl_loading_location 없음)
-        $this->assertSame('done', $flow[5]['status']);    // 통관 (export_declaration_document 있음)
+        // 🔀 2026-10-20 — 신고서만 있으면 선적 「진행중」(선적일 없음) · 통관은 체크 전이라 pending(선적일·ETA 없음)
+        $this->assertSame('progress', $flow[4]['status']); // 선적 (신고서 있음, 선적일 없음)
+        $this->assertSame('pending', $flow[5]['status']);  // 통관 (선적일·ETA·체크 없음)
         $this->assertSame('pending', $flow[6]['status']); // B/L (bl_document 없음)
         $this->assertSame('shipping', $flow[4]['key']);
         $this->assertSame('clearance', $flow[5]['key']);
@@ -247,10 +248,11 @@ class PipelineStripTest extends TestCase
         $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
-        // 반입지 입력 → 선적 done / B/L 문서 없음 → B/L pending (분리 검증)
+        // 반입지 + 선적일 → 선적 done(2026-10-20: 반입지만이면 진행중) / B/L 문서 없음 → B/L pending (분리 검증)
         $v = $this->makeVehicle([
             'sales_channel' => 'export',
             'bl_loading_location' => 'INCHEON',
+            'shipping_date' => '2026-10-20',
         ]);
         $flow = collect(Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->get('progressFlow'));
 
@@ -305,26 +307,32 @@ class PipelineStripTest extends TestCase
         $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리']);
         $this->actingAs($admin);
 
-        // 판매 완료 + 통관 정보 0 → 통관 pending + reason에 "수출통관 정보 미입력"
+        // 판매 완료 + 선적일·ETA 0 → 통관 pending + reason에 "선적일·ETA 미입력" (2026-10-20)
         $v1 = $this->makeVehicle([
             'sale_price' => 1000, 'deposit_down_payment' => 1000,
         ]);
         // 회의확장씬 #1 v4 (2026-05-21) — 통관은 flow[5] (선적 swap)
         $flow1 = Volt::test('erp.vehicles.index')->call('openEdit', $v1->id)->get('progressFlow');
         $this->assertSame('pending', $flow1[5]['status']);
-        $this->assertStringContainsString('수출통관 정보 미입력', $flow1[5]['reason']);
+        $this->assertStringContainsString('선적일·ETA 미입력', $flow1[5]['reason']);
 
-        // 통관 바이어 + 선적일 입력 (체크박스만) + 문서 0 → progress + reason에 "수출신고서 업로드 필요"
-        $buyer = Buyer::create([
-            'name' => '테스트 바이어', 'is_active' => true, 'country_id' => null,
-        ]);
+        // 반입지 + 선적일 + ETA (체크 전) → 통관 progress + reason 「통관 체크」 안내 (2026-10-20 — 통관중 = 운항 중 서류 마무리)
         $v2 = $this->makeVehicle([
             'sale_price' => 1000, 'deposit_down_payment' => 1000,
-            'export_buyer_id' => $buyer->id, 'shipping_date' => '2026-05-20',
+            'bl_loading_location' => 'INCHEON', 'shipping_date' => '2026-05-20', 'eta_date' => '2026-06-20',
         ]);
         $flow2 = Volt::test('erp.vehicles.index')->call('openEdit', $v2->id)->get('progressFlow');
         $this->assertSame('progress', $flow2[5]['status']);
-        $this->assertStringContainsString('수출신고서 업로드 필요', $flow2[5]['reason']);
+        $this->assertStringContainsString('통관 체크', $flow2[5]['reason']);
+
+        // 선적일·ETA 가 있어도 반입지·신고서가 없으면 통관은 pending (진행상태 규칙과 같은 판정)
+        $v3 = $this->makeVehicle([
+            'sale_price' => 1000, 'deposit_down_payment' => 1000,
+            'shipping_date' => '2026-05-20', 'eta_date' => '2026-06-20',
+        ]);
+        $flow3 = Volt::test('erp.vehicles.index')->call('openEdit', $v3->id)->get('progressFlow');
+        $this->assertSame('pending', $flow3[5]['status']);
+        $this->assertSame('pending', $flow3[4]['status']);
     }
 
     // ── vehicles/index mount() — progressFilter 진입 시 날짜 필터 비움 ───

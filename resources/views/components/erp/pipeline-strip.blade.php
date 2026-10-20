@@ -39,13 +39,13 @@
                     $href = $urlBuilder ? $urlBuilder($stage['key']) : null;
                 @endphp
                 @if($href)
-                <a href="{{ $href }}" wire:navigate
+                <a href="{{ $href }}" wire:navigate title="{{ __('domain.progress_hint.'.$stage['key']) }}"
                    class="flex flex-shrink-0 flex-col items-center gap-1.5 rounded-md px-3 py-2 transition hover:bg-gray-50">
                     <span class="badge {{ $stage['badge'] }}">{{ __('domain.progress.'.$stage['key']) }}</span>
                     <span class="text-lg font-bold {{ $count > 0 ? 'text-gray-800' : 'text-gray-300' }}">{{ $count }}</span>
                 </a>
                 @else
-                <div class="flex flex-shrink-0 flex-col items-center gap-1.5 rounded-md px-3 py-2">
+                <div class="flex flex-shrink-0 flex-col items-center gap-1.5 rounded-md px-3 py-2" title="{{ __('domain.progress_hint.'.$stage['key']) }}">
                     <span class="badge {{ $stage['badge'] }}">{{ __('domain.progress.'.$stage['key']) }}</span>
                     <span class="text-lg font-bold {{ $count > 0 ? 'text-gray-800' : 'text-gray-300' }}">{{ $count }}</span>
                 </div>

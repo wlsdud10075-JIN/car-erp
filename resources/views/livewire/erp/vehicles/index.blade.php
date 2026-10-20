@@ -3711,18 +3711,24 @@ new #[Layout('components.layouts.app')] class extends Component {
             default => null,
         };
 
-        // 통관 — 큐 2.6 잔여 통합: 체크박스 + 문서 둘 다 누락 시 명시 안내
-        $clearanceStatus = $v->export_declaration_document ? 'done'
-            : ($v->export_buyer_id && $v->shipping_date ? 'progress' : 'pending');
-        $clearanceReason = match (true) {
-            $clearanceStatus === 'progress' => __('vehicle.reason.clearance_progress'),
-            $clearanceStatus === 'pending' => __('vehicle.reason.clearance_pending'),
+        // 🔀 2026-10-20 (jin) — 흐름도 두 칸을 진행상태 규칙과 같은 입력 순서로 판정.
+        //   선적 = 반입지·신고서(진행중) → 선적일(완료) / 통관 = 선적일+ETA(진행중) → 통관 체크(완료).
+        //   선적일·ETA 는 반입지나 신고서가 있을 때만 친다 — Vehicle::getProgressStatusAttribute 와 같은 판정.
+        $hasLoading = (bool) $v->bl_loading_location || (bool) $v->export_declaration_document;
+        $shippingStatus = $hasLoading && $v->shipping_date ? 'done' : ($hasLoading ? 'progress' : 'pending');
+        $shippingReason = match ($shippingStatus) {
+            'progress' => __('vehicle.reason.shipping_progress'),
+            'pending' => __('vehicle.reason.shipping_pending'),
             default => null,
         };
 
-        // 선적(반입) — 반입지 입력 = 완료 (B/L 발급과 분리, 2026-07-04)
-        $shippingStatus = $v->bl_loading_location ? 'done' : 'pending';
-        $shippingReason = $shippingStatus === 'pending' ? __('vehicle.reason.shipping_pending') : null;
+        $clearanceStatus = $v->is_export_cleared ? 'done'
+            : ($hasLoading && $v->shipping_date && $v->eta_date ? 'progress' : 'pending');
+        $clearanceReason = match ($clearanceStatus) {
+            'progress' => __('vehicle.reason.clearance_progress'),
+            'pending' => __('vehicle.reason.clearance_pending'),
+            default => null,
+        };
 
         // B/L — 문서 업로드 = 완료(거래완료). 통관완료 + 반입지 있으면 진행중.
         $blStatus = $v->bl_document ? 'done'
@@ -7763,6 +7769,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             <button wire:click="cycleProgress('{{ $val }}')"
                     @if($val === '매입중') title="{{ __('vehicle.progress_pill.maeipjung_hint') }}" @endif
                     @if($val === '말소완료') title="{{ __('vehicle.progress_pill.malso_hint') }}" @endif
+                    {{-- 단계 뜻 호버 (jin 2026-10-20) — 매입중·말소완료는 위 넓은 필터 설명이 우선 --}}
+                    @if($val !== '' && $val !== '매입중' && $val !== '말소완료') title="{{ __('domain.progress_hint.'.$val) }}" @endif
                     class="rounded-full px-2.5 py-0.5 text-xs font-medium transition
                            @if($isInclude) bg-violet-600 text-white @elseif($isExclude) bg-red-500 text-white line-through @else bg-gray-100 text-gray-600 hover:bg-gray-200 @endif">
                 {{ $val === '' ? __('vehicle.filter_all') : __('domain.progress.'.$val) }}
@@ -8212,7 +8220,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>@php endif; @endphp
                 @php if ($this->colOn('vin')): @endphp<td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['vin']">{{ $v->nice_reg_vin ?: '-' }}</td>@php endif; @endphp
                 <td class="py-3 pr-4">
-                    <span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span>
+                    <span class="badge {{ $badgeClass }}" title="{{ __('domain.progress_hint.'.$status) }}">{{ __('domain.progress.'.$status) }}</span>
                     {{-- 운항 뱃지 (jin 2026-08-09) — 진행상태와 별개 축이라 나란히 붙인다. 도착은 ETA 경과 = 추정. --}}
                     @if($v->sailing_status === \App\Models\Vehicle::SAILING_IN_TRANSIT)
                         <span class="badge badge-blue" title="{{ __('vehicle.tooltip.sailing', ['ship' => $v->shipping_date?->format('Y-m-d'), 'eta' => $v->eta_date?->format('Y-m-d')]) }}">🚢</span>
@@ -8495,7 +8503,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
             </div>
             <div class="text-xs text-gray-500">{{ $v->brand }} {{ $v->model_type }}</div>
             <div class="flex items-center gap-1.5">
-                <span class="badge {{ $badgeClass }}">{{ __('domain.progress.'.$status) }}</span>
+                <span class="badge {{ $badgeClass }}" title="{{ __('domain.progress_hint.'.$status) }}">{{ __('domain.progress.'.$status) }}</span>
                 @if($v->sailing_status === \App\Models\Vehicle::SAILING_IN_TRANSIT)
                     <span class="badge badge-blue">🚢</span>
                 @elseif($v->sailing_status === \App\Models\Vehicle::SAILING_ARRIVED)

@@ -2340,15 +2340,15 @@ class WorkflowGapTest extends TestCase
         $this->assertSame('선적중', $v->progress_status);
     }
 
-    public function test_v4_step4_bl_loading_location_with_export_declaration_doc_returns_선적완료(): void
+    public function test_v4_step4_bl_loading_location_with_export_declaration_doc_returns_선적중(): void
     {
         $v = $this->makeVehicle([
             'sale_price' => 1_000_000, 'deposit_down_payment' => 1_000_000,
             'bl_loading_location' => '부산항',
             'export_declaration_document' => 'edoc.pdf',
         ]);
-        // 🔀 2026-10-16 규칙 — 수출신고서 = 통관중 (구: 반입지+신고서 = 선적완료). 선적완료는 반입지+선적일.
-        $this->assertSame('통관중', $v->progress_status);
+        // 🔀 2026-10-20 규칙 — 반입지·신고서 = 선적중 (선적일이 와야 선적완료, +ETA 면 통관중).
+        $this->assertSame('선적중', $v->progress_status);
     }
 
     public function test_v4_step3_export_cleared_with_bl_loading_returns_통관중(): void

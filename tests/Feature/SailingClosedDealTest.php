@@ -59,13 +59,13 @@ class SailingClosedDealTest extends TestCase
     /**
      * ⚠️ `progress_status_cache` 는 **계산값**이다(`Vehicle::saving` 이 매 저장마다 덮어쓴다).
      *    직접 넣으면 조용히 무시되므로 v4 cascade 가 실제로 그 값을 내도록 조건을 준다.
-     *    거래완료 = B/L 서류 존재(1순위) · 선적완료 = 반입지 + 선적일(2026-10-16 규칙 — arrived() 가 선적일을 준다).
+     *    거래완료 = B/L 서류 존재(1순위) · 통관중 = 반입지 + 선적일 + ETA(2026-10-20 규칙 — arrived() 가 선적일·ETA 를 준다).
      */
     private function arrivedAt(string $status): Vehicle
     {
         $v = $this->arrived(match ($status) {
             '거래완료' => ['bl_document' => 'vehicles/bl-'.($this->n + 1).'.pdf'],
-            '선적완료' => ['bl_loading_location' => '인천'],
+            '통관중' => ['bl_loading_location' => '인천'],
             default => [],
         });
         $v->refresh();
@@ -128,7 +128,7 @@ class SailingClosedDealTest extends TestCase
     /** 조건은 **둘 다** 본다 — 마감된 정산이 있어도 거래완료가 아니면 아직 배 위다. */
     public function test_a_closed_settlement_alone_does_not_hide_a_vehicle_still_in_progress(): void
     {
-        $shipping = $this->arrivedAt('선적완료');
+        $shipping = $this->arrivedAt('통관중');
         $this->settle($shipping, 'closed');
 
         $this->assertListed($shipping, '거래완료가 아닌 차가 정산 마감만으로 숨었다 — 조건을 「2차 마감」 하나로 줄이지 말 것');

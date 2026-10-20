@@ -142,7 +142,7 @@ return [
         'clearance' => [
             'derg_wait' => ['l' => '말소 대기', 'h' => '매입가 입금 완료 → 말소 미처리'],
             'clr_req_wait' => ['l' => '통관 신청 대기', 'h' => '판매 완납 → 면장 미업로드'],
-            'decl_wait' => ['l' => '수출신고서 업로드 대기', 'h' => '통관중'],
+            'decl_wait' => ['l' => '수출신고서 업로드 대기', 'h' => '선적일 있음 → 신고서 없음'],
             'ship_wait' => ['l' => '선적 처리 대기', 'h' => '면장 완료 → 반입지 미입력'],
             'dhl_wait' => ['l' => 'DHL 발송 대기', 'h' => 'B/L 발행 → 미신청'],
         ],
@@ -179,7 +179,7 @@ return [
             'clearance_info_missing' => ['l' => '통관 바이어/일자 누락', 'd' => '판매 진입 → 통관 바이어 또는 선적일 없음'],
             'eta_missing' => ['l' => '데이터 보정 — 도착일(ETA) 없음', 'd' => '선적했는데 도착일 미입력 → 채워야 통관서류 알람 예약됨'],
             'forwarding_missing' => ['l' => '포워딩사 미지정', 'd' => '통관 진입 → forwarding 없음'],
-            'export_declaration_upload_needed' => ['l' => '수출신고서 업로드', 'd' => '통관중 → 신고서 없음'],
+            'export_declaration_upload_needed' => ['l' => '수출신고서 업로드', 'd' => '선적일 입력 → 신고서 없음'],
             'shipping_process_needed' => ['l' => '선적 처리 필요', 'd' => '판매 완료 → 반입지 미입력'],
             'bl_upload_needed' => ['l' => 'B/L 업로드 필요', 'd' => '통관 완료 → B/L 미업로드'],
             'dhl_dispatch_needed' => ['l' => 'DHL 발송 대기', 'd' => '거래완료 → 미신청'],

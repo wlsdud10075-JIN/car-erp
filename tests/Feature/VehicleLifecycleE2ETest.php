@@ -108,12 +108,12 @@ class VehicleLifecycleE2ETest extends TestCase
         $v6->save();
         $this->assertSame('선적중', $v6->fresh()->progress_status);
 
-        // ── 7) 수출신고서 업로드 → 통관중 (2026-10-16 규칙: 신고서 = 통관중) ──
+        // ── 7) 수출신고서 업로드 → 선적중 그대로 (2026-10-20 규칙: 반입지·신고서 = 선적중, 통관중 = 선적일+ETA) ──
         $v7 = Vehicle::find($v->id);
         $v7->export_declaration_document = 'fake/export-decl.pdf';
         $v7->guardStageOrderForExport();   // 50% 이상이라 통과
         $v7->save();
-        $this->assertSame('통관중', $v7->fresh()->progress_status);
+        $this->assertSame('선적중', $v7->fresh()->progress_status);
 
         // ── 8) 통관 처리 → 통관완료 (2026-10-16 규칙: 체크 = 통관완료) ──
         $v8 = Vehicle::find($v->id);
