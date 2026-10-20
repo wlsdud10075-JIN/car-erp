@@ -69,12 +69,6 @@
         ? \App\Models\SettlementPayoutBatch::query()->awaitingDecisionBy($user)->count()
         : 0;
 
-    // 2026-05-20 #1 피드백 — 수출통관 사이드바 카운트는 통관 후보 차량 (말소 대기 + 통관 준비 합집합).
-    // link 도 clearance_candidates 액션 필터로 변경 (link ↔ badge 100% 일치).
-    $clearanceBadge = $user->canAccessClearance()
-        ? \App\Models\Vehicle::query()->whereNull('deleted_at')->action('clearance_candidates')->count()
-        : 0;
-
     // 2026-06-18 ETA 통관서류 알람 — 미확인(미해소+미확인) 건수. canAccessClearance 만 계산.
     $alarmUnread = $user->canAccessClearance()
         ? \App\Models\TaskAlarm::query()->visibleTo($user)->unread()->count()
@@ -160,16 +154,9 @@
                     'active' => request()->routeIs('erp.inventory.*'),
                     'show' => true,
                 ],
-                // 2026-05-20 #1 피드백 — 수출통관 사이드바 = 통관 후보 차량 (말소 대기 + 통관 준비 합집합).
-                // 사용자 의도: (a) 매입완료 + 판매 진행 + 말소 안 됨 OR (b) 말소완료 + 판매 진행 + 입금률 ≥ 50%
-                [
-                    'label' => __('nav.menu.clearance'),
-                    'href' => route('erp.vehicles.index').'?action=clearance_candidates',
-                    'icon' => 'identification',
-                    'active' => false,
-                    'show' => $user->canAccessClearance(),
-                    'badge' => $clearanceBadge > 0 ? $clearanceBadge : null,
-                ],
+                // 🗑️ 2026-10-20 (jin «없애는 게 낫겠다») — 「수출통관」 메뉴(= 차량관리 ?action=clearance_candidates 링크 + 배지) 제거.
+                //   별도 화면이 아니었고 필터가 진행 중 판매 차를 거의 다 담아(신고서 있으면 전부) 거르는 게 없었다. 14일 접속 ssancar 21회·karaba 0.
+                //   대신 차량관리 「말소 필요 · 선적 필요 · 통관 필요」 토글. 옛 URL 은 scopeAction 이 남아 계속 열린다.
                 [
                     'label' => __('nav.menu.receivables'),
                     'href' => $user->canViewReceivables() ? route('erp.receivables.index') : '#',
