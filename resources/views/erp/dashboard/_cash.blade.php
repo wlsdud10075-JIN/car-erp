@@ -66,7 +66,32 @@
     @if($never > 0)
     <p class="mt-2 rounded bg-amber-50 px-3 py-1.5 text-xs text-amber-700" data-cash-never-entered>{{ __('cash.account.never_entered', ['n' => $never]) }}</p>
     @endif
-    <div class="mt-2 overflow-x-auto">
+    {{-- 📱 폰 = 계좌별 카드(jin 2026-10-20 «모바일에서 옆으로 스크롤해야 되던데») — 표는 sm 이상에서만. 값·합계는 같은 $byAccount/$sums. --}}
+    <div class="mt-2 space-y-2 sm:hidden" data-cash-account-cards>
+        @foreach($byAccount as $accId => $g)
+            @php $acc = $g->first()['account']; $cells = $g->keyBy('currency'); $asOf = $g->pluck('as_of')->filter()->max(); $carried = $g->contains(fn ($r) => $r['carried']); @endphp
+            <div class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700">
+                <div class="flex items-start justify-between gap-2">
+                    <span class="break-all font-medium text-gray-800">{{ $acc->display_name }}</span>
+                    <button type="button" wire:click="deactivateCashAccount({{ $acc->id }})" wire:confirm="{{ __('cash.account.hide_confirm') }}" class="shrink-0 text-[11px] text-gray-400 hover:text-red-500">{{ __('cash.account.hide') }}</button>
+                </div>
+                <dl class="mt-1 space-y-0.5">
+                    @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
+                    @php $c = $cells->get($cur); @endphp
+                    <div class="flex justify-between"><dt class="text-gray-500">{{ $cur }}</dt><dd class="font-mono {{ ($c['carried'] ?? false) ? 'text-gray-400' : '' }}">{{ ($c['balance'] ?? null) === null ? '—' : ($cur === 'KRW' ? number_format($c['balance']) : number_format($c['balance'], 2)) }}</dd></div>
+                    @endforeach
+                </dl>
+                <p class="mt-1 text-[11px] {{ $carried ? 'text-gray-400' : 'text-gray-500' }}">{{ __('cash.account.as_of') }} {{ $asOf ?? __('cash.account.never') }}{{ $carried ? ' '.__('cash.account.carried') : '' }}</p>
+            </div>
+        @endforeach
+        <div class="rounded-lg border border-gray-300 bg-gray-50 px-3 py-2 text-xs font-semibold text-gray-800">
+            <div class="mb-0.5">{{ __('cash.account.total') }}</div>
+            <div class="flex justify-between"><span>KRW</span><span class="font-mono">{{ number_format($sums['KRW']) }}</span></div>
+            <div class="flex justify-between"><span>USD</span><span class="font-mono">{{ number_format($sums['USD'], 2) }}</span></div>
+            <div class="flex justify-between"><span>EUR</span><span class="font-mono">{{ number_format($sums['EUR'], 2) }}</span></div>
+        </div>
+    </div>
+    <div class="mt-2 hidden overflow-x-auto sm:block">
         <table class="w-full min-w-[520px] text-xs" data-cash-account-table>
             <thead><tr class="border-b border-gray-200 text-left text-gray-500">
                 <th class="py-1 pr-2">{{ __('cash.account.label') }}</th>

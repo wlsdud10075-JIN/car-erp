@@ -77,6 +77,21 @@ class CashAccountBalanceTest extends TestCase
     }
 
     /** 마이너스 통장은 원화 칸에 − 를 직접 친다(토글 없음, jin 2026-10-14). 외화 음수는 종전대로 거부. */
+    /** 📱 폰에서 표가 옆으로 넘치던 것(jin 2026-10-20) — 폰은 계좌별 카드, 표는 sm 이상에서만. 카드에도 같은 값·합계·기준일. */
+    public function test_phone_gets_account_cards_and_the_table_is_desktop_only(): void
+    {
+        $a = CashAccount::create(['bank' => '신한', 'account_no' => '140-013-275958', 'label' => '원화']);
+        app(CashAccountBalanceService::class)->save($a, now()->toDateString(), ['KRW' => 52_766_844]);
+        $this->actingAs($this->finance());
+
+        $html = Volt::test('erp.dashboard')->html();
+        $this->assertMatchesRegularExpression('/class="[^"]*sm:hidden[^"]*" data-cash-account-cards/', $html);
+        $this->assertMatchesRegularExpression('/class="mt-2 hidden overflow-x-auto sm:block">\s*<table[^>]*data-cash-account-table/', $html);
+        $cards = substr($html, strpos($html, 'data-cash-account-cards'), 4000);
+        $this->assertStringContainsString('신한(원화) 140-013-275958', $cards);
+        $this->assertStringContainsString('52,766,844', $cards);
+    }
+
     public function test_krw_account_takes_a_typed_minus_and_foreign_negative_is_refused(): void
     {
         $a = CashAccount::create(['bank' => '신한', 'account_no' => '1']);
