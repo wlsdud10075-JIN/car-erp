@@ -52,6 +52,16 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url]
     public string $search = '';
 
+    /**
+     * ☑️ 선택 합계 (jin 2026-10-20 — 판매·매입 잔금 탭) — 잔금 **한 줄** 단위로 고른다(한 차에 잔금이 여러 줄일 수 있다).
+     *    페이지를 넘겨도 유지, 탭을 바꾸면 비운다. 값은 체크박스라 문자열로 들어온다 — 쿼리에서 int 로 거른다.
+     */
+    public array $selectedPaymentIds = [];
+
+    /** 진행상태로 거르기 (판매·매입 잔금 탭, jin 2026-10-20 「로컬에서 봐볼게」) — 차량관리 pill 과 같은 scope(progressStage). */
+    #[Url(as: 'stage')]
+    public string $stageFilter = '';
+
     public bool $showModal = false;
 
     public ?int $modalTransferId = null;
@@ -150,6 +160,58 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->resetPage();
         $this->statusFilter = 'awaiting';
+        $this->selectedPaymentIds = [];
+        $this->stageFilter = '';
+    }
+
+    public function updatedStageFilter(): void
+    {
+        $this->resetPage();
+    }
+
+    /** 머리 체크박스 — 이 페이지 줄이 다 골라져 있으면 빼고, 아니면 전부 넣는다. */
+    public function togglePageSelection(array $ids): void
+    {
+        $ids = array_map('strval', $ids);
+        $all = array_diff($ids, $this->selectedPaymentIds) === [];
+        $this->selectedPaymentIds = $all
+            ? array_values(array_diff($this->selectedPaymentIds, $ids))
+            : array_values(array_unique([...$this->selectedPaymentIds, ...$ids]));
+    }
+
+    public function clearSelection(): void
+    {
+        $this->selectedPaymentIds = [];
+    }
+
+    /**
+     * 고른 잔금 줄의 합계 — 통화별(판매 잔금은 차량 통화가 섞인다) + 차량 대수.
+     *
+     * @return array{rows: array<int, array{currency: string, total: float}>, count: int, vehicles: int}
+     */
+    #[Computed]
+    public function selectedTotals(): array
+    {
+        $ids = array_values(array_filter(array_map('intval', $this->selectedPaymentIds)));
+        if ($ids === [] || $this->tabType === 'transfer') {
+            return ['rows' => [], 'count' => 0, 'vehicles' => 0];
+        }
+        $isSale = $this->tabType === 'sale_payment';
+        $table = $isSale ? 'final_payments' : 'purchase_balance_payments';
+        // 열 이름에 테이블을 붙인다 — 판매는 vehicles 와 조인해 id·vehicle_id 가 모호해진다.
+        $base = ($isSale ? FinalPayment::query() : PurchaseBalancePayment::query())->whereIn("{$table}.id", $ids)->whereHas('vehicle');
+        $count = (clone $base)->count();
+        $vehicles = (clone $base)->distinct()->count("{$table}.vehicle_id");
+        $rows = $isSale
+            ? (clone $base)->join('vehicles', 'vehicles.id', '=', 'final_payments.vehicle_id')
+                ->selectRaw('vehicles.currency as currency, SUM(final_payments.amount) as total')->groupBy('vehicles.currency')->get()
+            : (clone $base)->selectRaw("'KRW' as currency, SUM({$table}.amount) as total")->get();
+
+        return [
+            'rows' => $rows->map(fn ($r) => ['currency' => (string) ($r->currency ?: 'KRW'), 'total' => (float) $r->total])->sortBy('currency')->values()->all(),
+            'count' => $count,
+            'vehicles' => $vehicles,
+        ];
     }
 
     public function updatedPerPage(): void
@@ -264,6 +326,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $this->applyVehicleSearch(
             FinalPayment::query()
                 ->whereHas('vehicle')
+                ->when($this->stageFilter !== '', fn ($q) => $q->whereHas('vehicle', fn ($v) => $v->progressStage($this->stageFilter)))
                 ->whereNull('transfer_id')
                 ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
                 ->when($this->statusFilter === 'executed', fn ($q) => $q->whereNotNull('confirmed_at'))
@@ -274,7 +337,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function salePayments()
     {
         return $this->salePaymentsQuery()
-            ->with(['vehicle:id,vehicle_number,nice_reg_vin,buyer_id,currency', 'vehicle.buyer:id,name', 'financeConfirmer:id,name'])
+            ->with(['vehicle:id,vehicle_number,nice_reg_vin,buyer_id,currency,progress_status_cache', 'vehicle.buyer:id,name', 'financeConfirmer:id,name'])
             ->orderByDesc('created_at')
             // 동점 tie-break (jin 2026-09-11) — SKILLS §8 #92. 정렬키가 같으면 페이지가 흔들린다.
             ->orderByDesc('id')
@@ -296,6 +359,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $this->applyVehicleSearch(
             PurchaseBalancePayment::query()
                 ->whereHas('vehicle')
+                ->when($this->stageFilter !== '', fn ($q) => $q->whereHas('vehicle', fn ($v) => $v->progressStage($this->stageFilter)))
                 ->when($this->statusFilter === 'awaiting', fn ($q) => $q->whereNull('confirmed_at'))
                 ->when($this->statusFilter === 'executed', fn ($q) => $q->whereNotNull('confirmed_at'))
         );
@@ -305,7 +369,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function purchasePayments()
     {
         return $this->purchasePaymentsQuery()
-            ->with(['vehicle:id,vehicle_number,nice_reg_vin,purchase_from,salesman_id', 'vehicle.salesman:id,name', 'financeConfirmer:id,name'])
+            ->with(['vehicle:id,vehicle_number,nice_reg_vin,purchase_from,salesman_id,progress_status_cache', 'vehicle.salesman:id,name', 'financeConfirmer:id,name'])
             ->orderByDesc('created_at')
             // 동점 tie-break (jin 2026-09-11) — SKILLS §8 #92. 정렬키가 같으면 페이지가 흔들린다.
             ->orderByDesc('id')
@@ -1021,6 +1085,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ $label }}
                 </button>
                 @endforeach
+                {{-- 진행상태로 거르기 (jin 2026-10-20) — 차량관리 진행상태 버튼과 같은 판정(매입중·말소완료는 넓은 뜻). --}}
+                <select wire:model.live="stageFilter" class="input-filter text-xs" title="{{ __('transfer.stage.filter_hint') }}">
+                    <option value="">{{ __('transfer.stage.all') }}</option>
+                    @foreach(['매입중', '매입완료', '말소완료', '판매중', '판매완료', '선적중', '선적완료', '통관중', '통관완료', '거래완료'] as $st)
+                    <option value="{{ $st }}">{{ __('domain.progress.'.$st) }}</option>
+                    @endforeach
+                </select>
             @endif
         </div>
 
@@ -1055,6 +1126,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         <span class="text-sm text-gray-400">{{ __('transfer.total.empty') }}</span>
         @endforelse
     </div>
+
+    {{-- ☑️ 선택 합계 (jin 2026-10-20) — 판매·매입 잔금 탭에서 체크한 줄만. 위 합계(필터 전체)와 따로 보인다. --}}
+    @if($tabType !== 'transfer' && count($selectedPaymentIds) > 0)
+    @php $sel = $this->selectedTotals; @endphp
+    <div class="card flex flex-wrap items-center gap-x-6 gap-y-2 border-violet-200 bg-violet-50/60" data-selected-totals>
+        <span class="text-xs font-medium text-violet-700">{{ __('transfer.selected.label', ['n' => number_format($sel['count']), 'v' => number_format($sel['vehicles'])]) }}</span>
+        @foreach($sel['rows'] as $t)
+        <span class="flex items-baseline gap-1.5">
+            <span class="text-[11px] font-semibold text-violet-400">{{ $t['currency'] }}</span>
+            <span class="text-lg font-bold text-violet-900">{{ number_format($t['total'], $t['currency'] === 'KRW' ? 0 : 2) }}</span>
+        </span>
+        @endforeach
+        <button type="button" wire:click="clearSelection" class="ml-auto rounded-lg bg-white px-3 py-1.5 text-xs text-violet-700 hover:bg-violet-100">{{ __('transfer.selected.clear') }}</button>
+    </div>
+    @endif
 
     @if($tabType === 'transfer')
     {{-- 데스크탑 테이블 --}}
@@ -1257,8 +1343,21 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="hidden sm:block overflow-x-auto">
         <table class="w-full text-sm border-separate border-spacing-0">
             <thead>
+                @php
+                    $pageIds = $payments->pluck('id')->map(fn ($i) => (string) $i)->all();
+                    $pageAll = $pageIds !== [] && array_diff($pageIds, $selectedPaymentIds) === [];
+                    $stageBadge = fn (?string $st) => match (true) {
+                        in_array($st, ['매입중', '매입완료', '말소완료'], true) => 'badge-blue',
+                        in_array($st, ['판매중', '판매완료'], true) => 'badge-purple',
+                        in_array($st, ['선적중', '선적완료'], true) => 'badge-amber',
+                        in_array($st, ['통관중', '통관완료'], true) => 'badge-green',
+                        default => 'badge-gray',
+                    };
+                @endphp
                 <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
+                    <th class="w-8 pb-2 pr-2"><input type="checkbox" class="rounded" @checked($pageAll) wire:click="togglePageSelection(@js($pageIds))" title="{{ __('transfer.selected.page_hint') }}" /></th>
                     <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.vehicle') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.progress') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ $isSale ? __('transfer.col.buyer') : __('transfer.col.buyer_or_purchase') }}</th>
                     <th class="pb-2 pr-4 font-medium text-right">{{ __('transfer.col.amount') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ $isSale ? __('transfer.col.date_sale') : __('transfer.col.date_purchase') }}</th>
@@ -1269,14 +1368,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             </thead>
             <tbody>
                 @forelse($payments as $p)
-                @php $isAwaiting = $p->confirmed_at === null; @endphp
-                <tr class="border-b border-gray-100 hover:bg-gray-50">
+                @php $isAwaiting = $p->confirmed_at === null; $st = $p->vehicle?->progress_status_cache; @endphp
+                <tr class="border-b border-gray-100 hover:bg-gray-50 {{ in_array((string) $p->id, $selectedPaymentIds, true) ? 'bg-violet-50/60' : '' }}">
+                    <td class="py-3 pr-2"><input type="checkbox" class="rounded" wire:model.live="selectedPaymentIds" value="{{ $p->id }}" /></td>
                     <td class="py-3 pr-4 font-mono text-xs text-gray-800">
                         <div>{{ $p->vehicle?->vehicle_number ?? '#'.$p->vehicle_id }}</div>
                         {{-- 차대번호(VIN) — 번호판은 재발급으로 바뀌므로 재무가 지급 대상을 확정할 때 실제 식별키(jin 2026-08-05) --}}
                         @if($p->vehicle?->nice_reg_vin)
                             <div class="text-[10px] font-normal text-gray-400">{{ $p->vehicle->nice_reg_vin }}</div>
                         @endif
+                    </td>
+                    <td class="py-3 pr-4">
+                        @if($st)<span class="badge {{ $stageBadge($st) }}" title="{{ __('domain.progress_hint.'.$st) }}">{{ __('domain.progress.'.$st) }}</span>@else<span class="text-xs text-gray-400">-</span>@endif
                     </td>
                     <td class="py-3 pr-4 text-xs text-gray-700">
                         @if($isSale)
@@ -1323,7 +1426,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </td>
                 </tr>
                 @empty
-                <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">{{ __('transfer.empty_payment') }}</td></tr>
+                <tr><td colspan="9" class="py-12 text-center text-sm text-gray-400">{{ __('transfer.empty_payment') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
@@ -1332,18 +1435,20 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 모바일 카드 (판매·매입 잔금 공용) --}}
     <div class="block sm:hidden space-y-2">
         @forelse($payments as $p)
-        @php $isAwaiting = $p->confirmed_at === null; @endphp
-        <div class="card-tight">
+        @php $isAwaiting = $p->confirmed_at === null; $st = $p->vehicle?->progress_status_cache; @endphp
+        <div class="card-tight {{ in_array((string) $p->id, $selectedPaymentIds, true) ? 'ring-1 ring-violet-300' : '' }}">
             <div class="flex items-center justify-between">
-                <div class="font-mono text-xs text-gray-800">
+                <label class="flex items-center gap-2 font-mono text-xs text-gray-800">
+                    <input type="checkbox" class="rounded" wire:model.live="selectedPaymentIds" value="{{ $p->id }}" />
                     {{ $p->vehicle?->vehicle_number ?? '#'.$p->vehicle_id }}
                     @if($p->vehicle?->nice_reg_vin)
                         <span class="ml-1 text-[10px] font-normal text-gray-400">{{ $p->vehicle->nice_reg_vin }}</span>
                     @endif
-                </div>
+                </label>
                 <span class="badge {{ $isAwaiting ? 'badge-amber' : 'badge-green' }}">{{ $isAwaiting ? __('transfer.pending') : __('transfer.confirmed') }}</span>
             </div>
-            <div class="mt-1 text-xs text-gray-600">
+            <div class="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
+                @if($st)<span class="badge {{ $stageBadge($st) }}">{{ __('domain.progress.'.$st) }}</span>@endif
                 @if($isSale)
                     {{ $p->vehicle?->buyer?->name ?? '-' }}
                 @else

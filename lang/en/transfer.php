@@ -21,6 +21,7 @@ return [
     ],
 
     'col' => [
+        'progress' => 'Progress',
         'type' => 'Type',
         'route' => 'Source → Target',
         'buyer' => 'Buyer',
@@ -179,6 +180,16 @@ return [
     'search' => [
         'placeholder' => 'Search plate, seller or salesman',
         'clear' => 'Clear',
+    ],
+    // Selected totals · progress filter (2026-10-20, sale/purchase balance tabs)
+    'selected' => [
+        'label' => ':n selected · :v vehicles total',
+        'clear' => 'Clear selection',
+        'page_hint' => 'Select/clear this page',
+    ],
+    'stage' => [
+        'all' => 'All progress',
+        'filter_hint' => 'Filter by vehicle progress — same rule as the vehicle list progress buttons',
     ],
     'total' => [
         'label' => 'Total',
