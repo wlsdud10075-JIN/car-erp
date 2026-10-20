@@ -41,11 +41,13 @@ public function getProgressStatusAttribute(): string
         if ($this->bl_document) return '거래완료';
         // 🚢 2026-10-14 — FOB + FOB포워더(buyer_handles_bl) + 완납 → 거래완료 (B/L 을 바이어가 발급하는 거래). 반입지·통관보다 앞.
         if ($this->incoterms === 'FOB' && in_array($this->forwarding_company_id, ForwardingCompany::buyerHandledIds()) && $this->sale_price > 0 && $this->sale_unpaid_amount <= 0) return '거래완료';
-        // 🔀 2026-10-16 (jin, 가안) — 통관완료=체크 · 통관중=신고서 · 선적완료=반입지+선적일 · 선적중=반입지. 출항 뒤는 운항 뱃지.
+        // 🔀 2026-10-20 (jin) — 실무 입력 순서: 반입지·신고서(선적중) → 선적일(선적완료) → ETA(통관중) → 체크(통관완료). 출항 뒤는 운항 뱃지.
+        //   선적일·ETA 는 반입지나 신고서가 있을 때만 친다(엑셀 적재 차가 판매 단계에서 튀지 않게).
         if ($this->is_export_cleared) return '통관완료';
-        if ($this->export_declaration_document) return '통관중';
-        if ($this->bl_loading_location && $this->shipping_date) return '선적완료';
-        if ($this->bl_loading_location) return '선적중';
+        $hasLoading = $this->bl_loading_location || $this->export_declaration_document;
+        if ($hasLoading && $this->shipping_date && $this->eta_date) return '통관중';
+        if ($hasLoading && $this->shipping_date) return '선적완료';
+        if ($hasLoading) return '선적중';
     } else {
         // v1~v3 grandfather (archive 참조)
         // ...
@@ -82,8 +84,8 @@ public function getPurchaseUnpaidAmountAttribute(): int { /* §13 공식 참조 
 | `기본정보` | 차량번호, 주행거리, brand/type/cc/kg, NICE API 등록정보 12개, 제원정보 12개, 차량 사진/첨부(사진·PDF·Excel·HWP 등, 최대 10건 — `vehicle_photos`) |
 | `매입` | 매입일, 매입담당자, 구입처, 소유자, 매입가, 매도비, **비용 10개** (말소/면허/탁송/캐리/쇼링/보험/이전비/**주차료**/기타1/기타2 — 단일 출처 `Vehicle::DISPLAY_COST_FIELDS`), 계약금, 잔금 N건, 송금메모 |
 | `판매` | 판매일, 통화/환율, 바이어/컨사이니, 판매가, TAX D/C, Commission, 운임비, 입금현황(계약금 + 중도금 + 잔금 N건 + 선수금1/2 + 적립금 사용) |
-| `수출통관` | 통관 바이어/컨사이니, 포워딩사, **면장금액(USD)**, 선적일, 도착일자(ETA), RORO/CONTAINER, Port of Loading, 수출신고서 업로드 |
-| `선적(B/L)` | 선적 바이어/컨사이니, B/L번호, 컨테이너 No, 반입지, VSL, B/L 문서 업로드 |
+| `수출`(key `export`, 🔀 2026-10-20 구 선적+수출통관 합본) | 바이어(판매에서)·컨사이니 한 줄 → ①반입(반입지·포워딩사·서류마감·RORO/CONTAINER·선적항·인코텀즈·도착항) → ②수출신고(번호·면장금액·신고서) → ③선적(선적일·VSL·컨테이너·선박사진) → ④운항(ETA) → ⑤통관(체크). 메모 2칸(선적·통관) |
+| `B/L` | B/L번호, 발행일, B/L 방식, 체크빌, B/L 문서 업로드 |
 | `DHL` | 수취인 정보, 발송인 정보, 중량/크기, DHL 발송신청 체크 |
 | `서류` | 말소신청서 / 계약서 / 등록증신청서 / 양도증명서 / Invoice / RO·con CIPL 자동 생성 |
 

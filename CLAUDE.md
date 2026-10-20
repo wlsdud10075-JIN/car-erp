@@ -103,16 +103,17 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 ### 차량 진행상태 10단계 (computed property — DB 컬럼 X)
 > `progress_status_rule_version` 분기. **v4=현재 default** (2026-05-21 회의확장씬 안건 1). v1·v2·v3=grandfather (운영 데이터 거의 없음, 상세 SKILLS §2).
 
-**v4 워크플로우 순서**: 매입 → 판매 → **반입(선적) → 통관** → B/L → 거래완료.
+**v4 워크플로우 순서**: 매입 → 판매 → **반입지·신고서 → 선적일 → ETA → 통관 체크** → B/L → 거래완료 (🔀 2026-10-20 jin — 실무 입력 순서, 감사로그 실측 반입지→신고서 406:2 · 신고서→선적일 471:16).
 '선적'의 도메인 의미 = 반입(`bl_loading_location` 입력). 단계명: 수출통관중/완료 → 통관중/완료.
 
 **v4 cascade — 우선순위 높음 → 낮음으로 평가, 첫 번째 매칭 반환**:
 1. `bl_document` → **`거래완료`** (단독, B/L 발급 = 거래완료)
 1-B. 🚢 `incoterms='FOB'` AND 포워딩사 `buyer_handles_bl`(「FOB포워더」 — 바이어가 직접 고른 포워딩사, B/L 을 바이어가 발급) AND 판매 완납 → **`거래완료`** (jin 2026-10-14. B/L 파일이 ERP 에 올 일이 없는 거래. 반입지·통관 규칙보다 앞. 판정은 이름이 아니라 플래그 — 포워딩사 관리 체크박스. 가드 = `ProgressRuleFobForwarderTest`)
-2. `is_export_cleared` → **`통관완료`** (🔀 2026-10-16 jin — 통관 체크만. 구: + B/L 파일이라 **도달 불가**였다, 3사 0대)
-3. `export_declaration_document` → **`통관중`** (🔀 수출신고서 업로드. 구: 반입지 + 통관 체크)
-4. `bl_loading_location` AND `shipping_date` → **`선적완료`** (🔀 반입 + 선적일 = 「배 날짜까지 잡힘」. 구: 반입 + 수출신고서. (가)안 — 신고서 무관)
-5. `bl_loading_location` → **`선적중`** (반입지 입력)
+2. `is_export_cleared` → **`통관완료`** (통관 체크 단독. 2026-10-16 부터 같음)
+3. (반입지 OR 신고서) AND `shipping_date` AND `eta_date` → **`통관중`** (🔀 2026-10-20 — 구 10-16: 수출신고서)
+4. (반입지 OR 신고서) AND `shipping_date` → **`선적완료`** (🔀 2026-10-20 — 구 10-16: 반입지 + 선적일)
+5. `bl_loading_location` OR `export_declaration_document` → **`선적중`** (🔀 2026-10-20 — 구: 반입지만)
+> ⚠️ **선적일·ETA 는 반입지나 신고서가 있을 때만 단계로 친다** — 엑셀 적재로 선적일·ETA 만 들어간 판매 단계 차(ssancarerp 128대)가 통관중으로 튀지 않게(jin «추천 좋네»). 흐름 = 통관중+🚢운항중 → (서류 끝내고 체크) 통관완료+운항중 → 통관완료+도착예정. 단계 뜻은 `domain.progress_hint`(pill·뱃지 호버) — **규칙을 바꾸면 같이 고칠 것.** 가드 = `ProgressRuleV4StagesTest`. 편집 패널은 「수출」 탭 하나에 이 순서대로(`ExportTabMergeTest`).
 > 🚢 **출항 이후는 진행상태가 아니다** — 운항중·도착예정은 `sailing_status`(선적일+ETA, ETA 당일부터 도착예정) 별도 축. 통관완료 차는 네 칸을 다 갖고 「통관완료 + 🚢」로 보인다. 해외 통관은 모른다(jin 2026-10-16 «국내에서 선적기획→통관진행→운항→도착»).
 6. `sale_price > 0` AND 판매미입금 ≤ 0 → **`판매완료`**
 7. `sale_price > 0` → **`판매중`**
