@@ -1371,6 +1371,6 @@ Contact the system administrator.',
         'clearance' => 'Needs clearance',
         'clearance_hint' => 'Sold vehicles missing the cleared check or export declaration - excluding completed, cancelled and domestic',
         'bl' => 'Needs B/L',
-        'bl_hint' => 'Vehicles with the cleared check and export declaration still missing a B/L upload - excluding completed, cancelled and domestic',
+        'bl_hint' => 'Vehicles with the cleared check still missing a B/L upload - excluding completed, cancelled and domestic',
     ],
 ];

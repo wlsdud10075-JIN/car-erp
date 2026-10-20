@@ -180,7 +180,7 @@ return [
             'forwarding_missing' => ['l' => 'Forwarder Not Set', 'd' => 'clearance started → no forwarder'],
             'export_declaration_upload_needed' => ['l' => 'Export Declaration Upload', 'd' => 'shipping date set → no declaration'],
             'shipping_process_needed' => ['l' => 'Shipment Needed', 'd' => 'sold → loading location empty'],
-            'bl_upload_needed' => ['l' => 'B/L Upload Needed', 'd' => 'loading location set → B/L not uploaded'],
+            'bl_upload_needed' => ['l' => 'B/L Upload Needed', 'd' => 'cleared → B/L not uploaded'],
             'dhl_dispatch_needed' => ['l' => 'DHL Dispatch Pending', 'd' => 'completed → not requested'],
         ],
         'settlement' => [
