@@ -345,7 +345,7 @@ class LocaleTest extends TestCase
         Volt::test('erp.vehicles.index')
             ->call('openCreate')
             ->assertSee('NICE Registration')        // 기본정보 탭 섹션 (2026-10-02 칸 교체로 「(12)」 표기 제거)
-            ->assertSee('Export Clearance')          // 패널 탭 네비
+            ->assertSee('Export')                    // 패널 탭 네비 (2026-10-20 선적+수출통관 → 「수출」 합본)
             ->assertSee('9 Cost Items')              // 매입 탭 섹션
             ->assertSee('Seller Account (remittance target)')
             ->assertSee('Payment Status')            // 판매 탭 섹션

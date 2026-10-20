@@ -1471,7 +1471,7 @@ class Vehicle extends Model
         // 큐 2.6 H3 — B/L 문서는 반입지 입력 후 (v4: 선적 → 통관 → B/L)
         if ($this->bl_document && empty($this->bl_loading_location)) {
             throw ValidationException::withMessages([
-                'bl_document' => 'B/L 문서를 업로드하려면 반입지 입력이 먼저 필요합니다 — 선적 탭.',
+                'bl_document' => 'B/L 문서를 업로드하려면 반입지 입력이 먼저 필요합니다 — 수출 탭.',
             ]);
         }
 
@@ -1531,7 +1531,7 @@ class Vehicle extends Model
         //   컨사이니는 선적에서 입력 → 통관 이어받음(export_consignee_id). B/L·선적서류에 필요.
         if ($this->bl_loading_location && ! $this->bl_consignee_id) {
             throw ValidationException::withMessages([
-                'bl_consignee_id_str' => '선적하려면 컨사이니를 지정해야 합니다 — 선적 탭.',
+                'bl_consignee_id_str' => '선적하려면 컨사이니를 지정해야 합니다 — 수출 탭.',
             ]);
         }
 

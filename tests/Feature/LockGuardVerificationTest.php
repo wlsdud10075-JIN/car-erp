@@ -265,7 +265,7 @@ class LockGuardVerificationTest extends TestCase
             $this->assertStringContainsString('매입 탭', $e->getMessage());
         }
 
-        // 컨사이니 — 말소완료 + 반입지 + 선적 컨사이니 없음 → "선적 탭" (jin 2026-07-09 당사자 축소)
+        // 컨사이니 — 말소완료 + 반입지 + 선적 컨사이니 없음 → "수출 탭" (jin 2026-07-09 당사자 축소 · 2026-10-20 선적+수출통관 → 수출 탭)
         $v2 = Vehicle::create([
             'vehicle_number' => 'TAB-CONS', 'sales_channel' => 'export', 'buyer_id' => $buyer->id, 'salesman_id' => $sm->id,
             'is_deregistered' => true, 'deregistration_document' => 'x.pdf', 'bl_loading_location' => 'PUSAN',
@@ -274,17 +274,17 @@ class LockGuardVerificationTest extends TestCase
             $v2->guardStageOrderForExport();
             $this->fail('컨사이니 락 발동 안 함');
         } catch (ValidationException $e) {
-            $this->assertStringContainsString('선적 탭', $e->getMessage());
+            $this->assertStringContainsString('수출 탭', $e->getMessage());
         }
 
-        // H3 — B/L 문서 + 반입지 없음 → "선적 탭"
+        // H3 — B/L 문서 + 반입지 없음 → "수출 탭"
         $v3 = Vehicle::create(['vehicle_number' => 'TAB-H3', 'sales_channel' => 'export', 'buyer_id' => $buyer->id, 'salesman_id' => $sm->id]);
         $v3->bl_document = 'bl.pdf';
         try {
             $v3->guardAttachmentDeps();
             $this->fail('H3 발동 안 함');
         } catch (ValidationException $e) {
-            $this->assertStringContainsString('선적 탭', $e->getMessage());
+            $this->assertStringContainsString('수출 탭', $e->getMessage());
         }
     }
 
