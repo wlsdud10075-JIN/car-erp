@@ -145,7 +145,7 @@ class ManagerPanelLifecycleE2ETest extends TestCase
             ->call('save')
             ->assertSet('showDocCheckModal', true);
         $c->call('confirmSaveWithDocMismatch')->assertHasNoErrors();
-        $this->assertSame('통관중', $v->fresh()->progress_status);
+        $this->assertSame('선적중', $v->fresh()->progress_status);   // 반입지+신고서 = 선적중 (2026-10-20 규칙)
 
         Volt::test('erp.vehicles.index')
             ->call('openEdit', $v->id)

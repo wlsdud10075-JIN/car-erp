@@ -366,7 +366,7 @@ class BulkVehicleDocumentTest extends TestCase
 
         $v->refresh();
         $this->assertFalse((bool) $v->is_export_cleared);
-        $this->assertSame('통관중', $v->progress_status_cache);   // 신고서만 = 통관중 (2026-10-16 규칙)
+        $this->assertSame('선적중', $v->progress_status_cache);   // 반입지+신고서(선적일 없음) = 선적중 (2026-10-20 규칙)
     }
 
     public function test_deregistration_upload_ticks_is_deregistered_and_leaves_ticked_rows_alone(): void
@@ -413,7 +413,7 @@ class BulkVehicleDocumentTest extends TestCase
         $v->refresh();
         $this->assertNotNull($v->export_declaration_document);
         $this->assertFalse((bool) $v->is_export_cleared, '그대로 올리면 체크는 안 켜진다');
-        $this->assertSame('통관중', $v->progress_status_cache);
+        $this->assertSame('선적중', $v->progress_status_cache, '신고서만 = 선적중 (2026-10-20 규칙)');
     }
 
     // ── 개별형(말소증) — 차량마다 다른 파일 ─────────────────────────

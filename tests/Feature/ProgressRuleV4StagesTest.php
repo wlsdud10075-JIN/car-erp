@@ -7,16 +7,15 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * v4 진행상태 4단계 조건 재정의 (jin 2026-10-16 «국내에서 선적기획 → 통관진행 → 운항 → 도착»).
+ * v4 진행상태 4단계 — 실무 입력 순서 (jin 2026-10-20). 구 2026-10-16 판을 대체한다.
  *
- *   선적중   = 반입지
- *   선적완료 = 반입지 + 선적일            (가안 — 수출신고서 무관)
- *   통관중   = 수출신고서 업로드
- *   통관완료 = 수출통관완료 체크          (구: + B/L 파일이라 도달 불가, 3사 0대)
+ *   선적중   = 반입지 또는 수출신고서
+ *   선적완료 = 선적일                     (반입지·신고서가 있을 때만)
+ *   통관중   = 선적일 + ETA                (반입지·신고서가 있을 때만) — 🚢 운항중과 함께 보인다
+ *   통관완료 = 통관 체크                   (단독)
  *   거래완료 = B/L 파일
  *
- * 출항 이후(운항중·도착예정)는 진행상태가 아니라 운항 뱃지(sailing_status)다.
- * 실측(배포 전, 3사): 통관중→통관완료 ssancarerp 858 · heymanerp 47 · karaba 149 / 선적완료→통관중 52·2·0.
+ * 근거 실측(ssancarerp 감사로그): 반입지→신고서 406:2 · 신고서→선적일 471:16 · 선적일→B/L 32:0.
  */
 class ProgressRuleV4StagesTest extends TestCase
 {
@@ -33,28 +32,49 @@ class ProgressRuleV4StagesTest extends TestCase
 
     public function test_the_four_stages_follow_the_redefined_fields(): void
     {
-        $this->assertSame('판매중', $this->vehicle()->progress_status, '반입지 없으면 판매 단계');
+        $this->assertSame('판매중', $this->vehicle()->progress_status, '반입지·신고서 없으면 판매 단계');
         $this->assertSame('선적중', $this->vehicle(['bl_loading_location' => '평택'])->progress_status);
-        $this->assertSame('선적완료', $this->vehicle(['bl_loading_location' => '평택', 'shipping_date' => '2026-10-20'])->progress_status);
-        $this->assertSame('통관중', $this->vehicle(['bl_loading_location' => '평택', 'shipping_date' => '2026-10-20', 'export_declaration_document' => 'vehicles/decl.pdf'])->progress_status);
-        $this->assertSame('통관완료', $this->vehicle(['bl_loading_location' => '평택', 'shipping_date' => '2026-10-20', 'export_declaration_document' => 'vehicles/decl.pdf', 'is_export_cleared' => true])->progress_status);
-        $this->assertSame('거래완료', $this->vehicle(['bl_loading_location' => '평택', 'shipping_date' => '2026-10-20', 'export_declaration_document' => 'vehicles/decl.pdf', 'is_export_cleared' => true, 'bl_document' => 'vehicles/bl.pdf'])->progress_status);
+        $this->assertSame('선적중', $this->vehicle(['export_declaration_document' => 'vehicles/decl.pdf'])->progress_status, '신고서만 있어도 선적중');
+        $this->assertSame('선적중', $this->vehicle(['bl_loading_location' => '평택', 'export_declaration_document' => 'vehicles/decl.pdf'])->progress_status);
+        $this->assertSame('선적완료', $this->vehicle(['bl_loading_location' => '평택', 'export_declaration_document' => 'vehicles/decl.pdf', 'shipping_date' => '2026-10-20'])->progress_status);
+        $this->assertSame('통관중', $this->vehicle(['bl_loading_location' => '평택', 'export_declaration_document' => 'vehicles/decl.pdf', 'shipping_date' => '2026-10-20', 'eta_date' => '2026-11-20'])->progress_status);
+        $this->assertSame('통관완료', $this->vehicle(['bl_loading_location' => '평택', 'export_declaration_document' => 'vehicles/decl.pdf', 'shipping_date' => '2026-10-20', 'eta_date' => '2026-11-20', 'is_export_cleared' => true])->progress_status);
+        $this->assertSame('거래완료', $this->vehicle(['bl_loading_location' => '평택', 'export_declaration_document' => 'vehicles/decl.pdf', 'shipping_date' => '2026-10-20', 'eta_date' => '2026-11-20', 'is_export_cleared' => true, 'bl_document' => 'vehicles/bl.pdf'])->progress_status);
     }
 
-    /** 통관완료는 이제 도달 가능하다 — 통관 체크만으로 (구 규칙은 B/L 파일도 요구해 영영 빈 칸이었다). */
+    /** 통관완료는 통관 체크 단독 — 앞 단계 칸이 비어도 통관완료(10-16 과 같음). */
     public function test_cleared_is_reachable_with_the_check_alone(): void
     {
         $this->assertSame('통관완료', $this->vehicle(['is_export_cleared' => true])->progress_status);
         $this->assertSame('통관완료', $this->vehicle(['is_export_cleared' => true, 'bl_loading_location' => '평택'])->progress_status);
     }
 
-    /** 선적완료는 반입지가 있어야 한다 — 선적일만 있는 차(ssancarerp 138대)는 판매 단계에 남는다. 신고서는 무관(가안). */
-    public function test_loaded_needs_the_loading_location_not_the_declaration(): void
+    /**
+     * 선적일·ETA 는 반입지나 신고서가 있을 때만 단계로 친다(jin 2026-10-20 「추천 좋네」) — 엑셀 적재로 선적일·ETA 만
+     * 들어간 판매 단계 차(ssancarerp 128대, 미수 남은 판매중 46대)가 통관중으로 튀지 않게.
+     */
+    public function test_shipping_date_and_eta_count_only_after_loading_or_declaration(): void
     {
-        $this->assertSame('판매중', $this->vehicle(['shipping_date' => '2026-10-20'])->progress_status, '반입지 없는 선적일은 선적완료가 아니다');
-        $this->assertSame('선적완료', $this->vehicle(['bl_loading_location' => '평택', 'shipping_date' => '2026-10-20'])->progress_status);
-        $this->assertSame('통관중', $this->vehicle(['export_declaration_document' => 'vehicles/decl.pdf'])->progress_status, '신고서만 있어도 통관중(반입지 무관)');
-        $this->assertSame('통관중', $this->vehicle(['bl_loading_location' => '평택', 'export_declaration_document' => 'vehicles/decl.pdf'])->progress_status, '구 규칙의 「선적완료」 조합은 이제 통관중');
+        $this->assertSame('판매중', $this->vehicle(['shipping_date' => '2026-10-20'])->progress_status, '선적일만 = 판매 단계');
+        $this->assertSame('판매중', $this->vehicle(['shipping_date' => '2026-10-20', 'eta_date' => '2026-11-20'])->progress_status, '선적일+ETA 만 = 판매 단계');
+        $this->assertSame('선적중', $this->vehicle(['bl_loading_location' => '평택', 'eta_date' => '2026-11-20'])->progress_status, 'ETA 만으로는 안 넘어간다(선적일 필요)');
+        $this->assertSame('선적완료', $this->vehicle(['export_declaration_document' => 'vehicles/decl.pdf', 'shipping_date' => '2026-10-20'])->progress_status, '신고서 + 선적일 = 선적완료(반입지 무관)');
+        $this->assertSame('통관중', $this->vehicle(['bl_loading_location' => '평택', 'shipping_date' => '2026-10-20', 'eta_date' => '2026-11-20'])->progress_status, '반입지 + 선적일 + ETA = 통관중(신고서 무관)');
+    }
+
+    /** 통관중 = 운항 뱃지와 함께 — 체크하면 통관완료 + 운항중, ETA 가 지나면 통관완료 + 도착예정(jin 2026-10-20). */
+    public function test_clearing_comes_with_the_sailing_badge(): void
+    {
+        $v = $this->vehicle([
+            'bl_loading_location' => '평택', 'export_declaration_document' => 'vehicles/decl.pdf',
+            'shipping_date' => now()->subDays(5)->toDateString(), 'eta_date' => now()->addDays(10)->toDateString(),
+        ]);
+        $this->assertSame('통관중', $v->progress_status);
+        $this->assertSame(Vehicle::SAILING_IN_TRANSIT, $v->sailing_status);
+
+        $v->update(['is_export_cleared' => true]);
+        $this->assertSame('통관완료', $v->fresh()->progress_status);
+        $this->assertSame(Vehicle::SAILING_IN_TRANSIT, $v->fresh()->sailing_status);
     }
 
     /** 출항 이후는 진행상태가 아니다 — 통관완료 + 운항 뱃지. ETA 당일부터 도착예정. */

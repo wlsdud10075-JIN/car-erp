@@ -141,7 +141,7 @@ return [
         'clearance' => [
             'derg_wait' => ['l' => 'Deregistration Pending', 'h' => 'purchase paid → not deregistered'],
             'clr_req_wait' => ['l' => 'Clearance Request Pending', 'h' => 'sale fully paid → license not uploaded'],
-            'decl_wait' => ['l' => 'Export Declaration Pending', 'h' => 'clearing'],
+            'decl_wait' => ['l' => 'Export Declaration Pending', 'h' => 'shipping date set → no declaration'],
             'ship_wait' => ['l' => 'Shipment Pending', 'h' => 'license done → loading location empty'],
             'dhl_wait' => ['l' => 'DHL Dispatch Pending', 'h' => 'B/L issued → not requested'],
         ],
@@ -178,7 +178,7 @@ return [
             'clearance_info_missing' => ['l' => 'Clearance Buyer/Date Missing', 'd' => 'sale started → clearance buyer or shipping date missing'],
             'eta_missing' => ['l' => 'Data Fix — ETA Missing', 'd' => 'shipped but arrival date empty → fill it to schedule the clearance alarm'],
             'forwarding_missing' => ['l' => 'Forwarder Not Set', 'd' => 'clearance started → no forwarder'],
-            'export_declaration_upload_needed' => ['l' => 'Export Declaration Upload', 'd' => 'clearing → no declaration'],
+            'export_declaration_upload_needed' => ['l' => 'Export Declaration Upload', 'd' => 'shipping date set → no declaration'],
             'shipping_process_needed' => ['l' => 'Shipment Needed', 'd' => 'sold → loading location empty'],
             'bl_upload_needed' => ['l' => 'B/L Upload Needed', 'd' => 'clearance done → B/L not uploaded'],
             'dhl_dispatch_needed' => ['l' => 'DHL Dispatch Pending', 'd' => 'completed → not requested'],
