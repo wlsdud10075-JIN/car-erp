@@ -366,19 +366,9 @@ return [
             'bl' => 'B/L',
             'dhl' => 'DHL',
         ],
-        // 수출 탭 단계 (jin 2026-10-20) — t = 단계 이름, r = 「무엇을 넣으면 → 어느 진행상태」.
-        'export_step' => [
-            'loading' => ['t' => '반입', 'r' => '반입지 → 선적중'],
-            'decl' => ['t' => '수출신고', 'r' => '신고서 업로드 → 선적중'],
-            'ship' => ['t' => '선적', 'r' => '선적일 → 선적완료'],
-            'sail' => ['t' => '운항', 'r' => 'ETA → 통관중 + 🚢'],
-            'clear' => ['t' => '통관', 'r' => '체크 → 통관완료'],
-        ],
-        'export_eta_note' => 'ETA 당일부터 「도착예정」',
-        'export_clear_hint' => '통관 서류를 다 끝냈으면 체크',
         'export_memo' => ['shipping' => '선적 메모', 'clearance' => '통관 메모'],
         'sec' => [
-            'export' => '수출 — 반입 → 수출신고 → 선적 → 운항 → 통관',
+            'export' => '수출',
             'basic' => '기본 정보',
             'nice_reg' => 'NICE 등록정보',
             'nice_spec' => 'NICE 제원정보',
