@@ -394,6 +394,28 @@ class BulkVehicleDocumentTest extends TestCase
         $this->assertStringContainsString('wire:model.live="bulkDocSetFlag"', file_get_contents(resource_path('views/livewire/erp/vehicles/index.blade.php')), '모달에 옵션 체크가 있다(기본 ON)');
     }
 
+    public function test_screen_defaults_the_flag_off_for_declaration_and_on_for_deregistration(): void
+    {
+        // jin 2026-10-20 «수출신고서일 때 통관 체크박스를 기본 체크 안 된 상태로. 말소증은 냅두고»
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $v = $this->vehicle('11가1001', ['bl_loading_location' => '평택항', 'export_declaration_number' => 'D-1']);
+
+        $c = Volt::test('erp.vehicles.index')
+            ->set('shipDocIds', [(string) $v->id])
+            ->set('bulkDocType', 'export_declaration')
+            ->call('openBulkDoc')
+            ->assertSet('bulkDocSetFlag', false);
+        $c->set('bulkDocType', 'deregistration')->assertSet('bulkDocSetFlag', true);
+        $c->set('bulkDocType', 'export_declaration')->assertSet('bulkDocSetFlag', false);
+
+        $c->set('bulkDocFile', $this->file())->call('applyBulkDoc')->assertSet('bulkDocOpen', false);
+        $v->refresh();
+        $this->assertNotNull($v->export_declaration_document);
+        $this->assertFalse((bool) $v->is_export_cleared, '그대로 올리면 체크는 안 켜진다');
+        $this->assertSame('통관중', $v->progress_status_cache);
+    }
+
     // ── 개별형(말소증) — 차량마다 다른 파일 ─────────────────────────
 
     public function test_individual_mode_gives_each_vehicle_its_own_file(): void

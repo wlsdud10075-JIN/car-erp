@@ -33,7 +33,7 @@ return [
         'apply' => 'Upload',
         'replace' => 'Also replace the :count vehicle(s) that already have a file',
         'set_flag_export_declaration' => 'Also tick "Export cleared" (:count currently unticked)',
-        'set_flag_hint_export_declaration' => 'Having the export declaration means clearance is done. If off, only the file is stored and the vehicle will not move to "Clearing" even with a loading location.',
+        'set_flag_hint_export_declaration' => 'Off by default - only the file is stored and the vehicle moves to "Clearing". Tick it to go straight to "Cleared" (only for vehicles whose clearance is actually done).',
         'set_flag_deregistration' => 'Also tick "Deregistered" (:count currently unticked)',
         'set_flag_hint_deregistration' => 'If off, only the file is stored: the vehicle stays short of "Deregistered", clearance/shipping entry stays blocked and reminder messages keep going out. Ticks set in bulk skip the panel RRN check; it runs on the next panel save.',
         'unit' => '',

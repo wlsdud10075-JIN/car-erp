@@ -131,7 +131,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     /** 이미 파일이 있는 차량도 덮어쓸지 — 기본 꺼짐(실수로 덮는 것 방지, jin). */
     public bool $bulkDocReplace = false;
-    /** ✅ 서류와 짝 체크박스(말소·통관)도 함께 켬 — 기본 ON (jin 2026-10-15). 끄면 종전처럼 파일만. */
+    /** ✅ 서류와 짝 체크박스(말소·통관)도 함께 켬 — 말소증은 기본 ON (jin 2026-10-15), 수출신고서는 기본 OFF (jin 2026-10-20). */
     public bool $bulkDocSetFlag = true;
 
     /** 같은 번호인데 선택 밖인 차량도 함께 처리할지 — 기본 켬(묶음이 반쪽으로 남지 않게). */
@@ -2711,7 +2711,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkDocFile = null;
         $this->bulkDocFiles = [];
         $this->bulkDocReplace = false;
-        $this->bulkDocSetFlag = true;
+        $this->bulkDocSetFlag = $this->bulkDocFlagDefault($this->bulkDocType);
         $this->bulkDocIncludeOutside = true;
         $this->bulkDocMixedAck = false;
         $this->bulkDocReason = '';
@@ -2734,7 +2734,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 종류가 바뀌면 개별형↔공유형이 갈린다 — 앞서 담은 파일을 그대로 두면 엉뚱한 서류로 나간다.
         $this->bulkDocFile = null;
         $this->bulkDocFiles = [];
+        $this->bulkDocSetFlag = $this->bulkDocFlagDefault($this->bulkDocType);
         unset($this->bulkDocPreview);
+    }
+
+    /**
+     * 짝 체크박스 기본값 — 수출신고서만 꺼짐(jin 2026-10-20). 신고서를 받았다고 통관이 끝난 건 아니라
+     * 켜 두면 통관완료로 건너뛴다(2026-10-16 규칙: 신고서 = 통관중 · 체크 = 통관완료). 말소증은 그대로 켜짐.
+     */
+    private function bulkDocFlagDefault(string $type): bool
+    {
+        return $type !== 'export_declaration';
     }
 
     /**
