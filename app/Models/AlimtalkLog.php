@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\BizmResultCodes;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -42,16 +43,6 @@ class AlimtalkLog extends Model
         'no_test_tmplid' => '테스트용 템플릿 ID가 없어 보내지 않음',
     ];
 
-    /** BizM 오류코드 뜻 — 코드는 진단에 필요하므로 지우지 않고 뒤에 설명을 붙인다. */
-    private const BIZM_CODES = [
-        'K108' => '등록된 버튼과 다름',
-        'K135' => '강조 문구가 너무 김',
-        'K137' => '항목 설명이 너무 김',
-        'K138' => '등록된 요약정보와 다름',
-        'K140' => '요약정보 형식 위반(금액만 가능)',
-        'K208' => '항목 제목이 너무 김(6자 초과)',
-    ];
-
     /**
      * 로그 화면에 보여줄 사유 — 영문 코드를 한글로, BizM 오류는 코드 + 뜻으로.
      * 매핑이 없으면 원문 그대로(진단 정보를 삼키지 않는다).
@@ -66,11 +57,37 @@ class AlimtalkLog extends Model
             return self::SKIP_REASONS[$raw];
         }
         // 'bizmsg fail — K140:InvalidItemSummaryDescriptionException — [{...}]' 형태에서 코드만 뽑아 설명 부착.
-        if (preg_match('/\b(K\d{3})\b/', $raw, $m) && isset(self::BIZM_CODES[$m[1]])) {
-            return '발송 거부 '.$m[1].' — '.self::BIZM_CODES[$m[1]];
+        if ($described = BizmResultCodes::describe($raw)) {
+            return '발송 거부 '.$described;
         }
 
         return $raw;
+    }
+
+    /**
+     * 미도달 사유 — 발송은 접수됐는데 결과조회(report)가 실패 코드를 준 건.
+     * originMessage 가 있으면 알림톡이 실패해 대체문자로 넘어간 것이고, message 는 그 문자의 결과다.
+     */
+    public function reportLabel(): ?string
+    {
+        if ($this->report_status !== 'undelivered' || ! is_array($this->report_raw)) {
+            return null;
+        }
+        $message = (string) ($this->report_raw['message'] ?? '');
+        $origin = (string) ($this->report_raw['originMessage'] ?? '');
+        $label = fn (string $raw) => BizmResultCodes::describe($raw) ?? $raw;
+
+        if ($origin !== '') {
+            return '알림톡 실패 '.$label($origin).($message !== '' ? ' · 대체문자 '.$label($message) : '');
+        }
+
+        return $message !== '' ? '미도달 '.$label($message) : null;
+    }
+
+    /** 로그 화면 「사유」 칸 — 발송 거부·skip 사유가 먼저, 없으면 미도달 사유. */
+    public function reasonLabel(): ?string
+    {
+        return $this->errorLabel() ?? $this->reportLabel();
     }
 
     /**
