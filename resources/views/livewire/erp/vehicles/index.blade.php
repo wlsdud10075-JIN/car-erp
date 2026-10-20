@@ -10368,17 +10368,17 @@ function vehicleColumnsToggle(columns, serverKnows) {
                       placeholder="{{ __('vehicle.tab_memo.placeholder.sale') }}"></textarea>
         </div>
 
-        {{-- ─── 수출 탭 (jin 2026-10-20) — 구 「선적」 + 「수출통관」 두 탭 합본. 실무 입력 순서대로 위→아래:
-             ① 반입(반입지 → 선적중) ② 수출신고(신고서 → 선적중) ③ 선적(선적일 → 선적완료) ④ 운항(ETA → 통관중 + 🚢) ⑤ 통관(체크 → 통관완료).
-             칸·wire:model·검증·게이트는 그대로 — 위치만 옮겼다. 단계 판정은 Vehicle::getProgressStatusAttribute 와 같은 칸을 본다.
-             당사자 = 바이어(판매에서 이어받음) + 컨사이니(여기서 정함 — bl_consignee, 통관 컨사이니는 save 때 이어받음). --}}
+        {{-- ─── 수출 탭 (jin 2026-10-20) — 구 「선적」 + 「수출통관」 두 탭 합본. 화면 모양은 원래 탭 그대로(섹션 머리 + 칸 그리드)이고
+             칸 순서만 실무 입력 순서: 바이어·컨사이니 → 반입지·포워딩사·서류마감·선적방법·선적항·인코텀즈·도착항 → 수출신고번호·면장금액·신고서
+             → 선적일·VSL·컨테이너 → ETA → 통관 체크. 칸·wire:model·검증·게이트는 그대로 — 위치만 옮겼다(jin «쓸데없는 UX 빼 달라»).
+             컨사이니 = bl_consignee (통관 컨사이니는 save 때 이어받음). --}}
         <div x-show="tab === 'export'" x-cloak>
             <div class="section-header">
                 <span class="section-dot bg-amber-500"></span>
                 <span class="section-title">{{ __('vehicle.panel.sec.export') }}</span>
             </div>
 
-            {{-- 미입금 진입 게이트(C5 50%) 안내 — 수출 탭 맨 위 1회 (구: 선적·통관 탭에 하나씩, 2026-10-20 합본) --}}
+            {{-- 미입금 진입 게이트(C5 50%) 안내 — 수출 탭 1회 (구: 선적·통관 탭에 하나씩, 2026-10-20 합본) --}}
             @php $gate = $this->exportGateStatus; @endphp
             @if($gate && ! $gate['has_bl'])
             <div class="mb-3 rounded-md border px-3 py-2 text-xs
@@ -10397,22 +10397,10 @@ function vehicleColumnsToggle(columns, serverKnows) {
             </div>
             @endif
 
-            @php
-                $exHas = [
-                    'loading' => (string) $bl_loading_location !== '',
-                    'decl' => $exportDeclarationDocFile !== null || ($export_declaration_document_path !== '' && ! $clearExportDeclarationDoc),
-                    'ship' => (bool) $shipping_date,
-                    'sail' => (bool) $eta_date,
-                    'clear' => (bool) $is_export_cleared,
-                ];
-                $exNext = collect($exHas)->search(false);
-                $exStep = collect($exHas)->map(fn ($d, $k) => $d ? 'done' : ($k === $exNext ? 'next' : 'todo'))->all();
-                $exBuyerName = $this->buyers->firstWhere('id', (int) ($buyer_id_str ?: 0))?->name;
-            @endphp
-
-            <div class="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
                     <label class="label-base">{{ __('vehicle.field.buyer') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.inherit_from_sale') }}</span></label>
+                    @php $exBuyerName = $this->buyers->firstWhere('id', (int) ($buyer_id_str ?: 0))?->name; @endphp
                     <div class="input-base bg-gray-50 text-gray-600">{{ $exBuyerName ?: '—' }}</div>
                 </div>
                 <div>
@@ -10427,16 +10415,6 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         placeholder="{{ $bl_buyer_id_str ? __('vehicle.panel.select_placeholder') : __('vehicle.panel.buyer_first') }}"
                         wire:key="cbx-cons-bl-{{ $bl_buyer_id_str }}-{{ $bl_consignee_id_str }}" />
                 </div>
-            </div>
-
-            @php $__st = $exStep['loading']; @endphp
-            <div class="flex flex-wrap items-center gap-2">
-                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold {{ $__st === 'done' ? 'bg-emerald-500 text-white' : ($__st === 'next' ? 'border-2 border-violet-500 bg-white text-violet-700' : 'bg-gray-100 text-gray-500') }}">1</span>
-                <span class="text-sm font-semibold text-gray-800">{{ __('vehicle.panel.export_step.loading.t') }}</span>
-                <span class="rounded-full border px-2 py-0.5 text-[11px] {{ $__st === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : ($__st === 'next' ? 'border-violet-300 text-violet-700' : 'border-gray-200 text-gray-500') }}">{{ __('vehicle.panel.export_step.loading.r') }}</span>
-            </div>
-            <div class="ml-3 mt-2 border-l-2 {{ $__st === 'done' ? 'border-emerald-200' : 'border-gray-200' }} pb-5 pl-5">
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {{-- 2026-05-21 CIPL 이식 — 반입지 드롭다운 --}}
                 <div>
                     <label class="label-base flex items-center gap-1">{{ __('vehicle.field.loading_location') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span></label>
@@ -10495,16 +10473,6 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     </select>
                     <p class="mt-1 text-[11px] text-gray-400">{{ __('vehicle.panel.discharge_note') }}</p>
                 </div>
-                </div>
-            </div>
-            @php $__st = $exStep['decl']; @endphp
-            <div class="flex flex-wrap items-center gap-2">
-                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold {{ $__st === 'done' ? 'bg-emerald-500 text-white' : ($__st === 'next' ? 'border-2 border-violet-500 bg-white text-violet-700' : 'bg-gray-100 text-gray-500') }}">2</span>
-                <span class="text-sm font-semibold text-gray-800">{{ __('vehicle.panel.export_step.decl.t') }}</span>
-                <span class="rounded-full border px-2 py-0.5 text-[11px] {{ $__st === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : ($__st === 'next' ? 'border-violet-300 text-violet-700' : 'border-gray-200 text-gray-500') }}">{{ __('vehicle.panel.export_step.decl.r') }}</span>
-            </div>
-            <div class="ml-3 mt-2 border-l-2 {{ $__st === 'done' ? 'border-emerald-200' : 'border-gray-200' }} pb-5 pl-5">
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div><label class="label-base">{{ __('vehicle.field.export_decl_number') }}</label><input wire:model="export_declaration_number" type="text" class="input-base" placeholder="123-12-123456" /></div>
                 {{-- 2026-05-21 — 면장금액 미입력 시 sale_price 자동 복사 (Vehicle::saving 훅). 인코텀즈 차이 등 명시 입력 시 그 값 우선 --}}
                 <div>
@@ -10528,16 +10496,6 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     @endif
                     </x-erp.file-drop>
                 </div>
-                </div>
-            </div>
-            @php $__st = $exStep['ship']; @endphp
-            <div class="flex flex-wrap items-center gap-2">
-                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold {{ $__st === 'done' ? 'bg-emerald-500 text-white' : ($__st === 'next' ? 'border-2 border-violet-500 bg-white text-violet-700' : 'bg-gray-100 text-gray-500') }}">3</span>
-                <span class="text-sm font-semibold text-gray-800">{{ __('vehicle.panel.export_step.ship.t') }}</span>
-                <span class="rounded-full border px-2 py-0.5 text-[11px] {{ $__st === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : ($__st === 'next' ? 'border-violet-300 text-violet-700' : 'border-gray-200 text-gray-500') }}">{{ __('vehicle.panel.export_step.ship.r') }}</span>
-            </div>
-            <div class="ml-3 mt-2 border-l-2 {{ $__st === 'done' ? 'border-emerald-200' : 'border-gray-200' }} pb-5 pl-5">
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div><label class="label-base flex items-center gap-1">{{ __('vehicle.field.shipping_date') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span></label><input wire:model="shipping_date" type="text" data-date class="input-base input-gated" /></div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.vessel') }}</label>
@@ -10556,8 +10514,15 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     @endif
                 </div>
                 <div><label class="label-base">{{ __('vehicle.field.container_number') }}</label><input wire:model="container_number" type="text" class="input-base" /></div>
+                <div><label class="label-base">ETA</label><input wire:model="eta_date" type="text" data-date class="input-base" /></div>
+                <div class="flex items-end">
+                    <label class="flex items-center gap-2 text-sm cursor-pointer">
+                        <input wire:model="is_export_cleared" type="checkbox" class="rounded" /> {{ __('vehicle.field.export_cleared') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span>
+                    </label>
                 </div>
-                {{-- 선박 사진/첨부 (category='shipping' — vehicle_photos, 운영 시 S3). 한도=VehiclePhoto::MAX_SHIPPING. --}}
+            </div>
+
+            {{-- 선박 사진/첨부 (category='shipping' — vehicle_photos, 운영 시 S3). 한도=VehiclePhoto::MAX_SHIPPING. --}}
             <div class="mt-4">
                 <label class="label-base">{{ __('vehicle.panel.sec.ship_photos', ['max' => \App\Models\VehiclePhoto::MAX_SHIPPING]) }}</label>
                 <x-erp.file-drop model="shipPhotoUpload" multiple
@@ -10617,35 +10582,6 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         @endforeach
                 </div>
                 @endif
-            </div>
-            </div>
-            @php $__st = $exStep['sail']; @endphp
-            <div class="flex flex-wrap items-center gap-2">
-                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold {{ $__st === 'done' ? 'bg-emerald-500 text-white' : ($__st === 'next' ? 'border-2 border-violet-500 bg-white text-violet-700' : 'bg-gray-100 text-gray-500') }}">4</span>
-                <span class="text-sm font-semibold text-gray-800">{{ __('vehicle.panel.export_step.sail.t') }}</span>
-                <span class="rounded-full border px-2 py-0.5 text-[11px] {{ $__st === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : ($__st === 'next' ? 'border-violet-300 text-violet-700' : 'border-gray-200 text-gray-500') }}">{{ __('vehicle.panel.export_step.sail.r') }}</span>
-            </div>
-            <div class="ml-3 mt-2 border-l-2 {{ $__st === 'done' ? 'border-emerald-200' : 'border-gray-200' }} pb-5 pl-5">
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div><label class="label-base">ETA</label><input wire:model="eta_date" type="text" data-date class="input-base" /><p class="mt-1 text-[11px] text-gray-400">{{ __('vehicle.panel.export_eta_note') }}</p></div>
-                </div>
-            </div>
-            @php $__st = $exStep['clear']; @endphp
-            <div class="flex flex-wrap items-center gap-2">
-                <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold {{ $__st === 'done' ? 'bg-emerald-500 text-white' : ($__st === 'next' ? 'border-2 border-violet-500 bg-white text-violet-700' : 'bg-gray-100 text-gray-500') }}">5</span>
-                <span class="text-sm font-semibold text-gray-800">{{ __('vehicle.panel.export_step.clear.t') }}</span>
-                <span class="rounded-full border px-2 py-0.5 text-[11px] {{ $__st === 'done' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : ($__st === 'next' ? 'border-violet-300 text-violet-700' : 'border-gray-200 text-gray-500') }}">{{ __('vehicle.panel.export_step.clear.r') }}</span>
-            </div>
-            <div class="ml-3 mt-2 border-l-2 {{ $__st === 'done' ? 'border-emerald-200' : 'border-gray-200' }} pb-5 pl-5">
-                <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <div class="col-span-2 sm:col-span-3">
-                    <label class="flex cursor-pointer flex-wrap items-center gap-2 rounded-md border border-gray-200 bg-white px-3 py-2 text-sm">
-                        <input wire:model="is_export_cleared" type="checkbox" class="rounded" /> {{ __('vehicle.field.export_cleared') }}
-                        <span class="text-[11px] text-gray-400">— {{ __('vehicle.panel.export_clear_hint') }}</span>
-                        <span class="ml-auto text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span>
-                    </label>
-                </div>
-                </div>
             </div>
 
             {{-- 탭 메모 (2026-08-11) — 구 선적·수출통관 탭 메모 두 칸(DB 칸이 따로라 합치지 않는다). 하단 「메모(공통)」와 별개다. --}}

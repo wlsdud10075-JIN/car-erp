@@ -354,19 +354,9 @@ return [
             'bl' => 'B/L',
             'dhl' => 'DHL',
         ],
-        // Export tab steps (2026-10-20) - t = step name, r = what to enter -> which progress status.
-        'export_step' => [
-            'loading' => ['t' => 'Loading', 'r' => 'Loading location -> Loading'],
-            'decl' => ['t' => 'Export declaration', 'r' => 'Upload declaration -> Loading'],
-            'ship' => ['t' => 'Shipping', 'r' => 'Shipping date -> Loaded'],
-            'sail' => ['t' => 'Sailing', 'r' => 'ETA -> Clearing + 🚢'],
-            'clear' => ['t' => 'Clearance', 'r' => 'Tick -> Cleared'],
-        ],
-        'export_eta_note' => 'From the ETA day it shows as "Arriving"',
-        'export_clear_hint' => 'tick once the clearance paperwork is done',
         'export_memo' => ['shipping' => 'Shipping memo', 'clearance' => 'Clearance memo'],
         'sec' => [
-            'export' => 'Export - loading -> declaration -> shipping -> sailing -> clearance',
+            'export' => 'Export',
             'basic' => 'Basic Info',
             'nice_reg' => 'NICE Registration',
             'nice_spec' => 'NICE Specs',
