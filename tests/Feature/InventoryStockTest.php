@@ -6,6 +6,7 @@ use App\Models\Buyer;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -77,6 +78,8 @@ class InventoryStockTest extends TestCase
         $v->update(['sale_price' => 10_000_000, 'sale_date' => '2026-05-15', 'buyer_id' => Buyer::create(['name' => 'bc', 'is_active' => true])->id, 'exchange_rate' => 1, 'bl_loading_location' => '부산항', 'bl_document' => 'bl.pdf']);
         $v->finalPayments()->create(['amount' => 10_000_000, 'type' => 'balance', 'payment_date' => '2026-05-20', 'confirmed_at' => now()]);
         $v->refreshCaches();
+        // 2026-10-20 부터 거래완료면 출고일이 자동으로 채워진다 — 옛 데이터처럼 출고일이 빈 상태를 직접 만든다
+        DB::table('vehicles')->where('id', $v->id)->update(['warehouse_out_date' => null]);
         $this->assertSame('거래완료', $v->fresh()->progress_status_cache);
         $this->assertNull($v->fresh()->warehouse_out_date, '출고일 미입력 상태');
         $this->assertNotContains($v->id, Vehicle::inStock()->pluck('id')->all(), '거래완료 → 출고일 없어도 재고 제외');

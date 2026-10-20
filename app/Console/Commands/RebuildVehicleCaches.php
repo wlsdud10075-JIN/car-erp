@@ -27,6 +27,8 @@ class RebuildVehicleCaches extends Command
                         'progress_status_cache' => $vehicle->progress_status,
                         'receivable_risk' => $vehicle->receivable_risk_computed,
                         'sale_unpaid_amount_krw_cache' => $krw !== null ? (int) round($krw) : null,
+                        // 🚚 거래완료인데 출고일 빈 차 — 훅을 안 거친 경로(입금 저장·적재)의 마지막 그물 (2026-10-20)
+                        ...$vehicle->autoWarehouseOutValues(),
                     ]);
                     $count++;
                 }
