@@ -368,16 +368,103 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->accumSearchOpen = ! $this->accumSearchOpen;
     }
 
+    /** 한 번 검색에 쌓는 상한 — 「1」처럼 넓은 검색어로 수천 대가 쌓이지 않게. */
+    private const ACCUM_MAX_PER_SEARCH = 100;
+
     /**
-     * 누적검색 (jin 2026-07-09 (a)안) — 담기 아니라 "목록 검색". 입력어로 메인 목록을 필터링하고,
-     * 결과에서 체크박스로 선택하면 shipDocIds 에 담겨 칩(태그)으로 누적된다. 검색을 바꿔도 칩은 유지.
+     * 누적검색 (🔀 jin 2026-10-21 재설계) — 검색할 때마다 걸린 차를 **목록에 쌓는다**.
+     *   1번 차 검색 → 2번 차 검색 → 3번 차 검색 = 목록에 3대.
+     *   구 (a)안(07-09)은 검색어로 목록을 갈아끼워서, 체크한 차만 칩으로 남았다(jin «체크할 때만 누적이 된다»).
+     *   - 쌓인 셋 = `ids`(URL ?ids=). 목록 필터 체인(filteredVehicleQuery)이 이미 그걸로 좁힌다 — 새 축을 만들지 않는다.
+     *   - 찾는 범위 = 지금 화면 필터 그대로(담당 범위·진행상태 등) — 담았는데 목록에 안 보이는 차가 없게.
+     *   - 여러 대가 걸리면 전부(jin). 이미 쌓인 차는 다시 안 넣는다.
+     *   - 일괄 작업(선적요청 묶기·서류) 대상은 종전대로 **체크해야** 들어간다(jin).
      */
     public function searchAccum(): void
     {
         $term = SearchTerm::of($this->accumSearchTerm);
+        if ($term === '') {
+            return;
+        }
+
+        $kept = $this->accumIdList();
+        [$search, $vin, $ids] = [$this->search, $this->vinSearch, $this->ids];
+        // 차번호 OR 차대번호 통합검색(종전 그대로). 쌓인 셋 밖에서 찾아야 하므로 ids 는 잠시 비운다.
         $this->search = $term;
-        $this->vinSearch = $term;   // 선적요청 검색은 차대번호(VIN)로도 찾음 (item 3 분리 후에도 accum은 통합 유지)
+        $this->vinSearch = $term;
+        $this->ids = '';
+        try {
+            $found = $this->filteredVehicleQuery()->limit(self::ACCUM_MAX_PER_SEARCH + 1)
+                ->pluck('id')->map(fn ($id) => (int) $id)->all();
+        } finally {
+            [$this->search, $this->vinSearch, $this->ids] = [$search, $vin, $ids];
+        }
+
+        if ($found === []) {
+            $this->dispatch('notify', message: __('vehicle.accum.none', ['term' => $term]), type: 'error');
+
+            return;
+        }
+        if (count($found) > self::ACCUM_MAX_PER_SEARCH) {
+            $this->dispatch('notify', message: __('vehicle.accum.too_many', ['max' => self::ACCUM_MAX_PER_SEARCH]), type: 'error');
+
+            return;
+        }
+
+        $new = array_values(array_diff($found, $kept));
+        $this->ids = implode(',', array_merge($kept, $new));
+        // 메인 검색칸이 남아 있으면 쌓인 셋과 겹쳐(AND) 방금 쌓은 차가 가려진다 — 비운다.
+        $this->search = '';
+        $this->vinSearch = '';
+        $this->accumSearchTerm = '';
+        unset($this->vehicles);
         $this->resetPage();
+
+        $dup = count($found) - count($new);
+        $this->dispatch('notify', type: $new === [] ? 'warning' : 'success', message: $new === []
+            ? __('vehicle.accum.already', ['count' => $dup])
+            : __('vehicle.accum.added', ['count' => count($new), 'total' => count($kept) + count($new)])
+                .($dup > 0 ? ' '.__('vehicle.accum.dup_tail', ['count' => $dup]) : ''));
+    }
+
+    /** 쌓인 차량 id (순서 = 쌓인 순서). */
+    private function accumIdList(): array
+    {
+        return array_values(array_unique(array_filter(array_map('intval', explode(',', $this->ids)))));
+    }
+
+    /** 쌓인 차 하나 빼기. 다 빠지면 목록이 평소대로 돌아온다. */
+    public function removeAccumVehicle(int $id): void
+    {
+        $this->ids = implode(',', array_values(array_diff($this->accumIdList(), [$id])));
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
+    /** 쌓인 차 전부 비우기. 체크한 선택(shipDocIds)은 건드리지 않는다 — 그건 아래 액션바의 [선택 해제]. */
+    public function clearAccum(): void
+    {
+        $this->ids = '';
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
+    /**
+     * 쌓인 차량 칩 (쌓인 순서). `ids` 는 URL 로도 들어오므로 **볼 수 있는 차만** 그린다
+     * (영업·관리가 남의 차 번호를 ?ids= 로 보지 않게 — 목록은 filteredVehicleQuery 가 이미 거른다).
+     */
+    #[Computed]
+    public function accumVehicles()
+    {
+        $order = array_flip($this->accumIdList());
+        if ($order === []) {
+            return collect();
+        }
+        $user = auth()->user();
+
+        return Vehicle::whereIn('id', array_keys($order))->get(['id', 'vehicle_number', 'salesman_id'])
+            ->filter(fn ($v) => $user?->canScopeVehicle($v))
+            ->sortBy(fn ($v) => $order[$v->id])->values();
     }
 
     public function removeFromAccumulation(int $id): void
@@ -2592,6 +2679,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'count' => array_sum(array_column($byCurrency, 'cnt')),
             'sum' => array_sum(array_column($byCurrency, 'freight')),
             'sale_total_sum' => array_sum(array_column($byCurrency, 'sale_total')),
+            // 🧾 운임비 USD 기록칸(순수 메모)은 차량 통화와 무관하게 늘 USD 라 통화별로 안 쪼갠다 (jin 2026-10-21).
+            'freight_usd_sum' => array_sum(array_column($byCurrency, 'freight_usd')),
         ];
     }
 
@@ -2629,6 +2718,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 // ⚠️ 같은 항이 SALE_TOTAL_SQL(정렬식)에도 있다 — 항을 바꾸면 같이 (§8 #45).
                 .'COALESCE(SUM(COALESCE(sale_price,0)+COALESCE(transport_fee,0)+COALESCE(sale_other_costs,0)'
                 .'+COALESCE(commission,0)+COALESCE(auto_loading,0)-COALESCE(tax_dc,0)),0) AS sale_total, '
+                .'COALESCE(SUM(COALESCE(transport_fee_usd,0)),0) AS freight_usd, '
+                // 📉 미수금 (jin 2026-10-21) — 받은 돈을 뺀 **남은** 미수만. 과입금(음수)은 더하지 않는다.
+                //   차량 통화 단위 = 미수 KRW 캐시 ÷ 판매환율(캐시 = sale_unpaid_amount × exchange_rate, Vehicle::refreshCaches).
+                //   🚫 행마다 accessor 를 돌리지 말 것 — 필터 전체(수천 대)를 훑게 된다(§8 #79).
+                //   환율 미입력 외화 차는 캐시가 NULL 이라 빠진다(채권관리 KPI 와 같다).
+                .'COALESCE(SUM(CASE WHEN sale_unpaid_amount_krw_cache > 0 THEN '
+                ."CASE WHEN COALESCE(currency,'KRW') = 'KRW' THEN sale_unpaid_amount_krw_cache "
+                .'ELSE sale_unpaid_amount_krw_cache * 1.0 / NULLIF(exchange_rate,0) END ELSE 0 END),0) AS unpaid, '
                 .'COUNT(*) AS cnt'
             )
             ->groupBy('cur')
@@ -2638,6 +2735,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'currency' => $r->cur ?: 'KRW',
                 'freight' => (int) $r->freight,
                 'sale_total' => (int) $r->sale_total,
+                'freight_usd' => (int) $r->freight_usd,
+                'unpaid' => (int) round((float) $r->unpaid),
                 'cnt' => (int) $r->cnt,
             ])->all();
     }
@@ -7617,6 +7716,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     $ftc = collect($this->freightTotalsByCurrency);
     $freightCurs = $ftc->filter(fn ($c) => $c['freight'] !== 0)->values();
     $saleCurs = $ftc->filter(fn ($c) => $c['sale_total'] !== 0)->values();
+    $unpaidCurs = $ftc->filter(fn ($c) => $c['unpaid'] !== 0)->values();
 @endphp
 <div class="card-tight inline-flex flex-wrap items-start gap-x-5 gap-y-2">
     <div class="flex items-baseline gap-1.5">
@@ -7661,6 +7761,38 @@ new #[Layout('components.layouts.app')] class extends Component {
         @if($saleCurs->count() > 1)
         <div class="pl-6 text-[10px] text-gray-400">
             {{ $saleCurs->map(fn ($c) => $c['currency'].' '.number_format($c['sale_total']))->implode(' · ') }}
+        </div>
+        @endif
+    </div>
+    {{-- 🧾 운임비 USD 기록용 합 (jin 2026-10-21) — 판매탭 「운임비 USD」 칸(계산 미포함 메모)의 합. 늘 USD.
+         🅿️ 0 이면 안 보인다 — 그 칸을 안 쓰는 회사의 헤더를 어지럽히지 않게(발송비합과 같은 규칙). --}}
+    @if($ft['freight_usd_sum'] > 0)
+    <span class="h-4 w-px bg-gray-200"></span>
+    <div class="flex items-baseline gap-1.5" data-stat-freight-usd>
+        <span class="text-sm">🧾</span>
+        <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.freight_usd') }}</span>
+        <span class="text-sm font-bold text-gray-800">USD {{ number_format($ft['freight_usd_sum']) }}</span>
+    </div>
+    @endif
+    <span class="h-4 w-px bg-gray-200"></span>
+    {{-- 📉 미수금 합 — 통화별 (jin 2026-10-21) — 받은 돈을 뺀 남은 미수만(과입금 제외). 단일 통화면 prefix. --}}
+    <div class="flex flex-col gap-0.5" data-stat-unpaid title="{{ __('vehicle.stat.unpaid_title') }}">
+        <div class="flex items-baseline gap-1.5">
+            <span class="text-sm">📉</span>
+            <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.unpaid') }}</span>
+            <span class="text-sm font-bold {{ $unpaidCurs->isEmpty() ? 'text-gray-800' : 'text-red-600' }}">
+                @if($unpaidCurs->count() === 1)
+                    {{ $unpaidCurs->first()['currency'] }} {{ number_format($unpaidCurs->first()['unpaid']) }}
+                @elseif($unpaidCurs->isEmpty())
+                    0
+                @else
+                    {{ __('vehicle.stat.currencies', ['n' => $unpaidCurs->count()]) }}
+                @endif
+            </span>
+        </div>
+        @if($unpaidCurs->count() > 1)
+        <div class="pl-6 text-[10px] text-gray-400">
+            {{ $unpaidCurs->map(fn ($c) => $c['currency'].' '.number_format($c['unpaid']))->implode(' · ') }}
         </div>
         @endif
     </div>
@@ -7711,7 +7843,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
 </div>
 
-{{-- 선적요청 배치 딥링크 활성 — 그 차량만 조회 중임을 안내 + 전체 복귀 --}}
+{{-- ?ids= 활성(선적요청 배치 딥링크 · 누적검색 2026-10-21) — 그 차량만 조회 중임을 안내 + 전체 복귀 --}}
 @if($ids !== '')
 <div class="flex items-center justify-between rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm">
     <span class="font-semibold text-teal-800">{{ __('vehicle.batch_filter', ['count' => count(array_filter(explode(',', $ids)))]) }}</span>
@@ -7911,6 +8043,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         <span class="flex items-center gap-2">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z"/></svg>
             {{ __('vehicle.accum.title') }}
+            @if($this->accumVehicles->isNotEmpty())
+                <span class="pill-count">{{ __('vehicle.accum.pill', ['count' => $this->accumVehicles->count()]) }}</span>
+            @endif
             @if(count($shipDocIds) > 0)
                 <span class="pill-count">{{ count($shipDocIds) }}</span>
             @endif
@@ -7925,7 +8060,29 @@ new #[Layout('components.layouts.app')] class extends Component {
             <input wire:model="accumSearchTerm" wire:keydown.enter.prevent="searchAccum" type="text"
                    placeholder="{{ __('vehicle.accum.placeholder') }}" class="input-filter w-52" />
             <button type="button" wire:click="searchAccum" class="btn-search">{{ __('vehicle.accum.search_btn') }}</button>
+            @if($this->accumVehicles->isNotEmpty())
+                <button type="button" wire:click="clearAccum" class="text-xs text-gray-500 hover:underline">{{ __('vehicle.accum.clear') }}</button>
+            @endif
         </div>
+        {{-- 쌓인 차 (jin 2026-10-21) — 목록이 곧 이 차들이다. × = 목록에서 빼기(체크 선택과는 별개). --}}
+        @if($this->accumVehicles->isNotEmpty())
+        <div data-accum-list>
+            <p class="mb-1 text-xs font-semibold text-indigo-800">
+                {{ __('vehicle.accum.list', ['count' => $this->accumVehicles->count()]) }}
+                @if($this->vehicles->total() < $this->accumVehicles->count())
+                    <span class="font-normal text-amber-700">· {{ __('vehicle.accum.hidden', ['count' => $this->accumVehicles->count() - $this->vehicles->total()]) }}</span>
+                @endif
+            </p>
+            <div class="flex flex-wrap gap-1.5">
+                @foreach($this->accumVehicles as $av)
+                    <span class="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-white px-2 py-0.5 text-xs font-medium text-indigo-800">
+                        {{ $av->vehicle_number }}
+                        <button type="button" wire:click="removeAccumVehicle({{ $av->id }})" class="leading-none text-indigo-400 hover:text-indigo-900" title="{{ __('vehicle.accum.remove') }}">&times;</button>
+                    </span>
+                @endforeach
+            </div>
+        </div>
+        @endif
     </div>
     @endif
 </div>
@@ -8607,6 +8764,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         if ($wire.dateFrom) p.set('dateFrom', $wire.dateFrom);
                         if ($wire.dateTo) p.set('dateTo', $wire.dateTo);
                         if ($wire.salesmanId) p.set('salesmanId', $wire.salesmanId);
+                        {{-- 누적검색·선적요청 딥링크(?ids=) — 안 넘기면 화면은 3대인데 엑셀은 전체가 나온다. --}}
+                        if ($wire.ids) p.set('ids', $wire.ids);
                     }
                     window.location.href = '{{ route('erp.vehicles.export') }}?' + p.toString();
                     this.open = false;

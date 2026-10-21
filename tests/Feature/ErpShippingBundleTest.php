@@ -110,11 +110,12 @@ class ErpShippingBundleTest extends TestCase
         $this->assertSame(0, ShippingRequest::count());
     }
 
-    public function test_search_accum_filters_list_not_adds(): void
+    public function test_search_accum_stacks_into_the_list_not_the_selection(): void
     {
-        // (a)안 (jin 2026-07-09) — 누적검색 = 목록 검색(담기 아님). 검색만 하고 선택은 체크박스.
+        // 🔀 jin 2026-10-21 — 누적검색 = 찾은 차를 목록에 쌓는다(ids). 일괄 작업 선택은 종전대로 체크박스.
+        //   쌓기 자체의 회귀 = VehicleAccumSearchStackTest.
         $sm = Salesman::create(['name' => '김영업', 'is_active' => true, 'type' => 'employee']);
-        Vehicle::create(['vehicle_number' => '88아8888', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
+        $v = Vehicle::create(['vehicle_number' => '88아8888', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
         Vehicle::create(['vehicle_number' => '22나2222', 'sales_channel' => 'export', 'salesman_id' => $sm->id]);
 
         $this->actingAs($this->clearanceUser());
@@ -122,7 +123,7 @@ class ErpShippingBundleTest extends TestCase
         Volt::test('erp.vehicles.index')
             ->set('accumSearchTerm', '88아8888')
             ->call('searchAccum')
-            ->assertSet('search', '88아8888')   // 목록 검색으로 반영
+            ->assertSet('ids', (string) $v->id)   // 목록에 쌓임
             ->assertSet('shipDocIds', [])        // 검색은 담지 않음
             ->assertSee('88아8888')
             ->assertDontSee('22나2222');
