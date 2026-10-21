@@ -84,11 +84,15 @@ class PayoutGapsTest extends TestCase
         $this->assertStringContainsString('판매가', implode(' ', $changes[0]['hints']), '무엇이 바뀌었는지 감사로그로 붙는다');
         $this->assertContains('settlement_pay', $batch->fresh()->changedFieldsBySalesman($batch->fresh()->breakdownForDisplay())[$sm->id] ?? []);
 
-        // 승인 화면(서명 링크)과 월정산 화면에 같은 목록이 보인다
+        // 월정산 탭에만 보이고, 대표 알림톡 승인 링크엔 안 보인다(jin 2026-10-21)
         $admin = $this->user('super');
-        $html = $this->get(URL::temporarySignedRoute('payout.approve.show', now()->addHour(), ['batch' => $batch->id, 'u' => $admin->id]))->getContent();
-        $this->assertStringContainsString('data-payout-changes', $html);
-        $this->assertMatchesRegularExpression('/200,000 → <b>100,000<\/b>/u', $html);
+        $html = $this->get(\Illuminate\Support\Facades\URL::temporarySignedRoute('payout.approve.show', now()->addHour(), ['batch' => $batch->id, 'u' => $admin->id]))->getContent();
+        $this->assertStringNotContainsString('data-payout-changes', $html);
+        $this->assertStringNotContainsString('data-submitted-changed', $html);
+        $this->actingAs($admin);
+        $tab = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->html();
+        $this->assertStringContainsString('data-payout-changes', $tab);
+        $this->assertMatchesRegularExpression('/200,000 → <b>100,000<\/b>/u', $tab);
     }
 
     public function test_final_approval_re_measures_the_total_and_keeps_the_change_in_history(): void

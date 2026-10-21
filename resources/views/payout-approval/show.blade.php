@@ -119,24 +119,14 @@
     @endif
 
     @isset($v3)
-    {{-- 🧾 제출 뒤 실지급이 바뀐 정산 (jin 2026-10-21) — 제출 때 박제 ↔ 지금(끝난 배치는 승인 때) --}}
-    @php $payoutChanges = $batch->settlementPayoutChanges($v3); @endphp
-    @if($payoutChanges !== [])
-    <div class="card" style="background:#fffbeb;border-color:#fcd34d;" data-payout-changes>
-        <div class="sub" style="margin-bottom:6px;">{{ __('payout_batch.changes.title', ['n' => count($payoutChanges)]) }}</div>
-        <div class="cap" style="color:#92400e;font-size:12px;margin-bottom:6px;">{{ __('payout_batch.changes.hint') }}</div>
-        @foreach($payoutChanges as $c)
-        <div class="row bd" data-payout-change="{{ $c['vehicle_number'] }}"><span class="k"><b>{{ $c['name'] }}</b> {{ $c['vehicle_number'] }}@foreach($c['hints'] as $h)<br><span style="color:#6b7280;font-size:12px;">{{ $h }}</span>@endforeach</span><span class="v">{{ number_format($c['before']) }} → <b>{{ number_format($c['after']) }}</b></span></div>
-        @endforeach
-    </div>
-    @endif
+    {{-- 🧾 「제출 뒤 바뀐 정산」은 월정산 탭에서만 보인다 — 대표 알림톡 승인 링크엔 안 띄운다(jin 2026-10-21). --}}
     <div class="card">
         @if($batch->status === 'rejected')<div class="err" data-rejected-kept>{{ __('payout_batch.steps.rejected_kept') }}</div>@endif
         <div class="sub" style="margin-bottom:8px;">담당자별 실지급 <span style="color:#9ca3af;font-weight:400;">— 이름을 누르면 계산 단계</span></div>
         {{-- 🧾 월정산 v3 — ERP 월정산 화면과 **같은 카드**(components/payout/person-card). JS 없이 <details> 로 펼친다. --}}
         <div style="display:grid;gap:8px;">
             @foreach($v3['people'] as $person)
-            <x-payout.person-card :person="$person" mode="batch" :changed="$changed[$person['salesman_id']] ?? []" />
+            <x-payout.person-card :person="$person" mode="batch" :changed="$changed[$person['salesman_id']] ?? []" :show-submitted="false" />
             @endforeach
         </div>
         {{-- 전체 항목(25열)이 필요하면 엑셀로 (jin 2026-08-04). 서명 링크라 로그인 없이 받는다. --}}
