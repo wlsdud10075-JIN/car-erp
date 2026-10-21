@@ -178,6 +178,19 @@ class PayoutGapsTest extends TestCase
         $this->assertSame(100_000, $s->fresh()->retieredPerUnitAtClose(), '지급 때 값 = 그때 자동 등급이면 자동으로 본다');
     }
 
+    /** heymanerp 실측(2026-10-21): 6월 귀속 · 7/8 지급 무사백 6대 — 입력은 그대로인데 8/6 환율 규칙 변경으로만 총마진이 달라졌다. 다시 매기지 않는다. */
+    public function test_paid_before_the_receipt_rate_rule_is_not_re_tiered(): void
+    {
+        $sm = $this->tierEmployee();
+        [$v, $s] = $this->paidEmployeeSettlement($sm, 12_000_000);
+        $snap = $s->confirmed_snapshot;
+        unset($snap['per_unit_auto']);
+        $s->forceFill(['confirmed_snapshot' => $snap, 'paid_at' => '2026-07-08 10:00:00'])->saveQuietly();
+
+        $v->update(['sale_price' => 10_000_000]);
+        $this->assertNull($s->fresh()->retieredPerUnitAtClose());
+    }
+
     // ── ③ 판매수당 · 헤이맨 정산금 · 퇴직연금 1/12 ──────────────────────────
 
     public function test_musabaek_september_numbers(): void

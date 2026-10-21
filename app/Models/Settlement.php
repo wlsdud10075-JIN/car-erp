@@ -1137,9 +1137,13 @@ class Settlement extends Model
      * - 재무가 **직접 넣은** 건당액은 다시 매기지 않는다(null) — 박제의 `per_unit_auto`. 그 키가 없는 옛 박제는
      *   「지급 때 값 = 그때 총마진의 자동 등급」이면 자동으로 본다.
      * - 박제가 없는 행(엑셀 적재분)은 기준이 없어 null — closeOne 의 「스냅샷 없으면 이월 없음」과 같은 선.
+     * - 2026-08-06(정산 환율 규칙 변경) 전에 지급된 옛 박제는 null — 규칙 차이가 등급 차이로 둔갑한다.
      *
      * @return int|null 다시 매긴 건당액. 대상이 아니면 null
      */
+    /** 1차 정산 환율이 실입금환율로 바뀐 날 (CLAUDE.md 「정산 마진 공식」 2026-08-06). 이 전 지급분은 2차 마감 재평가 대상이 아니다. */
+    public const RECEIPT_RATE_SINCE = '2026-08-06';
+
     public function retieredPerUnitAtClose(): ?int
     {
         if ($this->settlement_type !== 'per_unit' || ! is_array($this->confirmed_snapshot)) {
@@ -1147,6 +1151,11 @@ class Settlement extends Model
         }
         $snap = $this->confirmed_snapshot;
         if (! isset($snap['total_margin'], $snap['settlement_amount'])) {
+            return null;
+        }
+        // 🚫 정산 환율 규칙이 바뀌기(2026-08-06 판매환율 → 실입금환율) 전에 지급된 건은 다시 매기지 않는다.
+        //    지금 총마진은 새 규칙으로 계산돼 「입력은 그대로인데 등급만 바뀌는」 거짓 차액이 생긴다(heymanerp 6월 귀속 무사백 6대, 실측 2026-10-21).
+        if (! array_key_exists('per_unit_auto', $snap) && ($this->paid_at === null || $this->paid_at->lt(self::RECEIPT_RATE_SINCE))) {
             return null;
         }
         $auto = array_key_exists('per_unit_auto', $snap)
