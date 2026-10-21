@@ -47,8 +47,8 @@ class PayoutApprovalController extends Controller
             'breakdown' => $this->breakdown($batch),
             'profit' => $batch->profitStats(),
             // 🧾 월정산 v3 — 사람 카드·합계(급여 차감 후 회사 순이익). 승인 금액(total_payout)은 종전 그대로.
-            'v3' => $v3 = $batch->breakdownForDisplay(),
-            'changed' => $batch->changedFieldsBySalesman($v3),
+            'v3' => $batch->breakdownForDisplay(),
+            'changed' => $batch->changedFieldsBySalesman(),
             'notice' => null,
             'exportUrl' => $this->exportUrl($batch, $user),
             'error' => null,
@@ -130,7 +130,7 @@ class PayoutApprovalController extends Controller
                 'decideUrl' => $decideUrl, 'breakdown' => $this->breakdown($batch),
                 'profit' => $batch->profitStats(),
                 'exportUrl' => $this->exportUrl($batch, $user),
-                'v3' => $v3 = $batch->breakdownForDisplay(), 'changed' => $batch->changedFieldsBySalesman($v3), 'notice' => null,
+                'v3' => $batch->breakdownForDisplay(), 'changed' => $batch->changedFieldsBySalesman(), 'notice' => null,
                 'error' => '반려하려면 사유를 입력해 주세요.',
             ]);
         }
@@ -164,7 +164,7 @@ class PayoutApprovalController extends Controller
                 'batch' => $batch, 'user' => $user, 'decidable' => $batch->canDecide($user),
                 'decideUrl' => $decideUrl, 'breakdown' => $this->breakdown($batch),
                 'profit' => $batch->profitStats(), 'exportUrl' => $this->exportUrl($batch, $user),
-                'v3' => $v3 = $batch->breakdownForDisplay(), 'changed' => $batch->changedFieldsBySalesman($v3),
+                'v3' => $batch->breakdownForDisplay(), 'changed' => $batch->changedFieldsBySalesman(),
                 'error' => $error, 'notice' => $notice,
             ]);
         }

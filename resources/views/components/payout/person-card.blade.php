@@ -1,7 +1,8 @@
+{{-- showSubmitted: 차량 줄의 「제출 때 ₩…」 표시 — 월정산 탭만(대표 승인 링크는 false, jin 2026-10-21) --}}
 {{-- 🧾 월정산 사람 카드 (월정산 v3, 2026-10-09) — 정산관리 담당자별 합계 · 월정산 · 폰 승인 링크가 **같은 카드**를 쓴다.
      숫자는 PersonPayoutBreakdown 한 곳(§8 #44·#45). 접기/펼치기는 <details> — 승인 링크 페이지엔 JS(Alpine)가 없다.
      mode: batch(월정산·승인) / preview(정산관리, 인센티브는 제출 때) · changed: 상신 뒤 바뀐 칸 키(노란 표시) --}}
-@props(['person', 'mode' => 'batch', 'open' => false, 'changed' => []])
+@props(['person', 'mode' => 'batch', 'open' => false, 'changed' => [], 'showSubmitted' => true])
 @php
     $p = $person;
     $t = $p['type'];
@@ -219,7 +220,7 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         @foreach($p['vehicles'] as $v)
-                        @php $sub = $v['submitted_payout'] ?? null; $subChanged = $sub !== null && (int) $sub !== (int) $v['actual_payout']; @endphp
+                        @php $sub = $v['submitted_payout'] ?? null; $subChanged = $showSubmitted && $sub !== null && (int) $sub !== (int) $v['actual_payout']; @endphp
                         <tr class="text-gray-600 {{ $subChanged ? 'bg-amber-50' : '' }}" @if($subChanged) data-submitted-changed title="{{ __('payout_card.vh_submitted_changed', ['amount' => number_format((int) $sub)]) }}" @endif data-vehicle-number="{{ $v['vehicle_number'] }}" data-total_margin="{{ (int) $v['total_margin'] }}" data-margin_rate="{{ $v['margin_rate'] === null ? '' : (float) $v['margin_rate'] }}" data-type_label="{{ $v['type_label'] ?? '' }}" data-actual_payout="{{ (int) $v['actual_payout'] }}">
                             <td class="py-1 px-1 text-center font-medium text-gray-700">{{ $v['vehicle_number'] }}</td>
                             <td class="py-1 px-1 text-center font-mono {{ $v['total_margin'] < 0 ? 'text-red-600' : '' }}">{{ number_format($v['total_margin']) }}</td>
