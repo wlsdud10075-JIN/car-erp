@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Services\BizmAlimtalkService;
 use App\Services\Payout\BatchPayoutBreakdown;
 use App\Support\AlimtalkRecipients;
+use App\Support\ColumnLabel;
 use App\Support\SettlementCkBatch;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -205,13 +206,89 @@ class SettlementPayoutBatch extends Model
         return $last->steps->mapWithKeys(fn ($st) => [$st->title => (int) $st->approver_user_id])->all();
     }
 
-    /** 상신 뒤 바뀐 칸 — salesman_id => [field, …]. 카드가 노란 표시에 쓴다. */
-    public function changedFieldsBySalesman(): array
+    /**
+     * 상신 뒤 바뀐 칸 — salesman_id => [field, …]. 카드가 노란 표시에 쓴다.
+     * `$bd`(카드 데이터)를 주면 「제출 뒤 실지급이 바뀐 정산」이 있는 사람에 'settlement_pay' 를 더한다(2026-10-21).
+     */
+    public function changedFieldsBySalesman(?array $bd = null): array
     {
         $changes = $this->relationLoaded('batchChanges') ? $this->batchChanges : $this->batchChanges()->get();
 
-        return $changes->whereNotNull('salesman_id')->groupBy('salesman_id')
+        $out = $changes->whereNotNull('salesman_id')->groupBy('salesman_id')
             ->map(fn ($g) => $g->pluck('field')->unique()->values()->all())->all();
+        if ($bd !== null) {
+            foreach (self::settlementPayoutChangesIn($bd) as $c) {
+                $out[$c['salesman_id']] = array_values(array_unique([...($out[$c['salesman_id']] ?? []), 'settlement_pay']));
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * 🧾 **제출 뒤 실지급이 바뀐 정산** (jin 2026-10-21 «바뀐걸 찾아낼 수 있는 방안»).
+     *
+     * 기준 = 제출 때 박제(`settlements.payout_submitted_krw`) ↔ 카드의 차량 실지급(진행 중 = 지금 값, 끝난 배치 = 승인 때 박제).
+     * 🔑 훅으로 잡지 않고 **값을 비교**한다 — 판매가·환율·비용·잔금·일괄 도구 어느 길로 바뀌어도 잡힌다(§8 #102 「계기」 문제).
+     * 무엇이 바뀌었는지는 그 차의 감사로그(제출 뒤 회계 칸)로 붙인다.
+     *
+     * @return list<array{salesman_id:int, name:string, settlement_id:int, vehicle_number:string, before:int, after:int, hints:list<string>}> hints = 「판매가 9,947 → 9,317 (10-12 이름)」
+     */
+    public function settlementPayoutChanges(?array $bd = null): array
+    {
+        $rows = self::settlementPayoutChangesIn($bd ?? $this->breakdownForDisplay());
+        if ($rows === []) {
+            return [];
+        }
+        $vehicleIds = Settlement::withTrashed()->whereIn('id', array_column($rows, 'settlement_id'))->pluck('vehicle_id', 'id');
+        $logs = AuditLog::query()
+            ->where('auditable_type', Vehicle::class)
+            ->whereIn('auditable_id', $vehicleIds->values()->filter()->all())
+            ->where('action', 'updated')
+            ->whereIn('column_name', self::PAYOUT_DRIVER_COLUMNS)
+            ->when($this->submitted_at, fn ($q) => $q->where('created_at', '>=', $this->submitted_at))
+            ->when($this->decided_at, fn ($q) => $q->where('created_at', '<=', $this->decided_at))
+            ->with('user:id,name')->orderBy('id')->get()->groupBy('auditable_id');
+        foreach ($rows as &$r) {
+            $vid = (int) ($vehicleIds[$r['settlement_id']] ?? 0);
+            // 예: 「판매가 9,947 → 9,317 (10-12 홍길동)」 — 숫자는 콤마, 소수 .00 은 떼고
+            $num = fn ($v) => is_numeric($v) ? number_format((float) $v, fmod((float) $v, 1.0) == 0.0 ? 0 : 2) : (string) $v;
+            $r['hints'] = ($logs->get($vid) ?? collect())->map(fn (AuditLog $a) => ColumnLabel::column('vehicles', $a->column_name)
+                .' '.$num($a->old_value).' → '.$num($a->new_value)
+                .' ('.$a->created_at?->format('m-d').($a->user?->name ? ' '.$a->user->name : '').')')->values()->all();
+        }
+        unset($r);
+
+        return $rows;
+    }
+
+    /** 실지급을 움직이는 차량 칸 — 「무엇이 바뀌었나」 힌트용(감사 대상 칸만 잡힌다). */
+    public const PAYOUT_DRIVER_COLUMNS = [
+        'sale_price', 'commission', 'auto_loading', 'tax_dc', 'exchange_rate', 'currency',
+        'purchase_price', 'selling_fee',
+        'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry', 'cost_shoring',
+        'cost_insurance', 'cost_transfer', 'cost_parking', 'cost_extra1', 'cost_extra2',
+    ];
+
+    /** 카드 데이터에서 「제출 때 ≠ 지금」 차량만 뽑는다(쿼리 없음). */
+    public static function settlementPayoutChangesIn(array $bd): array
+    {
+        $out = [];
+        foreach ($bd['people'] ?? [] as $p) {
+            foreach ($p['vehicles'] ?? [] as $v) {
+                $before = $v['submitted_payout'] ?? null;
+                if ($before === null || (int) $before === (int) $v['actual_payout']) {
+                    continue;
+                }
+                $out[] = [
+                    'salesman_id' => (int) $p['salesman_id'], 'name' => (string) $p['name'],
+                    'settlement_id' => (int) $v['id'], 'vehicle_number' => (string) $v['vehicle_number'],
+                    'before' => (int) $before, 'after' => (int) $v['actual_payout'], 'hints' => [],
+                ];
+            }
+        }
+
+        return $out;
     }
 
     public function recordChange(User $by, ?int $salesmanId, string $field, ?int $before, ?int $after, ?string $note = null): SettlementPayoutBatchChange
@@ -625,6 +702,10 @@ class SettlementPayoutBatch extends Model
                 'submitted_at' => now(),
             ]);
             Settlement::whereIn('id', $ids)->update(['payout_batch_id' => $batch->id]);
+            // 🧾 제출 때 실지급액 박제 (jin 2026-10-21) — 결재 중에 판매가 등이 바뀌면 「제출 때 ↔ 지금」으로 띄운다(settlementPayoutChanges).
+            foreach ($settlements as $s) {
+                Settlement::whereKey($s->id)->update(['payout_submitted_krw' => (int) $s->actual_payout]);
+            }
             foreach ($steps as $i => $st) {
                 $batch->steps()->create(['seq' => $i + 1, 'title' => $st['title'], 'approver_user_id' => $st['user_id'], 'status' => 'pending']);
             }
@@ -734,6 +815,9 @@ class SettlementPayoutBatch extends Model
             }
 
             if ($final) {
+                // 🧾 총액을 승인 시점 값으로 다시 잰다 (jin 2026-10-21) — 제출 뒤 판매가 등이 바뀌면 제출 때 총액이 그대로 남아
+                //    완료 알림톡 「총액」과 실제 지급이 어긋났다(ssancarerp #5 196다2669 20만 → 10만).
+                $this->recomputeTotal();
                 // 🧾 박제 — 최종 승인 시점의 사람별 카드(급여·2차 마감이 뒤에 바뀌어도 역사는 그대로). execute 전에 찍는다.
                 $this->breakdown_snapshot = BatchPayoutBreakdown::forBatch($this);
                 $this->status = self::STATUS_APPROVED;
@@ -859,7 +943,7 @@ class SettlementPayoutBatch extends Model
             $this->save();
 
             // 멤버 정산 배치 해제 → 재배치 가능 (settlement_status=confirmed 유지)
-            $this->settlements()->update(['payout_batch_id' => null]);
+            $this->settlements()->update(['payout_batch_id' => null, 'payout_submitted_krw' => null]);
             // 💸 이 배치가 가져갔던 미청산 이월을 되돌린다 — 안 되돌리면 반려된 배치가 돈을 「처리한 것」이 되어
             //    다음 제출에서 그 이월이 안 나온다(조정 줄은 반려 배치의 역사로 남는다). (jin 2026-10-06)
             CarryoverClearance::where('payout_batch_id', $this->id)->delete();

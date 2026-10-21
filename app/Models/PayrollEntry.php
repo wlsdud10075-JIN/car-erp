@@ -31,12 +31,28 @@ class PayrollEntry extends Model
         '특별상여', '연차수당', '업무분담지원금', '경력수당', '판매수당', '직책수당', '영업지원', '헤이딜러', 'ERP이용수당',
     ];
 
+    /**
+     * 판매수당 — 급여대장이 정산금(+헤이맨 몫·조정 − 퇴직연금 1/12)을 싣는 줄 (jin 2026-10-21).
+     * ERP 는 정산금을 따로 더하므로 사내직원 월정산 급여 합계에선 이 줄을 빼고, 대조용으로만 쓴다(PersonPayoutBreakdown).
+     */
+    public const SALES_COMMISSION = '판매수당';
+
     /** 직접 추가 행의 sort 시작값 — 고정 항목 뒤에 온다. */
     public const CUSTOM_SORT_BASE = 100;
 
     public function salesman(): BelongsTo
     {
         return $this->belongsTo(Salesman::class);
+    }
+
+    /**
+     * 월정산에 「급여」로 세는 행 — 사내직원의 판매수당은 뺀다(정산금과 같은 돈, 2026-10-21).
+     * 급여를 합산하는 곳(월정산 카드·월결산 알림톡·관리자 대시보드)이 전부 이걸 쓴다(§8 #72 복제 3곳).
+     */
+    public function scopeCountedInPay($query)
+    {
+        return $query->where(fn ($w) => $w->where('label', '!=', self::SALES_COMMISSION)
+            ->orWhereIn('salesman_id', Salesman::query()->where('type', '!=', 'employee')->select('id')));
     }
 
     public function scopeForMonth($query, string $month)

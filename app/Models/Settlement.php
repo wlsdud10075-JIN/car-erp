@@ -23,6 +23,8 @@ class Settlement extends Model
     protected $fillable = [
         'vehicle_id', 'salesman_id', 'settlement_type', 'settlement_ratio',
         'per_unit_amount', 'other_deduction', 'settlement_status', 'payout_batch_id',
+        // 2026-10-21 jin — 월정산 제출 때의 실지급액 박제(「제출 뒤 바뀐 정산」 비교 기준). SettlementPayoutBatch::openBatch 가 찍는다.
+        'payout_submitted_krw',
         'secondary_status', 'secondary_closed_at',
         // 2026-10-06 jin — 「2차 가능」: 지급 뒤 비용 칸이 기입된 시각(NULL = 비용 대기). 마이그레이션 주석 참조.
         'secondary_ready_at',
@@ -61,6 +63,7 @@ class Settlement extends Model
         'gate_override_at' => 'datetime',
         'gate_override_blockers' => 'array',
         'gate_override_unpaid_amount' => 'decimal:2',
+        'payout_submitted_krw' => 'integer',
     ];
 
     /**
@@ -245,6 +248,9 @@ class Settlement extends Model
             //   (tier 는 total_margin 의존이라, 미고정 시 2차 비용보정으로 closed actual_payout ≠ paid snapshot).
             $becamePaid = $s->settlement_status === 'paid'
                 && $s->getOriginal('settlement_status') !== 'paid';
+            // 🔁 2026-10-21 (jin «(나)») — 자동 차등(tier)으로 정해진 건당액인가를 박제한다. 2차 마감 때 그 사이 총마진이 바뀌어
+            //    등급이 넘어가면(20만↔10만) 차액을 다음 달로 이월한다(retieredPerUnitAtClose). 재무가 직접 넣은 값은 건드리지 않는다.
+            $perUnitAuto = $becamePaid && $s->settlement_type === 'per_unit' && $s->per_unit_amount === null;
             if ($becamePaid) {
                 if ($s->settlement_type === 'ratio' && $s->settlement_ratio === null) {
                     $s->settlement_ratio = $s->effective_ratio;
@@ -256,7 +262,7 @@ class Settlement extends Model
 
             // H4 — status가 paid로 전환되는 시점에 vehicle 회계 컬럼 + 마진을 snapshot 캡처.
             if ($becamePaid && empty($s->confirmed_snapshot)) {
-                $s->confirmed_snapshot = $s->buildConfirmedSnapshot();
+                $s->confirmed_snapshot = $s->buildConfirmedSnapshot() + ($s->settlement_type === 'per_unit' ? ['per_unit_auto' => $perUnitAuto] : []);
             }
         });
     }
@@ -1091,9 +1097,18 @@ class Settlement extends Model
             return (int) $this->per_unit_amount;
         }
 
+        return $this->autoPerUnitAmountAt($this->total_margin);
+    }
+
+    /**
+     * 자동 건당액(재무 입력값 무시) — 주어진 총마진으로. 지금 값·지급 때 값·2차 마감 때 값이 **같은 규칙**을 타게 한 곳에 둔다
+     * (승계 5만·tier OFF 10만·내수 바닥 포함). 🚫 등급 규칙을 다른 곳에 옮겨 적지 말 것(§8 #45).
+     */
+    public function autoPerUnitAmountAt(int $totalMargin): int
+    {
         // NULL = 자동 차등 tier (2026-06-22 jin 확정). 매입합계(구입금액+매도비)·총마진 기준 (엑셀 BX=R열).
         $tier = self::employeePerUnitTier(
-            $this->total_margin,
+            $totalMargin,
             (int) ($this->vehicle->purchase_price ?? 0) + (int) ($this->vehicle->selling_fee ?? 0),
             (bool) ($this->salesman?->per_unit_tier_enabled),
             $this->isInheritedBuyerDeal(),
@@ -1106,11 +1121,42 @@ class Settlement extends Model
         //    🧭 임계를 「10만원」으로 박지 않고 **정산액 ≤ 기준액** 으로 쓴다 — 그러면
         //       차등 25% 구간(매입 1억↑)이 자연히 살아난다(비율은 기준액을 넘을 수 없다).
         //       숫자를 박으면 기능설정에서 건당 금액을 바꿨을 때 한쪽만 따라간다.
-        if ($this->is_domestic && $tier > $this->total_margin) {
+        if ($this->is_domestic && $tier > $totalMargin) {
             return 0;
         }
 
         return $tier;
+    }
+
+    /**
+     * 🔁 2차 마감 때 다시 매긴 사내직원 건당액 (jin 2026-10-21 «(나)» — 사람이 보고 조정 줄로 넣으면 누락된다).
+     *
+     * 지급(paid) 때 건당액은 고정된다. 그 뒤 판매가·환율·비용이 바뀌어 총마진이 등급을 넘으면(20만↔10만·0)
+     * 마감 때 새 등급으로 다시 매기고, 차액은 종전 이월 경로(carryover_out → 다음 월정산 「미청산 이월」 줄)로 나간다.
+     *
+     * - 재무가 **직접 넣은** 건당액은 다시 매기지 않는다(null) — 박제의 `per_unit_auto`. 그 키가 없는 옛 박제는
+     *   「지급 때 값 = 그때 총마진의 자동 등급」이면 자동으로 본다.
+     * - 박제가 없는 행(엑셀 적재분)은 기준이 없어 null — closeOne 의 「스냅샷 없으면 이월 없음」과 같은 선.
+     *
+     * @return int|null 다시 매긴 건당액. 대상이 아니면 null
+     */
+    public function retieredPerUnitAtClose(): ?int
+    {
+        if ($this->settlement_type !== 'per_unit' || ! is_array($this->confirmed_snapshot)) {
+            return null;
+        }
+        $snap = $this->confirmed_snapshot;
+        if (! isset($snap['total_margin'], $snap['settlement_amount'])) {
+            return null;
+        }
+        $auto = array_key_exists('per_unit_auto', $snap)
+            ? (bool) $snap['per_unit_auto']
+            : (int) $snap['settlement_amount'] === $this->autoPerUnitAmountAt((int) $snap['total_margin']);
+        if (! $auto) {
+            return null;
+        }
+
+        return $this->autoPerUnitAmountAt($this->total_margin);
     }
 
     /**

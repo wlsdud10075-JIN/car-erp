@@ -1837,6 +1837,14 @@ new #[Layout('components.layouts.app')] class extends Component
         if ($settlement->confirmed_snapshot === null) {
             return [$exchangeDiff, 0];
         }
+        // 🔁 사내직원 등급 재평가 (jin 2026-10-21 «(나)») — 지급 뒤 총마진이 바뀌어 등급이 넘어갔으면(20만↔10만·0)
+        //    마감 때 새 등급으로 다시 매긴다. 차액은 아래 이월(carryover_out)로 → 다음 월정산 「미청산 이월」 줄.
+        //    재무가 직접 넣은 건당액·박제 없는 행은 그대로(Settlement::retieredPerUnitAtClose). per_unit_amount 변경은 감사로그에 남는다.
+        $fresh = $settlement->fresh(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman']);
+        $retiered = $fresh->retieredPerUnitAtClose();
+        if ($retiered !== null && $retiered !== (int) $fresh->per_unit_amount) {
+            $fresh->update(['per_unit_amount' => $retiered]);
+        }
         $paidSnapshotPayout = (int) ($settlement->confirmed_snapshot['actual_payout'] ?? 0);
         $closedPayout = $settlement->fresh()->actual_payout;
         $carryoverOut = $closedPayout - $paidSnapshotPayout;

@@ -119,6 +119,17 @@
     @endif
 
     @isset($v3)
+    {{-- 🧾 제출 뒤 실지급이 바뀐 정산 (jin 2026-10-21) — 제출 때 박제 ↔ 지금(끝난 배치는 승인 때) --}}
+    @php $payoutChanges = $batch->settlementPayoutChanges($v3); @endphp
+    @if($payoutChanges !== [])
+    <div class="card" style="background:#fffbeb;border-color:#fcd34d;" data-payout-changes>
+        <div class="sub" style="margin-bottom:6px;">{{ __('payout_batch.changes.title', ['n' => count($payoutChanges)]) }}</div>
+        <div class="cap" style="color:#92400e;font-size:12px;margin-bottom:6px;">{{ __('payout_batch.changes.hint') }}</div>
+        @foreach($payoutChanges as $c)
+        <div class="row bd" data-payout-change="{{ $c['vehicle_number'] }}"><span class="k"><b>{{ $c['name'] }}</b> {{ $c['vehicle_number'] }}@foreach($c['hints'] as $h)<br><span style="color:#6b7280;font-size:12px;">{{ $h }}</span>@endforeach</span><span class="v">{{ number_format($c['before']) }} → <b>{{ number_format($c['after']) }}</b></span></div>
+        @endforeach
+    </div>
+    @endif
     <div class="card">
         @if($batch->status === 'rejected')<div class="err" data-rejected-kept>{{ __('payout_batch.steps.rejected_kept') }}</div>@endif
         <div class="sub" style="margin-bottom:8px;">담당자별 실지급 <span style="color:#9ca3af;font-weight:400;">— 이름을 누르면 계산 단계</span></div>
@@ -158,6 +169,10 @@
              「회사 순이익 (급여 차감 후)」와 다른 숫자가 나란히 떠서 헷갈렸고, 환차는 실제로 안 빼는데 캡션이 뺀다고 적혀 있었다. --}}
         @isset($v3)
         <div class="row"><span class="k">송금 총액 (급여 포함)</span><span class="v">− {{ number_format($v3['totals']['transfer_total'] ?? $profit['payout']) }}원</span></div>
+        @if(($v3['totals']['external_total'] ?? 0) !== 0)
+        {{-- 헤이맨 정산금은 송금엔 있고 회사이익엔 없다 — 이 줄이 없으면 위 산수가 안 닫힌다(2026-10-21) --}}
+        <div class="row" data-external-total><span class="k">{{ __('payout_card.external_in_transfer') }}</span><span class="v">+ {{ number_format($v3['totals']['external_total']) }}원</span></div>
+        @endif
         <div class="row big"><span class="k">회사이익 (급여 차감 후)</span><span class="v {{ $v3['totals']['company_net'] < 0 ? 'loss' : '' }}">{{ number_format($v3['totals']['company_net']) }}원</span></div>
         <div class="cap">회사이익 = 총마진 − (급여 + 정산 + 추가 인센티브) − 발송비 − 공통 인건비(검차직원).</div>
         @else

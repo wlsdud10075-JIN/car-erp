@@ -28,6 +28,10 @@ return [
         'all' => 'All',
     ],
     'field' => [
+        'pension_split' => 'Pension 1/12 split',
+        'pension_split_hint' => 'When on, (payroll + settlement + Heyman settlement + adjustments) ÷ 12 of the month goes to the pension and the rest is transferred. The payroll-sheet commission check uses the same base.',
+        'heyman_pay' => 'Heyman settlement',
+        'heyman_pay_hint' => 'Amount settled at heymanerp and paid together with this month. Included in the transfer, not in this company profit.',
         'name' => 'Name',
         'name_ph' => 'e.g. John Kim',
         'initials' => 'Initials',
@@ -53,6 +57,13 @@ return [
     ],
 
     'import' => [
+        'col_commission' => 'Commission check',
+        'commission_hint' => 'Sheet sales commission − ERP (settlement + Heyman + adjustments − pension 1/12). Non-zero means one side is wrong.',
+        'commission_ok' => 'Match',
+        'commission_detail' => 'Sheet :sheet / ERP :erp',
+        'commission_pension' => '1/12 applied −:amount',
+        'commission_bad' => ':n people differ from ERP',
+        'commission_all_ok' => 'Commission check: all :n match',
         'button' => 'Upload payroll sheet',
         'title' => 'Upload payroll sheet (xls)',
         'hint' => 'Upload the accounting payroll sheet; only pay items are read and written as that month\'s payroll. Deductions are ignored. Re-uploading a month overwrites only those people for that month.',

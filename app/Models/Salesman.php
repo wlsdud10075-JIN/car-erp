@@ -21,6 +21,8 @@ class Salesman extends Model
         'type',
         // 2026-08-04 jin — 사내직원 차등정산(tier) 담당자별 on/off. OFF=10만원 고정.
         'per_unit_tier_enabled',
+        // 2026-10-21 jin — 퇴직연금 1/12 전환 대상(사람별). 마이그레이션 2026_10_21_000001 주석 참조.
+        'pension_split_enabled',
         // 2026-09-16 jin — 정산 지급 대상이 아닌 담당자(자매 회사 계정 등). 상세 = 마이그레이션 주석.
         'payout_excluded',
         // 2026-09-18 jin — 예치금(프리랜서) · 기본급(사내직원). **표시 전용**, 지급액 불참.
@@ -32,6 +34,7 @@ class Salesman extends Model
         'is_active' => 'boolean',
         'left_at' => 'date',
         'per_unit_tier_enabled' => 'boolean',
+        'pension_split_enabled' => 'boolean',
         'payout_excluded' => 'boolean',
         'deposit_krw' => 'integer',
         'base_salary_krw' => 'integer',

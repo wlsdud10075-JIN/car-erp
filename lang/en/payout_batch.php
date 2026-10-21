@@ -62,6 +62,7 @@ return [
         'change_incentive' => 'Extra incentive',
         'change_adjustment' => 'Adjustment',
         'change_payroll' => 'Payroll',
+        'change_heyman' => 'Heyman settlement',
         'changed_hint' => 'Yellow = changed after submission. Approval continues from the current step. Amounts in already-sent messages are as of that time.',
         'rejected_kept' => 'This monthly settlement was rejected — the submitted content is kept as it was. Settlements went back to the list; resubmitting creates a new one.',
         'incentive_title' => 'Extra incentive (edit during approval)',
@@ -89,5 +90,10 @@ return [
             'expected_hint' => 'Payout total plus employee base salaries (people in this batch, plus active salaried employees with no settlement this month). It is shown so the whole outgoing amount can be seen at once, and never enters approval or company profit.',
             'salary_only' => 'No settlement · base salary only',
         ],
+    ],
+    // 2026-10-21 — 제출 뒤 실지급이 바뀐 정산(SettlementPayoutBatch::settlementPayoutChanges)
+    'changes' => [
+        'title' => ':n settlement(s) changed after submission',
+        'hint' => 'Sale price, rate or costs changed after submission, so the payout differs. Approving pays the new amount (right).',
     ],
 ];

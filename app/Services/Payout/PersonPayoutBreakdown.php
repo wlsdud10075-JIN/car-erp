@@ -2,11 +2,13 @@
 
 namespace App\Services\Payout;
 
+use App\Models\ExternalSettlementPay;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutAdjustment;
+use App\Models\SettlementPayoutBatch;
 use Illuminate\Support\Collection;
 
 /**
@@ -35,6 +37,15 @@ use Illuminate\Support\Collection;
  * 검차직원(inspector) = 급여 지급합계만. 회사 기여 없음(공통 인건비).
  *
  * 회사 기여(지분율 기준, M1) = Σ총마진(실효) − 실지급액 − Σ발송비. 검차는 null.
+ *
+ * 🔀 2026-10-21 (jin) — 급여대장의 「판매수당」·헤이맨 정산금·퇴직연금 1/12
+ *   - 판매수당 = 급여대장이 정산금(+조정, 헤이맨 몫 포함 − 1/12)을 급여에 실은 줄이다. ERP 는 정산금을 따로 더하므로
+ *     **사내직원 급여 합계에서 판매수당을 뺀다**(안 빼면 같은 돈이 두 번 — 9월 8명 23,446,196원). 판매수당은 **대조용**으로만 남긴다.
+ *   - 헤이맨 정산금(ExternalSettlementPay) = 다른 회사에서 정산된 몫을 이 회사가 같이 보낸다 → 송금엔 넣고 회사이익엔 안 넣는다.
+ *   - 퇴직연금 1/12(사람별 토글) = (급여(판매수당 제외) + 정산금 + 헤이맨 + 조정·인센티브) ÷ 12 를 퇴직연금으로 돌린다.
+ *     회사가 내는 돈은 그대로라 회사이익은 안 바뀌고, 그 사람 통장으로 가는 송금(payout)만 줄어든다(송금 총액엔 연금 몫도 포함).
+ *   - 판매수당 대조 = 급여대장 판매수당 − (정산금 + 헤이맨 + 조정·인센티브 − 1/12). 0 이 아니면 어느 쪽이 틀린 것이다
+ *     (9월 무사백: 엑셀이 640을 650으로·전월소급 −24만 누락 → 311,666 차이).
  * karaba 는 정산 공식이 달라(구간표) `unsupported` 로 돌려준다 — 2사 먼저(jin).
  */
 final class PersonPayoutBreakdown
@@ -66,8 +77,9 @@ final class PersonPayoutBreakdown
      * @param  int|null  $payrollTotal  그 달 급여 지급합계(null = 미입력). 생략하면 PayrollEntry 에서 읽는다
      * @param  list<array{label:string, amount:int}>|null  $payrollItems  기입된 급여 항목(순서대로). 생략하면 PayrollEntry 에서 읽는다 —
      *                                                                    카드 펼침에 「기입된 항목만」 보여 준다(jin 2026-10-14 «18개 다 기입되는 경우는 드무니까»)
+     * @param  int|null  $externalPay  그 달 다른 회사(heymanerp) 정산금. 생략하면 ExternalSettlementPay 에서 읽는다
      */
-    public static function build(Salesman $sm, string $month, Collection $settlements, Collection $adjustments, ?int $payrollTotal = null, bool $loadPayroll = true, ?array $payrollItems = null): array
+    public static function build(Salesman $sm, string $month, Collection $settlements, Collection $adjustments, ?int $payrollTotal = null, bool $loadPayroll = true, ?array $payrollItems = null, ?int $externalPay = null): array
     {
         $type = $sm->type ?? 'employee';
         if ($payrollTotal === null && $loadPayroll && $type !== 'freelance') {
@@ -77,6 +89,18 @@ final class PersonPayoutBreakdown
             $payrollItems = self::payrollItemsFor([$sm->id], $month)[$sm->id] ?? [];
         }
         $payroll = $type === 'freelance' ? 0 : (int) ($payrollTotal ?? 0);
+        // 판매수당(급여대장) — 사내직원만 합계에서 뺀다(정산금과 같은 돈). 검차·직원은 그대로(정산이 없다).
+        $salesCommission = null;
+        if ($type === 'employee') {
+            foreach ($payrollItems ?? [] as $it) {
+                if (($it['label'] ?? '') === PayrollEntry::SALES_COMMISSION) {
+                    $salesCommission = (int) ($salesCommission ?? 0) + (int) $it['amount'];
+                }
+            }
+            $payroll -= (int) ($salesCommission ?? 0);
+        }
+        $heymanPay = (int) ($externalPay ?? ($loadPayroll ? (ExternalSettlementPay::totalsFor([$sm->id], $month)[$sm->id] ?? 0) : 0));
+        $pensionOn = (bool) $sm->pension_split_enabled && ! in_array($type, Salesman::PAYROLL_ONLY_TYPES, true);
 
         $adjOf = fn (string $kind): int => (int) $adjustments->where('kind', $kind)->sum('amount');
         $incentive = $adjOf(SettlementPayoutAdjustment::KIND_INCENTIVE);
@@ -89,6 +113,8 @@ final class PersonPayoutBreakdown
             'id' => $s->id,
             'vehicle_number' => $s->vehicle?->vehicle_number ?? ('#'.$s->vehicle_id),
             'actual_payout' => (int) $s->actual_payout,
+            // 🧾 월정산 제출 때 실지급(2026-10-21) — 다르면 「제출 뒤 바뀐 정산」. 제출 전(미리보기)·옛 배치는 null.
+            'submitted_payout' => $s->payout_submitted_krw,
             'total_margin' => (int) $s->total_margin,
             'margin_rate' => $s->margin_rate,
             'is_domestic' => (bool) $s->is_domestic,
@@ -106,6 +132,9 @@ final class PersonPayoutBreakdown
             'tier' => (bool) $sm->per_unit_tier_enabled,
             'margin_rate' => Settlement::marginRateOf($settlements),   // Σ총마진 ÷ Σ판매금원화 — 월정산·승인 두 화면이 같은 식
             'unsupported' => false,
+            // 2026-10-21 — 헤이맨 정산금·퇴직연금·판매수당 대조. 옛 박제엔 이 키들이 없다(카드는 없으면 안 그린다).
+            'heyman_pay' => $heymanPay, 'pension_on' => $pensionOn, 'pension' => 0,
+            'sales_commission' => $salesCommission, 'sales_commission_expected' => null, 'sales_commission_diff' => null,
         ];
 
         if (in_array($type, Salesman::PAYROLL_ONLY_TYPES, true)) {   // 검차직원·직원 = 급여만
@@ -118,7 +147,7 @@ final class PersonPayoutBreakdown
         }
 
         if (Setting::isKaraba()) {
-            $payout = (int) $settlements->sum(fn (Settlement $s) => (int) $s->actual_payout) + $adjManual + $adjCarry + $incentive + $payroll + $adjDeposit;
+            $payout = (int) $settlements->sum(fn (Settlement $s) => (int) $s->actual_payout) + $adjManual + $adjCarry + $incentive + $payroll + $adjDeposit + $heymanPay;
 
             return $base + [
                 'unsupported' => true,
@@ -143,9 +172,10 @@ final class PersonPayoutBreakdown
             $carry = $carryIn + $adjCarry;
             $equivTotal = $equivEffective + $carryIn + $adjCarry + $adjManual;   // = Σactual_payout + Σ조정(예치금 반환 제외) (닫힘)
             $payoutCost = $equivTotal + $incentive;            // 회사가 부담하는 지급
-            $payout = $payoutCost + $adjDeposit;               // 실제 송금 = 거기에 예치금 반환
+            $pension = $pensionOn ? self::pensionOf($payoutCost + $heymanPay) : 0;
+            $payout = $payoutCost + $heymanPay - $pension + $adjDeposit;   // 실제 송금 = 거기에 헤이맨 몫·예치금 반환, 연금 몫은 따로
 
-            return $base + [
+            return array_replace($base, ['pension' => $pension, 'payout_cost' => $payoutCost]) + [
                 'equiv_sale_rate' => $equivSaleRate, 'fx_primary' => $fxPrimary, 'carry' => $carry, 'fx_secondary' => $closedFx,
                 'equiv_total' => $equivTotal, 'settlement_pay' => $equivTotal, 'payout' => $payout,
                 'total_margin' => $totalMargin, 'shipping' => $shipping,
@@ -157,11 +187,20 @@ final class PersonPayoutBreakdown
         // 사내직원
         $settlementPay = (int) $settlements->sum(fn (Settlement $s) => (int) $s->actual_payout);
         $equivTotal = $equivEffective + $closedCarry + $adjManual;
-        $payoutCost = $payroll + $settlementPay + $adjManual + $adjCarry + $incentive;   // 회사가 부담하는 지급
-        $payout = $payoutCost + $adjDeposit;                                             // 실제 송금(예치금 반환 포함 — 사내직원은 보통 0)
+        $payoutCost = $payroll + $settlementPay + $adjManual + $adjCarry + $incentive;   // 회사가 부담하는 지급(판매수당 뺀 급여 — 위)
+        $settleSide = $settlementPay + $heymanPay + $adjManual + $adjCarry + $incentive;  // 급여대장 「판매수당」에 실리는 몫(1/12 전)
+        $pension = $pensionOn ? self::pensionOf($payroll + $settleSide) : 0;
+        $payout = $payoutCost + $heymanPay - $pension + $adjDeposit;                     // 그 사람 통장으로 가는 송금(헤이맨 몫 포함 · 연금 몫 제외)
         $marginAfterPay = $equivTotal - $payoutCost;
+        $expected = $settleSide - $pension;
 
-        return $base + [
+        return array_replace($base, [
+            'payroll' => $payrollTotal === null ? null : $payroll,
+            'pension' => $pension,
+            'payout_cost' => $payoutCost,   // 회사이익 산출에서 빼는 지급 = 실지급 − 헤이맨 몫 + 연금 몫 (예치금 반환 제외)
+            'sales_commission_expected' => $expected,
+            'sales_commission_diff' => $salesCommission === null ? null : $salesCommission - $expected,
+        ]) + [
             'equiv_sale_rate' => $equivSaleRate, 'fx_primary' => $fxPrimary, 'carry' => $closedCarry, 'fx_secondary' => $closedFx,
             'equiv_total' => $equivTotal, 'settlement_pay' => $settlementPay, 'payout' => $payout,
             'total_margin' => $totalMargin, 'shipping' => $shipping,
@@ -180,6 +219,63 @@ final class PersonPayoutBreakdown
      * 분모 ≤ 0 이면 null(「—」). 1자리.
      * 🔑 카드·정산관리 요약·관리자 대시보드가 전부 이걸 부른다. 옛 박제(`breakdown_snapshot`)엔 이 키가 없어 카드가 payroll·settlement_pay·total_margin·shipping 으로 되살린다.
      */
+    /**
+     * 🔎 급여대장 판매수당 대조 (jin 2026-10-21) — 업로드 미리보기가 부른다. 월정산 카드의 `sales_commission_diff` 와 **같은 식**.
+     *
+     * ERP 기대값 = 그 달 (정산금 + 헤이맨 정산금 + 조정·인센티브) − 퇴직연금 1/12(토글 켠 사람만, 기준에 급여대장의 판매수당 뺀 급여 포함).
+     * 그 달 월정산(진행 중·승인)이 있으면 그 배치로, 없으면 제출 전 미리보기(제출 대상 정산)로 센다.
+     *
+     * @param  array<int, array<string,int>>  $sheets  salesman_id => 급여대장 항목(label => amount)
+     * @return array<int, array{sheet:int, expected:int, diff:int, pension_on:bool, pension:int}> 판매수당 줄이 있는 사내직원만
+     */
+    public static function commissionCheckFor(string $month, array $sheets): array
+    {
+        $people = Salesman::query()->whereIn('id', array_keys($sheets))->where('type', 'employee')->get()->keyBy('id');
+        $targets = [];
+        foreach ($sheets as $id => $items) {
+            if ($people->has($id) && array_key_exists(PayrollEntry::SALES_COMMISSION, $items)) {
+                $targets[(int) $id] = $items;
+            }
+        }
+        if ($targets === []) {
+            return [];
+        }
+
+        $batch = SettlementPayoutBatch::monthly()->where('month', $month)
+            ->whereIn('status', [SettlementPayoutBatch::STATUS_PENDING, SettlementPayoutBatch::STATUS_APPROVED])
+            ->orderByDesc('id')->first();
+        $bd = $batch
+            ? BatchPayoutBreakdown::forBatch($batch)
+            : BatchPayoutBreakdown::forMonthPreview($month, Settlement::query()
+                ->whereIn('id', SettlementPayoutBatch::eligibleSettlementIds($month))
+                ->with(['salesman', 'vehicle.finalPayments', 'vehicle.receivableHistories'])->get());
+        $byId = collect($bd['people'])->keyBy('salesman_id');
+        $external = ExternalSettlementPay::totalsFor(array_keys($targets), $month);
+
+        $out = [];
+        foreach ($targets as $id => $items) {
+            $p = $byId->get($id);
+            $settleSide = $p
+                ? (int) $p['settlement_pay'] + (int) $p['adj_manual'] + (int) $p['adj_carry'] + (int) $p['incentive']
+                : 0;
+            $settleSide += (int) ($external[$id] ?? 0);
+            $sheet = (int) $items[PayrollEntry::SALES_COMMISSION];
+            $payrollEx = (int) array_sum($items) - $sheet;
+            $on = (bool) $people->get($id)->pension_split_enabled;
+            $pension = $on ? self::pensionOf($payrollEx + $settleSide) : 0;
+            $expected = $settleSide - $pension;
+            $out[$id] = ['sheet' => $sheet, 'expected' => $expected, 'diff' => $sheet - $expected, 'pension_on' => $on, 'pension' => $pension];
+        }
+
+        return $out;
+    }
+
+    /** 퇴직연금 전환액 = 기준 ÷ 12 (원 단위 반올림). 9월 존 7,109,642 → 592,470(급여대장과 1원까지 같음). 기준 ≤ 0 이면 0. */
+    public static function pensionOf(int $base): int
+    {
+        return $base > 0 ? (int) round($base / 12) : 0;
+    }
+
     public static function profitMultiple(?int $profitBeforeIncentive, ?int $basePay): ?float
     {
         if ($profitBeforeIncentive === null || $basePay === null || $basePay <= 0) {
