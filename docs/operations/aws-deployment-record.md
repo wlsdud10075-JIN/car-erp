@@ -658,6 +658,13 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-21(3차) — 「제출 뒤 바뀐 정산」 월정산 탭 전용 + 문구 `222f9ebd` (dev `28cdaafc`·`d1c70734`)
+
+- jin 「배포해줘」. 런 39553278528 잡 5개 success, `/login` 200×3. 대표 승인 링크(더미 #7)에서 상자·차량 줄 표시 빠진 것 실측.
+- ⚠️ **Livewire 화면 캐시 권한 꼬임** — 2차 배포 뒤 heymanerp 14:51~14:52 차량관리 오류 11건(`scripts/18acfc0c.js` 없음), 3차 배포 중 15:10:54 1건(`islands` Permission denied).
+  원인 = 배포(ubuntu)의 `view:cache` ↔ 웹서버(www-data)가 만든 캐시 폴더가 그룹 쓰기 없음(`drwxr-sr-x`). 복구 = `sudo -u www-data php artisan view:clear` + `sudo chmod -R g+rwX storage/framework/views`(3사). 배포 뒤 5분 관찰 오류 0.
+  근본 해결(deploy.yml 캐시 단계를 www-data 로) = jin «재발하면 그때 다시 보자» — 보류.
+
 ## 2026-10-21(2차) — 월정산 빈틈 3가지 `59112d71` (dev `5930048c`·`a8adf5e4`·`6a8514b4`)
 
 - **jin 승인**: 「좋아. 배포해줘.」(10-21 오후, 업무시간). 런 39550951824 잡 5개 success, 3사 HEAD `59112d71` 실측, `/login` 200×3. 마이그 1개(`2026_10_21_000001` — settlements.payout_submitted_krw · salesmen.pension_split_enabled · external_settlement_pays 표).
