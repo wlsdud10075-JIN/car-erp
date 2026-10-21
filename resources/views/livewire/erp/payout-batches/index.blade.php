@@ -255,7 +255,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="mt-3 max-w-3xl space-y-2 border-t border-gray-100 pt-3">
                     {{-- 🧾 월정산 v3 (jin 2026-10-08) — 합계 띠 + 사람별 카드(접기/펼치기). 숫자는 BatchPayoutBreakdown/PersonPayoutBreakdown 한 곳.
                          ⚠️ **펼쳤을 때만 계산한다** — 배치의 전 정산을 훑는다(§8 #96-C). 접힌 카드 목록은 최대 60개다. --}}
-                    @php $bd = $b->breakdownForDisplay(); $changed = $b->changedFieldsBySalesman(); @endphp
+                    @php $bd = $b->breakdownForDisplay(); $changed = $b->changedFieldsBySalesman($bd); $payoutChanges = $b->settlementPayoutChanges($bd); @endphp
                     @if($incentiveNotice && $b->status === 'pending')
                     <div class="flex items-start justify-between gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800" data-incentive-notice>
                         <span><b>✅ 반영되었습니다.</b> {{ $incentiveNotice }} — {{ __('payout_batch.steps.changed_hint') }}</span>
@@ -301,6 +301,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </div>
                         @endforeach
                         @if($b->batchChanges->isNotEmpty())<p class="text-[10px] text-gray-400">{{ __('payout_batch.steps.changed_hint') }}</p>@endif
+                    </div>
+                    @endif
+                    {{-- 🧾 제출 뒤 실지급이 바뀐 정산 (jin 2026-10-21 «바뀐걸 찾아낼 수 있는 방안») --}}
+                    @if($payoutChanges !== [])
+                    <div class="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-[11px]" data-payout-changes>
+                        <div class="font-semibold text-amber-800">{{ __('payout_batch.changes.title', ['n' => count($payoutChanges)]) }}</div>
+                        <p class="mb-1 text-[10px] text-amber-700">{{ __('payout_batch.changes.hint') }}</p>
+                        @foreach($payoutChanges as $c)
+                        <div class="flex flex-wrap items-baseline justify-between gap-x-3 border-t border-amber-200 py-1" data-payout-change="{{ $c['vehicle_number'] }}">
+                            <span><b>{{ $c['name'] }}</b> {{ $c['vehicle_number'] }}@foreach($c['hints'] as $h)<span class="block text-[10px] text-gray-500">{{ $h }}</span>@endforeach</span>
+                            <span class="font-mono">{{ number_format($c['before']) }} → <b>{{ number_format($c['after']) }}</b></span>
+                        </div>
+                        @endforeach
                     </div>
                     @endif
                     <x-payout.totals :totals="$bd['totals']" :settlement-total="(int) $b->total_payout" />

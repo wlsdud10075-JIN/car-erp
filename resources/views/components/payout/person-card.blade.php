@@ -24,6 +24,13 @@
     $ratioText = $ratioVal === null ? '—' : (($ratioVal < 0 ? '−' : '+').number_format(abs($ratioVal), 1).__('payout_card.times'));
     $shareText = ! array_key_exists('share', $p) || $p['share'] === null ? null : (($p['share'] < 0 ? '−' : '').number_format(abs($p['share']), 1).'%');
     $payrollMissing = $t !== 'freelance' && $p['payroll'] === null;
+    // 2026-10-21 — 헤이맨 정산금·퇴직연금·판매수당 대조. 옛 박제엔 키가 없다 → 안 그린다.
+    $heyman = (int) ($p['heyman_pay'] ?? 0);
+    $pension = (int) ($p['pension'] ?? 0);
+    $commission = $p['sales_commission'] ?? null;
+    // 회사이익 산출에서 빼는 지급 — 헤이맨 몫은 빼고 연금 몫은 넣은 값(회사가 실제로 부담하는 돈). 옛 박제엔 키가 없다 → 실지급.
+    $payoutCost = $p['payout_cost'] ?? $p['payout'];
+    $costLabel = $payoutCost !== $p['payout'] ? __('payout_card.minus_payout_cost') : __('payout_card.minus_payout');
 @endphp
 <details class="rounded-lg border border-gray-200 bg-white" data-person-card="{{ $p['salesman_id'] }}" data-person-type="{{ $t }}" @if($open) open @endif>
     <summary class="flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-left" title="{{ __('payout_card.open_hint') }}">
@@ -33,6 +40,7 @@
             <span class="badge {{ $typeBadge }} text-[10px] whitespace-nowrap">{{ $typeLabel }}</span>
             @if(! $payrollOnly)<span class="pill-count whitespace-nowrap">{{ __('payout_card.count', ['n' => $p['count']]) }}</span>@endif
             @if(!empty($changed))<span class="badge badge-amber text-[10px]" data-changed>{{ __('payout_card.changed') }}</span>@endif
+            @if(($p['sales_commission_diff'] ?? null) !== null && $p['sales_commission_diff'] !== 0)<span class="badge badge-red text-[10px]" data-commission-diff-badge>{{ __('payout_card.commission_diff_badge') }}</span>@endif
         </span>
         <span class="ml-auto flex min-w-0 flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px]">
             {{-- 접힌 줄 순서(jin 2026-10-12): 총마진 / 실지급액 / 회사이익 / 마진율 / 이익배수 / 지분율. 전부 지분율과 같은 모양(회색 라벨 + 굵은 고정폭, 음수 빨강). --}}
@@ -95,7 +103,7 @@
         <div class="rounded border border-gray-100">
             <div class="bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-700">{{ __('payout_card.ledger_company') }}</div>
             <div class="flex justify-between px-2 py-1.5 text-xs font-bold {{ $p['total_margin'] < 0 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-800' }}" data-total-margin><span>{{ __('payout_card.total_margin') }}</span><span class="font-mono">{{ $fmt($p['total_margin']) }}</span></div>
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_payout') }}</span><span class="font-mono text-red-600">{{ $minus($p['payout']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]" @if($payoutCost !== $p['payout']) title="{{ __('payout_card.minus_payout_cost_hint') }}" @endif><span class="text-gray-500">{{ $costLabel }}</span><span class="font-mono text-red-600">{{ $minus($payoutCost) }}</span></div>
             @if($p['shipping'] !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_shipping') }}</span><span class="font-mono text-red-600">{{ $minus($p['shipping']) }}</span></div>
             @endif
@@ -107,13 +115,15 @@
         {{-- 오른쪽: 담당자 지급 --}}
         <div class="rounded border border-gray-100">
             <div class="bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-700">{{ __('payout_card.ledger_person') }}</div>
-            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('payroll') }}"><span class="text-gray-500">{{ __('payout_card.payroll') }}</span>
+            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('payroll') }}"><span class="text-gray-500">{{ $commission !== null ? __('payout_card.payroll_ex_commission') : __('payout_card.payroll') }}</span>
                 <span class="font-mono">@if($payrollMissing)<span class="text-amber-700" title="{{ __('payout_card.payroll_missing_hint') }}" data-payroll-missing>{{ __('payout_card.payroll_missing') }}</span>@else{{ $fmt($p['payroll']) }}@endif</span></div>
-            {{-- 기입된 급여 항목만(jin 2026-10-14) — 행이 없는 항목은 안 그린다. 옛 박제엔 키가 없어 비어 있다. --}}
+            {{-- 기입된 급여 항목만(jin 2026-10-14) — 행이 없는 항목은 안 그린다. 옛 박제엔 키가 없어 비어 있다.
+                 판매수당은 정산금과 같은 돈이라 합계에서 빼고 아래 「판매수당 대조」로만 쓴다(2026-10-21). --}}
             @foreach(($p['payroll_items'] ?? []) as $it)
-            <div class="flex justify-between px-2 py-0.5 pl-5 text-[10px] text-gray-400" data-payroll-item="{{ $it['label'] }}"><span>{{ $it['label'] }}</span><span class="font-mono">{{ number_format($it['amount']) }}</span></div>
+            @php $isCommission = $commission !== null && $it['label'] === \App\Models\PayrollEntry::SALES_COMMISSION; @endphp
+            <div class="flex justify-between px-2 py-0.5 pl-5 text-[10px] {{ $isCommission ? 'text-gray-300 line-through' : 'text-gray-400' }}" data-payroll-item="{{ $it['label'] }}" @if($isCommission) title="{{ __('payout_card.commission_excluded') }}" @endif><span>{{ $it['label'] }}@if($isCommission) <span class="no-underline">({{ __('payout_card.commission_excluded_short') }})</span>@endif</span><span class="font-mono">{{ number_format($it['amount']) }}</span></div>
             @endforeach
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.settlement_pay') }} ({{ __('payout_card.count', ['n' => $p['count']]) }} · {{ ! empty($p['tier']) ? __('payout_card.settlement_pay_tier') : __('payout_card.settlement_pay_per_unit') }})</span><span class="font-mono">{{ $fmt($p['settlement_pay']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('settlement_pay') }}"><span class="text-gray-500">{{ __('payout_card.settlement_pay') }} ({{ __('payout_card.count', ['n' => $p['count']]) }} · {{ ! empty($p['tier']) ? __('payout_card.settlement_pay_tier') : __('payout_card.settlement_pay_per_unit') }})</span><span class="font-mono">{{ $fmt($p['settlement_pay']) }}</span></div>
             @if($p['adj_manual'] !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('adj_manual') }}"><span class="text-gray-500">{{ __('payout_card.adj_manual') }}</span><span class="font-mono">{{ $signed($p['adj_manual']) }}</span></div>
             @endif
@@ -125,7 +135,23 @@
             @if(($p['adj_deposit'] ?? 0) !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-deposit><span class="text-gray-500">{{ __('payout_card.adj_deposit') }}</span><span class="font-mono">{{ $signed($p['adj_deposit']) }}</span></div>
             @endif
+            @if($heyman !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('heyman') }}" data-heyman-pay title="{{ __('payout_card.heyman_pay_hint') }}"><span class="text-gray-500">{{ __('payout_card.heyman_pay') }}</span><span class="font-mono">{{ $signed($heyman) }}</span></div>
+            @endif
+            @if($pension !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]" data-pension title="{{ __('payout_card.pension_hint') }}"><span class="text-gray-500">{{ __('payout_card.pension') }}</span><span class="font-mono text-red-600">−{{ $fmt($pension) }}</span></div>
+            @endif
             <div class="flex justify-between border-t border-gray-100 bg-emerald-50 px-2 py-1.5 text-xs font-bold text-emerald-800" data-payout-expanded><span>{{ __('payout_card.payout') }}</span><span class="font-mono">{{ $fmt($p['payout']) }}</span></div>
+            @if($commission !== null)
+            {{-- 🔎 판매수당 대조 (jin 2026-10-21 «급여대장과 매칭해서 실수를 잡는다») — 급여대장 ↔ ERP(정산금 + 헤이맨 + 조정 − 1/12) --}}
+            @php $diff = (int) ($p['sales_commission_diff'] ?? 0); @endphp
+            <div class="border-t border-dashed border-gray-200 px-2 py-1 text-[10px] {{ $diff !== 0 ? 'bg-red-50' : '' }}" data-commission-check>
+                <div class="font-semibold text-gray-600">{{ __('payout_card.commission_check') }}</div>
+                <div class="flex justify-between text-gray-500"><span>{{ __('payout_card.commission_sheet') }}</span><span class="font-mono">{{ number_format($commission) }}</span></div>
+                <div class="flex justify-between text-gray-500"><span>{{ __('payout_card.commission_erp') }}</span><span class="font-mono">{{ $fmt($p['sales_commission_expected'] ?? null) }}</span></div>
+                <div class="flex justify-between font-semibold {{ $diff !== 0 ? 'text-red-700' : 'text-emerald-700' }}"><span>{{ __('payout_card.commission_diff') }}</span><span class="font-mono" data-commission-diff>{{ $diff === 0 ? __('payout_card.commission_same') : $signed($diff) }}</span></div>
+            </div>
+            @endif
         </div>
 
         @else
@@ -133,7 +159,7 @@
         <div class="rounded border border-gray-100">
             <div class="bg-gray-50 px-2 py-1 text-[11px] font-semibold text-gray-700">{{ __('payout_card.ledger_company') }}</div>
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.total_margin') }}</span><span class="font-mono">{{ $fmt($p['total_margin']) }}</span></div>
-            <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_payout') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['payout']) }}</span></div>
+            <div class="flex justify-between px-2 py-1 text-[11px]" @if($payoutCost !== $p['payout']) title="{{ __('payout_card.minus_payout_cost_hint') }}" @endif><span class="text-gray-500">{{ $costLabel }}</span><span class="font-mono text-red-600">−{{ $fmt($payoutCost) }}</span></div>
             @if($p['shipping'] !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]"><span class="text-gray-500">{{ __('payout_card.minus_shipping') }}</span><span class="font-mono text-red-600">−{{ $fmt($p['shipping']) }}</span></div>
             @endif
@@ -162,6 +188,12 @@
             @if(($p['adj_deposit'] ?? 0) !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-deposit><span class="text-gray-500">{{ __('payout_card.adj_deposit') }}</span><span class="font-mono">{{ $signed($p['adj_deposit']) }}</span></div>
             @endif
+            @if($heyman !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('heyman') }}" data-heyman-pay title="{{ __('payout_card.heyman_pay_hint') }}"><span class="text-gray-500">{{ __('payout_card.heyman_pay') }}</span><span class="font-mono">{{ $signed($heyman) }}</span></div>
+            @endif
+            @if($pension !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]" data-pension title="{{ __('payout_card.pension_hint') }}"><span class="text-gray-500">{{ __('payout_card.pension') }}</span><span class="font-mono text-red-600">−{{ $fmt($pension) }}</span></div>
+            @endif
             <div class="flex justify-between border-t border-gray-100 px-2 py-1 text-xs font-bold"><span>{{ __('payout_card.payout') }}</span><span class="font-mono">{{ $fmt($p['payout']) }}</span></div>
             @if(($p['deposit'] ?? null) !== null)
             <div class="px-2 py-1 text-[10px] text-gray-400">({{ __('payout_card.deposit') }} {{ number_format($p['deposit']) }} · {{ ($p['adj_deposit'] ?? 0) !== 0 ? __('payout_card.deposit_returning') : __('payout_card.deposit_hint') }})</div>
@@ -171,7 +203,7 @@
 
         @if(! $payrollOnly && !empty($p['vehicles']))
         {{-- 차량별 보기 — 머리글 클릭 정렬 (jin 2026-10-12). 순수 JS(승인 링크 페이지엔 Alpine 이 없다) · 문서 위임 1회 등록이라 Livewire morph 뒤에도 산다. --}}
-        <details class="sm:col-span-2">
+        <details class="min-w-0 sm:col-span-2">
             <summary class="cursor-pointer text-[11px] text-gray-500 hover:text-violet-700">{{ __('payout_card.vehicles') }} ({{ count($p['vehicles']) }})</summary>
             <div class="mt-1 overflow-x-auto">
                 {{-- 모든 열 가운데 정렬(jin 2026-10-12 「문자든 숫자든 좌우 쏠림 없이」) --}}
@@ -187,12 +219,13 @@
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         @foreach($p['vehicles'] as $v)
-                        <tr class="text-gray-600" data-vehicle-number="{{ $v['vehicle_number'] }}" data-total_margin="{{ (int) $v['total_margin'] }}" data-margin_rate="{{ $v['margin_rate'] === null ? '' : (float) $v['margin_rate'] }}" data-type_label="{{ $v['type_label'] ?? '' }}" data-actual_payout="{{ (int) $v['actual_payout'] }}">
+                        @php $sub = $v['submitted_payout'] ?? null; $subChanged = $sub !== null && (int) $sub !== (int) $v['actual_payout']; @endphp
+                        <tr class="text-gray-600 {{ $subChanged ? 'bg-amber-50' : '' }}" @if($subChanged) data-submitted-changed title="{{ __('payout_card.vh_submitted_changed', ['amount' => number_format((int) $sub)]) }}" @endif data-vehicle-number="{{ $v['vehicle_number'] }}" data-total_margin="{{ (int) $v['total_margin'] }}" data-margin_rate="{{ $v['margin_rate'] === null ? '' : (float) $v['margin_rate'] }}" data-type_label="{{ $v['type_label'] ?? '' }}" data-actual_payout="{{ (int) $v['actual_payout'] }}">
                             <td class="py-1 px-1 text-center font-medium text-gray-700">{{ $v['vehicle_number'] }}</td>
                             <td class="py-1 px-1 text-center font-mono {{ $v['total_margin'] < 0 ? 'text-red-600' : '' }}">{{ number_format($v['total_margin']) }}</td>
                             <td class="py-1 px-1 text-center font-mono {{ ($v['margin_rate'] ?? 0) < 0 ? 'text-red-600' : '' }}">{{ \App\Models\Settlement::formatMarginRate($v['margin_rate']) }}</td>
                             <td class="py-1 px-1 text-center text-gray-500">{{ $v['type_label'] ?? '' }}</td>
-                            <td class="py-1 px-1 text-center font-mono {{ $v['actual_payout'] < 0 ? 'text-red-600' : '' }}">{{ $v['actual_payout'] < 0 ? '−' : '' }}₩{{ number_format(abs($v['actual_payout'])) }}</td>
+                            <td class="py-1 px-1 text-center font-mono {{ $v['actual_payout'] < 0 ? 'text-red-600' : '' }}">{{ $v['actual_payout'] < 0 ? '−' : '' }}₩{{ number_format(abs($v['actual_payout'])) }}@if($subChanged)<span class="block text-[10px] font-normal text-amber-700">{{ __('payout_card.vh_submitted', ['amount' => number_format((int) $sub)]) }}</span>@endif</td>
                         </tr>
                         @endforeach
                     </tbody>

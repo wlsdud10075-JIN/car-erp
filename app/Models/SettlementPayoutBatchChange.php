@@ -23,6 +23,9 @@ class SettlementPayoutBatchChange extends Model
 
     public const FIELD_PAYROLL = 'payroll';
 
+    /** 다른 회사(heymanerp) 정산금 — ExternalSettlementPay (2026-10-21). */
+    public const FIELD_HEYMAN = 'heyman';
+
     public function batch(): BelongsTo
     {
         return $this->belongsTo(SettlementPayoutBatch::class, 'batch_id');

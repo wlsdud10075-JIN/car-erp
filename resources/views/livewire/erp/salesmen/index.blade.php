@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ExternalSettlementPay;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
 use App\Models\User;
@@ -48,6 +49,36 @@ new #[Layout('components.layouts.app')] class extends Component {
         foreach ($importer->match($this->importPreview['people']) as $row => $id) {
             $this->importMatches[$row] = $id === null ? '' : (string) $id;
         }
+    }
+
+    /**
+     * 🔎 판매수당 대조 (jin 2026-10-21 «급여대장 업로드하면 … 급여대장과 매칭해서 실수가 확인되게»).
+     * 급여대장 행번호 => [sheet, expected, diff, pension_on] — 연결된 사내직원 중 급여대장에 판매수당 줄이 있는 사람만.
+     * 계산은 PersonPayoutBreakdown::commissionCheckFor 한 곳(월정산 카드와 같은 식).
+     */
+    #[Computed]
+    public function importCommissionCheck(): array
+    {
+        $month = $this->importPreview['month'] ?? null;
+        if (! $month || ! PayrollEntry::isMonth($month)) {
+            return [];
+        }
+        $sheets = [];
+        $rowOf = [];
+        foreach ($this->importPreview['people'] ?? [] as $p) {
+            $id = (int) ($this->importMatches[$p['row']] ?? 0);
+            if ($id === 0 || ! $p['ok']) {
+                continue;
+            }
+            $sheets[$id] = $p['items'] ?? [];
+            $rowOf[$id] = $p['row'];
+        }
+        $out = [];
+        foreach (\App\Services\Payout\PersonPayoutBreakdown::commissionCheckFor($month, $sheets) as $id => $c) {
+            $out[$rowOf[$id]] = $c;
+        }
+
+        return $out;
     }
 
     /** 미매칭을 연결할 후보 — 활성 인원 전부(유형 무관). 배열로 담는다(모델이면 페이로드가 커진다, §8 #96-C). */
@@ -174,6 +205,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   ([관리] 이상 = role 관리 · 업무관리자 · 최고관리자 · 시스템관리자).
     public bool   $per_unit_tier_enabled = false;
     public bool   $payout_excluded       = false;
+    // 2026-10-21 jin — 퇴직연금 1/12 전환 대상(사람별). 돈의 갈림이라 canApprove() 만 수정.
+    public bool   $pension_split_enabled = false;
+    // 2026-10-21 jin — 그 달 heymanerp 정산금(ExternalSettlementPay). 급여 귀속월(payrollMonth)과 같은 달. '' = 미입력.
+    public string $heymanPayStr = '';
 
     // 2026-09-18 jin — 예치금(프리랜서) / 기본급(사내직원). 금액칸이라 문자열로 받는다
     //   (콤마 포매터 data-money 가 붙는다 — SKILLS §14). 빈 문자열 = 미입력(null 저장).
@@ -323,6 +358,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->left_at     = $sm->left_at?->format('Y-m-d') ?? '';
         $this->per_unit_tier_enabled = (bool) $sm->per_unit_tier_enabled;
         $this->payout_excluded = (bool) $sm->payout_excluded;
+        $this->pension_split_enabled = (bool) $sm->pension_split_enabled;
         $this->deposit_krw_str     = $sm->deposit_krw     === null ? '' : (string) $sm->deposit_krw;
         $this->base_salary_krw_str = $sm->base_salary_krw === null ? '' : (string) $sm->base_salary_krw;
         if (! PayrollEntry::isMonth($this->payrollMonth)) {
@@ -363,6 +399,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
         $this->payrollEntered = $rows->isNotEmpty();
+        $heyman = ExternalSettlementPay::heymanFor($salesmanId, $this->payrollMonth);
+        $this->heymanPayStr = $heyman === null ? '' : (string) $heyman;
     }
 
     public function updatedPayrollMonth(): void
@@ -465,6 +503,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $data['per_unit_tier_enabled'] = $this->per_unit_tier_enabled;
                 // 🚪 지급 대상 제외도 돈이 나가고 안 나가고를 가르므로 tier 와 같은 무게로 재인가한다.
                 $data['payout_excluded'] = $this->payout_excluded;
+                // 퇴직연금 1/12 — 송금액이 갈린다(2026-10-21). 사내직원·프리랜서만(검차·직원은 정산이 없다).
+                if (in_array($sm->type, ['employee', 'freelance'], true)) {
+                    $data['pension_split_enabled'] = $this->pension_split_enabled;
+                }
             }
             // 💰 예치금·기본급 — 연결된 계정 유형이 정하는 **한 칸만** 저장한다.
             //   🚫 유형이 안 붙은 담당자는 둘 다 건드리지 않는다 — 화면에도 안 띄운다.
@@ -483,6 +525,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'left_at' => $sm->left_at?->format('Y-m-d'),
                 'per_unit_tier_enabled' => (bool) $sm->per_unit_tier_enabled,
                 'payout_excluded' => (bool) $sm->payout_excluded,
+                'pension_split_enabled' => (bool) $sm->pension_split_enabled,
                 'deposit_krw' => $sm->deposit_krw,
                 'base_salary_krw' => $sm->base_salary_krw,
             ];
@@ -502,6 +545,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             if (($sm->type === 'employee' || $sm->isPayrollOnly()) && $actor?->canEditPayroll() && PayrollEntry::isMonth($this->payrollMonth)) {
                 // 감사로그·결재 중 월정산 변경 이력은 writeMonthWithAudit 한 곳(급여대장 업로드와 공용, §8 #44).
                 PayrollEntry::writeMonthWithAudit($sm, $this->payrollMonth, $this->payrollRows(), $actor, '급여 항목 수정');
+            }
+            // 💱 헤이맨 정산금 — 사내직원·프리랜서, 급여와 같은 권한·같은 귀속월. 감사로그·결재 중 변경 이력은 writeHeyman 한 곳.
+            if (in_array($sm->type, ['employee', 'freelance'], true) && $actor?->canEditPayroll() && PayrollEntry::isMonth($this->payrollMonth)) {
+                ExternalSettlementPay::writeHeyman($sm, $this->payrollMonth, $this->signedMoneyOrNull($this->heymanPayStr), $actor);
             }
         } else {
             // 🔀 2026-10-14 (jin «사용자관리에서 한번에 관리») — 이 화면에서는 등록하지 않는다. 검차직원을 포함한 모든 인원은
@@ -535,6 +582,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->payrollItems = [];
         $this->payrollCustom = [];
         $this->payrollEntered = false;
+        $this->heymanPayStr = '';
+        $this->pension_split_enabled = false;
     }
 }; ?>
 
@@ -605,12 +654,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $byId = collect($candidates)->keyBy('id');
                 $matchedIds = array_filter(array_map('intval', $importMatches));
                 $overwrite = $month ? \App\Models\PayrollEntry::whereIn('salesman_id', $matchedIds)->where('month', $month)->distinct()->count('salesman_id') : 0;
+                $commissionCheck = $this->importCommissionCheck;
+                $commissionBad = collect($commissionCheck)->filter(fn ($c) => $c['diff'] !== 0)->count();
             @endphp
             <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-700">
                 <span>{{ __('salesman.import.month') }} <b>{{ $month ?? '—' }}</b></span>
                 <span>{{ __('salesman.import.count', ['n' => count($people)]) }}</span>
                 <span>{{ __('salesman.import.matched', ['n' => count($matchedIds)]) }}</span>
                 @if($overwrite > 0)<span class="text-amber-700">{{ __('salesman.import.overwrite', ['n' => $overwrite]) }}</span>@endif
+                @if($commissionCheck !== [])<span class="{{ $commissionBad > 0 ? 'font-semibold text-red-700' : 'text-emerald-700' }}" data-commission-summary>{{ $commissionBad > 0 ? __('salesman.import.commission_bad', ['n' => $commissionBad]) : __('salesman.import.commission_all_ok', ['n' => count($commissionCheck)]) }}</span>@endif
             </div>
             <div class="mt-2 overflow-x-auto">
                 <table class="w-full min-w-[640px] text-xs">
@@ -619,6 +671,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <th class="py-1 pr-2">{{ __('salesman.import.col_name') }}</th>
                         <th class="py-1 pr-2">{{ __('salesman.import.col_dept') }}</th>
                         <th class="py-1 pr-2 text-right">{{ __('salesman.payroll.total') }}</th>
+                        <th class="py-1 pr-2 text-right" title="{{ __('salesman.import.commission_hint') }}">{{ __('salesman.import.col_commission') }}</th>
                         <th class="py-1 pr-2">{{ __('salesman.import.col_match') }}</th>
                         <th class="py-1">{{ __('common.status') }}</th>
                     </tr></thead>
@@ -630,6 +683,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <td class="py-1 pr-2 font-medium text-gray-800">{{ $p['name'] }} <span class="text-gray-400">{{ $p['position'] }}</span></td>
                             <td class="py-1 pr-2 text-gray-500">{{ $p['dept'] }}</td>
                             <td class="py-1 pr-2 text-right font-mono">{{ number_format($p['total']) }}</td>
+                            @php $cc = $commissionCheck[$p['row']] ?? null; @endphp
+                            <td class="py-1 pr-2 text-right font-mono text-[11px]" data-import-commission="{{ $p['row'] }}">
+                                @if($cc)
+                                    @if($cc['diff'] === 0)<span class="text-emerald-700">{{ __('salesman.import.commission_ok') }}</span>
+                                    @else<span class="font-semibold text-red-700" title="{{ __('salesman.import.commission_detail', ['sheet' => number_format($cc['sheet']), 'erp' => number_format($cc['expected'])]) }}">{{ $cc['diff'] > 0 ? '+' : '−' }}{{ number_format(abs($cc['diff'])) }}</span>
+                                    <span class="block text-[10px] font-normal text-gray-500">{{ __('salesman.import.commission_detail', ['sheet' => number_format($cc['sheet']), 'erp' => number_format($cc['expected'])]) }}</span>@endif
+                                    @if($cc['pension_on'])<span class="block text-[10px] font-normal text-sky-700">{{ __('salesman.import.commission_pension', ['amount' => number_format($cc['pension'])]) }}</span>@endif
+                                @else<span class="text-gray-300">—</span>@endif
+                            </td>
                             <td class="py-1 pr-2">
                                 <select wire:model="importMatches.{{ $p['row'] }}" class="input-base h-8 py-0 text-xs text-gray-800">
                                     <option value="">{{ __('salesman.import.unmatched') }}</option>
@@ -877,6 +939,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             </label>
         </div>
         @endif
+        {{-- 🏦 퇴직연금 1/12 전환 (jin 2026-10-21) — 사람별. 켜면 (급여 + 정산금 + 헤이맨 정산금 + 조정) ÷ 12 를 퇴직연금으로 돌리고
+             나머지를 송금한다. 급여대장 판매수당 대조도 이 값으로 한다. 송금액이 갈려서 [관리] 이상만. --}}
+        @if(in_array($linkedUserType, ['employee', 'freelance'], true) && auth()->user()?->canApprove())
+        <div class="rounded-lg border border-sky-200 bg-sky-50 p-3" data-pension-toggle>
+            <label class="flex items-start gap-2 cursor-pointer">
+                <input wire:model="pension_split_enabled" type="checkbox" class="mt-0.5 rounded" />
+                <span class="text-sm text-gray-800">
+                    {{ __('salesman.field.pension_split') }}
+                    <span class="mt-1 block text-[11px] leading-relaxed text-gray-600">{{ __('salesman.field.pension_split_hint') }}</span>
+                </span>
+            </label>
+        </div>
+        @endif
         {{-- 💰 예치금(프리랜서) / 기본급(사내직원) — jin 2026-09-18.
              「사용자관리에서 프리랜서냐 사내직원이냐에 따라서 그걸 기입 할 수 있게」
              🚫 유형이 안 붙은 담당자에겐 **둘 다 안 보인다** — 엉뚱한 칸에 금액이 들어가는 것보다 낫다.
@@ -936,6 +1011,30 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <button type="button" wire:click="addPayrollRow" class="h-9 sm:h-7 text-xs text-violet-700 hover:underline">{{ __('salesman.payroll.add_row') }}</button>
                 <span class="text-sm font-semibold text-gray-800">{{ __('salesman.payroll.total') }} <span class="tabular-nums" data-payroll-total x-text="'₩' + total()">₩{{ number_format($this->payrollTotal()) }}</span></span>
             </div>
+            @if($linkedUserType === 'employee')
+            {{-- 💱 헤이맨 정산금 (2026-10-21) — 급여 합계 밖의 별도 칸. 월정산 카드에서 송금엔 더하고 회사이익엔 안 넣는다. --}}
+            <div class="mt-2 flex items-center gap-2 border-t border-violet-200 pt-2" data-heyman-input>
+                <span class="w-28 shrink-0 text-xs text-gray-700">{{ __('salesman.field.heyman_pay') }}</span>
+                <input wire:model="heymanPayStr" data-money data-money-signed type="text" inputmode="numeric"
+                       class="input-base h-9 sm:h-7 flex-1 text-right text-xs tabular-nums" placeholder="{{ __('salesman.payroll.amount_ph') }}" />
+            </div>
+            <p class="mt-1 text-[11px] text-gray-500">{{ __('salesman.field.heyman_pay_hint') }}</p>
+            @endif
+        </div>
+        @elseif($linkedUserType === 'freelance' && $canEditPayroll)
+        {{-- 💱 프리랜서도 헤이맨 정산금을 같이 받는 경우가 있다(jin «사내직원/프리랜서 다 필요») — 귀속월은 급여와 같은 선택. --}}
+        <div class="rounded-lg border border-violet-200 bg-violet-50 p-3" data-heyman-input>
+            <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-semibold text-gray-800">{{ __('salesman.field.heyman_pay') }}</span>
+                <select wire:model.live="payrollMonth" class="input-base w-auto py-1 text-xs text-gray-800" aria-label="{{ __('salesman.payroll.month') }}">
+                    @foreach($this->payrollMonthOptions() as $m)
+                    <option value="{{ $m }}">{{ $m }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <input wire:model="heymanPayStr" data-money data-money-signed type="text" inputmode="numeric"
+                   class="input-base mt-2 text-right text-xs tabular-nums" placeholder="{{ __('salesman.payroll.amount_ph') }}" />
+            <p class="mt-1 text-[11px] text-gray-500">{{ __('salesman.field.heyman_pay_hint') }}</p>
         </div>
         @endif
         {{-- 🚪 지급 대상 제외 (jin 2026-09-16) — 「헤이맨」처럼 사람이 아닌 계정(자매 회사)용.

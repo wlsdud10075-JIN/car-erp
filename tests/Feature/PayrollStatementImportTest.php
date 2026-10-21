@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Services\Payroll\PayrollStatementImporter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -132,6 +134,31 @@ class PayrollStatementImportTest extends TestCase
             ->set('payrollFile', UploadedFile::fake()->createWithContent('x.xls', file_get_contents($this->sheet($this->samplePeople()))))
             ->call('applyImport');
         $this->assertSame(4_583_333, PayrollEntry::totalFor($kim->id, '2026-09'));
+    }
+
+    /**
+     * 🔎 판매수당 대조 (jin 2026-10-21) — 미리보기에서 급여대장 판매수당을 ERP 계산(그 달 정산금 + 조정 − 1/12)과 맞춰 본다.
+     * 김연아: 급여대장 판매수당 2,083,333. 9월 확정 정산 2,083,333 이면 「일치」, 2,000,000 이면 +83,333.
+     */
+    public function test_preview_checks_sales_commission_against_the_erp(): void
+    {
+        $kim = Salesman::create(['name' => '김연아', 'type' => 'employee', 'is_active' => true]);
+        $v = Vehicle::create(['vehicle_number' => 'CK1', 'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'salesman_id' => $kim->id, 'purchase_price' => 10_000_000, 'purchase_date' => '2026-09-01', 'sale_price' => 12_000_000, 'sale_date' => '2026-09-02']);
+        $v->finalPayments()->create(['type' => 'balance', 'amount' => 12_000_000, 'payment_date' => '2026-09-05', 'confirmed_at' => now()]);
+        $s = Settlement::create(['vehicle_id' => $v->id, 'salesman_id' => $kim->id, 'settlement_type' => 'per_unit', 'per_unit_amount' => 2_083_333,
+            'settlement_status' => 'confirmed', 'confirmed_at' => '2026-09-15', 'attributed_month' => '2026-09-01']);
+        $this->actingAs(User::factory()->create(['permission' => 'user', 'role' => '재무']));
+        $file = fn () => UploadedFile::fake()->createWithContent('09.xls', file_get_contents($this->sheet($this->samplePeople())));
+
+        Volt::test('erp.salesmen.index')->call('openImport')->set('payrollFile', $file())
+            ->assertSeeHtml('data-import-commission="9"')
+            ->assertSee('판매수당 대조 1명 모두 일치');
+
+        $s->update(['per_unit_amount' => 2_000_000]);
+        $html = Volt::test('erp.salesmen.index')->call('openImport')->set('payrollFile', $file())->html();
+        $this->assertMatchesRegularExpression('/data-import-commission="9"[\s\S]{0,400}?\+83,333/u', $html);
+        $this->assertStringContainsString('판매수당이 ERP 와 다른 사람 1명', $html);
     }
 
     public function test_sales_cannot_open_the_import(): void

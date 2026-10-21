@@ -2,6 +2,7 @@
 
 namespace App\Services\Payout;
 
+use App\Models\ExternalSettlementPay;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
 use App\Models\Settlement;
@@ -16,7 +17,9 @@ use Illuminate\Support\Collection;
  * 각 사람은 PersonPayoutBreakdown — 공식은 거기 한 곳.
  *
  * 합계
- *   transfer_total     송금 총액 = Σ실지급액(급여·검차 포함)                       … 통장에서 나갈 돈
+ *   transfer_total     송금 총액 = Σ실지급액(급여·검차·헤이맨 몫 포함) + Σ퇴직연금 전환액   … 통장에서 나갈 돈
+ *   pension_total      Σ퇴직연금 1/12 전환액(2026-10-21) — 사람에게 안 가고 퇴직연금으로 간다
+ *   external_total     Σ헤이맨 정산금(2026-10-21) — 송금엔 있고 회사이익엔 없다. 「총마진 − 송금 총액 + 이것 = 회사이익」으로 닫힌다
  *   contribution_sum   Σ회사 기여(검차 제외)                                      … 지분율 분모
  *   common_labor       Σ검차직원 실지급(공통 인건비)
  *   company_net        회사 순이익 = contribution_sum − common_labor
@@ -71,12 +74,15 @@ final class BatchPayoutBreakdown
             ->where('payout_excluded', false)
             ->where('type', '!=', 'freelance')
             ->pluck('id');
-        $ids = $ids->merge($salaried)->unique()->values();
+        // 💱 다른 회사(heymanerp) 정산금만 있는 사람도 그린다(2026-10-21) — 송금에 들어가는 돈이다.
+        $externalIds = ExternalSettlementPay::query()->where('month', $month)->distinct()->pluck('salesman_id')->map(fn ($i) => (int) $i);
+        $ids = $ids->merge($salaried)->merge($externalIds)->unique()->values();
 
         $people = Salesman::query()->whereIn('id', $ids)->get()->keyBy('id');
         $payrollTotals = PayrollEntry::query()->where('month', $month)->whereIn('salesman_id', $ids)
             ->selectRaw('salesman_id, SUM(amount) as total')->groupBy('salesman_id')->pluck('total', 'salesman_id');
         $payrollItems = PersonPayoutBreakdown::payrollItemsFor($ids->all(), $month);   // 카드 펼침용 기입 항목(한 쿼리)
+        $external = ExternalSettlementPay::totalsFor($ids->all(), $month);
 
         $rows = [];
         foreach ($ids as $id) {
@@ -89,7 +95,7 @@ final class BatchPayoutBreakdown
                 $sm, $month,
                 ($bySalesman->get($id) ?? collect())->values(),
                 ($adjBySalesman->get($id) ?? collect())->values(),
-                $payroll, false, $payrollItems[$id] ?? [],
+                $payroll, false, $payrollItems[$id] ?? [], (int) ($external[$id] ?? 0),
             );
         }
 
@@ -103,8 +109,12 @@ final class BatchPayoutBreakdown
         $vehicles = 0;
         $equivSum = 0;
         $totalMargin = 0;
+        $pensionTotal = 0;
+        $externalTotal = 0;
         foreach ($rows as $r) {
-            $transfer += (int) $r['payout'];
+            $externalTotal += (int) ($r['heyman_pay'] ?? 0);
+            $transfer += (int) $r['payout'] + (int) ($r['pension'] ?? 0);
+            $pensionTotal += (int) ($r['pension'] ?? 0);
             $vehicles += (int) $r['count'];
             $totalMargin += (int) $r['total_margin'];
             $equivSum += (int) ($r['equiv_total'] ?? 0);
@@ -130,6 +140,8 @@ final class BatchPayoutBreakdown
                 'total_margin' => $totalMargin,
                 'equiv_sum' => $equivSum,
                 'transfer_total' => $transfer,
+                'pension_total' => $pensionTotal,
+                'external_total' => $externalTotal,
                 'contribution_sum' => $contributionSum,
                 'common_labor' => $commonLabor,
                 'company_net' => $contributionSum - $commonLabor,

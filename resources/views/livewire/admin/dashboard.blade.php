@@ -761,7 +761,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ? \App\Models\SettlementPayoutBatch::query()->whereIn('id', array_keys($batchIds))->pluck('month')->unique()->values()
             : collect();
         if ($payrollMonths->isNotEmpty()) {
-            $payroll = \App\Models\PayrollEntry::query()->whereIn('month', $payrollMonths)
+            $payroll = \App\Models\PayrollEntry::query()->whereIn('month', $payrollMonths)->countedInPay()   // 판매수당 제외(2026-10-21)
                 ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
                 ->selectRaw('salesman_id, SUM(amount) as t')->groupBy('salesman_id')->pluck('t', 'salesman_id');
             $inspectorIds = $payroll->isEmpty() ? collect() : Salesman::query()->whereIn('id', $payroll->keys())->whereIn('type', Salesman::PAYROLL_ONLY_TYPES)->pluck('id');   // 검차·직원 = 공통 인건비
