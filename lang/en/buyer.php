@@ -66,6 +66,9 @@ return [
     ],
 
     'field' => [
+        'settlement_ratio' => 'Settlement split',
+        'settlement_ratio_default' => 'Default (by salesman type)',
+        'settlement_ratio_hint' => 'With 5:5 or 7:3, cars sold to this buyer pay the salesman total margin × that share regardless of type (7:3 = our salesman 30%, no per-unit tier, negative on loss cars). The 50,000 document fee is deducted for freelancers only. Applies to settlements created after this is set; resets to default when the buyer changes salesman.',
         'domestic' => 'Domestic-sale buyer',
         'domestic_hint' => 'Vehicles sold to this buyer settle with the domestic formula (total sale − purchase − deregistration − towing) instead of the export margin. Only KRW vehicles get that treatment — non-KRW vehicles can still be assigned to this buyer, but they settle with the export formula until their currency is changed to KRW.',
         'name' => 'Buyer Name',

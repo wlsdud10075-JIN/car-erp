@@ -2,6 +2,7 @@
 
 namespace App\Services\Payout;
 
+use App\Models\Buyer;
 use App\Models\ExternalSettlementPay;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
@@ -119,7 +120,9 @@ final class PersonPayoutBreakdown
             'margin_rate' => $s->margin_rate,
             'is_domestic' => (bool) $s->is_domestic,
             // 승인 판단용 — 정산방식(승인 페이지가 종전부터 보여 주던 것)
-            'type_label' => $s->settlement_type === 'ratio' ? __('payout_batch.type_ratio', ['ratio' => $s->effective_ratio]) : __('payout_batch.type_per_unit'),
+            'type_label' => $s->isBuyerRatio()
+                ? __('payout_batch.type_buyer_ratio', ['split' => Buyer::SETTLEMENT_RATIO_OPTIONS[$s->effective_ratio] ?? $s->effective_ratio.'%'])
+                : ($s->settlement_type === 'ratio' ? __('payout_batch.type_ratio', ['ratio' => $s->effective_ratio]) : __('payout_batch.type_per_unit')),
         ])->values()->all();
 
         $base = [

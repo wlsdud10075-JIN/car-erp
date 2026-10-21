@@ -22,6 +22,8 @@ class Settlement extends Model
 
     protected $fillable = [
         'vehicle_id', 'salesman_id', 'settlement_type', 'settlement_ratio',
+        // 2026-10-21 jin — 'buyer' = 비율이 바이어 정산 방식(5:5·7:3)에서 왔다. 생성 때 박제.
+        'ratio_source',
         'per_unit_amount', 'other_deduction', 'settlement_status', 'payout_batch_id',
         // 2026-10-21 jin — 월정산 제출 때의 실지급액 박제(「제출 뒤 바뀐 정산」 비교 기준). SettlementPayoutBatch::openBatch 가 찍는다.
         'payout_submitted_krw',
@@ -1267,7 +1269,18 @@ class Settlement extends Model
      */
     public function getDocumentFeeAttribute(): int
     {
+        // 바이어 정산 방식(5:5·7:3)으로 비율을 받는 **사내직원**은 서류비를 빼지 않는다 (jin 2026-10-21 «빼지마»). 프리랜서는 종전대로.
+        if ($this->settlement_type === 'ratio' && $this->ratio_source === 'buyer' && $this->salesman?->type !== 'freelance') {
+            return 0;
+        }
+
         return $this->settlement_type === 'ratio' ? self::param('settlement_freelance_document_fee') : 0;
+    }
+
+    /** 바이어 정산 방식에서 온 비율인가 — 화면 라벨(「바이어 7:3」)용. */
+    public function isBuyerRatio(): bool
+    {
+        return $this->settlement_type === 'ratio' && $this->ratio_source === 'buyer';
     }
 
     /**

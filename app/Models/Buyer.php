@@ -19,6 +19,8 @@ class Buyer extends Model
         'contact_phone', 'passport_id', 'address', 'memo', 'is_active',
         // 2026-08-04 jin — 퇴사자 승계 바이어. 사내직원 정산 시 건당 5만원 고정(영구).
         'is_inherited', 'inherited_from_salesman_id', 'inherited_at',
+        // 2026-10-21 jin — 바이어별 정산 비율(NULL 기본 · 50 = 5:5 · 30 = 7:3). 마이그레이션 2026_10_21_000002 주석 참조.
+        'settlement_ratio_pct',
         // 2026-08-10 jin — 무담보 한도(단골에게 담보 없이 내주는 매입 한도). NULL·0 = 미설정 = 기존 동작.
         'unsecured_limit_krw',
         // 2026-08-21 jin - 바이어별 락 필요입금률(%). NULL = 미설정 = 전역값. 0 은 유효값(락 없음).
@@ -50,8 +52,21 @@ class Buyer extends Model
      * 자동 생성분은 독립 — 이후 바이어 수정해도 동기화하지 않는다(단순).
      * 가드: 대량 임포트/시더(artisan, auth 없음)는 제외 — 일괄업로드가 컨사이니를 함께 만들 때 중복 방지.
      */
+    /** 바이어 정산 방식 선택지 — 비율(%) => 표시. NULL(기본)은 화면이 따로 그린다. */
+    public const SETTLEMENT_RATIO_OPTIONS = [50 => '5:5', 30 => '7:3'];
+
     protected static function booted(): void
     {
+        // 🔁 담당자가 바뀌면(퇴사 승계·수동 변경) 바이어 정산 방식은 「기본」으로 돌아간다 (jin 2026-10-21 «승계를 하면 기본»).
+        //    같은 저장에서 정산 방식을 직접 고쳤으면 그 값을 따른다. 정산이 이미 생긴 차는 박제라 무관.
+        static::saving(function (Buyer $buyer) {
+            if ($buyer->exists && $buyer->isDirty('salesman_id') && $buyer->getOriginal('salesman_id') !== null
+                && $buyer->settlement_ratio_pct !== null && ! $buyer->isDirty('settlement_ratio_pct')) {
+                AuditLog::recordChange($buyer, 'settlement_ratio_pct', $buyer->settlement_ratio_pct, null);
+                $buyer->settlement_ratio_pct = null;
+            }
+        });
+
         // 삭제 가드 (jin 2026-09-23 → 2026-09-24, SKILLS §8 #110) — 판정·문구는 BuyerRebindService 단일 출처.
         //   차량이 붙어 있으면 화면이 「이관 후 삭제」 모달로 풀고, 적립금·현금 원장이 있으면 어디서도 못 지운다.
         //   ⚠️ auth 없는 경로(시더·artisan·테스트 픽스처)는 통과 — Vehicle::deleting 과 같은 우회. 「이미 매달린 데이터」를
