@@ -261,7 +261,6 @@ return [
         'freight_usd' => 'Freight USD (memo) total',
         'unpaid' => 'Receivable total',
         'unpaid_title' => 'Sum of sales still unpaid in the current search and filters (remaining after payments, overpayments excluded). Foreign-currency vehicles without an exchange rate are left out.',
-        'currencies' => ':n currencies',
         'shipping_fee' => 'Shipping',
         'purchase_unpaid' => 'Unpaid total',
         'purchase_unpaid_title' => 'Total purchase balance still owed, under the current search and filters. Click to show only vehicles with an unpaid balance - including those already sold or shipped.',

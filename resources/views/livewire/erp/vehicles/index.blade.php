@@ -7775,26 +7775,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
     @endif
     <span class="h-4 w-px bg-gray-200"></span>
-    {{-- 📉 미수금 합 — 통화별 (jin 2026-10-21) — 받은 돈을 뺀 남은 미수만(과입금 제외). 단일 통화면 prefix. --}}
-    <div class="flex flex-col gap-0.5" data-stat-unpaid title="{{ __('vehicle.stat.unpaid_title') }}">
-        <div class="flex items-baseline gap-1.5">
-            <span class="text-sm">📉</span>
-            <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.unpaid') }}</span>
-            <span class="text-sm font-bold {{ $unpaidCurs->isEmpty() ? 'text-gray-800' : 'text-red-600' }}">
-                @if($unpaidCurs->count() === 1)
-                    {{ $unpaidCurs->first()['currency'] }} {{ number_format($unpaidCurs->first()['unpaid']) }}
-                @elseif($unpaidCurs->isEmpty())
-                    0
-                @else
-                    {{ __('vehicle.stat.currencies', ['n' => $unpaidCurs->count()]) }}
-                @endif
-            </span>
-        </div>
-        @if($unpaidCurs->count() > 1)
-        <div class="pl-6 text-[10px] text-gray-400">
-            {{ $unpaidCurs->map(fn ($c) => $c['currency'].' '.number_format($c['unpaid']))->implode(' · ') }}
-        </div>
-        @endif
+    {{-- 📉 미수금 합 — 통화별 (jin 2026-10-21) — 받은 돈을 뺀 남은 미수만(과입금 제외).
+         통화별 금액을 본 줄에 같은 크기로 나란히 — 통화가 다른 돈은 더하지 않는다(jin «아래 금액이 너무 작아»). --}}
+    <div class="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5" data-stat-unpaid title="{{ __('vehicle.stat.unpaid_title') }}">
+        <span class="text-sm">📉</span>
+        <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.unpaid') }}</span>
+        @forelse($unpaidCurs as $c)
+            <span class="text-sm font-bold text-red-600 whitespace-nowrap">{{ $c['currency'] }} {{ number_format($c['unpaid']) }}</span>
+            @if(! $loop->last)<span class="text-xs text-gray-300">·</span>@endif
+        @empty
+            <span class="text-sm font-bold text-gray-800">0</span>
+        @endforelse
     </div>
     {{-- 💸 미지급 총액 (jin 2026-09-10) — 「지금 지급해야 할 돈」. 매입은 원화 단일이라 통화별로 안 쪼갠다.
          🔑 **숫자를 누르면 그 숫자를 만든 차만** 남는다(action=purchase_unpaid_all 토글) — 진행상태
