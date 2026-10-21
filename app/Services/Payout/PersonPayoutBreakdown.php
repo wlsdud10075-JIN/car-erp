@@ -230,17 +230,17 @@ final class PersonPayoutBreakdown
      */
     public static function commissionCheckFor(string $month, array $sheets): array
     {
-        $people = Salesman::query()->whereIn('id', array_keys($sheets))->where('type', 'employee')->get()->keyBy('id');
-        $targets = [];
-        foreach ($sheets as $id => $items) {
-            if ($people->has($id) && array_key_exists(PayrollEntry::SALES_COMMISSION, $items)) {
-                $targets[(int) $id] = $items;
-            }
-        }
-        if ($targets === []) {
-            return [];
-        }
+        return self::commissionCheckWith(self::commissionBaseFor($month), $sheets);
+    }
 
+    /**
+     * 그 달 사내직원별 대조 기준 — salesman_id => [settle(정산금 + 헤이맨 + 조정·인센티브), pension_on].
+     * 한 달 배치를 통째로 계산하므로 **무겁다** — 급여대장 미리보기는 파일을 읽을 때 한 번만 부르고 배열로 들고 있는다(§8 #96-C).
+     *
+     * @return array<int, array{settle:int, pension_on:bool}>
+     */
+    public static function commissionBaseFor(string $month): array
+    {
         $batch = SettlementPayoutBatch::monthly()->where('month', $month)
             ->whereIn('status', [SettlementPayoutBatch::STATUS_PENDING, SettlementPayoutBatch::STATUS_APPROVED])
             ->orderByDesc('id')->first();
@@ -250,21 +250,38 @@ final class PersonPayoutBreakdown
                 ->whereIn('id', SettlementPayoutBatch::eligibleSettlementIds($month))
                 ->with(['salesman', 'vehicle.finalPayments', 'vehicle.receivableHistories'])->get());
         $byId = collect($bd['people'])->keyBy('salesman_id');
-        $external = ExternalSettlementPay::totalsFor(array_keys($targets), $month);
+        $external = ExternalSettlementPay::query()->where('month', $month)->selectRaw('salesman_id, SUM(amount) as t')->groupBy('salesman_id')->pluck('t', 'salesman_id');
 
         $out = [];
-        foreach ($targets as $id => $items) {
-            $p = $byId->get($id);
-            $settleSide = $p
-                ? (int) $p['settlement_pay'] + (int) $p['adj_manual'] + (int) $p['adj_carry'] + (int) $p['incentive']
-                : 0;
-            $settleSide += (int) ($external[$id] ?? 0);
+        foreach (Salesman::query()->where('type', 'employee')->get(['id', 'pension_split_enabled']) as $sm) {
+            $p = $byId->get($sm->id);
+            $settle = $p ? (int) $p['settlement_pay'] + (int) $p['adj_manual'] + (int) $p['adj_carry'] + (int) $p['incentive'] : 0;
+            $out[(int) $sm->id] = ['settle' => $settle + (int) ($external[$sm->id] ?? 0), 'pension_on' => (bool) $sm->pension_split_enabled];
+        }
+
+        return $out;
+    }
+
+    /**
+     * 기준(commissionBaseFor) × 급여대장 항목 → 대조. 계산만 한다(쿼리 없음).
+     *
+     * @param  array<int, array{settle:int, pension_on:bool}>  $base
+     * @param  array<int, array<string,int>>  $sheets
+     * @return array<int, array{sheet:int, expected:int, diff:int, pension_on:bool, pension:int}>
+     */
+    public static function commissionCheckWith(array $base, array $sheets): array
+    {
+        $out = [];
+        foreach ($sheets as $id => $items) {
+            if (! isset($base[$id]) || ! array_key_exists(PayrollEntry::SALES_COMMISSION, $items)) {
+                continue;
+            }
             $sheet = (int) $items[PayrollEntry::SALES_COMMISSION];
             $payrollEx = (int) array_sum($items) - $sheet;
-            $on = (bool) $people->get($id)->pension_split_enabled;
-            $pension = $on ? self::pensionOf($payrollEx + $settleSide) : 0;
-            $expected = $settleSide - $pension;
-            $out[$id] = ['sheet' => $sheet, 'expected' => $expected, 'diff' => $sheet - $expected, 'pension_on' => $on, 'pension' => $pension];
+            $on = $base[$id]['pension_on'];
+            $pension = $on ? self::pensionOf($payrollEx + $base[$id]['settle']) : 0;
+            $expected = $base[$id]['settle'] - $pension;
+            $out[(int) $id] = ['sheet' => $sheet, 'expected' => $expected, 'diff' => $sheet - $expected, 'pension_on' => $on, 'pension' => $pension];
         }
 
         return $out;
