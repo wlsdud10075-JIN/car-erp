@@ -94,6 +94,6 @@ return [
     // 2026-10-21 — 제출 뒤 실지급이 바뀐 정산(SettlementPayoutBatch::settlementPayoutChanges)
     'changes' => [
         'title' => ':n settlement(s) changed after submission',
-        'hint' => 'Sale price, rate or costs changed after submission, so the payout differs. Approving pays the new amount (right).',
+        'hint' => 'These payouts changed between submission and approval. Approving pays the new amount (right); nothing needs to be deducted.',
     ],
 ];
