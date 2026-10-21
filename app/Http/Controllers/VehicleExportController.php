@@ -66,6 +66,8 @@ class VehicleExportController extends Controller
             : [];
         $search = $mirror ? trim((string) $request->query('q', '')) : '';
         $salesmanId = $mirror ? (string) $request->query('salesmanId', '') : '';
+        // 누적검색·선적요청 딥링크(?ids=) — 화면 목록과 같은 차만 (jin 2026-10-21).
+        $ids = $mirror ? array_values(array_filter(array_map('intval', explode(',', (string) $request->query('ids', ''))))) : [];
         $dateFrom = $mirror ? (string) $request->query('dateFrom', '') : '';
         $dateTo = $mirror ? (string) $request->query('dateTo', '') : '';
         $dateType = (string) $request->query('dateType', 'purchase');
@@ -101,6 +103,7 @@ class VehicleExportController extends Controller
             ->when($restrictOwn, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictMgr, fn ($q) => $q->whereIn('salesman_id', $subIds))
             ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))
+            ->when($ids !== [], fn ($q) => $q->whereIn('id', $ids))
             ->when($progress !== '', fn ($q) => $q->progressStage($progress))   // 화면과 같은 스코프 — 매입중·말소완료는 넓다
             ->when($exclude !== [], fn ($q) => $q->notProgressStages($exclude))
             // 화면 pill 과 같은 집합을 내보낸다 — 「거래완료 + 2차 마감」 제외 (jin 2026-09-10).
