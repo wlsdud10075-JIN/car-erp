@@ -26,17 +26,19 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $importPreview = [];
     /** @var array<int, string> 급여대장 행번호 → salesman_id('' = 미매칭) */
     public array $importMatches = [];
+    /** 판매수당 대조 기준(그 달 사내직원별 정산금 쪽 합 · 연금 토글) — 파일을 읽을 때 한 번만 계산(드롭다운을 바꿀 때마다 한 달 배치를 다시 돌지 않게). */
+    public array $commissionBase = [];
 
     public function openImport(): void
     {
         abort_unless(auth()->user()?->canEditPayroll(), 403);
-        $this->reset(['payrollFile', 'importPreview', 'importMatches']);
+        $this->reset(['payrollFile', 'importPreview', 'importMatches', 'commissionBase']);
         $this->showImport = true;
     }
 
     public function closeImport(): void
     {
-        $this->reset(['payrollFile', 'importPreview', 'importMatches', 'showImport']);
+        $this->reset(['payrollFile', 'importPreview', 'importMatches', 'showImport', 'commissionBase']);
     }
 
     public function updatedPayrollFile(): void
@@ -46,6 +48,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $importer = new PayrollStatementImporter;
         $this->importPreview = $importer->parse($this->payrollFile->getRealPath());
         $this->importMatches = [];
+        $month = $this->importPreview['month'] ?? null;
+        $this->commissionBase = $month && PayrollEntry::isMonth($month) && ($this->importPreview['people'] ?? []) !== []
+            ? \App\Services\Payout\PersonPayoutBreakdown::commissionBaseFor($month) : [];
         foreach ($importer->match($this->importPreview['people']) as $row => $id) {
             $this->importMatches[$row] = $id === null ? '' : (string) $id;
         }
@@ -74,7 +79,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $rowOf[$id] = $p['row'];
         }
         $out = [];
-        foreach (\App\Services\Payout\PersonPayoutBreakdown::commissionCheckFor($month, $sheets) as $id => $c) {
+        foreach (\App\Services\Payout\PersonPayoutBreakdown::commissionCheckWith($this->commissionBase, $sheets) as $id => $c) {
             $out[$rowOf[$id]] = $c;
         }
 

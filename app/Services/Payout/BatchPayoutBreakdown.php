@@ -75,7 +75,9 @@ final class BatchPayoutBreakdown
             ->where('type', '!=', 'freelance')
             ->pluck('id');
         // 💱 다른 회사(heymanerp) 정산금만 있는 사람도 그린다(2026-10-21) — 송금에 들어가는 돈이다.
-        $externalIds = ExternalSettlementPay::query()->where('month', $month)->distinct()->pluck('salesman_id')->map(fn ($i) => (int) $i);
+        //    지급 대상 아님(payout_excluded)은 급여 인원과 같이 뺀다.
+        $externalIds = Salesman::query()->whereIn('id', ExternalSettlementPay::query()->where('month', $month)->select('salesman_id'))
+            ->where('payout_excluded', false)->pluck('id')->map(fn ($i) => (int) $i);
         $ids = $ids->merge($salaried)->merge($externalIds)->unique()->values();
 
         $people = Salesman::query()->whereIn('id', $ids)->get()->keyBy('id');

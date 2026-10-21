@@ -1842,7 +1842,8 @@ new #[Layout('components.layouts.app')] class extends Component
         //    재무가 직접 넣은 건당액·박제 없는 행은 그대로(Settlement::retieredPerUnitAtClose). per_unit_amount 변경은 감사로그에 남는다.
         $fresh = $settlement->fresh(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman']);
         $retiered = $fresh->retieredPerUnitAtClose();
-        if ($retiered !== null && $retiered !== (int) $fresh->per_unit_amount) {
+        //    ⚠️ 건당액이 빈칸(null)인 옛 지급분은 원래 실시간 등급이라 손댈 것이 없다(채우면 감사로그 소음만 — ssancarerp 224건).
+        if ($retiered !== null && $fresh->per_unit_amount !== null && $retiered !== (int) $fresh->per_unit_amount) {
             $fresh->update(['per_unit_amount' => $retiered]);
         }
         $paidSnapshotPayout = (int) ($settlement->confirmed_snapshot['actual_payout'] ?? 0);
