@@ -57,6 +57,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool   $is_inherited  = false;
     // 2026-09-08 jin — 내수(국내 판매) 바이어. 이 바이어로 판 차량은 내수정산으로 빠진다.
     public bool   $is_domestic   = false;
+    // 2026-10-21 jin — 바이어 정산 방식: '' = 기본(담당자 유형) · '50' = 5:5 · '30' = 7:3. 정산액을 바꾸므로 [관리] 이상.
+    public string $settlement_ratio_pct_str = '';
     public string $inherited_from_salesman_id_str = '';
     public string $inherited_at  = '';
     // 2026-08-10 jin — 무담보 한도. 담보(선적 전 국내 차량)가 없어도 이 금액까지는 매입해준다.
@@ -401,6 +403,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_active     = $buyer->is_active;
         $this->is_inherited  = (bool) $buyer->is_inherited;
         $this->is_domestic   = (bool) $buyer->is_domestic;
+        $this->settlement_ratio_pct_str = $buyer->settlement_ratio_pct === null ? '' : (string) $buyer->settlement_ratio_pct;
         $this->inherited_from_salesman_id_str = $buyer->inherited_from_salesman_id ? (string) $buyer->inherited_from_salesman_id : '';
         $this->inherited_at  = $buyer->inherited_at?->format('Y-m-d') ?? '';
         $this->unsecured_limit_krw_str = ($buyer->unsecured_limit_krw ?? 0) > 0
@@ -471,6 +474,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             //      정산이 나면 일반(수출) 공식으로 떨어지지, 외화를 원화로 오인하지 않는다.
             //      🚫 여기에 다시 막지 말 것. 대신 아래 화면이 몇 대가 남았는지 말한다.
             $data['is_domestic'] = $this->is_domestic;
+            // 🤝 바이어 정산 방식 — 선택지 밖 값은 기본으로(§8 #26 프로퍼티 주입 방어). karaba 는 화면도 저장도 없다.
+            if (! \App\Models\Setting::isKaraba()) {
+                $pct = (int) $this->settlement_ratio_pct_str;
+                $data['settlement_ratio_pct'] = array_key_exists($pct, Buyer::SETTLEMENT_RATIO_OPTIONS) ? $pct : null;
+            }
         }
 
         // 💳 무담보 한도 — **업무관리자 이상**(manager·admin·super, jin 2026-09-29). 화면 노출은 편의일 뿐이라 저장 시 재인가(SKILLS §8 #26).
@@ -500,6 +508,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $buyer = Buyer::findOrFail($this->editingId);
             $wasInherited = (bool) $buyer->is_inherited;
             $wasDomestic = (bool) $buyer->is_domestic;
+            $wasRatio = $buyer->settlement_ratio_pct;
             $wasLimit = (int) ($buyer->unsecured_limit_krw ?? 0);
             $wasLocks = [
                 'lock_shipping_entry_pct' => $buyer->lock_shipping_entry_pct,
@@ -513,6 +522,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 내수 지정은 그 바이어로 파는 모든 차의 정산 공식을 바꾼다 — 누가 언제 켰는지 남긴다.
             if (array_key_exists('is_domestic', $data) && $wasDomestic !== $this->is_domestic) {
                 \App\Models\AuditLog::recordChange($buyer, 'is_domestic', $wasDomestic, $this->is_domestic);
+            }
+            // 바이어 정산 방식은 그 바이어로 생길 정산의 비율을 바꾼다 — 누가 언제 골랐는지 남긴다.
+            if (array_key_exists('settlement_ratio_pct', $data) && $wasRatio !== $data['settlement_ratio_pct']) {
+                \App\Models\AuditLog::recordChange($buyer, 'settlement_ratio_pct', $wasRatio, $data['settlement_ratio_pct']);
             }
             // 무담보 한도는 매입 락 기준선이라 변경 이력 필수 — 누가 언제 얼마로 올렸는지가 감사 핵심.
             if (array_key_exists('unsecured_limit_krw', $data) && $wasLimit !== (int) ($data['unsecured_limit_krw'] ?? 0)) {
@@ -1643,6 +1656,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <p class="mt-1 text-xs text-gray-400">{{ __('buyer.field.salesman_note') }}</p>
                     @error('salesman_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
+                {{-- 🤝 정산 방식 (jin 2026-10-21) — 기본 / 5:5 / 7:3. 고르면 이 바이어 차는 담당자 유형과 무관하게 총마진 × 비율만(차등 없음).
+                     정한 뒤 새로 생기는 정산부터 · 담당자가 바뀌면 기본으로. [관리] 이상, karaba 제외. --}}
+                @if(auth()->user()?->canApprove() && ! \App\Models\Setting::isKaraba())
+                <div class="rounded-lg border border-violet-200 bg-violet-50 p-3" data-buyer-settlement-ratio>
+                    <label class="label-base">{{ __('buyer.field.settlement_ratio') }}</label>
+                    <div class="flex flex-wrap gap-1">
+                        @foreach(['' => __('buyer.field.settlement_ratio_default'), '50' => '5:5', '30' => '7:3'] as $val => $lab)
+                        <button type="button" wire:click="$set('settlement_ratio_pct_str', '{{ $val }}')"
+                                class="tab-pill {{ $settlement_ratio_pct_str === (string) $val ? 'is-active' : '' }}">{{ $lab }}</button>
+                        @endforeach
+                    </div>
+                    <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('buyer.field.settlement_ratio_hint') }}</p>
+                </div>
+                @endif
                 {{-- 내수(국내 판매) 바이어 (jin 2026-09-08) — 이 바이어로 판 차량은 내수정산으로 빠진다.
                      정산 공식을 통째로 바꾸므로 승계와 같은 [관리] 이상 권한. --}}
                 @if(auth()->user()?->canApprove())

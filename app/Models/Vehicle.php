@@ -1697,10 +1697,15 @@ class Vehicle extends Model
             return null;   // 담당자 없이는 만들 수 없다 — 예외로도 못 넘긴다(입력 미비)
         }
 
+        // 🤝 바이어별 정산 비율 (jin 2026-10-21) — 판매 바이어에 5:5·7:3 이 정해져 있으면 담당자 유형과 무관하게 그 비율.
+        //    여기서 한 번 박제한다(내수와 같은 이유 — 바이어 칸을 나중에 바꿔도 이미 생긴 정산은 그대로). karaba 는 정산 공식이 달라 제외.
+        $buyerPct = Setting::isKaraba() ? null : $this->domesticBuyer()?->settlement_ratio_pct;
+
         return $this->settlements()->create([
             'salesman_id' => $salesman->id,
-            'settlement_type' => $salesman->defaultSettlementType(),
-            'settlement_ratio' => null,
+            'settlement_type' => $buyerPct !== null ? 'ratio' : $salesman->defaultSettlementType(),
+            'settlement_ratio' => $buyerPct,
+            'ratio_source' => $buyerPct !== null ? 'buyer' : null,
             'per_unit_amount' => null,
             'settlement_status' => 'pending',
             'attributed_month' => $this->settlementAttributionMonth(),

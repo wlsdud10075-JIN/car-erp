@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\Buyer;
 use App\Models\Settlement;
 use App\Models\Vehicle;
 use Illuminate\Support\Collection;
@@ -73,7 +74,7 @@ class SettlementExportService
             //    내수·분모 0 은 null → 빈칸. 🚨 합계는 SUM 이 아니다(아래 SUM_COLUMNS 에 안 넣는다).
             'margin_rate' => ['마진율', 'rate', fn (Settlement $s) => $s->margin_rate],
             // 정산
-            'settlement_type' => ['정산방식', 'str', fn (Settlement $s) => $s->settlement_type === 'ratio' ? '프리랜서(비율)' : '사내직원(건당)'],
+            'settlement_type' => ['정산방식', 'str', fn (Settlement $s) => $s->isBuyerRatio() ? '바이어 '.(Buyer::SETTLEMENT_RATIO_OPTIONS[$s->effective_ratio] ?? $s->effective_ratio.'%') : ($s->settlement_type === 'ratio' ? '프리랜서(비율)' : '사내직원(건당)')],
             'settlement_ratio' => ['정산비율(%)', 'num', fn (Settlement $s) => $s->settlement_type === 'ratio' ? $s->settlement_ratio : null],
             'per_unit_amount' => ['건당금액', 'num', fn (Settlement $s) => $s->settlement_type === 'per_unit' ? $s->per_unit_amount : null],
             'settlement_amount' => ['정산액', 'num', fn (Settlement $s) => $s->settlement_amount],

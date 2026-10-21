@@ -22,6 +22,7 @@ return [
     'rejected_reason' => 'Reject reason: :reason',
     'no_salesman' => 'No salesman',
     'type_ratio' => 'Freelance :ratio%',
+    'type_buyer_ratio' => 'Buyer :split',   // 2026-10-21 — 바이어 정산 방식(5:5·7:3)에서 온 비율
     'type_per_unit' => 'Employee per-unit',
     'empty' => 'No batches.',
     'notify' => [

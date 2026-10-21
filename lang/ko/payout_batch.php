@@ -22,6 +22,7 @@ return [
     'rejected_reason' => '반려 사유: :reason',
     'no_salesman' => '담당자 미지정',
     'type_ratio' => '프리랜서 :ratio%',
+    'type_buyer_ratio' => '바이어 :split',   // 2026-10-21 — 바이어 정산 방식(5:5·7:3)에서 온 비율
     'type_per_unit' => '사내직원 건당',
     'empty' => '배치가 없습니다.',
     'notify' => [
