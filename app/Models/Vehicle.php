@@ -201,6 +201,7 @@ class Vehicle extends Model
         'cost_inspection', 'cost_performance', 'cost_repair', 'cost_advertising',   // karaba 비용 4개 (Phase 2, 2026-07-22)
         'parts_amount',   // karaba 부품 기록(미추적 — 미수·정산·매출 제외)
         'transport_fee_usd',   // 운임비 USD 기록칸(순수 메모 — 어떤 계산에도 미포함, jin 2026-08-05)
+        'usd_exchange_rate',   // board 매입 때 USD 환율 메모(계산 미포함 — 판매통화 환율은 exchange_rate, jin 2026-10-22)
         'purchase_vat_amount',   // karaba 매입세액VAT (Phase 3 — 이익율 정산 영업이익 계산)
         // 큐 22-C-E (2026-05-20) — down_payment / selling_fee_payment DROP.
         // 2컬럼은 purchase_balance_payments.type enum (down/selling_fee) 로 통합.
@@ -833,6 +834,7 @@ class Vehicle extends Model
         //   "영업이 잘못 골라도 관리가 눈치챌 기회가 사라진다" 는 우려의 유일한 대응이 이 기록이다.
         //   운임비(USD)는 회계 미포함 메모지만 서류·정산 대화에 쓰이므로 같이 남긴다.
         'forwarding_company_id', 'transport_fee_usd',
+        'usd_exchange_rate',   // 2026-10-22 board 연동 메모 — 누가 바꿨는지 남긴다
     ];
 
     /**

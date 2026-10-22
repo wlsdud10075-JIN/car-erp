@@ -1434,6 +1434,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $sale_date    = '';
     public string $currency     = 'USD';
     public string $exchange_rate_str = '';
+    public string $usd_rate_memo = '';   // board 매입 때 USD 환율(표시만 — 저장 배열에 없음, jin 2026-10-22)
     public string $buyer_id_str     = '';
     public string $consignee_id_str = '';
     public string $sale_price_str       = '';
@@ -4695,6 +4696,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->sale_date         = $v->sale_date ? $v->sale_date->format('Y-m-d') : '';
         $this->currency          = $v->currency ?? 'USD';
         $this->exchange_rate_str = $v->exchange_rate ? (string)$v->exchange_rate : '';
+        $this->usd_rate_memo     = (float) $v->usd_exchange_rate > 0 ? rtrim(rtrim(number_format((float) $v->usd_exchange_rate, 4), '0'), '.') : '';
         $this->buyer_id_str      = $v->buyer_id     ? (string)$v->buyer_id     : '';
         $this->consignee_id_str  = $v->consignee_id ? (string)$v->consignee_id : '';
         $this->sale_price_str       = $v->sale_price       ? (string)$v->sale_price       : '';
@@ -5527,7 +5529,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'cost_transfer_str', 'cost_parking_str', 'cost_extra1_str', 'cost_extra2_str',
             'cost_inspection_str', 'cost_performance_str', 'cost_repair_str', 'cost_advertising_str', 'parts_amount_str', 'purchase_vat_amount_str',
             'down_payment_str', 'selling_fee_payment_str',
-            'exchange_rate_str', 'sale_price_str', 'tax_dc_str',
+            'exchange_rate_str', 'usd_rate_memo', 'sale_price_str', 'tax_dc_str',
             'commission_str', 'transport_fee_str', 'transport_fee_usd_str', 'auto_loading_str',
             'sale_other_costs_str', 'savings_used_str',
             // 22-A-3a 사용자 정정 — 4 _str 복귀 (재무·관리자 입력)
@@ -9907,7 +9909,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         @endforeach
                     </select>
                 </div>
-                <div><label class="label-base">{{ __('vehicle.field.exchange_rate') }} @if($currency !== 'KRW')  @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'input-required' : '' }}" placeholder="1350" />@error('exchange_rate_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror</div>
+                <div>@if($usd_rate_memo !== '')<p class="mb-0.5 text-[11px] text-gray-400" data-usd-rate-memo>{{ __('vehicle.field.usd_rate_memo', ['rate' => $usd_rate_memo]) }}</p>@endif<label class="label-base">{{ __('vehicle.field.exchange_rate') }} @if($currency !== 'KRW')  @endif</label><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'input-required' : '' }}" placeholder="1350" />@error('exchange_rate_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror</div>
                 <div>
                     <div class="flex items-center justify-between">
                         <label class="label-base">{{ __('vehicle.field.buyer') }} </label>

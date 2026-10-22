@@ -95,6 +95,9 @@ class PurchaseSyncController extends Controller
             'purchase_price_krw' => ['nullable', 'integer', 'min:0'],   // 구입금액(차값−할인)만 — final_price 부풀림 교정
             'selling_fee_krw' => ['nullable', 'integer', 'min:0'],      // 매도비 (별도 컬럼)
             'transport_fee' => ['nullable', 'numeric', 'min:0'],        // 운임비 — ⚠️ 판매통화(board 가 환산해 보냄), USD raw 아님
+            // 2026-10-22 (jin) — 버전 그대로 optional 2개. 둘 다 메모(계산 미포함). USD 운임비는 정수(달러)로 반올림.
+            'transport_fee_usd' => ['nullable', 'numeric', 'min:0'],    // 운임비 USD raw → vehicles.transport_fee_usd
+            'usd_exchange_rate' => ['nullable', 'numeric', 'min:0'],    // 그때 USD 환율 → vehicles.usd_exchange_rate (판매통화 환율 아님)
             'sale_price' => ['nullable', 'numeric', 'min:0'],           // pre-fill, 관리 편집
             'sale_currency' => ['nullable', 'string', 'in:'.implode(',', self::SALE_CURRENCIES)],
             'sale_exchange_rate' => ['nullable', 'numeric', 'min:0'],   // pre-fill, 관리가 지정시점 환율로 덮어씀
@@ -177,6 +180,14 @@ class PurchaseSyncController extends Controller
             //    뒤에서 단일 exchange_rate 로 곱해짐(Vehicle::getSaleTotalAmountAttribute) → USD raw 저장 시
             //    EUR 판매차에서 EUR 환율로 곱해져 부풀음. board 가 판매통화로 환산해 보냄(2026-06-23 버그수정).
             $vehicle->transport_fee = $data['transport_fee'];
+        }
+        // 2026-10-22 — USD 운임비·USD 환율 메모. 컨테이너 차는 board 가 비워 보내고, 선적요청 1/N 몫이 나중에 채운다
+        //   (ShippingRequestController — 그쪽도 빈 칸만 채움).
+        if ((float) ($data['transport_fee_usd'] ?? 0) > 0) {
+            $vehicle->transport_fee_usd = (int) round((float) $data['transport_fee_usd']);
+        }
+        if ((float) ($data['usd_exchange_rate'] ?? 0) > 0) {
+            $vehicle->usd_exchange_rate = $data['usd_exchange_rate'];
         }
 
         // v3 — 바이어/컨사이니 FK (존재·활성 검증, consignee 는 buyer 하위. 무효면 null).
@@ -528,6 +539,24 @@ class PurchaseSyncController extends Controller
             } else {
                 $vehicle->transport_fee = $data['transport_fee'];
                 $filled[] = 'transport_fee';
+            }
+        }
+
+        // 2026-10-22 — USD 메모 2칸도 같은 규칙(빈 칸만). 이미 선적요청 1/N 이나 사람이 넣은 값은 안 건드린다.
+        if ((float) ($data['transport_fee_usd'] ?? 0) > 0) {
+            if ((int) $vehicle->transport_fee_usd > 0) {
+                $skipped['transport_fee_usd'] = 'already_set';
+            } else {
+                $vehicle->transport_fee_usd = (int) round((float) $data['transport_fee_usd']);
+                $filled[] = 'transport_fee_usd';
+            }
+        }
+        if ((float) ($data['usd_exchange_rate'] ?? 0) > 0) {
+            if ((float) $vehicle->usd_exchange_rate > 0) {
+                $skipped['usd_exchange_rate'] = 'already_set';
+            } else {
+                $vehicle->usd_exchange_rate = $data['usd_exchange_rate'];
+                $filled[] = 'usd_exchange_rate';
             }
         }
 
