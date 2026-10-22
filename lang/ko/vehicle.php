@@ -611,6 +611,7 @@ return [
         'sale_date' => '판매일',
         'currency' => '통화',
         'exchange_rate' => '환율',
+        'usd_rate_memo' => 'USD 환율 :rate',
         'buyer' => '바이어',
         'consignee' => '컨사이니',
         'sale_price' => '판매가',

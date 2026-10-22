@@ -597,6 +597,7 @@ return [
         'sale_date' => 'Sale Date',
         'currency' => 'Currency',
         'exchange_rate' => 'Exchange Rate',
+        'usd_rate_memo' => 'USD rate :rate',
         'buyer' => 'Buyer',
         'consignee' => 'Consignee',
         'sale_price' => 'Sell Price',

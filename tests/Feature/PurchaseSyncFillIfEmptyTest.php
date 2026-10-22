@@ -9,6 +9,7 @@ use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
@@ -295,5 +296,59 @@ class PurchaseSyncFillIfEmptyTest extends TestCase
         $this->postSigned($this->payload(['buyer_id' => $b->id]))->assertStatus(200);
 
         $this->assertSame($b->id, $v->refresh()->buyer_id);
+    }
+
+    // ── 2026-10-22 USD 운임비 · USD 환율 메모 (jin, 버전 그대로 optional) ─────────
+
+    public function test_new_purchase_mirrors_usd_freight_and_usd_rate(): void
+    {
+        $this->salesman();
+        $this->postSigned($this->payload([
+            'sale_price' => 8000, 'sale_currency' => 'EUR', 'sale_exchange_rate' => 1600,
+            'transport_fee' => 1739.13, 'transport_fee_usd' => 2040, 'usd_exchange_rate' => 1380.5,
+        ]))->assertStatus(201);
+
+        $v = Vehicle::where('vehicle_number', '12가3456')->firstOrFail();
+        $this->assertSame(2040, (int) $v->transport_fee_usd);
+        $this->assertSame(1380.5, (float) $v->usd_exchange_rate);
+        $this->assertSame(1600.0, (float) $v->exchange_rate, '판매통화 환율은 그대로 — USD 환율은 메모');
+        $this->assertSame(1739.13, (float) $v->transport_fee, '판매통화 운임비는 종전대로');
+    }
+
+    public function test_usd_freight_is_rounded_to_whole_dollars(): void
+    {
+        $this->salesman();
+        $this->postSigned($this->payload(['transport_fee_usd' => 2040.6]))->assertStatus(201);
+        $this->assertSame(2041, (int) Vehicle::where('vehicle_number', '12가3456')->value('transport_fee_usd'));
+    }
+
+    public function test_resend_fills_usd_memo_only_when_empty(): void
+    {
+        $this->salesman();
+        $v = $this->createPurchaseOnly();
+
+        $res = $this->postSigned($this->payload(['transport_fee_usd' => 2040, 'usd_exchange_rate' => 1380.5]));
+        $this->assertContains('transport_fee_usd', $res->json('fields_filled'));
+        $this->assertContains('usd_exchange_rate', $res->json('fields_filled'));
+
+        // 선적요청 1/N 몫이나 사람이 고친 값은 재전송이 안 덮는다.
+        $v->refresh()->update(['transport_fee_usd' => 1500, 'usd_exchange_rate' => 1400]);
+        $res = $this->postSigned($this->payload(['transport_fee_usd' => 2040, 'usd_exchange_rate' => 1380.5]));
+        $this->assertSame('already_set', $res->json('fields_skipped.transport_fee_usd'));
+        $this->assertSame('already_set', $res->json('fields_skipped.usd_exchange_rate'));
+        $this->assertSame(1500, (int) $v->fresh()->transport_fee_usd);
+        $this->assertSame(1400.0, (float) $v->fresh()->usd_exchange_rate);
+    }
+
+    public function test_panel_shows_usd_rate_memo_above_the_rate_field(): void
+    {
+        $this->salesman();
+        $this->postSigned($this->payload(['usd_exchange_rate' => 1380.5]))->assertStatus(201);
+        $v = Vehicle::where('vehicle_number', '12가3456')->firstOrFail();
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+
+        Volt::test('erp.vehicles.index')->call('openEdit', $v->id)
+            ->assertSet('usd_rate_memo', '1,380.5')
+            ->assertSeeHtml('data-usd-rate-memo');
     }
 }

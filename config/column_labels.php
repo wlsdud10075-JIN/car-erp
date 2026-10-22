@@ -90,6 +90,7 @@ return [
         'auto_loading' => '하역비 외',
         'transport_fee' => '운임비',
         'transport_fee_usd' => '운임비(USD, 기록용)',
+        'usd_exchange_rate' => 'USD 환율(board 매입 메모)',
         'sale_other_costs' => '기타 판매비용',
 
         // 입금
