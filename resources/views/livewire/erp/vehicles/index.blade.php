@@ -9909,7 +9909,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         @endforeach
                     </select>
                 </div>
-                <div><div class="flex items-baseline justify-between gap-2"><label class="label-base">{{ __('vehicle.field.exchange_rate') }}</label>@if($usd_rate_memo !== '')<span class="truncate text-[11px] text-gray-400" data-usd-rate-memo>{{ __('vehicle.field.usd_rate_memo', ['rate' => $usd_rate_memo]) }}</span>@endif</div><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'input-required' : '' }}" placeholder="1350" />@error('exchange_rate_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror</div>
+                <div><div class="flex items-baseline justify-between gap-2"><label class="label-base">{{ __('vehicle.field.exchange_rate') }}</label>@if($usd_rate_memo !== '')<span class="truncate text-[11px] text-gray-400" data-usd-rate-memo title="{{ __('vehicle.field.usd_rate_memo', ['rate' => $usd_rate_memo]) }}">{{ __('vehicle.field.usd_rate_memo', ['rate' => $usd_rate_memo]) }}</span>@endif</div><input wire:model="exchange_rate_str" type="text" class="input-base {{ $currency !== 'KRW' ? 'input-required' : '' }}" placeholder="1350" />@error('exchange_rate_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror</div>
                 <div>
                     <div class="flex items-center justify-between">
                         <label class="label-base">{{ __('vehicle.field.buyer') }} </label>
