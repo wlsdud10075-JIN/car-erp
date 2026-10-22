@@ -75,6 +75,8 @@
 "purchase_price_krw": 0,      // 구입금액(차값−할인)만 → purchase_price (final_price 부풀림 교정)
 "selling_fee_krw": 0,         // 매도비 → selling_fee
 "transport_fee": 0,           // 운임비 → transport_fee ⚠️ 판매통화(board 환산), USD raw 아님
+"transport_fee_usd": 2040,    // (2026-10-22, 버전 그대로) 운임비 USD raw → transport_fee_usd · 정수(달러, 소수는 반올림) · 메모
+"usd_exchange_rate": 1380.5,  // (2026-10-22, 버전 그대로) 그때 USD 환율 → usd_exchange_rate · 메모(판매 탭 환율 칸 위 표시)
 "sale_price": 0,              // pre-fill → sale_price (관리 편집)
 "sale_currency": "USD",       // → currency (enum USD/JPY/EUR/GBP/CNY/KRW)
 "sale_exchange_rate": 0,      // pre-fill → exchange_rate (관리가 지정시점 환율로 덮어씀)
@@ -86,6 +88,8 @@
 1. **`contract_version: 3` 수용** (1·2·3). 미지원 → 422 유지.
 2. **purchase_price**: v3 & `purchase_price_krw` 있으면 그것, 아니면 `final_price`(v2 호환). validation = `final_price` 는 `required_without:purchase_price_krw`(둘 중 하나 필수).
 3. **selling_fee/transport_fee**: 값 있으면 채움(관리 이후 편집). ⚠️ **운임비(`transport_fee`)는 판매통화 기준** — `sale_total_amount`(미수율 분모) = `sale_price + transport_fee + …` 가 뒤에서 단일 `exchange_rate` 로 곱해짐(`Vehicle::getSaleTotalAmountAttribute`). board 가 `shipping_usd × (USD환율/판매환율)` 로 판매통화 환산해 보냄(USD판매=×1·EUR판매=USD/EUR 크로스·KRW판매=×USD환율). **USD raw 저장 금지**(2026-06-23 board 발견 버그 — EUR차 ~16% 부풀림).
+   - **USD 메모 2칸**(jin 2026-10-22, `contract_version` 그대로 — 모르는 필드 무시라 배포 순서 무관): `transport_fee_usd`(정수 달러) · `usd_exchange_rate`. **둘 다 어떤 계산에도 안 들어간다.** 신규·재전송 모두 **빈 칸만** 채운다.
+     ⚠️ **컨테이너 차는 board 가 `transport_fee_usd` 를 비워 보낸다** — 나중에 선적요청의 컨테이너 1/N 몫이 채운다(`ShippingRequestController` 도 빈 칸만). 매입 때 값을 넣으면 그 값이 남고 1/N 은 안 들어간다(jin «RORO→컨테이너로 바뀌는 차는 아마 없다»).
 4. **sale pre-fill — ⚠️ chk_sale_required all-or-nothing**: `sale_price>0` 이면 DB CHECK 가 `sale_date NOT NULL AND exchange_rate>0` 요구(SKILLS #25). 따라서 **`sale_price>0 AND sale_exchange_rate>0` 일 때만** sale_price·exchange_rate·currency·`sale_date=now()` 세팅(→ progress 즉시 `판매중`, Jin 확정 OK). **환율 누락 시 sale 필드 통째 보류**(매입중 유지, currency 힌트만 무해 보존) — INSERT 실패 방지.
 5. **buyer_id/consignee_id**: 존재 + `is_active` 검증. consignee 는 **해당 buyer 하위 + active** 여야 함(소속 불일치 → null). buyer 무효 → 둘 다 null.
 6. **정산(부가세 9%·마진) 미변경** — 기존 정산씬 그대로.
@@ -128,7 +132,7 @@
 **왜**: 급한 차는 매입가만 넣고 판매가·통화·운임비 없이 보낸다. 나중에 판매가를 채워 재전송해도
 멱등 분기가 **첨부만 받고 금액은 통째로 무시**했다(위 v3 §7 "push-once"). 그 문을 **빈 칸에 한해서만** 연다.
 
-1. **대상** = `sale_price`·`sale_currency`·`sale_exchange_rate`·`transport_fee`·`buyer_id`·`consignee_id`.
+1. **대상** = `sale_price`·`sale_currency`·`sale_exchange_rate`·`transport_fee`·`transport_fee_usd`·`usd_exchange_rate`·`buyer_id`·`consignee_id`.
 2. 🔒 **이미 값이 있으면 절대 안 덮는다** — 관리가 ERP 에서 고친 값이 board 재전송으로 되돌아가면
    회계가 조용히 틀어진다. 스킵 사유 `already_set` 으로 응답에 남는다.
 3. **판매 3종 + `sale_date` 는 세트** — `chk_sale_required`(`sale_price>0` → `sale_date`·`exchange_rate>0`)
