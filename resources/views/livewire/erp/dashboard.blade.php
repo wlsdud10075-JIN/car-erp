@@ -2,6 +2,7 @@
 
 use App\Models\ApprovalRequest;
 use App\Models\CashAccount;
+use App\Models\CashAccountBalance;
 use App\Models\CashSnapshot;
 use App\Models\Salesman;
 use App\Models\Settlement;
@@ -49,11 +50,19 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   아래 폼이 이 모드로 바뀐다. 0개면 종전 3칸 폼(heyman·karaba 가 배포 다음 날도 그대로 입력). 합계는 CashAccountBalanceService 가 스냅샷으로.
     public string $cashAccountId = '';
     /** @var array<string, string> 통화 → 금액 문자열(원화는 부호 포함) */
-    public array $cashAmounts = [];
+    // 🐛 2026-10-22 (heymanerp 외화 계좌에 원화가 같이 기록됨) — 빈 배열로 두면 저장 뒤 reset 이 [] 가 되어 칸의 경로가 사라지고,
+    //   브라우저 칸에 남은 숫자가 다음 계좌 저장에 실려 갔다. 세 통화 키를 늘 빈 문자열로 들고 있게 한다.
+    public array $cashAmounts = ['KRW' => '', 'USD' => '', 'EUR' => ''];
     public bool $showAddAccount = false;
     public string $newBank = '';
     public string $newAccountNo = '';
     public string $newLabel = '';
+    public bool $newForeign = false;   // 등록할 때 「외화 계좌」 체크 (2026-10-22)
+    // ✏️ 수정 중인 계좌(이 날짜 값) — null 이면 새로 넣기. 수정 중엔 비운 칸 = 그 날짜 값 삭제(jin 2026-10-22).
+    public ?int $cashEditAccountId = null;
+    // 🌐 외화 계좌에 원화 — 경고창이 떠 있나 / [그래도 기록] 을 눌렀나
+    public bool $cashFxWarn = false;
+    public bool $cashFxConfirmed = false;
 
     #[Computed]
     public function cashAccounts()
@@ -71,6 +80,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedCashDate(): void
     {
         unset($this->cashAccountRows);
+        $this->reset(['cashAmounts', 'cashEditAccountId', 'cashFxWarn', 'cashFxConfirmed']);   // 날짜가 바뀌면 수정 대상도 바뀐다
+    }
+
+    /** 계좌를 바꾸면 칸을 비운다 — 앞 계좌에 쓰던 숫자가 다음 계좌로 넘어가지 않게(2026-10-22). */
+    public function updatedCashAccountId(): void
+    {
+        $this->reset(['cashAmounts', 'cashEditAccountId', 'cashFxWarn', 'cashFxConfirmed']);
     }
 
     public function saveAccountBalance(): void
@@ -89,18 +105,25 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
+        $editing = $this->cashEditAccountId === $account->id;
         $clean = fn ($v) => (float) str_replace([',', ' '], '', (string) $v);
         $amounts = [];
+        $cleared = [];
         foreach (CashAccount::CURRENCIES as $cur) {   // 어느 계좌든 세 통화(jin 2026-10-14)
             $raw = trim((string) ($this->cashAmounts[$cur] ?? ''));
             if ($raw === '') {
-                continue;   // 비운 통화는 안 건드린다(이어쓰기)
+                // 새로 넣을 때 = 비운 통화는 안 건드린다(이어쓰기). 수정 중 = 비우면 그 날짜 값을 지운다(jin 2026-10-22 «삭제하고 다시 기입»).
+                if ($editing) {
+                    $cleared[] = $cur;
+                }
+
+                continue;
             }
             // 원화는 칸에 친 부호 그대로(마이너스 통장 — data-money-signed, jin «이제 자판에서 +,- 기입할 수 있는데 토글로 할 필요가 있나»).
             //   외화는 종전대로 0 이상(마이너스 통장은 원화 계좌라, 외화 음수는 오타일 확률이 높다).
             $amounts[$cur] = $clean($raw);
         }
-        if ($amounts === []) {
+        if ($amounts === [] && $cleared === []) {
             $this->dispatch('notify', message: __('cash.account.amount_required'), type: 'error');
 
             return;
@@ -110,11 +133,87 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
-        app(CashAccountBalanceService::class)->save($account, $date, $amounts, $user);
+        // 🌐 외화 계좌에 원화 — 막지 않고 한 번 묻는다(jin 2026-10-22). [그래도 기록] 이 다시 부르면 통과.
+        if ($account->is_foreign && (float) ($amounts['KRW'] ?? 0) !== 0.0 && ! $this->cashFxConfirmed) {
+            $this->cashFxWarn = true;
+
+            return;
+        }
+        $this->cashFxWarn = false;
+        $this->cashFxConfirmed = false;
+
+        $service = app(CashAccountBalanceService::class);
+        if ($cleared !== []) {
+            $service->clearCurrencies($account, $date, $cleared, $user);
+        }
+        $amounts === [] ? $service->captureTotals($date, $user) : $service->save($account, $date, $amounts, $user, $editing);
         $this->cashSavedAt = $date;
-        $this->reset(['cashAmounts']);
+        $this->reset(['cashAmounts', 'cashEditAccountId']);
         unset($this->cashAccountRows);
-        $this->dispatch('notify', message: __('cash.account.saved', ['date' => $date, 'account' => $account->display_name]), type: 'success');
+        $this->dispatch('notify', message: __($editing ? 'cash.account.edited' : 'cash.account.saved', ['date' => $date, 'account' => $account->display_name]), type: 'success');
+    }
+
+    /** 경고창 [그래도 기록] — 외화 계좌에 원화를 넣는 게 맞다고 확인. */
+    public function confirmFxSave(): void
+    {
+        $this->cashFxConfirmed = true;
+        $this->saveAccountBalance();
+    }
+
+    public function cancelFxSave(): void
+    {
+        $this->cashFxWarn = false;
+        $this->cashFxConfirmed = false;
+    }
+
+    /** [수정] — 그 계좌의 이 날짜 값을 칸에 불러온다. 비우고 저장하면 그 통화는 지워진다(이어쓴 값은 그 날짜 것이라 안 건드린다). */
+    public function editCashAccount(int $id): void
+    {
+        abort_unless(auth()->user()->canEnterCashBalance(), 403);
+        $account = CashAccount::active()->findOrFail($id);
+        $date = $this->cashDate ?: now()->toDateString();
+        $this->cashAccountId = (string) $account->id;
+        $this->cashEditAccountId = $account->id;
+        $this->cashFxWarn = false;
+        $this->cashFxConfirmed = false;
+        $this->cashAmounts = ['KRW' => '', 'USD' => '', 'EUR' => ''];
+        $rows = CashAccountBalance::where('cash_account_id', $account->id)->whereDate('snapshot_date', $date)->get();
+        foreach ($rows as $b) {
+            $this->cashAmounts[$b->currency] = $b->currency === 'KRW'
+                ? number_format((float) $b->balance)
+                : rtrim(rtrim(number_format((float) $b->balance, 2, '.', ''), '0'), '.');
+        }
+    }
+
+    public function cancelCashEdit(): void
+    {
+        $this->reset(['cashAmounts', 'cashEditAccountId', 'cashFxWarn', 'cashFxConfirmed']);
+    }
+
+    /** [이 날짜 기록 삭제] — 그 계좌의 이 날짜 값 세 통화를 모두 지운다. 지운 뒤엔 앞 날짜 값을 이어 쓴다. */
+    public function deleteCashEntry(): void
+    {
+        $user = auth()->user();
+        abort_unless($user->canEnterCashBalance(), 403);
+        $account = CashAccount::active()->findOrFail((int) $this->cashEditAccountId);
+        $date = $this->cashDate ?: now()->toDateString();
+        $service = app(CashAccountBalanceService::class);
+        $service->clearCurrencies($account, $date, CashAccount::CURRENCIES, $user);
+        $service->captureTotals($date, $user);
+        $this->reset(['cashAmounts', 'cashEditAccountId', 'cashFxWarn', 'cashFxConfirmed']);
+        unset($this->cashAccountRows);
+        $this->dispatch('notify', message: __('cash.account.deleted', ['date' => $date, 'account' => $account->display_name]), type: 'success');
+    }
+
+    /** 수정 칸 안의 「외화 계좌」 체크 — 바로 저장·감사. */
+    public function toggleCashForeign(): void
+    {
+        abort_unless(auth()->user()->canEnterCashBalance(), 403);
+        $account = CashAccount::active()->findOrFail((int) $this->cashEditAccountId);
+        $old = $account->is_foreign;
+        $account->update(['is_foreign' => ! $old]);
+        \App\Models\AuditLog::recordChange($account, 'is_foreign', $old, ! $old);
+        unset($this->cashAccounts);
     }
 
     /** 「n행 추가」 — 계좌 등록. 잔액 입력 권한자면 누구나(jin «추천대로»). */
@@ -128,11 +227,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         ], [], ['newBank' => __('cash.account.bank'), 'newAccountNo' => __('cash.account.number')]);
         $acc = CashAccount::create([
             'bank' => trim($this->newBank), 'account_no' => trim($this->newAccountNo), 'label' => trim($this->newLabel) ?: null,
+            'is_foreign' => $this->newForeign,
             'currencies' => CashAccount::CURRENCIES,
             'sort' => (int) CashAccount::max('sort') + 1, 'is_active' => true,
         ]);
         \App\Models\AuditLog::recordChange($acc, 'cash_account', null, $acc->display_name);
-        $this->reset(['newBank', 'newAccountNo', 'newLabel', 'showAddAccount']);
+        $this->reset(['newBank', 'newAccountNo', 'newLabel', 'newForeign', 'showAddAccount']);
         $this->cashAccountId = (string) $acc->id;
         unset($this->cashAccounts, $this->cashAccountRows);
         $this->dispatch('notify', message: __('cash.account.added'), type: 'success');
@@ -148,6 +248,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($this->cashAccountId === (string) $id) {
             $this->cashAccountId = '';
         }
+        $this->reset(['cashAmounts', 'cashEditAccountId', 'cashFxWarn', 'cashFxConfirmed']);
         unset($this->cashAccounts, $this->cashAccountRows);
     }
 

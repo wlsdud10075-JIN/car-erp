@@ -228,6 +228,10 @@ return [
     'cash_accounts' => [
         'cash_account' => '계좌 등록',
         'cash_account_active' => '계좌 표시(활성)',
+        'is_foreign' => '외화 계좌 표시',
+        'cash_balance_krw' => '계좌 잔액(원화)',
+        'cash_balance_usd' => '계좌 잔액(달러)',
+        'cash_balance_eur' => '계좌 잔액(유로)',
         'bank' => '은행',
         'account_no' => '계좌번호',
         'label' => '구분',
