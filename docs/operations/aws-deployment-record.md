@@ -886,3 +886,12 @@ cherry-pick(.md 제외). 마이그 없음.
 - 배포 전 로컬 전체: GD 7 오진 해소 뒤라 실패 0(병렬 rename 경합 1 → 순차 통과). deploy 런 38332091561 잡 5개 success. 3사 서버 `46627df1`, `add_reject_to_board_requests` Ran, `reject_reason` 컬럼 존재.
 - board 쪽: 칩 수정 `42c92be` 가 10-13 10:02 선배포(거절 → 빨간 「거절」+사유). ERP 가 뒤따름(순서 준수). 웹푸시는 board VAPID 미설정이라 아직 no-op.
 - 거절 흐름 운영 확인 = 첫 실제 거절 건이 생기면 board 칩까지 이어지는지 본다(heymanerp open 요청 현황은 위 open= 값).
+
+## 2026-10-22(2차) — master `ae3ddb15` · 마이그 2
+
+jin «배포하고 실무자가 고치게 하자». cherry-pick 5건(dev `305263cd`·`4e48bac3`·`376cf724`·`4835cc81`·`51ca8262`).
+- 사진 확대 화면 좌우 넘기기(버튼·←/→·스와이프).
+- 연동 B — purchase-sync `transport_fee_usd`·`usd_exchange_rate` 메모 수신(버전 그대로). 마이그 `2026_10_22_000001`(vehicles.usd_exchange_rate).
+- 통장 잔액 — 외화 계좌에 원화가 같이 기록되던 버그 수정 + 외화 계좌 원화 경고 + 표 「숨김」→「수정」(수정·삭제·감사). 마이그 `2026_10_22_000002`(cash_accounts.is_foreign, 구분 「외화」 백필 → heymanerp 1 · ssancarerp 2).
+- 확인: 로컬 병렬 3,466 pass · 잡 5 green(run 39743577740) · 3사 SHA `ae3ddb15` · `/login` 200 · 배포 뒤 `view:clear`(www-data)+`chmod` · 16:58 캐시 권한 오류 각 1건(정리 직전) 뒤 5분 0건.
+- 🅿️ heymanerp 10-22 원화 합계 2배(외화 계좌 KRW 13,549,873, `cash_account_balances.id 143`) = **실무자가 「수정」으로 원화 칸 비우고 저장**(jin 결정). 운영 쓰기 안 함.
