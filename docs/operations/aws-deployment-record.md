@@ -658,6 +658,12 @@ cherry-pick(.md 제외). 마이그 없음.
 - 텔레그램 켜기: 회사 PC 작업 스케줄러 인수 변경(`-SendTelegram`)은 **PC 암호 입력을 요구해 SSH 비대화형으로 불가**(schtasks /Change 가 암호를 묻고 EOF). ⇒ 스크립트에 플래그 파일 스위치(`C:\Users\SSANCAR\nightly\telegram.on` 있으면 전송) 추가(dev `08f9d221`), scp 로 PC 갱신, 플래그 파일 생성. 끄려면 그 파일 삭제.
 - 매일 03:30 야간 조사 뒤 보고서가 heymanerp `notify:send` 경유로 jin 텔레그램에 1통 온다(이상 없는 날도 1통). 미배포 앱코드 = **0건**.
 
+## 2026-10-22 — 바이어별 정산 방식 기본/5:5/7:3 `1f82f7e5` (dev `692edba8`)
+
+- jin 「바이어 정산 방식 배포해줘」(점심 무렵). 런 39709766856 잡 5개 success, 3사 HEAD `1f82f7e5` 실측, `/login` 200×3, 마이그 `2026_10_21_000002`(buyers.settlement_ratio_pct · settlements.ratio_source) 3사 Ran.
+- 배포 직후 3사 `sudo -u www-data php artisan view:clear` + `chmod -R g+rwX storage/framework/views` → 5분 관찰 신규 오류 0.
+- ⚠️ karabaerp 배포 창(11:14:47)에 Livewire `islands` Permission denied **1건** — 10-21 과 같은 패턴(배포 때마다 1건씩 재발). 근본 해결(deploy.yml 캐시 단계 www-data) jin 판단 대기.
+
 ## 2026-10-21(3차) — 「제출 뒤 바뀐 정산」 월정산 탭 전용 + 문구 `222f9ebd` (dev `28cdaafc`·`d1c70734`)
 
 - jin 「배포해줘」. 런 39553278528 잡 5개 success, `/login` 200×3. 대표 승인 링크(더미 #7)에서 상자·차량 줄 표시 빠진 것 실측.
