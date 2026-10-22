@@ -8839,9 +8839,29 @@ function vehicleColumnsToggle(columns, serverKnows) {
     tab: 'basic',
     dirty: false,
     confirmOpen: false,
-    lightbox: { open: false, url: '', name: '', kind: '' },
-    openLightbox(url, name, kind) { this.lightbox = { open: true, url: url, name: name, kind: kind }; },
+    lightbox: { open: false, url: '', name: '', kind: '', items: [], index: 0 },
+    // 같은 사진 칸(data-lightbox-group)의 미리보기들을 모아 좌우로 넘긴다 — jin 2026-10-22
+    openLightbox(url, name, kind, el) {
+        const group = el ? el.closest('[data-lightbox-group]') : null;
+        const items = group ? [...group.querySelectorAll('[data-lb-url]')].map(n => ({ url: n.dataset.lbUrl, name: n.dataset.lbName, kind: n.dataset.lbKind })) : [];
+        const index = Math.max(0, items.findIndex(i => i.url === url));
+        this.lightbox = { open: true, url: url, name: name, kind: kind, items: items, index: index };
+    },
     closeLightbox() { this.lightbox.open = false; },
+    stepLightbox(d) {
+        const n = this.lightbox.items.length;
+        if (! this.lightbox.open || n < 2) return;
+        const i = (this.lightbox.index + d + n) % n;
+        this.lightbox = { ...this.lightbox, ...this.lightbox.items[i], index: i };
+    },
+    lbTouchX: null, lbTouchY: null,
+    lbTouchStart(e) { this.lbTouchX = e.changedTouches[0].clientX; this.lbTouchY = e.changedTouches[0].clientY; },
+    lbTouchEnd(e) {
+        if (this.lbTouchX === null) return;
+        const dx = e.changedTouches[0].clientX - this.lbTouchX, dy = e.changedTouches[0].clientY - this.lbTouchY;
+        this.lbTouchX = null;
+        if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) this.stepLightbox(dx < 0 ? 1 : -1);
+    },
     attemptClose() {
         if ($wire.showPurchaseGate) { $wire.cancelPurchaseGate(); return; }   // 미수 게이트 모달이 최상위(z-110)
         if ($wire.quickAddOpen) { $wire.cancelQuickAdd(); return; }     // 바이어/컨사이니 quick-add 모달이 최상위 — ESC는 그것부터 닫음
@@ -8851,7 +8871,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
         if (this.dirty) { this.confirmOpen = true; } else { $wire.close(); }
     },
     confirmDiscard() { this.confirmOpen = false; $wire.close(); },
-}" x-on:switch-tab.window="tab = $event.detail.tab" @panel-mark-dirty.window="dirty = true" @keyup.escape.window="attemptClose()">
+}" x-on:switch-tab.window="tab = $event.detail.tab" @panel-mark-dirty.window="dirty = true" @keyup.escape.window="attemptClose()" @keydown.arrow-left.window="stepLightbox(-1)" @keydown.arrow-right.window="stepLightbox(1)">
 {{-- Backdrop --}}
 <div class="fixed inset-0 z-40 bg-black/40" @click="attemptClose()"></div>
 
@@ -9224,16 +9244,18 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 </div>
 
                 @if(count($existingPhotos) || count($photoFiles))
-                <div class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                <div class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5" data-lightbox-group>
                         @foreach($existingPhotos as $p)
                         <div class="relative aspect-square overflow-hidden rounded border border-gray-200">
                             @if($p['is_image'])
                                 <img src="{{ $p['url'] }}" class="h-full w-full cursor-zoom-in object-cover"
                                      alt="{{ $p['filename'] }}"
-                                     @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'image')" />
+                                     data-lb-url="{{ $p['url'] }}" data-lb-name="{{ $p['filename'] }}" data-lb-kind="image"
+                                     @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'image', $el)" />
                             @elseif($p['ext'] === 'pdf')
                                 <button type="button"
-                                        @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'pdf')"
+                                        data-lb-url="{{ $p['url'] }}" data-lb-name="{{ $p['filename'] }}" data-lb-kind="pdf"
+                                     @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'pdf', $el)"
                                         class="flex h-full w-full cursor-zoom-in flex-col items-center justify-center gap-1 bg-gray-50 p-2 text-center hover:bg-gray-100">
                                     <span class="rounded bg-gray-200 px-2 py-1 text-[10px] font-bold text-gray-700">PDF</span>
                                     <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $p['filename'] }}</span>
@@ -9258,7 +9280,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
                             @if($_isImg)
                                 <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full cursor-zoom-in object-cover"
                                      alt="{{ __('vehicle.panel.new') }}"
-                                     @click="openLightbox({{ \Illuminate\Support\Js::from($photo->temporaryUrl()) }}, {{ \Illuminate\Support\Js::from($photo->getClientOriginalName()) }}, 'image')" />
+                                     data-lb-url="{{ $photo->temporaryUrl() }}" data-lb-name="{{ $photo->getClientOriginalName() }}" data-lb-kind="image"
+                                     @click="openLightbox({{ \Illuminate\Support\Js::from($photo->temporaryUrl()) }}, {{ \Illuminate\Support\Js::from($photo->getClientOriginalName()) }}, 'image', $el)" />
                             @else
                                 <div class="flex h-full w-full flex-col items-center justify-center gap-1 bg-violet-50 p-2 text-center">
                                     <span class="rounded bg-violet-200 px-2 py-1 text-[10px] font-bold text-violet-800">{{ strtoupper($_ext) ?: 'FILE' }}</span>
@@ -10695,16 +10718,18 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 @error('shipPhotoUpload.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
 
                 @if(count($existingShipPhotos) || count($shipPhotoFiles))
-                <div class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+                <div class="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5" data-lightbox-group>
                         @foreach($existingShipPhotos as $p)
                         <div class="relative aspect-square overflow-hidden rounded border border-gray-200">
                             @if($p['is_image'])
                                 <img src="{{ $p['url'] }}" class="h-full w-full cursor-zoom-in object-cover"
                                      alt="{{ $p['filename'] }}"
-                                     @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'image')" />
+                                     data-lb-url="{{ $p['url'] }}" data-lb-name="{{ $p['filename'] }}" data-lb-kind="image"
+                                     @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'image', $el)" />
                             @elseif($p['ext'] === 'pdf')
                                 <button type="button"
-                                        @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'pdf')"
+                                        data-lb-url="{{ $p['url'] }}" data-lb-name="{{ $p['filename'] }}" data-lb-kind="pdf"
+                                     @click="openLightbox({{ \Illuminate\Support\Js::from($p['url']) }}, {{ \Illuminate\Support\Js::from($p['filename']) }}, 'pdf', $el)"
                                         class="flex h-full w-full cursor-zoom-in flex-col items-center justify-center gap-1 bg-gray-50 p-2 text-center hover:bg-gray-100">
                                     <span class="rounded bg-gray-200 px-2 py-1 text-[10px] font-bold text-gray-700">PDF</span>
                                     <span class="line-clamp-2 break-all text-[10px] text-gray-700">{{ $p['filename'] }}</span>
@@ -10729,7 +10754,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
                             @if($_isImg)
                                 <img src="{{ $photo->temporaryUrl() }}" class="h-full w-full cursor-zoom-in object-cover"
                                      alt="{{ __('vehicle.panel.new') }}"
-                                     @click="openLightbox({{ \Illuminate\Support\Js::from($photo->temporaryUrl()) }}, {{ \Illuminate\Support\Js::from($photo->getClientOriginalName()) }}, 'image')" />
+                                     data-lb-url="{{ $photo->temporaryUrl() }}" data-lb-name="{{ $photo->getClientOriginalName() }}" data-lb-kind="image"
+                                     @click="openLightbox({{ \Illuminate\Support\Js::from($photo->temporaryUrl()) }}, {{ \Illuminate\Support\Js::from($photo->getClientOriginalName()) }}, 'image', $el)" />
                             @else
                                 <div class="flex h-full w-full flex-col items-center justify-center gap-1 bg-violet-50 p-2 text-center">
                                     <span class="rounded bg-violet-200 px-2 py-1 text-[10px] font-bold text-violet-800">{{ strtoupper($_ext) ?: 'FILE' }}</span>
@@ -11289,7 +11315,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
      class="fixed inset-0 z-[100] flex flex-col bg-black/80"
      @click.self="closeLightbox()">
     <div class="flex items-center justify-between px-4 py-3 text-white">
-        <span class="truncate text-sm" x-text="lightbox.name"></span>
+        <span class="truncate text-sm"><span x-show="lightbox.items.length > 1" class="mr-2 text-white/60" x-text="(lightbox.index + 1) + ' / ' + lightbox.items.length"></span><span x-text="lightbox.name"></span></span>
         <div class="flex items-center gap-3">
             <a :href="lightbox.url" target="_blank" rel="noopener"
                class="rounded border border-white/40 px-3 py-1 text-xs hover:bg-white/10">{{ __('vehicle.panel.open_new_tab') }}</a>
@@ -11297,7 +11323,12 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     class="rounded-full bg-white/20 px-2.5 py-0.5 text-lg leading-none hover:bg-white/30">×</button>
         </div>
     </div>
-    <div class="flex flex-1 items-center justify-center overflow-auto p-4" @click.self="closeLightbox()">
+    <div class="relative flex flex-1 items-center justify-center overflow-auto p-4" @click.self="closeLightbox()"
+         @touchstart.passive="lbTouchStart($event)" @touchend="lbTouchEnd($event)">
+        <button type="button" x-show="lightbox.items.length > 1" @click="stepLightbox(-1)" aria-label="prev"
+                class="absolute left-2 top-1/2 z-10 h-11 w-11 -translate-y-1/2 rounded-full bg-white/20 text-2xl leading-none text-white hover:bg-white/35">&lsaquo;</button>
+        <button type="button" x-show="lightbox.items.length > 1" @click="stepLightbox(1)" aria-label="next"
+                class="absolute right-2 top-1/2 z-10 h-11 w-11 -translate-y-1/2 rounded-full bg-white/20 text-2xl leading-none text-white hover:bg-white/35">&rsaquo;</button>
         <template x-if="lightbox.kind === 'image'">
             <img :src="lightbox.url" :alt="lightbox.name" class="max-h-full max-w-full object-contain" />
         </template>
