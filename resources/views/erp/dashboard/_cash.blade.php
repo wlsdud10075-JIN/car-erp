@@ -27,28 +27,57 @@
         </div>
         <button type="button" wire:click="$toggle('showAddAccount')" class="h-9 rounded-lg border border-dashed border-gray-300 px-3 text-xs text-gray-600 hover:bg-gray-50">{{ __('cash.account.add_row') }}</button>
         @if($selAcc)
-            {{-- 어느 계좌든 원화·달러·유로 세 칸(jin 2026-10-14). 비운 칸은 안 건드린다(이어쓰기). 부호는 종전대로 원화 ± 토글. --}}
+            {{-- 어느 계좌든 원화·달러·유로 세 칸(jin 2026-10-14). 비운 칸은 안 건드린다(이어쓰기). ✏️ 수정 중이면 비운 칸 = 그 날짜 값 삭제(2026-10-22). --}}
             @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
             <div class="w-full sm:w-44">
                 <label class="text-xs text-gray-500">{{ __('cash.'.strtolower($cur)) }}</label>
                 <div class="flex gap-1">
                     @if($cur === 'KRW')
                     {{-- 마이너스 통장은 칸에 − 를 직접 친다(data-money-signed) — 10-07 단축키 폐지로 가능해졌다(jin 2026-10-14). --}}
-                    <input type="text" wire:model="cashAmounts.{{ $cur }}" data-money data-money-signed inputmode="numeric" class="input-base w-full text-right" placeholder="0" title="{{ __('cash.sign_hint_typed') }}" />
+                    <input type="text" wire:model="cashAmounts.{{ $cur }}" wire:key="cash-amt-{{ $selAcc->id }}-{{ $cur }}" data-money data-money-signed inputmode="numeric" class="input-base w-full text-right" placeholder="0" title="{{ __('cash.sign_hint_typed') }}" />
                     @else
-                    <input type="text" wire:model="cashAmounts.{{ $cur }}" inputmode="decimal" class="input-base w-full text-right" placeholder="0.00" />
+                    <input type="text" wire:model="cashAmounts.{{ $cur }}" wire:key="cash-amt-{{ $selAcc->id }}-{{ $cur }}" inputmode="decimal" class="input-base w-full text-right" placeholder="0.00" />
                     @endif
                 </div>
             </div>
             @endforeach
-            <button type="button" wire:click="saveAccountBalance" class="btn-primary h-9">{{ __('cash.save') }}</button>
+            <button type="button" wire:click="saveAccountBalance" class="btn-primary h-9">{{ $cashEditAccountId === $selAcc->id ? __('cash.account.save_edit') : __('cash.save') }}</button>
         @endif
     </div>
+    @if($selAcc && $cashEditAccountId === $selAcc->id)
+    {{-- ✏️ 수정 중 (jin 2026-10-22 «숨김 말고 수정 — 잘못 기록한 것을 수정하거나 삭제하고 다시 기입») --}}
+    <div class="mt-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800" data-cash-editing>
+        <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="font-semibold">{{ __('cash.account.editing', ['account' => $selAcc->display_name, 'date' => $cashDate]) }}</span>
+            <div class="flex flex-wrap items-center gap-3">
+                <label class="inline-flex items-center gap-1"><input type="checkbox" wire:click="toggleCashForeign" @checked($selAcc->is_foreign) /> {{ __('cash.account.foreign') }}</label>
+                <button type="button" wire:click="deleteCashEntry" wire:confirm="{{ __('cash.account.delete_confirm') }}" class="text-red-600 hover:underline">{{ __('cash.account.delete_date') }}</button>
+                <button type="button" wire:click="deactivateCashAccount({{ $selAcc->id }})" wire:confirm="{{ __('cash.account.hide_confirm') }}" class="text-gray-500 hover:underline">{{ __('cash.account.hide_account') }}</button>
+                <button type="button" wire:click="cancelCashEdit" class="text-gray-600 hover:underline">{{ __('cash.account.cancel') }}</button>
+            </div>
+        </div>
+        <p class="mt-1 text-blue-700/80">{{ __('cash.account.edit_hint') }}</p>
+    </div>
+    @endif
+    @if($cashFxWarn && $selAcc)
+    {{-- 🌐 외화 계좌에 원화 — 막지 않고 묻는다(jin 2026-10-22). [그래도 기록] 이면 저장된다. --}}
+    <div class="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" data-cash-fx-warn>
+        <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+            <p class="text-sm font-semibold text-gray-900">{{ __('cash.account.fx_warn_title') }}</p>
+            <p class="mt-2 text-sm text-gray-600">{{ __('cash.account.fx_warn_body', ['account' => $selAcc->display_name, 'krw' => number_format((float) str_replace([',', ' '], '', (string) ($cashAmounts['KRW'] ?? '0')))]) }}</p>
+            <div class="mt-4 flex justify-end gap-2">
+                <button type="button" wire:click="cancelFxSave" class="h-9 rounded-lg border border-gray-300 px-4 text-sm text-gray-700 hover:bg-gray-50">{{ __('cash.account.cancel') }}</button>
+                <button type="button" wire:click="confirmFxSave" class="h-9 rounded-lg bg-amber-600 px-4 text-sm font-medium text-white hover:bg-amber-700">{{ __('cash.account.fx_confirm') }}</button>
+            </div>
+        </div>
+    </div>
+    @endif
     @if($showAddAccount)
     <div class="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-gray-200 bg-gray-50 p-2" data-cash-account-add>
         <div><label class="text-xs text-gray-500">{{ __('cash.account.bank') }}</label><input type="text" wire:model="newBank" class="input-base w-28" placeholder="{{ __('cash.account.bank_ph') }}" /></div>
         <div><label class="text-xs text-gray-500">{{ __('cash.account.number') }}</label><input type="text" wire:model="newAccountNo" class="input-base w-48" placeholder="{{ __('cash.account.number_ph') }}" /></div>
         <div><label class="text-xs text-gray-500">{{ __('cash.account.label_opt') }}</label><input type="text" wire:model="newLabel" class="input-base w-24" placeholder="{{ __('cash.account.label_ph') }}" /></div>
+        <label class="inline-flex h-9 items-center gap-1 text-xs text-gray-600" title="{{ __('cash.account.foreign_hint') }}"><input type="checkbox" wire:model="newForeign" /> {{ __('cash.account.foreign') }}</label>
         <button type="button" wire:click="addCashAccount" class="btn-primary h-9">{{ __('cash.account.add') }}</button>
         @error('newBank')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
         @error('newAccountNo')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
@@ -72,8 +101,8 @@
             @php $acc = $g->first()['account']; $cells = $g->keyBy('currency'); $asOf = $g->pluck('as_of')->filter()->max(); $carried = $g->contains(fn ($r) => $r['carried']); @endphp
             <div class="rounded-lg border border-gray-200 px-3 py-2 text-xs text-gray-700">
                 <div class="flex items-start justify-between gap-2">
-                    <span class="break-all font-medium text-gray-800">{{ $acc->display_name }}</span>
-                    <button type="button" wire:click="deactivateCashAccount({{ $acc->id }})" wire:confirm="{{ __('cash.account.hide_confirm') }}" class="shrink-0 text-[11px] text-gray-400 hover:text-red-500">{{ __('cash.account.hide') }}</button>
+                    <span class="break-all font-medium text-gray-800">{{ $acc->display_name }}@if($acc->is_foreign) <span class="rounded bg-sky-100 px-1 text-[10px] text-sky-700">{{ __('cash.account.foreign_badge') }}</span>@endif</span>
+                    <button type="button" wire:click="editCashAccount({{ $acc->id }})" class="shrink-0 text-[11px] text-blue-600 hover:underline" data-cash-edit>{{ __('cash.account.edit') }}</button>
                 </div>
                 <dl class="mt-1 space-y-0.5">
                     @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
@@ -102,14 +131,14 @@
             @foreach($byAccount as $accId => $g)
                 @php $acc = $g->first()['account']; $cells = $g->keyBy('currency'); $asOf = $g->pluck('as_of')->filter()->max(); $carried = $g->contains(fn ($r) => $r['carried']); @endphp
                 <tr class="text-gray-700">
-                    <td class="py-1 pr-2">{{ $acc->display_name }}</td>
+                    <td class="py-1 pr-2">{{ $acc->display_name }}@if($acc->is_foreign) <span class="rounded bg-sky-100 px-1 text-[10px] text-sky-700">{{ __('cash.account.foreign_badge') }}</span>@endif</td>
                     @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
                     @php $c = $cells->get($cur); @endphp
                     <td class="py-1 pr-2 text-right font-mono {{ ($c['carried'] ?? false) ? 'text-gray-400' : '' }}">{{ ($c['balance'] ?? null) === null ? '—' : ($cur === 'KRW' ? number_format($c['balance']) : number_format($c['balance'], 2)) }}</td>
                     @endforeach
                     <td class="py-1 pr-2 {{ $carried ? 'text-gray-400' : '' }}">{{ $asOf ?? __('cash.account.never') }}{{ $carried ? ' '.__('cash.account.carried') : '' }}</td>
                     <td class="py-1 text-right">
-                        <button type="button" wire:click="deactivateCashAccount({{ $acc->id }})" wire:confirm="{{ __('cash.account.hide_confirm') }}" class="text-[11px] text-gray-400 hover:text-red-500">{{ __('cash.account.hide') }}</button>
+                        <button type="button" wire:click="editCashAccount({{ $acc->id }})" class="text-[11px] text-blue-600 hover:underline" data-cash-edit>{{ __('cash.account.edit') }}</button>
                     </td>
                 </tr>
             @endforeach
@@ -153,6 +182,7 @@
         <div><label class="text-xs text-gray-500">{{ __('cash.account.bank') }}</label><input type="text" wire:model="newBank" class="input-base w-28" placeholder="{{ __('cash.account.bank_ph') }}" /></div>
         <div><label class="text-xs text-gray-500">{{ __('cash.account.number') }}</label><input type="text" wire:model="newAccountNo" class="input-base w-48" placeholder="{{ __('cash.account.number_ph') }}" /></div>
         <div><label class="text-xs text-gray-500">{{ __('cash.account.label_opt') }}</label><input type="text" wire:model="newLabel" class="input-base w-24" placeholder="{{ __('cash.account.label_ph') }}" /></div>
+        <label class="inline-flex h-9 items-center gap-1 text-xs text-gray-600" title="{{ __('cash.account.foreign_hint') }}"><input type="checkbox" wire:model="newForeign" /> {{ __('cash.account.foreign') }}</label>
         <button type="button" wire:click="addCashAccount" class="btn-primary h-9">{{ __('cash.account.add') }}</button>
         @error('newBank')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
         @error('newAccountNo')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror

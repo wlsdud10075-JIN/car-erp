@@ -12,12 +12,13 @@ class CashAccount extends Model
 {
     public const CURRENCIES = ['KRW', 'USD', 'EUR'];
 
-    protected $fillable = ['bank', 'account_no', 'label', 'currencies', 'sort', 'is_active'];
+    /** `is_foreign` (2026-10-22) = 외화 계좌 — 원화를 넣으면 한 번 묻는다(막지 않음). */
+    protected $fillable = ['bank', 'account_no', 'label', 'is_foreign', 'currencies', 'sort', 'is_active'];
 
     /** `currencies` 는 2026-10-14 저녁부터 **쓰지 않는다** — 어느 계좌든 KRW·USD·EUR 세 칸을 넣는다(jin). 컬럼은 남겨 두고 전부 저장만. */
     protected $attributes = ['currencies' => '["KRW","USD","EUR"]'];
 
-    protected $casts = ['currencies' => 'array', 'is_active' => 'boolean', 'sort' => 'integer'];
+    protected $casts = ['currencies' => 'array', 'is_active' => 'boolean', 'is_foreign' => 'boolean', 'sort' => 'integer'];
 
     public function balances(): HasMany
     {
