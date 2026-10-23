@@ -152,7 +152,9 @@ class CashAccountEditFxTest extends TestCase
 
         Volt::test('erp.dashboard')->assertSeeHtml('data-cash-fx-total')
             ->assertSee('₩1,145,000')    // 1,000,000 + 100×1,300 + 10×1,500
-            ->assertSee('₩130,000')->assertSee('₩15,000');
+            ->assertSee('₩130,000')->assertSee('₩15,000')
+            ->assertSeeHtml('data-cash-headline')->assertSee('₩115만')   // 「+ 계좌 추가」 옆 카드 = 억·만 표기
+            ->set('cashAccountId', (string) $fx->id)->assertDontSeeHtml('data-cash-headline');   // 입력 중엔 숨겨 [저장]이 밀리지 않게
         $this->assertSame(1_000_000, (int) CashSnapshot::whereDate('snapshot_date', now()->toDateString())->value('balance_krw'), '저장값은 그대로 — 환산은 표시만');
     }
 }

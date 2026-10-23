@@ -11,6 +11,19 @@
     @if($this->cashAccounts->isNotEmpty())
     {{-- 🏦 계좌별 입력 모드 (jin 2026-10-14) — 날짜 · 계좌 드롭다운 · 그 계좌의 통화 칸 · 저장. 아래 표 = 이 날짜에 적용되는 계좌별 값. --}}
     @php $selAcc = $this->cashAccounts->firstWhere('id', (int) $cashAccountId); @endphp
+    @php
+        $rows = $this->cashAccountRows;
+        $sums = ['KRW' => 0.0, 'USD' => 0.0, 'EUR' => 0.0];
+        foreach ($rows as $r) { if ($r['balance'] !== null) { $sums[$r['currency']] += $r['balance']; } }
+        // 계좌 한 줄 = 통화 3칸. 한 번도 안 넣은 계좌(세 통화 전부 없음)만 센다 — 외화가 없는 계좌는 달러·유로가 비는 게 정상이다.
+        $byAccount = $rows->groupBy(fn ($r) => $r['account']->id);
+        $never = $byAccount->filter(fn ($g) => $g->every(fn ($r) => $r['balance'] === null))->count();
+        // 💱 외화 잔액의 원화 환산 (jin 2026-10-23) — 화면 위 「실시간 환율」 줄과 같은 값. 표시만 하고 저장·청산가치엔 안 쓴다.
+        $fxRates = $this->exchangeRates;
+        $fxUsd = isset($fxRates['USD']) ? $sums['USD'] * $fxRates['USD'] : null;
+        $fxEur = isset($fxRates['EUR']) ? $sums['EUR'] * $fxRates['EUR'] : null;
+        $fxTotal = ($fxUsd !== null && $fxEur !== null) ? $sums['KRW'] + $fxUsd + $fxEur : null;
+    @endphp
     <div class="flex flex-wrap items-end gap-2" data-cash-accounts>
         <div class="w-full sm:w-40">
             <label class="text-xs text-gray-500">{{ __('cash.date') }}</label>
@@ -26,6 +39,17 @@
             </select>
         </div>
         <button type="button" wire:click="$toggle('showAddAccount')" class="h-9 rounded-lg border border-dashed border-gray-300 px-3 text-xs text-gray-600 hover:bg-gray-50">{{ __('cash.account.add_row') }}</button>
+        {{-- 💰 지금 통장에 대략 얼마 있나 한눈에 (jin 2026-10-23) — 아래 「원화 환산」 줄의 합계를 억·만으로. 정확한 금액은 마우스를 올리면. --}}
+        {{-- 계좌를 고르면 그 자리에 입력칸 세 개가 붙는다 — 카드가 있으면 [저장]이 다음 줄로 밀리므로 입력 중엔 숨긴다(아래 표 합계는 그대로). --}}
+        @unless($selAcc)
+        @php $headline = $fxTotal ?? $sums['KRW']; @endphp
+        <div class="flex h-9 items-center gap-2 rounded-lg border border-blue-100 bg-blue-50/60 px-3" data-cash-headline
+             title="₩{{ number_format($headline) }}{{ $fxTotal === null ? ' ('.__('cash.account.headline_krw_only').')' : '' }}">
+            <span class="text-[11px] text-blue-700">{{ __('cash.account.headline') }}</span>
+            <span class="text-sm font-bold text-gray-900">₩{{ \App\Support\Money::krwShort($headline) }}</span>
+            @if($fxTotal === null)<span class="text-[10px] text-amber-600">{{ __('cash.account.headline_krw_only') }}</span>@endif
+        </div>
+        @endunless
         @if($selAcc)
             {{-- 어느 계좌든 원화·달러·유로 세 칸(jin 2026-10-14). 비운 칸은 안 건드린다(이어쓰기). ✏️ 수정 중이면 비운 칸 = 그 날짜 값 삭제(2026-10-22). --}}
             @foreach(\App\Models\CashAccount::CURRENCIES as $cur)
@@ -83,19 +107,6 @@
         @error('newAccountNo')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
     </div>
     @endif
-    @php
-        $rows = $this->cashAccountRows;
-        $sums = ['KRW' => 0.0, 'USD' => 0.0, 'EUR' => 0.0];
-        foreach ($rows as $r) { if ($r['balance'] !== null) { $sums[$r['currency']] += $r['balance']; } }
-        // 계좌 한 줄 = 통화 3칸. 한 번도 안 넣은 계좌(세 통화 전부 없음)만 센다 — 외화가 없는 계좌는 달러·유로가 비는 게 정상이다.
-        $byAccount = $rows->groupBy(fn ($r) => $r['account']->id);
-        $never = $byAccount->filter(fn ($g) => $g->every(fn ($r) => $r['balance'] === null))->count();
-        // 💱 외화 잔액의 원화 환산 (jin 2026-10-23) — 화면 위 「실시간 환율」 줄과 같은 값. 표시만 하고 저장·청산가치엔 안 쓴다.
-        $fxRates = $this->exchangeRates;
-        $fxUsd = isset($fxRates['USD']) ? $sums['USD'] * $fxRates['USD'] : null;
-        $fxEur = isset($fxRates['EUR']) ? $sums['EUR'] * $fxRates['EUR'] : null;
-        $fxTotal = ($fxUsd !== null && $fxEur !== null) ? $sums['KRW'] + $fxUsd + $fxEur : null;
-    @endphp
     {{-- 🚨 한 번도 안 넣은 계좌는 합계에 0 으로 들어간다 — 계좌 7개를 등록하고 하나만 넣은 날 청산가치가 꺼진다. 눈에 띄게 알린다. --}}
     @if($never > 0)
     <p class="mt-2 rounded bg-amber-50 px-3 py-1.5 text-xs text-amber-700" data-cash-never-entered>{{ __('cash.account.never_entered', ['n' => $never]) }}</p>
