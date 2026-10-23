@@ -131,6 +131,8 @@ return [
     'filter_ship_month_ph' => '202607',
     'filter_ship_hint' => '서류 발송(EMS·DHL) 축 — 진행상태와 별개다',
     'filter_dereg' => '말소 필요',
+    'filter_receivable' => '미수금',
+    'filter_receivable_hint' => '받을 돈(미수)이 남은 차만 — 채권관리 미수와 같은 기준. 결제대기·거래완료도 미수가 있으면 나옵니다. 위 기간 조건은 그대로 적용됩니다.',
     'filter_dereg_hint' => '매입 완납 후 :days일이 지났는데 말소가 안 된 차 — 진행상태와 별개라 판매중·선적중도 나온다',
 
     'date_type' => [

@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Carbon;
 
 class Buyer extends Model
 {
@@ -52,6 +53,24 @@ class Buyer extends Model
      * 자동 생성분은 독립 — 이후 바이어 수정해도 동기화하지 않는다(단순).
      * 가드: 대량 임포트/시더(artisan, auth 없음)는 제외 — 일괄업로드가 컨사이니를 함께 만들 때 중복 방지.
      */
+    /**
+     * 🆕 「신규」 뱃지 (jin 2026-10-22) — 등록 후 30일. 시작점은 heymanerp 첫 7:3 바이어(VIL LOGICSTICS, 2026-10-21 등록)부터
+     * — jin «그사람부터». 그 전에 등록된 바이어는 30일 안이어도 안 붙는다(일괄 적재분이 한꺼번에 「신규」가 되지 않게).
+     */
+    public const NEW_BADGE_DAYS = 30;
+
+    public const NEW_BADGE_SINCE = '2026-10-21';
+
+    public function isNewBuyer(): bool
+    {
+        if (! $this->created_at) {
+            return false;
+        }
+        $from = now()->subDays(self::NEW_BADGE_DAYS)->max(Carbon::parse(self::NEW_BADGE_SINCE));
+
+        return $this->created_at->gte($from);
+    }
+
     /** 바이어 정산 방식 선택지 — 비율(%) => 표시. NULL(기본)은 화면이 따로 그린다. */
     public const SETTLEMENT_RATIO_OPTIONS = [50 => '5:5', 30 => '7:3'];
 

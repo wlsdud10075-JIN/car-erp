@@ -127,6 +127,8 @@ return [
     'filter_ship_month_ph' => '202607',
     'filter_ship_hint' => 'Document shipping (EMS/DHL) — independent of progress status',
     'filter_dereg' => 'Deregistration due',
+    'filter_receivable' => 'Receivable',
+    'filter_receivable_hint' => 'Only vehicles with an outstanding receivable — same basis as Receivables. Includes awaiting-payment and completed deals. The date range above still applies.',
     'filter_dereg_hint' => 'Purchase fully paid :days+ days ago but not yet deregistered — independent of progress status, so cars being sold or shipped also appear',
 
     'date_type' => [
