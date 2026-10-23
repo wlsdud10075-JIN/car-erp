@@ -90,6 +90,11 @@
         // 계좌 한 줄 = 통화 3칸. 한 번도 안 넣은 계좌(세 통화 전부 없음)만 센다 — 외화가 없는 계좌는 달러·유로가 비는 게 정상이다.
         $byAccount = $rows->groupBy(fn ($r) => $r['account']->id);
         $never = $byAccount->filter(fn ($g) => $g->every(fn ($r) => $r['balance'] === null))->count();
+        // 💱 외화 잔액의 원화 환산 (jin 2026-10-23) — 화면 위 「실시간 환율」 줄과 같은 값. 표시만 하고 저장·청산가치엔 안 쓴다.
+        $fxRates = $this->exchangeRates;
+        $fxUsd = isset($fxRates['USD']) ? $sums['USD'] * $fxRates['USD'] : null;
+        $fxEur = isset($fxRates['EUR']) ? $sums['EUR'] * $fxRates['EUR'] : null;
+        $fxTotal = ($fxUsd !== null && $fxEur !== null) ? $sums['KRW'] + $fxUsd + $fxEur : null;
     @endphp
     {{-- 🚨 한 번도 안 넣은 계좌는 합계에 0 으로 들어간다 — 계좌 7개를 등록하고 하나만 넣은 날 청산가치가 꺼진다. 눈에 띄게 알린다. --}}
     @if($never > 0)
@@ -118,6 +123,14 @@
             <div class="flex justify-between"><span>KRW</span><span class="font-mono">{{ number_format($sums['KRW']) }}</span></div>
             <div class="flex justify-between"><span>USD</span><span class="font-mono">{{ number_format($sums['USD'], 2) }}</span></div>
             <div class="flex justify-between"><span>EUR</span><span class="font-mono">{{ number_format($sums['EUR'], 2) }}</span></div>
+            <div class="mt-1 border-t border-gray-200 pt-1 font-normal text-gray-600" data-cash-fx-total>
+                @if($fxTotal !== null)
+                <div class="flex justify-between"><span>{{ __('cash.account.fx_total') }}</span><span class="font-mono font-semibold text-gray-800">₩{{ number_format($fxTotal) }}</span></div>
+                <div class="text-[10px] text-gray-400">USD ≈ ₩{{ number_format($fxUsd) }} · EUR ≈ ₩{{ number_format($fxEur) }} ({{ __('cash.account.fx_rates', ['usd' => number_format($fxRates['USD'], 2), 'eur' => number_format($fxRates['EUR'], 2)]) }})</div>
+                @else
+                <div class="text-[10px] text-amber-600">{{ __('cash.account.fx_unavailable') }}</div>
+                @endif
+            </div>
         </div>
     </div>
     <div class="mt-2 hidden overflow-x-auto sm:block">
@@ -149,6 +162,17 @@
                 <td class="py-1 pr-2 text-right font-mono">{{ number_format($sums['USD'], 2) }}</td>
                 <td class="py-1 pr-2 text-right font-mono">{{ number_format($sums['EUR'], 2) }}</td>
                 <td class="py-1" colspan="2"></td>
+            </tr>
+            <tr class="text-gray-600" data-cash-fx-total>
+                @if($fxTotal !== null)
+                <td class="py-1 pr-2">{{ __('cash.account.fx_total') }}</td>
+                <td class="py-1 pr-2 text-right font-mono font-semibold text-gray-800">₩{{ number_format($fxTotal) }}</td>
+                <td class="py-1 pr-2 text-right font-mono text-gray-500">≈ ₩{{ number_format($fxUsd) }}</td>
+                <td class="py-1 pr-2 text-right font-mono text-gray-500">≈ ₩{{ number_format($fxEur) }}</td>
+                <td class="py-1 text-[10px] text-gray-400" colspan="2">{{ __('cash.account.fx_rates', ['usd' => number_format($fxRates['USD'], 2), 'eur' => number_format($fxRates['EUR'], 2)]) }}</td>
+                @else
+                <td class="py-1 pr-2 text-[11px] text-amber-600" colspan="6">{{ __('cash.account.fx_unavailable') }}</td>
+                @endif
             </tr></tfoot>
         </table>
     </div>
