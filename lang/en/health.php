@@ -3,6 +3,7 @@
 return [
     'title' => 'Morning check',
     'no_record' => 'no record',
+    'alimtalk_no_schedule' => 'no scheduled alerts on — not checked',
     'none' => 'none',
     'stale' => ':date (no update for :days days)',
     'count' => ':n',
