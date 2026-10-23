@@ -6464,6 +6464,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $existingPurchaseIdsBefore = $this->editingId
             ? PurchaseBalancePayment::where('vehicle_id', $this->editingId)->pluck('id')->toArray()
             : [];
+        // 🧾 저장 전 미수 — 이번 저장이 입금을 지우거나 줄여 미수를 되살렸는지 보려고(2026-10-23, 67머3910).
+        $unpaidBefore = $this->editingId ? (float) (\App\Models\Vehicle::find($this->editingId)?->sale_unpaid_amount ?? 0) : 0.0;
         try {
             \DB::transaction(function () use ($data, $toInt, $toFloat, $toDate, $fileFields, $existingPurchaseIdsBefore, &$newlyStoredPaths, &$pathsToDelete, &$vehicle) {
                 if ($this->editingId) {
@@ -6983,6 +6985,17 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 트랜잭션 성공: 옛 파일(교체·삭제 대상) 디스크에서 제거
         foreach ($pathsToDelete as $p) {
             Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($p);
+        }
+
+        // 🧾 미수가 되살아났으면 확정 전 정산 정리 — 재무처리·채권관리와 같은 단일 출처.
+        if ($this->editingId && $unpaidBefore <= 0 && $vehicle) {
+            $r = $vehicle->reconcileSettlementsAfterUnpaidRevived();
+            if ($r['removed'] > 0) {
+                $this->dispatch('notify', message: __('transfer.msg.settlement_pending_removed', ['count' => $r['removed']]), type: 'warning');
+            }
+            if ($r['locked'] && (float) $vehicle->fresh()->sale_unpaid_amount > 0) {
+                $this->dispatch('notify', message: __('transfer.msg.settlement_locked_warning'), type: 'warning');
+            }
         }
 
         $this->clearDeregistrationDoc = false;

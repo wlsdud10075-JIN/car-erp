@@ -692,6 +692,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 미러 삭제 cascade — 연결된 final_payment 가 재무확정(confirmed)이면 FinalPayment::deleting 이
         //   DomainException 을 던진다. try/catch 없으면 500 Ignition(jin 2026-07-08 채권 500 정체).
         //   ⚠️ RH::deleted 훅은 RH 삭제 後 FP 삭제 → 트랜잭션으로 감싸야 FP 실패 시 RH 도 롤백(고아 방지).
+        $vehicle = $h->vehicle;
+        $unpaidBefore = (float) ($vehicle?->sale_unpaid_amount ?? 0);
         try {
             DB::transaction(function () use ($h) {
                 $h->delete();   // saved/deleted 이벤트가 final_payment 미러링 + 캐시 갱신 처리
@@ -706,8 +708,16 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
+        // 🧾 입금을 지워 미수가 되살아났으면 확정 전 정산 정리(2026-10-23 — 차량 패널·재무처리와 같은 단일 출처).
+        $msg = __('receivable.deleted');
+        if ($vehicle && $unpaidBefore <= 0) {
+            $r = $vehicle->reconcileSettlementsAfterUnpaidRevived();
+            if ($r['removed'] > 0) {
+                $msg .= ' '.__('transfer.msg.settlement_pending_removed', ['count' => $r['removed']]);
+            }
+        }
         unset($this->selectedVehicle, $this->vehicles, $this->summary);
-        session()->flash('panel_success', __('receivable.deleted'));
+        session()->flash('panel_success', $msg);
     }
 
     /**
