@@ -4016,6 +4016,15 @@ class Vehicle extends Model
         return AlimtalkRecipients::escalationDays('erp_deregistration_reminder', '영업');
     }
 
+    /**
+     * 💰 미수금 있는 차 (jin 2026-10-22 차량관리 「미수금」 토글) — 채권관리 미수 KPI 와 같은 기준(미수 KRW 캐시 > 0).
+     * 결제대기(유예)·거래완료도 미수가 있으면 포함한다. 과입금(음수)·환율 미입력(캐시 null)은 빠진다.
+     */
+    public function scopeHasReceivable(Builder $q): Builder
+    {
+        return $q->where('sale_unpaid_amount_krw_cache', '>', 0);
+    }
+
     public function scopeExcludeReceivableGrace(Builder $q): Builder
     {
         // 유예 = **아직 안 떠난** 차의 미수 중 판매일+유예일 미경과분. 떠난 차는 유예 없이 즉시 채권이다.

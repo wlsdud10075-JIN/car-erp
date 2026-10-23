@@ -3240,6 +3240,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->taskFilter === 'deregistration', fn ($q) => $q->action('deregistration_due'))
             // 🚦 선적·통관·B/L 필요 — 단계 완료 조건이 빈 차. 조건은 Vehicle::scopeStageGap 단일 출처.
             ->when(in_array($this->taskFilter, \App\Models\Vehicle::STAGE_GAPS, true), fn ($q) => $q->stageGap($this->taskFilter))
+            // 💰 미수금 (jin 2026-10-22) — B/L 필요 옆 토글. 기준 = Vehicle::scopeHasReceivable(채권관리 KPI 와 같음).
+            ->when($this->taskFilter === 'receivable', fn ($q) => $q->hasReceivable())
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
             ->when($this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
@@ -7968,6 +7970,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     {{ $gapOn ? '✓ ' : '' }}{{ __('vehicle.stage_gap.'.$gap) }}
                 </button>
             @endforeach
+            {{-- 💰 미수금 (jin 2026-10-22) — B/L 필요 오른쪽. 같은 토글 묶음(하나만 켜짐). 채권관리 미수와 같은 기준. --}}
+            @php $recvOn = $taskFilter === 'receivable'; @endphp
+            <button type="button" wire:click="toggleTask('receivable')" data-filter-receivable
+                    title="{{ __('vehicle.filter_receivable_hint') }}"
+                    class="rounded-full px-2.5 py-0.5 text-xs transition
+                           {{ $recvOn ? 'bg-rose-600 text-white shadow-sm font-semibold' : 'bg-rose-100 text-rose-700 hover:bg-rose-200 font-medium' }}">
+                {{ $recvOn ? '✓ ' : '' }}💰 {{ __('vehicle.filter_receivable') }}
+            </button>
         </div>
 
         {{-- 서류 발송(EMS·DHL) 필터 (jin 2026-08-31) — 진행상태·운항과 또 다른 축.

@@ -12,6 +12,8 @@ return [
     'unassigned' => 'Unassigned',
     'empty' => 'No buyers.',
     'delete_confirm' => 'Delete buyer :name?',
+    'new_badge' => 'New',
+    'new_badge_hint' => 'Registered :date — shown for 30 days after registration.',
     'delete_confirm_simple' => 'Delete this buyer? This cannot be undone.',
     'saved' => 'Buyer saved.',
     'deleted' => 'Buyer deleted.',

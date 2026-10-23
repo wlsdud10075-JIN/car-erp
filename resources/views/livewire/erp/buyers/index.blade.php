@@ -1436,7 +1436,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     data-currency="원"
                 @endif
             >
-                <td class="py-3 pr-4 font-medium text-gray-800">{{ $b->name }}</td>
+                <td class="py-3 pr-4 font-medium text-gray-800">{{ $b->name }}@if($b->isNewBuyer())<span class="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-buyer-new title="{{ __('buyer.new_badge_hint', ['date' => $b->created_at->format('Y-m-d')]) }}">{{ __('buyer.new_badge') }}</span>@endif</td>
                 <td class="py-3 pr-4 text-gray-500">
                     @if($b->salesman)
                         <span class="badge badge-blue">{{ $b->salesman->name }}</span>
@@ -1472,7 +1472,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     @forelse($this->buyers as $b)
     <div class="card-tight flex items-center justify-between cursor-pointer" wire:click="openEdit({{ $b->id }})">
         <div>
-            <div class="font-medium text-gray-800">{{ $b->name }}</div>
+            <div class="font-medium text-gray-800">{{ $b->name }}@if($b->isNewBuyer())<span class="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-buyer-new title="{{ __('buyer.new_badge_hint', ['date' => $b->created_at->format('Y-m-d')]) }}">{{ __('buyer.new_badge') }}</span>@endif</div>
             <div class="text-xs text-gray-500">{{ $b->country?->name ?? '' }} {{ $b->contact_email ? '· '.$b->contact_email : '' }}</div>
         </div>
         <span class="badge {{ $b->is_active ? 'badge-green' : 'badge-gray' }}">{{ $b->is_active ? __('common.active') : __('common.inactive') }}</span>
