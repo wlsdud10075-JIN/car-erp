@@ -835,6 +835,13 @@ class Vehicle extends Model
         //   운임비(USD)는 회계 미포함 메모지만 서류·정산 대화에 쓰이므로 같이 남긴다.
         'forwarding_company_id', 'transport_fee_usd',
         'usd_exchange_rate',   // 2026-10-22 board 연동 메모 — 누가 바꿨는지 남긴다
+        // 🔀 2026-10-23 (jin «로그에 남지 않는 항목들을 살펴보자») — 사람이 고르는 칸 중 돈·진행·거래 상대에 닿는 것.
+        //    🚨 주차료는 비용 10칸 중 **유일하게 빠져 있었다**(2026-08-26 공통 칸 편입 때 누락).
+        //    제원·NICE 조회값·DHL 주소는 자동으로 채워지는 값이라 일부러 뺀다(기록만 늘어난다).
+        'cost_parking', 'purchase_date', 'purchase_from', 'nice_reg_owner_name', 'cancel_status', 'vehicle_number',
+        'consignee_id', 'export_buyer_id', 'export_consignee_id', 'bl_buyer_id', 'bl_consignee_id',
+        'incoterms', 'bl_loading_location', 'is_export_cleared', 'bl_issue_date', 'port_of_loading', 'discharge_port_id', 'shipping_method',
+        'deregistration_date', 'stock_location', 'memo',
     ];
 
     /**
@@ -1152,7 +1159,7 @@ class Vehicle extends Model
             // 🆕 등록 때 넣은 값도 남긴다 (jin 2026-10-19 61거7486 «로그 기록이 없고») — 종전엔 「등록됨」 한 줄뿐이라
             //   누가 처음에 얼마를 넣었는지(판매가·환율·적립금 사용 등)는 다음 수정의 old_value 로만 짐작됐다.
             //   빈 값·0·false 는 적지 않는다(새 차 한 대에 0 행이 수십 줄 쌓이는 소음, §8 #108).
-            foreach (array_diff(self::AUDITED_COLUMNS, ['progress_status_cache']) as $col) {   // 진행상태는 계산값 — 첫 값은 소음
+            foreach (array_diff(self::AUDITED_COLUMNS, ['progress_status_cache', 'vehicle_number']) as $col) {   // 진행상태는 계산값 — 첫 값은 소음 · 차량번호는 「생성」 줄의 대상이 이미 그 차다
                 $val = $vehicle->getAttribute($col);
                 if ($val === null || $val === '' || $val === false || (is_numeric($val) && (float) $val == 0.0)) {
                     continue;

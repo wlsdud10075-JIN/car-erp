@@ -110,8 +110,21 @@ class AuditLog extends Model
      */
     public static function isRealChange(Model $model, string $column): bool
     {
-        return $model->wasChanged($column)
-            && self::valuesDiffer($model->getOriginal($column), $model->getAttribute($column));
+        if (! $model->wasChanged($column)) {
+            return false;
+        }
+        $old = $model->getOriginal($column);
+        $new = $model->getAttribute($column);
+        // 🔒 가려 저장하는 칸(주민번호·계좌)은 화면에 「바뀜」만 남아 사람이 대조할 수 없다 — 숫자만 같으면 안 바뀐 것으로 본다
+        //    (2026-10-23 — 하이픈 유무 같은 표기만 다른 재입력이 「주민번호 변경」으로 남지 않게. 가려진 칸은 전·후가 같은 표식이라
+        //    운영 기록만으로는 어느 것이 진짜 변경이었는지 가를 수 없다 — 그래서 저장 시점에 숫자로 비교한다.)
+        if (array_key_exists($column, self::MASKED_COLUMNS)) {
+            $digits = fn ($v) => preg_replace('/\D+/', '', (string) $v);
+
+            return $digits($old) !== $digits($new);
+        }
+
+        return self::valuesDiffer($old, $new);
     }
 
     /**

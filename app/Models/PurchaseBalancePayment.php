@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\PaymentAudit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Cache;
@@ -159,16 +160,10 @@ class PurchaseBalancePayment extends Model
         });
 
         // 정산 락 개편(2026-07-24) — 마감 후 토큰 정정(금액·날짜) old→new AuditLog (FinalPayment 대칭).
-        static::updated(function (PurchaseBalancePayment $p) {
-            if ($p->getOriginal('confirmed_at') === null) {
-                return;
-            }
-            foreach (self::AUDITED_LEDGER_COLUMNS as $col) {
-                if (AuditLog::isRealChange($p, $col)) {
-                    AuditLog::recordChange($p, $col, $p->getOriginal($col), $p->getAttribute($col));
-                }
-            }
-        });
+        // 🔀 2026-10-23 — 확정 여부와 상관없이 줄 추가·수정·삭제·확정을 남긴다(PaymentAudit 단일 출처, FinalPayment 대칭).
+        static::created(fn (PurchaseBalancePayment $p) => PaymentAudit::created($p));
+        static::updated(fn (PurchaseBalancePayment $p) => PaymentAudit::updated($p));
+        static::deleted(fn (PurchaseBalancePayment $p) => PaymentAudit::deleted($p));
     }
 
     /** 정산 락 개편(2026-07-24) — 매입 잔금 개별 정정 잠금해제 cache key (FinalPayment 대칭). */

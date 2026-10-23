@@ -105,6 +105,8 @@ class ColumnLabel
             // 2026-09-04 — 바이어 현금 원장(외화 입금 → 판매잔금 차감).
             'BuyerCashReceipt' => 'buyer_cash_receipts',
             'BuyerCashFee' => 'buyer_cash_fees',
+            // 2026-10-23 — 감사로그에 쌓이는데 표가 없어 컬럼명이 영문으로 보이던 것.
+            'BoardRequest' => 'board_requests',
         ];
 
         return $map[$short] ?? null;
@@ -146,6 +148,10 @@ class ColumnLabel
             $name = trim(substr($columnName, strlen('buyer:')));
 
             return $name === '' ? '바이어' : "바이어 ({$name})";
+        }
+        // 2026-10-23 — 사내직원 명부에 달마다 쌓이는 급여대장·헤이맨 정산금(`payroll_2026-09` · `heyman_pay_2026-09`).
+        if (preg_match('/^(payroll|heyman_pay)_(\d{4}-\d{2})$/', $columnName, $m)) {
+            return ($m[1] === 'payroll' ? '급여대장' : '헤이맨 정산금')." ({$m[2]})";
         }
 
         return null;
