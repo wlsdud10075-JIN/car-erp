@@ -623,20 +623,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         try {
             $p = $this->editablePayment((int) $this->editPaymentId);
-            $wasConfirmed = $p->confirmed_at !== null;
-            // ⚠️ save() 뒤엔 getOriginal() 이 새 값을 돌려준다 — 감사용 옛 값은 **먼저** 뜬다.
-            $old = [
-                'amount' => (float) $p->amount,
-                'payment_date' => $p->payment_date?->format('Y-m-d'),
-                'note' => $p->note,
-            ];
             $new = [
                 'amount' => (float) str_replace(',', '', $this->editAmountStr),
                 'payment_date' => $this->editDate,
                 'note' => $this->editNote !== '' ? $this->editNote : null,
             ];
 
-            DB::transaction(function () use ($p, $wasConfirmed, $old, $new) {
+            DB::transaction(function () use ($p, $new) {
                 $p->amount = $new['amount'];
                 $p->payment_date = $new['payment_date'];
                 $p->note = $new['note'];
@@ -649,18 +642,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         ->update(['amount' => $new['amount'], 'collected_at' => $new['payment_date']]);
                 }
 
-                // 모델 훅은 미확정 행의 정정을 감사하지 않는다(일상 편집). 재무 화면에서의 정정은 돈이 움직이는
-                //   기록이라 남긴다. 확정 행은 훅이 이미 amount/payment_date 를 기록하므로 여기서 또 적지 않는다(이중 기록 방지).
-                if (! $wasConfirmed) {
-                    foreach (['amount', 'payment_date', 'note'] as $col) {
-                        $changed = $col === 'amount'
-                            ? abs($old[$col] - $new[$col]) > 1e-9
-                            : ($old[$col] ?? null) !== ($new[$col] ?? null);
-                        if ($changed) {
-                            AuditLog::recordChange($p, $col, $old[$col], $new[$col]);
-                        }
-                    }
-                }
+                // 🔀 2026-10-23 — 감사는 모델 훅(PaymentAudit)이 확정 여부와 상관없이 남긴다. 여기서 또 적으면 이중 기록이다.
 
                 if ($p instanceof FinalPayment) {
                     $this->reconcileSettlementAfterShrink($p->vehicle);
@@ -684,7 +666,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $vehicle = $p->vehicle;
 
             DB::transaction(function () use ($p, $vehicle) {
-                AuditLog::recordEvent($p, 'deleted');   // 실패하면 트랜잭션이 같이 되돌린다
+                // 삭제 감사는 모델 deleted 훅(PaymentAudit)이 남긴다 — 트랜잭션 안이라 실패하면 같이 되돌려진다(2026-10-23).
                 if ($p instanceof FinalPayment) {
                     // 미러 먼저 — RH::deleted 가 짝 FP 를 데려가며 FP::deleting 가드도 정상 발화한다.
                     ReceivableHistory::query()->where('final_payment_id', $p->id)->get()->each->delete();

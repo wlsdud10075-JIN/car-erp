@@ -6586,6 +6586,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             $existingFinalIds = $vehicle->finalPayments->pluck('id')->toArray();
             $submittedFinalIds = collect($this->finalPayments)->pluck('id')->filter()->toArray();
             $toDeleteIds = array_diff($existingFinalIds, $submittedFinalIds);
+            // 🧾 bulk delete 는 모델 훅을 안 탄다 — 지우기 전에 줄마다 감사 기록(PaymentAudit, 2026-10-23).
+            \App\Support\PaymentAudit::deletingMany(FinalPayment::whereIn('id', array_diff($toDeleteIds, $lockedFinalIds))->with('vehicle')->get());
             FinalPayment::whereIn('id', array_diff($toDeleteIds, $lockedFinalIds))->delete();
 
             // 회의확장씬 #6 (2026-05-22) — canConfirmFinance(재무·관리·admin) 직접 추가 시 즉시 확정.
@@ -6607,12 +6609,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $rateVal = ($row['exchange_rate'] ?? '') !== '' ? (float) str_replace(',', '', $row['exchange_rate']) : null;
                 if (isset($row['id']) && $row['id']) {
                     if (in_array($row['id'], $lockedFinalIds)) continue;
-                    FinalPayment::where('id', $row['id'])->update([
+                    $fpNew = [
                         'amount' => $amt,
                         'exchange_rate' => $rateVal,
                         'payment_date' => $dt,
                         'note' => $row['note'] ?? null,
-                    ]);
+                    ];
+                    \App\Support\PaymentAudit::updatingRow(FinalPayment::find($row['id']), $fpNew);   // bulk update — 훅 대신
+                    FinalPayment::where('id', $row['id'])->update($fpNew);
                 } else {
                     $newFp = $vehicle->finalPayments()->create(array_merge([
                         'amount' => $amt,
@@ -6829,6 +6833,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                     }
                     PurchaseBalancePayment::$allowConfirmedMutation = true;
                     try {
+                        \App\Support\PaymentAudit::deletingMany($vehicle->purchaseBalancePayments()
+                            ->where('type', $type)->whereNotNull('confirmed_at')->whereNull('transfer_id')->get());
                         $vehicle->purchaseBalancePayments()
                             ->where('type', $type)
                             ->whereNotNull('confirmed_at')
@@ -6861,6 +6867,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             //   PBP 도 아래가 bulk 라 모델 가드를 안 태우므로 여기서 목록으로 제외해야 한다.
             $lockedPurchaseIds = PurchaseBalancePayment::where('vehicle_id', $vehicle->id)
                 ->whereNotNull('transfer_id')->pluck('id')->toArray();
+            \App\Support\PaymentAudit::deletingMany(PurchaseBalancePayment::whereIn('id', array_diff($existingPurchaseIdsBefore, $submittedPurchaseIds, $lockedPurchaseIds))->get());
             PurchaseBalancePayment::whereIn('id', array_diff($existingPurchaseIdsBefore, $submittedPurchaseIds, $lockedPurchaseIds))->delete();
             foreach ($this->purchaseBalancePayments as $row) {
                 if (($row['amount'] ?? '') === '' && ($row['payment_date'] ?? '') === '') continue;
@@ -6868,7 +6875,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $dt  = $toDate($row['payment_date'] ?? '');
                 if (isset($row['id']) && $row['id']) {
                     if (in_array($row['id'], $lockedPurchaseIds)) continue;
-                    PurchaseBalancePayment::where('id', $row['id'])->update(['amount' => $amt, 'payment_date' => $dt, 'note' => $row['note'] ?? null]);
+                    $pbpNew = ['amount' => $amt, 'payment_date' => $dt, 'note' => $row['note'] ?? null];
+                    \App\Support\PaymentAudit::updatingRow(PurchaseBalancePayment::find($row['id']), $pbpNew);   // bulk update — 훅 대신
+                    PurchaseBalancePayment::where('id', $row['id'])->update($pbpNew);
                 } else {
                     // 회의확장씬 #6 (2026-05-22) — canConfirmFinance 직접 추가 시 즉시 확정 (판매 잔금과 동일 정책).
                     $vehicle->purchaseBalancePayments()->create(array_merge([
@@ -7689,6 +7698,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! empty($this->clearFinalPaymentProofs[$idx])) {
             if ($existingPath) {
                 $pathsToDelete[] = $existingPath;
+                if ($fpRow = FinalPayment::find($fpId)) {
+                    \App\Models\AuditLog::recordChange($fpRow, 'proof_path', $existingPath, null);
+                }   // bulk update — 훅 대신(2026-10-23)
                 FinalPayment::where('id', $fpId)->update(['proof_path' => null]);
             }
 
@@ -7708,6 +7720,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             $newlyStoredPaths[] = $path;
             if ($existingPath && $existingPath !== $path) {
                 $pathsToDelete[] = $existingPath;   // 교체(이름 다름) 시 옛 파일 정리. 같은 이름=덮어씀이라 삭제 안 함.
+            }
+            if ($existingPath !== $path) {
+                if ($fpRow = FinalPayment::find($fpId)) {
+                    \App\Models\AuditLog::recordChange($fpRow, 'proof_path', $existingPath, $path);
+                }   // bulk update — 훅 대신(2026-10-23)
             }
             FinalPayment::where('id', $fpId)->update(['proof_path' => $path]);
         }

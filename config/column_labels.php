@@ -119,15 +119,15 @@ return [
         // 이벤트가 column_name 자리에 테이블명을 넣는 경우(purchase_payment_after_paid).
         'purchase_balance_payments' => '매입 잔금',
         'shipping_method' => '운송 방식',
-        'port_of_loading' => 'Port of Loading',
+        'port_of_loading' => '선적항',
         'discharge_port_id' => '도착 항구',
-        'incoterms' => 'Incoterms',
+        'incoterms' => '인코텀즈',
         'export_declaration_document' => '수출신고서',
-        'is_export_cleared' => '통관 완료',
+        'is_export_cleared' => '통관 체크',
 
         // 선적 / B/L
-        'bl_buyer_id' => '선적 바이어',
-        'bl_consignee_id' => '선적 컨사이니',
+        'bl_buyer_id' => 'B/L 바이어',
+        'bl_consignee_id' => 'B/L 컨사이니',
         'bl_number' => 'B/L번호',
         'container_no' => '컨테이너 No',
         'container_number' => '컨테이너 번호',   // 실제 컬럼명 — 위 container_no 는 옛 키
@@ -162,11 +162,17 @@ return [
         // 감사 로그용 논리 라벨(실제 vehicles 컬럼 아님) — 관리자가 영문 없이 읽게.
         'unpaid_override_stage' => '미수 우회 단계',
         'unlock_reason' => '잠금해제 사유',
+        'purchase_from' => '구입처',
+        'cancel_status' => '매입취소 상태',
+        'stock_location' => '보관위치',
+        'memo' => '메모',
+        'deregistration_date' => '말소일',
+        'cancel_loss_settled_at' => '취소 손실 반영일',
     ],
 
     // ─── final_payments / purchase_balance_payments ─────────────────────
     'final_payments' => [
-        'amount' => '잔금',
+        'amount' => '금액',
         'exchange_rate' => '입금 시점 환율',
         'amount_krw' => 'KRW 환산',
         'payment_date' => '입금일',
@@ -176,15 +182,20 @@ return [
         'confirmed_by_user_id' => '재무 확정자',
         'finance_note' => '재무 메모',
         'transfer_id' => '차량 간 이체',
+        'payment_row' => '판매 입금 줄',
+        'proof_path' => '전시문(송금증)',
     ],
 
     'purchase_balance_payments' => [
-        'amount' => '매입 잔금',
+        'amount' => '금액',
         'payment_date' => '지급일',
         'note' => '비고',
         'type' => '구분',
         'confirmed_at' => '재무 확정 시각',
         'finance_note' => '재무 메모',
+        'payment_row' => '매입 지급 줄',
+        'proof_path' => '이체확인증',
+        'confirmed_by_user_id' => '재무 확정자',
     ],
 
     // ─── settlements ────────────────────────────────────────────────────
@@ -222,6 +233,7 @@ return [
         'employee_no' => '사원번호(급여대장)',   // 2026-10-14 급여대장 업로드 매칭 키
         'left_at' => '퇴사일',   // 2026-10-15 퇴사자 정산
         'memo' => '메모',
+        'pension_split_enabled' => '퇴직연금 1/12 분리',
     ],
 
     // 2026-10-14 — 계좌별 통장 잔액(업무 대시보드 「+ 계좌 추가」·「숨김」)
@@ -236,6 +248,7 @@ return [
         'account_no' => '계좌번호',
         'label' => '구분',
         'is_active' => '활성 상태',
+        'balances' => '계좌 잔액(적재)',
     ],
 
     'buyers' => [
@@ -258,6 +271,7 @@ return [
         'unsecured_limit_enabled' => '무담보 한도 기능',
         'inherited_from_salesman_id' => '승계 전 담당자',
         'inherited_at' => '승계일',
+        'settlement_ratio_pct' => '정산 방식(5:5·7:3)',
     ],
 
     'consignees' => [
@@ -391,6 +405,8 @@ return [
         'total_payout' => '지급 총액',
         'settlement_count' => '정산 건수',
         'current_level' => '현재 승인 단계',
+        'submitter_id' => '제출자',
+        'breakdown_snapshot' => '지급 내역(박제)',
     ],
 
     // ─── user_delegations (휴가 대리 위임) ───────────────────────────────
@@ -414,8 +430,8 @@ return [
     // audit_logs.auditable_type 표시에 사용
     'models' => [
         'Vehicle' => '차량',
-        'FinalPayment' => '판매 잔금',
-        'PurchaseBalancePayment' => '매입 잔금',
+        'FinalPayment' => '판매 입금',
+        'PurchaseBalancePayment' => '매입 지급',
         'Settlement' => '정산',
         'Buyer' => '바이어',
         'Consignee' => '컨사이니',
@@ -443,6 +459,10 @@ return [
         'BuyerCashReceipt' => '바이어 현금 입금',
         'SavingsStatus' => '바이어 적립금',
         'BuyerCashFee' => '바이어 현금 수수료',
+        'BoardRequest' => 'board 요청',
+        'ExternalSettlementPay' => '헤이맨 정산금',
+        'PayrollEntry' => '급여대장',
+        'CashAccountBalance' => '계좌 잔액',
     ],
 
     // ─── audit_logs.action 한글 ─────────────────────────────────────────
@@ -512,6 +532,17 @@ return [
         'delegation_deactivated' => '담당 영업 위임 종료',
         // 2026-10-12 — board 요청 거절(드로어 「거절」+사유). new_value = 사유.
         'board_request_rejected' => 'board 요청 거절',
+        'buyer_rebound' => '바이어 재연결(삭제된 바이어 정리)',
+        'payout_incentive_added_via_link' => '인센티브 추가(승인 링크)',
+        'contract_signed' => '전자서명 완료',
+        'purchase_payment_gate_override' => '매입 지급 게이트 예외 승인',
+        'purchase_overpay_corrected' => '매입 과지급 정정',
+        'progress_rule_v5_backfill' => '진행상태 규칙 일괄 재계산',
+        'bulk_document_flag_backfill' => '서류 표시 일괄 보정',
+        'cash_account_backfill' => '계좌 잔액 일괄 적재',
+        'dummy_resnap' => '시연용 정산 재계산',
+        'payment_confirmed' => '재무 확정',
+        'payment_unconfirmed' => '재무 확정 취소',
     ],
 
     /*
@@ -543,7 +574,7 @@ return [
             'type' => ['deposit_down' => '계약금', 'interim' => '중도금', 'advance_1' => '선수금1', 'fee' => '송금 수수료', 'balance' => '잔금'],
         ],
         'purchase_balance_payments' => [
-            'type' => ['down' => '계약금', 'balance' => '잔금'],
+            'type' => ['down' => '계약금', 'selling_fee' => '매도비', 'balance' => '매입잔금'],
         ],
         'savings_statuses' => [
             'transaction_type' => ['EARNED' => '적립', 'USED' => '사용', 'REFUND' => '반환', 'ADJUSTMENT' => '조정', 'CANCELLED' => '취소'],

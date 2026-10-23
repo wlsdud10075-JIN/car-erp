@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\BuyerCashService;
+use App\Support\PaymentAudit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Cache;
@@ -217,16 +218,11 @@ class FinalPayment extends Model
         // 선행결함2 (2026-07-06, c-2) — 재무확정 잔금의 사후 정정(금액·환율·날짜) old→new AuditLog.
         //   확정 후 변경은 잠금해제 토큰 경유로만 도달 → "잠금해제 사유"(서비스 기록) + "실제 변경값"(여기) 2단 추적.
         //   미확정 잔금의 일상 수정은 감사 대상 아님(getOriginal('confirmed_at') null → skip).
-        static::updated(function (FinalPayment $p) {
-            if ($p->getOriginal('confirmed_at') === null) {
-                return;
-            }
-            foreach (self::AUDITED_LEDGER_COLUMNS as $col) {
-                if (AuditLog::isRealChange($p, $col)) {
-                    AuditLog::recordChange($p, $col, $p->getOriginal($col), $p->getAttribute($col));
-                }
-            }
-        });
+        // 🔀 2026-10-23 (jin «계약금·판매잔금 기록이 없다») — 확정 여부와 상관없이 줄 추가·수정·삭제·확정을 남긴다.
+        //    판정·형식은 PaymentAudit 단일 출처. ⚠️ 차량 패널의 bulk 삭제·수정은 훅을 안 타서 그 자리에서 따로 부른다.
+        static::created(fn (FinalPayment $p) => PaymentAudit::created($p));
+        static::updated(fn (FinalPayment $p) => PaymentAudit::updated($p));
+        static::deleted(fn (FinalPayment $p) => PaymentAudit::deleted($p));
 
         // 큐 10 H5 — FinalPayment 신규 생성 시 ReceivableHistory(method=deposit) 자동 미러링.
         // ReceivableHistory에서 시작된 생성은 skipReceivableSync로 차단 (중복 방지).
