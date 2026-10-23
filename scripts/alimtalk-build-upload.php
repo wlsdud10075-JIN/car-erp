@@ -3,8 +3,13 @@
 /**
  * BizM 템플릿 등록 xlsx 생성기 — **기본형(버튼·카드 없는) 템플릿용**.
  *
- * 사용법:  php scripts/alimtalk-build-upload.php <템플릿코드> [카테고리코드]
+ * 사용법:  php scripts/alimtalk-build-upload.php <템플릿코드> [카테고리코드] [--only=헤이맨,싼카]
  * 예)      php scripts/alimtalk-build-upload.php erp_purchase_paid 004001
+ *          php scripts/alimtalk-build-upload.php erp_purchase_paid_v3 004001 --only=헤이맨,싼카
+ *
+ * 🔘 버튼 1개(웹링크) 템플릿도 된다 (2026-10-23 매입대금 v3) — `TEMPLATES[코드]['button'][0]['register_path']` 가 있으면
+ *    6행 AN(버튼타입)·AO(버튼명)·AP(모바일)·AQ(PC)에 `{회사 도메인}{register_path}#{url}` 을 넣는다.
+ *    도메인은 승인된 다른 버튼과 같은 회사 도메인(heysellcar.com · heymancar.com · karaba-erp.com).
  *
  * 출력:    Desktop\알림톡\{회사}확정알림톡\upload_erp_{회사}_{코드}_신규.xlsx  (3사)
  *
@@ -29,8 +34,15 @@ use Illuminate\Contracts\Console\Kernel;
 $app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 
-$CODE = $argv[1] ?? null;
-$CATEGORY = $argv[2] ?? '004001';
+$args = array_values(array_filter(array_slice($argv, 1), fn ($a) => ! str_starts_with($a, '--')));
+$CODE = $args[0] ?? null;
+$CATEGORY = $args[1] ?? '004001';
+$ONLY = null;
+foreach ($argv as $a) {
+    if (str_starts_with($a, '--only=')) {
+        $ONLY = explode(',', substr($a, 7));
+    }
+}
 
 if (! $CODE || ! isset(AlimtalkTemplates::TEMPLATES[$CODE])) {
     fwrite(STDERR, "사용법: php scripts/alimtalk-build-upload.php <템플릿코드> [카테고리코드]\n");
@@ -48,10 +60,18 @@ $SAMPLE = $BASE.'/upload_sample_v2.xlsx';
 
 /** 회사별 발신프로필(플러스친구 아이디) — 등록본에서 확인한 값. 회사를 늘리면 여기 한 줄. */
 $COMPANIES = [
-    ['헤이맨확정알림톡', '헤이맨', '@heyman_con'],
-    ['싼카확정알림톡', '싼카', '@site_condition'],
-    ['카라바확정알림톡', '카라바', '@주식회사카라바'],
+    ['헤이맨확정알림톡', '헤이맨', '@heyman_con', 'https://heysellcar.com'],
+    ['싼카확정알림톡', '싼카', '@site_condition', 'https://heymancar.com'],
+    ['카라바확정알림톡', '카라바', '@주식회사카라바', 'https://karaba-erp.com'],
 ];
+if ($ONLY !== null) {
+    $COMPANIES = array_values(array_filter($COMPANIES, fn ($c) => in_array($c[1], $ONLY, true)));
+}
+$BUTTON = $t['button'][0] ?? null;
+if ($BUTTON !== null && ! isset($BUTTON['register_path'])) {
+    fwrite(STDERR, "❌ {$CODE} 버튼에 register_path 가 없다 — 등록 URL 을 만들 수 없다\n");
+    exit(1);
+}
 
 /** 6행에 넣을 값. null = 그 칸을 **비운다**(샘플 예시의 버튼·미리보기 잔재 제거). */
 $vals = [
@@ -61,7 +81,7 @@ $vals = [
     'E' => $t['body'],
     'I' => $CATEGORY,
     // 샘플 6행에 박혀 있는 버튼·링크·미리보기 — 안 지우면 엉뚱한 버튼이 함께 등록된다.
-    'AN' => null, 'AO' => null, 'AT' => null, 'AU' => null,
+    'AN' => null, 'AO' => null, 'AP' => null, 'AQ' => null, 'AT' => null, 'AU' => null,
     'AZ' => null, 'BA' => null, 'BF' => null, 'BG' => null,
     'BL' => null, 'BM' => null, 'DZ' => null, 'ED' => null,
 ];
@@ -69,8 +89,15 @@ $vals = [
 
 $xmlEscape = fn (string $s): string => str_replace(['&', '<', '>'], ['&amp;', '&lt;', '&gt;'], $s);
 
-foreach ($COMPANIES as [$dir, $label, $profile]) {
+foreach ($COMPANIES as [$dir, $label, $profile, $domain]) {
     $vals['A'] = $profile;
+    if ($BUTTON !== null) {
+        $link = $domain.$BUTTON['register_path'].'#{url}';
+        $vals['AN'] = '웹링크';
+        $vals['AO'] = $BUTTON['name'];
+        $vals['AP'] = $link;
+        $vals['AQ'] = $link;
+    }
     $outPath = "$BASE/$dir/upload_erp_{$label}_{$CODE}_신규.xlsx";
 
     $zin = new ZipArchive;
@@ -176,4 +203,4 @@ foreach ($COMPANIES as [$dir, $label, $profile]) {
     echo "✅ $outPath\n";
 }
 
-echo "\n검증: php scripts/alimtalk-verify-upload.php $CODE\n";
+echo "\n검증: php scripts/alimtalk-verify-upload.php $CODE".($ONLY ? ' --only='.implode(',', $ONLY) : '')."\n";

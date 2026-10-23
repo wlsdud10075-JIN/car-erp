@@ -36,7 +36,8 @@ $companies = [
     '싼카' => ['profile' => '@site_condition', 'domain' => 'https://heymancar.com', 'dir' => '싼카확정알림톡'],
     '카라바' => ['profile' => '@주식회사카라바', 'domain' => 'https://karaba-erp.com', 'dir' => '카라바확정알림톡'],
 ];
-$codes = array_keys(AlimtalkTemplates::SUCCESSOR_OF);
+// 카드형 구 코드의 후속본만 — 매입대금 v3(카드 없음)는 alimtalk-build-upload.php 가 만든다.
+$codes = array_keys(array_filter(AlimtalkTemplates::SUCCESSOR_OF, fn ($base) => isset(AlimtalkTemplates::ITEMLIST[$base])));
 
 // 열 배치(1-based) — 접수본 4·5행 머리글 실측: A 프로필 · B 코드 · C 명 · D 유형 · E 본문 · H 보안 · I 카테고리 · J 강조유형
 //   N 헤더 · O/P 하이라이트(타이틀/디스크립션) · R~ 아이템(명/내용 쌍, 최대 10) · AL/AM 요약(명/내용) · AN~AQ 버튼1(타입/명/모바일/PC)

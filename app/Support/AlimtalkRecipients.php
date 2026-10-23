@@ -121,6 +121,8 @@ class AlimtalkRecipients
         //   v2 는 구 코드가 '담당 영업'을 자동 발송했다 → '영업'을 켠 채로 시작(동작 보존).
         //   ⚠️ 딜러는 역할이 아니다 — 그건 버튼이 직접 보내고 AUTO_EXTRA 로만 안내한다.
         'erp_purchase_paid_v2' => ['영업'],
+        // v3 = v2 와 같은 수신 설정(selectedRoles 가 baseCode 로 v2 키를 읽는다). 여기 키는 안내 화면의 역할형 판정용.
+        'erp_purchase_paid_v3' => ['영업'],
         // 🪜 지급 결재 결과 (jin 2026-10-15) — 기본 「결재선 전원」. 제출자는 항상(AUTO_EXTRA). 체크를 다 풀면 종전처럼 제출자만.
         'erp_payout_done' => [self::APPROVAL_LINE],
         'erp_payout_rejected' => [self::APPROVAL_LINE],
@@ -140,6 +142,7 @@ class AlimtalkRecipients
     /** 브로드캐스트형이면서 자동 대상도 함께 가는 혼합 알림 — 안내 화면 부가 표시. */
     public const AUTO_EXTRA = [
         'erp_purchase_paid_v2' => '국내 딜러(버튼이 직접 발송)',
+        'erp_purchase_paid_v3' => '국내 딜러(버튼이 직접 발송)',
         'erp_payout_done' => '제출자 본인(항상)',
         'erp_payout_rejected' => '제출자 본인(항상)',
     ];
@@ -154,7 +157,7 @@ class AlimtalkRecipients
     public const SCOPED_CODES = [
         'erp_vehicle_new', 'erp_purchase_unpaid', 'erp_sale_unpaid', 'erp_settle_pending',
         'erp_eta_balance_due', 'erp_shipping_due', 'erp_deposit_cash_due',
-        'erp_pickup_reminder', 'erp_purchase_paid_v2', 'erp_deregistration_reminder',
+        'erp_pickup_reminder', 'erp_purchase_paid_v2', 'erp_purchase_paid_v3', 'erp_deregistration_reminder',
     ];
 
     /**

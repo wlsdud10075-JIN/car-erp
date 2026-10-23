@@ -241,8 +241,8 @@ class PurchasePaidNoticeTest extends TestCase
 
         // ⚠️ 버튼 **라벨**로 찾지 말 것 — 같은 칸의 안내문구가 라벨을 그대로 인용해 항상 매치된다.
         //    `wire:click` 액션명은 버튼이 실제로 렌더될 때만 나온다.
-        $this->assertPanelHas($html, 'sendPurchasePaidAlimtalk', '📨 버튼');
-        $this->assertSame(2, substr_count($html, 'sendPurchasePaidAlimtalk'), '계약금 1 + 잔금 1 = 2개여야 한다');
+        $this->assertPanelHas($html, 'openPaidNotice(', '📨 버튼');
+        $this->assertSame(2, substr_count($html, 'openPaidNotice('), '계약금 1 + 잔금 1 = 2개여야 한다');
     }
 
     /**
@@ -283,7 +283,7 @@ class PurchasePaidNoticeTest extends TestCase
 
         $html = $this->panelHtml($v);
 
-        $this->assertSame(2, substr_count($html, 'sendPurchasePaidAlimtalk'),
+        $this->assertSame(2, substr_count($html, 'openPaidNotice('),
             '계약금 1(금액칸 옆) + 잔금 1 = 2개여야 한다 — 계약금·매도비 행에도 붙었다');
     }
 
@@ -301,10 +301,10 @@ class PurchasePaidNoticeTest extends TestCase
         $this->pay($v, 'down', 3_000_000);
 
         // 설정 전 — tmplId 가 비어 있다.
-        $this->assertPanelLacks($this->panelHtml($v), 'sendPurchasePaidAlimtalk', '📨 버튼(미설정)');
+        $this->assertPanelLacks($this->panelHtml($v), 'openPaidNotice(', '📨 버튼(미설정)');
 
         $this->configureAlimtalk();
-        $this->assertPanelHas($this->panelHtml($v), 'sendPurchasePaidAlimtalk', '📨 버튼(설정 후)');
+        $this->assertPanelHas($this->panelHtml($v), 'openPaidNotice(', '📨 버튼(설정 후)');
     }
 
     /** 개별 토글을 끄면 사라진다 — 승인 후에도 잠시 멈출 수 있어야 한다. */
@@ -318,7 +318,7 @@ class PurchasePaidNoticeTest extends TestCase
         $set = Setting::companyTemplateSet();
         Setting::updateOrCreate(['key' => "alimtalk_toggle_erp_purchase_paid_{$set}"], ['value' => '0', 'type' => 'boolean']);
 
-        $this->assertPanelLacks($this->panelHtml($v), 'sendPurchasePaidAlimtalk', '📨 버튼(토글 off)');
+        $this->assertPanelLacks($this->panelHtml($v), 'openPaidNotice(', '📨 버튼(토글 off)');
     }
 
     /** 확정 지급이 없으면 버튼도 없다 — 누를 수 없는 버튼을 띄우지 않는다. */
@@ -330,7 +330,7 @@ class PurchasePaidNoticeTest extends TestCase
         $v = $this->vehicle();
         $this->pay($v, 'balance', 5_000_000, confirmed: false);
 
-        $this->assertPanelLacks($this->panelHtml($v), 'sendPurchasePaidAlimtalk', '📨 버튼');
+        $this->assertPanelLacks($this->panelHtml($v), 'openPaidNotice(', '📨 버튼');
     }
 
     // ── 계좌 마스킹 ────────────────────────────────────────────────────────

@@ -18,7 +18,14 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 $app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 
-$CODE = $argv[1] ?? null;
+$args = array_values(array_filter(array_slice($argv, 1), fn ($a) => ! str_starts_with($a, '--')));
+$CODE = $args[0] ?? null;
+$ONLY = null;
+foreach ($argv as $a) {
+    if (str_starts_with($a, '--only=')) {
+        $ONLY = explode(',', substr($a, 7));
+    }
+}
 if (! $CODE || ! isset(AlimtalkTemplates::TEMPLATES[$CODE])) {
     fwrite(STDERR, "사용법: php scripts/alimtalk-verify-upload.php <템플릿코드>\n");
     exit(1);
@@ -27,13 +34,17 @@ $t = AlimtalkTemplates::TEMPLATES[$CODE];
 $BASE = 'C:/Users/User/Desktop/알림톡';
 
 $COMPANIES = [
-    ['헤이맨확정알림톡', '헤이맨', '@heyman_con'],
-    ['싼카확정알림톡', '싼카', '@site_condition'],
-    ['카라바확정알림톡', '카라바', '@주식회사카라바'],
+    ['헤이맨확정알림톡', '헤이맨', '@heyman_con', 'https://heysellcar.com'],
+    ['싼카확정알림톡', '싼카', '@site_condition', 'https://heymancar.com'],
+    ['카라바확정알림톡', '카라바', '@주식회사카라바', 'https://karaba-erp.com'],
 ];
+if ($ONLY !== null) {
+    $COMPANIES = array_values(array_filter($COMPANIES, fn ($c) => in_array($c[1], $ONLY, true)));
+}
+$BUTTON = $t['button'][0] ?? null;
 
 $fail = 0;
-foreach ($COMPANIES as [$dir, $label, $profile]) {
+foreach ($COMPANIES as [$dir, $label, $profile, $domain]) {
     $path = "$BASE/$dir/upload_erp_{$label}_{$CODE}_신규.xlsx";
     echo "── $label ──\n";
     if (! is_file($path)) {
@@ -70,8 +81,20 @@ foreach ($COMPANIES as [$dir, $label, $profile]) {
             $fail++;
         }
     }
+    // 🔘 버튼 템플릿 — 버튼1 4칸이 코드와 같아야 한다(발송 링크는 APP_URL + 같은 경로라 패턴이 맞아야 K108 이 안 난다).
+    if ($BUTTON !== null) {
+        $link = $domain.$BUTTON['register_path'].'#{url}';
+        foreach (['AN6' => '웹링크', 'AO6' => $BUTTON['name'], 'AP6' => $link, 'AQ6' => $link] as $c => $want) {
+            if ($get($c) === $want) {
+                echo "  ✅ 버튼 $c = $want\n";
+            } else {
+                echo "  ❌ 버튼 $c 기대 $want / 실제 ".$get($c)."\n";
+                $fail++;
+            }
+        }
+    }
     // 버튼 칸이 남아 있으면 등록본에 버튼이 붙고, 발송에 버튼을 안 실으면 K108 로 실패한다.
-    foreach (['AN6', 'AO6', 'AT6', 'DZ6', 'ED6'] as $c) {
+    foreach (array_merge($BUTTON !== null ? [] : ['AN6', 'AO6'], ['AT6', 'DZ6', 'ED6']) as $c) {
         if ($get($c) !== '') {
             echo "  ❌ 버튼/링크 칸 $c 이 안 비었다: ".$get($c)."\n";
             $fail++;

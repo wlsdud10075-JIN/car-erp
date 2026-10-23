@@ -1420,6 +1420,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool   $is_deregistered = false;
     public string $deregistration_date = '';   // 말소등록일 (NICE 비제공 수동입력, 통관 구매리스트 B7)
     public array  $purchaseBalancePayments = [];
+    // 📎 딜러 입금완료 📨 모달 (jin 2026-10-23) — ['kind','pbp_id','amount','proof_name','proof_url'] · 붙여넣기/파일 업로드
+    public ?array $paidNotice = null;
+    public $paidProofUpload = null;
     /**
      * 2026-07-28 — type별 이체(보증금 적용) 유입액. 4항목 박스가 "수기 입력분"만 보여주게 되면서
      * 박스 옆에 "+ 보증금 적용 N" 을 표시하기 위한 읽기 전용 데이터. 표시 전용이라 저장에 안 쓰임.
@@ -5236,6 +5239,15 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function sendPurchasePaidAlimtalk(string $kind, ?int $pbpId = null): void
     {
+        $this->deliverPurchasePaid($kind, $pbpId, null);
+    }
+
+    /**
+     * 실제 발송 — 📎 $proofRow(이체확인증이 붙은 지급 행)가 있고 v3 가 승인·입력돼 있으면 「이체확인증 보기」 버튼을 단 v3 로.
+     * 없거나 v3 미승인이면 종전 v2/v1 그대로(버튼 없음) — 승인 전에도 📨 가 죽지 않는다.
+     */
+    private function deliverPurchasePaid(string $kind, ?int $pbpId, ?\App\Models\PurchaseBalancePayment $proofRow): void
+    {
         abort_unless(in_array($kind, ['down', 'balance'], true), 422);
         abort_unless((bool) auth()->user()?->canConfirmFinance(), 403);
 
@@ -5277,7 +5289,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
-        $isV2 = $code === 'erp_purchase_paid_v2';
+        // 📎 이체확인증이 붙었고 v3 가 켜져 있으면 버튼 달린 v3 로(수신 설정은 v2 와 공유 — SUCCESSOR_OF).
+        $proofSkipped = false;
+        if ($proofRow !== null && $code === 'erp_purchase_paid_v2' && \App\Support\AlimtalkConfig::active()->canSend('erp_purchase_paid_v3')) {
+            $code = 'erp_purchase_paid_v3';
+        } elseif ($proofRow !== null) {
+            $proofSkipped = true;   // 파일은 지급 행에 저장됐지만 버튼 템플릿 승인 전 — 토스트로 알린다
+        }
+        $isV2 = in_array($code, ['erp_purchase_paid_v2', 'erp_purchase_paid_v3'], true);
 
         // 🚨 토글만 하고 저장을 안 했으면 막는다 — 발송은 **DB 값**을 읽으므로 화면과 다른 내용이
         //    나간다. 「저당을 켜고 보냈는데 문구가 없다」 가 되면 아무도 눈치 못 챈다.
@@ -5304,7 +5323,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                 : \App\Support\AlimtalkTemplates::MORTGAGE_NONE;
         }
 
-        $log = \App\Services\BizmAlimtalkService::active()->send($code, $phone, $vars, $meta);
+        // 「이체확인증 보기」 버튼 — 🚨 링크는 APP_URL 로 만든다(§8 #76). 접속 호스트로 만들면 등록 URL 과 달라 K108.
+        $buttons = [];
+        if ($code === 'erp_purchase_paid_v3') {
+            \Illuminate\Support\Facades\URL::forceRootUrl(config('app.url'));
+            \Illuminate\Support\Facades\URL::forceScheme(parse_url((string) config('app.url'), PHP_URL_SCHEME) ?: 'https');   // 요청이 http 여도 등록 URL(https)과 같게
+            try {
+                $buttons[] = [
+                    'name' => \App\Support\AlimtalkTemplates::TEMPLATES[$code]['button'][0]['name'],
+                    'url' => \Illuminate\Support\Facades\URL::temporarySignedRoute(
+                        'purchase.proof', now()->addDays(\App\Http\Controllers\PurchaseProofController::LINK_TTL_DAYS), ['pbp' => $proofRow->id],
+                    ),
+                ];
+            } finally {
+                \Illuminate\Support\Facades\URL::forceRootUrl(null);
+                \Illuminate\Support\Facades\URL::forceScheme(null);
+            }
+        }
+
+        $log = \App\Services\BizmAlimtalkService::active()->send($code, $phone, $vars, $meta, $buttons);
 
         if ($log->status !== 'sent') {
             $this->dispatch('notify', message: __('vehicle.paidnotice.failed', ['reason' => $log->error ?: $log->status]), type: 'error');
@@ -5342,7 +5379,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
                 $already[] = $d;
                 $tried++;
-                if (\App\Services\BizmAlimtalkService::active()->send($code, $target, $vars, $meta)->status === 'sent') {
+                if (\App\Services\BizmAlimtalkService::active()->send($code, $target, $vars, $meta, $buttons)->status === 'sent') {
                     $ok++;
                 }
             }
@@ -5362,9 +5399,125 @@ new #[Layout('components.layouts.app')] class extends Component {
             $extraNotice = __('vehicle.paidnotice.mortgage_pending');
         }
 
+        if ($code === 'erp_purchase_paid_v3') {
+            $extraNotice = trim(__('vehicle.paidnotice.proof_sent').' '.$extraNotice);
+        } elseif ($proofSkipped) {
+            $extraNotice = trim(__('vehicle.paidnotice.proof_pending').' '.$extraNotice);
+        }
+
         $message = __('vehicle.paidnotice.sent', ['amount' => number_format($amount)]);
         $this->dispatch('notify', message: trim($message.' '.$extraNotice), type: 'success');
+        $this->paidNotice = null;
+        $this->paidProofUpload = null;
     }
+
+    /**
+     * 📨 → 모달 (jin 2026-10-23 «스크린샷을 Ctrl+V 로 붙여넣어 보내거나, 파일 첨부, 사진 없이 그냥 보내기»).
+     *
+     * 금액·대상 행은 **DB 확정분**에서 다시 읽는다(발송 액션과 같은 기준). 계약금은 확정된 down 행 중 마지막 행에 붙인다
+     * (운영 실측 계약금은 차당 1건).
+     */
+    public function openPaidNotice(string $kind, ?int $pbpId = null): void
+    {
+        abort_unless(in_array($kind, ['down', 'balance'], true), 422);
+        abort_unless((bool) auth()->user()?->canConfirmFinance(), 403);
+        if ($this->editingId === null) {
+            $this->dispatch('notify', message: __('vehicle.paidnotice.save_first'), type: 'warning');
+
+            return;
+        }
+        $vehicle = \App\Models\Vehicle::find($this->editingId);
+        abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
+
+        $rows = $vehicle->purchaseBalancePayments()->where('type', $kind)->whereNotNull('confirmed_at');
+        $row = $kind === 'down' ? $rows->orderByDesc('id')->first() : $rows->find($pbpId);
+        $amount = $kind === 'down'
+            ? (int) $vehicle->purchaseBalancePayments()->where('type', 'down')->whereNotNull('confirmed_at')->sum('amount')
+            : (int) ($row->amount ?? 0);
+        if (! $row || $amount <= 0) {
+            $this->dispatch('notify', message: __('vehicle.paidnotice.not_confirmed'), type: 'error');
+
+            return;
+        }
+
+        $this->paidProofUpload = null;
+        $this->resetErrorBag('paidProofUpload');
+        $this->paidNotice = [
+            'kind' => $kind,
+            'pbp_id' => $row->id,
+            'amount' => $amount,
+            'proof_name' => $row->proof_path ? basename($row->proof_path) : null,
+            'proof_url' => $row->proof_path ? \App\Support\VehicleDocUrl::for($row->proof_path) : null,
+        ];
+    }
+
+    public function cancelPaidNotice(): void
+    {
+        $this->paidNotice = null;
+        $this->paidProofUpload = null;
+    }
+
+    /** 붙여넣기·파일로 올린 것을 취소(저장된 이체확인증은 그대로). */
+    public function clearPaidProofUpload(): void
+    {
+        $this->paidProofUpload = null;
+    }
+
+    /**
+     * 모달의 두 버튼 — [이체확인증과 함께 보내기] / [사진 없이 보내기].
+     *
+     * 함께 보내기 = 새로 붙인 파일이 있으면 그 지급 행에 저장(옛 파일 교체) → 없으면 이미 저장된 파일을 쓴다.
+     * 🚨 파일 쓰기는 실패해도 예외가 안 난다(§8 #47) — `exists()` 로 확인하고, 실패면 보내지 않는다.
+     */
+    public function sendPaidNotice(bool $withProof): void
+    {
+        abort_unless((bool) auth()->user()?->canConfirmFinance(), 403);
+        $n = $this->paidNotice;
+        if ($n === null) {
+            return;
+        }
+        $vehicle = \App\Models\Vehicle::find($this->editingId);
+        abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
+        $row = $vehicle->purchaseBalancePayments()->whereNotNull('confirmed_at')->find((int) $n['pbp_id']);
+        abort_unless($row !== null, 404);
+
+        $proofRow = null;
+        if ($withProof) {
+            if ($this->paidProofUpload) {
+                $this->validate(['paidProofUpload' => 'file|mimes:jpg,jpeg,png,gif,webp,bmp,pdf|max:10240'], [], ['paidProofUpload' => __('vehicle.paidnotice.proof')]);
+                $disk = config('filesystems.vehicle_docs_disk');
+                $orig = basename((string) $this->paidProofUpload->getClientOriginalName());
+                // 붙여넣은 스크린샷은 이름이 「image.png」 — 날짜를 붙여 무엇인지 보이게 한다.
+                if ($orig === '' || preg_match('/^image\.(png|jpe?g|gif|webp|bmp)$/i', $orig)) {
+                    $orig = 'screenshot-'.now()->format('Ymd-His').'.'.strtolower($this->paidProofUpload->getClientOriginalExtension() ?: 'png');
+                }
+                $safe = preg_replace('/[^\p{L}\p{N}._-]+/u', '_', $orig) ?: 'proof.png';
+                $path = $this->paidProofUpload->storeAs("vehicles/{$vehicle->id}/purchase-proofs/{$row->id}", $safe, $disk);
+                if (! $path || ! \Illuminate\Support\Facades\Storage::disk($disk)->exists($path)) {
+                    $this->dispatch('notify', message: __('vehicle.paidnotice.proof_store_failed'), type: 'error');
+
+                    return;
+                }
+                $old = $row->proof_path;
+                // 회계 잠금 이벤트를 안 타는 query-builder update — 판매 전시문과 같은 방식(증빙은 잠금 대상 아님).
+                \App\Models\PurchaseBalancePayment::where('id', $row->id)->update(['proof_path' => $path]);
+                \App\Models\AuditLog::recordChange($row, 'proof_path', $old, $path);
+                if ($old && $old !== $path) {
+                    \Illuminate\Support\Facades\Storage::disk($disk)->delete($old);
+                }
+                $row->proof_path = $path;
+            }
+            if (blank($row->proof_path)) {
+                $this->dispatch('notify', message: __('vehicle.paidnotice.proof_missing'), type: 'warning');
+
+                return;
+            }
+            $proofRow = $row;
+        }
+
+        $this->deliverPurchasePaid($n['kind'], $n['kind'] === 'balance' ? $row->id : null, $proofRow);
+    }
+
 
     public function removeExportDeclarationDoc(): void
     {
@@ -9635,8 +9788,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         {{-- 딜러에게 「계약금 입금완료」 통지 (jin 2026-08-12). 확정 계약금이 있을 때만.
                              ⚠️ 저장 전 입력값이 아니라 **DB 확정분**을 보낸다(액션에서 다시 읽는다). --}}
                         @if($canConfirmFinance && $editingId !== null && $this->paidNoticeEnabled && $this->confirmedDownPayment > 0)
-                        <button type="button" wire:click="sendPurchasePaidAlimtalk('down')"
-                                wire:confirm="{{ __('vehicle.paidnotice.confirm', ['kind' => __('vehicle.paidnotice.kind_down'), 'amount' => number_format($this->confirmedDownPayment)]) }}{{ $this->paidNoticeConfirmSuffix }}"
+                        <button type="button" wire:click="openPaidNotice('down')"
                                 title="{{ __('vehicle.paidnotice.btn_title') }}"
                                 class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-600">
                             {{ __('vehicle.paidnotice.btn') }}
@@ -9725,8 +9877,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                                 나눠 지급하는데, 두 번째 알림에 누계를 실으면 받는 분이 "추가로 그만큼
                                 더 들어왔다"로 읽는다. 이 줄의 금액을 이 줄이 보낸다. --}}
                         @if($canConfirmFinance && $this->paidNoticeEnabled && ($row['type'] ?? 'balance') === 'balance')
-                        <button type="button" wire:click="sendPurchasePaidAlimtalk('balance', {{ $row['id'] }})"
-                                wire:confirm="{{ __('vehicle.paidnotice.confirm', ['kind' => __('vehicle.paidnotice.kind_balance'), 'amount' => number_format((float) $row['amount'])]) }}{{ $this->paidNoticeConfirmSuffix }}"
+                        <button type="button" wire:click="openPaidNotice('balance', {{ $row['id'] }})"
                                 title="{{ __('vehicle.paidnotice.btn_title') }}"
                                 class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-amber-600">
                             {{ __('vehicle.paidnotice.btn') }}
@@ -12767,6 +12918,72 @@ function vehicleColumnsToggle(columns, serverKnows) {
             </button>
         </div>
         <p class="mt-3 text-xs text-gray-400">{{ __('signed_contract.modal.expire') }}</p>
+    </div>
+</div>
+@endif
+
+{{-- 📨 딜러 입금완료 알림톡 — 이체확인증 붙이기 모달 (jin 2026-10-23). 패널 액션이 여는 모달이라 섬 안에 둔다(§8 #109).
+     Win+Shift+S 로 찍고 이 창에서 Ctrl+V → 브라우저 paste 이벤트의 이미지를 Livewire 업로드로 넘긴다. --}}
+@if($paidNotice)
+@php
+    $pn = $paidNotice;
+    $pnKind = $pn['kind'] === 'down' ? __('vehicle.paidnotice.kind_down') : __('vehicle.paidnotice.kind_balance');
+    $pnV3 = $this->paidNoticeCode === 'erp_purchase_paid_v2' && \App\Support\AlimtalkConfig::active()->canSend('erp_purchase_paid_v3');
+    $pnPreview = null;
+    if ($paidProofUpload) {
+        try { $pnPreview = $paidProofUpload->isPreviewable() ? $paidProofUpload->temporaryUrl() : null; } catch (\Throwable $e) { $pnPreview = null; }
+    }
+    $pnHasFile = $paidProofUpload || ! empty($pn['proof_url']);
+@endphp
+<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-3" data-paid-notice-modal
+     x-data="{ pasting: false,
+        handle(e) {
+            const it = [...(e.clipboardData?.items || [])].find(i => i.kind === 'file');
+            const f = it ? it.getAsFile() : null;
+            if (! f) return;
+            e.preventDefault();
+            this.pasting = true;
+            $wire.upload('paidProofUpload', f, () => { this.pasting = false }, () => { this.pasting = false });
+        } }"
+     @paste.window="handle($event)" @keydown.escape.window="$wire.cancelPaidNotice()">
+    <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+        <p class="text-sm font-semibold text-gray-900">{{ __('vehicle.paidnotice.modal_title') }}</p>
+        <p class="mt-1 text-sm text-gray-600">{{ __('vehicle.paidnotice.confirm', ['kind' => $pnKind, 'amount' => number_format($pn['amount'])]) }}{{ $this->paidNoticeConfirmSuffix }}</p>
+
+        <div class="mt-3 rounded-lg border-2 border-dashed border-gray-300 bg-gray-50 p-3 text-center" data-paid-paste-zone>
+            <div x-show="pasting" class="text-xs text-gray-500">{{ __('vehicle.paidnotice.proof_uploading') }}</div>
+            @if($pnPreview)
+                <img src="{{ $pnPreview }}" alt="" class="mx-auto max-h-56 rounded border border-gray-200 object-contain" />
+                <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.paidnotice.proof_new') }}
+                    <button type="button" wire:click="clearPaidProofUpload" class="ml-1 text-red-500 hover:underline">{{ __('vehicle.panel.proof_cancel') }}</button></p>
+            @elseif($paidProofUpload)
+                <p class="text-xs text-emerald-700">📎 {{ $paidProofUpload->getClientOriginalName() }}
+                    <button type="button" wire:click="clearPaidProofUpload" class="ml-1 text-red-500 hover:underline">{{ __('vehicle.panel.proof_cancel') }}</button></p>
+            @elseif(! empty($pn['proof_url']))
+                <p class="text-xs text-gray-700">{{ __('vehicle.paidnotice.proof_saved') }}
+                    <a href="{{ $pn['proof_url'] }}" target="_blank" class="font-medium text-primary-text hover:underline">📄 {{ $pn['proof_name'] }}</a></p>
+                <p class="mt-1 text-[11px] text-gray-400">{{ __('vehicle.paidnotice.proof_replace_hint') }}</p>
+            @else
+                <p class="text-sm font-medium text-gray-700">{{ __('vehicle.paidnotice.paste_hint') }}</p>
+                <p class="mt-0.5 text-[11px] text-gray-400">{{ __('vehicle.paidnotice.paste_sub') }}</p>
+            @endif
+            <label class="mt-2 inline-flex cursor-pointer items-center gap-1 rounded border border-gray-300 bg-white px-2 py-1 text-xs text-gray-600 hover:border-primary hover:text-primary-text"
+                   wire:loading.class="opacity-40" wire:target="paidProofUpload">
+                📎 {{ __('vehicle.paidnotice.pick_file') }}
+                <input type="file" wire:model="paidProofUpload" accept="image/*,.pdf" class="hidden">
+            </label>
+            @error('paidProofUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        </div>
+        @unless($pnV3)
+        <p class="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">{{ __('vehicle.paidnotice.proof_v3_off') }}</p>
+        @endunless
+
+        <div class="mt-4 flex flex-wrap justify-end gap-2">
+            <button type="button" wire:click="cancelPaidNotice" class="h-9 rounded-lg border border-gray-300 px-4 text-sm text-gray-700 hover:bg-gray-50">{{ __('cash.account.cancel') }}</button>
+            <button type="button" wire:click="sendPaidNotice(false)" wire:loading.attr="disabled" class="h-9 rounded-lg border border-amber-500 px-4 text-sm font-medium text-amber-700 hover:bg-amber-50">{{ __('vehicle.paidnotice.send_without') }}</button>
+            <button type="button" wire:click="sendPaidNotice(true)" wire:loading.attr="disabled" @disabled(! $pnHasFile)
+                    class="h-9 rounded-lg bg-amber-500 px-4 text-sm font-semibold text-white hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-40">{{ __('vehicle.paidnotice.send_with') }}</button>
+        </div>
     </div>
 </div>
 @endif
