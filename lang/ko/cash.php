@@ -80,6 +80,8 @@ return [
         'total' => '합계',
         'fx_total' => '원화 환산 합계',
         'fx_row' => '원화 환산',
+        'headline' => '통장 합계',
+        'headline_krw_only' => '외화 제외 — 환율 조회 실패',
         'fx_rates' => '실시간 환율 USD ₩:usd · EUR ₩:eur 기준, 표시만',
         'fx_unavailable' => '실시간 환율을 불러오지 못해 원화 환산을 표시하지 않습니다. 위 환율 줄의 [새로고침]을 눌러 보세요.',
         'hide' => '숨김',

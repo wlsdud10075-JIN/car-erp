@@ -77,6 +77,8 @@ return [
         'total' => 'Total',
         'fx_total' => 'Total in KRW',
         'fx_row' => 'In KRW',
+        'headline' => 'Cash total',
+        'headline_krw_only' => 'KRW only — rates unavailable',
         'fx_rates' => 'at live rates USD ₩:usd · EUR ₩:eur, display only',
         'fx_unavailable' => 'Live rates unavailable, so the KRW conversion is hidden. Try [Refresh] on the rate line above.',
         'hide' => 'Hide',
