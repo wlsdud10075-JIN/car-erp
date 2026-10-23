@@ -89,7 +89,16 @@ class VehicleExportController extends Controller
         //    📏 값은 **실측으로 정했다** — 0대 56MB(고정) / 76대 66MB ⇒ 대당 약 0.13MB.
         //       ssancarerp 4,700대 ≈ 670MB 라 512M 로는 모자란다. 1G 는 그 위의 여유다.
         //       ⚠️ 이건 상한이지 예약이 아니다 — 작은 회사(karaba 300대 미만)는 실제로 100MB 도 안 쓴다.
-        @ini_set('memory_limit', '1024M');
+        //    🔀 2026-10-23 — **올리기만** 한다. 이미 더 크거나 무제한(-1)이면 그대로 둔다. 무조건 1024M 로 박으면
+        //       한도를 **낮추는** 경우가 생긴다 — CI 는 한 프로세스로 전 스위트를 도는데, 엑셀 테스트 뒤 나머지가 1G 에 묶여
+        //       96% 지점에서 메모리 초과로 배포 게이트가 멈췄다(run 39897412997).
+        $limit = trim((string) ini_get('memory_limit'));
+        $bytes = $limit === '-1' ? PHP_INT_MAX : (int) $limit * match (strtoupper(substr($limit, -1))) {
+            'G' => 1024 ** 3, 'M' => 1024 ** 2, 'K' => 1024, default => 1,
+        };
+        if ($bytes < 1024 * 1024 ** 2) {
+            @ini_set('memory_limit', '1024M');
+        }
 
         $vehicles = Vehicle::query()
             // 컨사이니 3칸(통관·선적·판매) = effective_consignee 폴백용 eager load.
