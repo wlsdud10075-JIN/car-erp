@@ -68,7 +68,9 @@ jobs:
             # migrate 성공 이후 — 캐시/링크 실패는 up 을 막지 않음(복구 가능 → 항상 서비스 복귀).
             php artisan config:cache || true
             php artisan route:cache || true
-            php artisan view:cache || true
+            # 🔀 2026-10-23 — 웹서버 계정(www-data)으로 캐시를 만든다. ubuntu 로 만들면 www-data 가 만든 캐시 파일을 못 덮어쓰거나(배포 로그 오류)
+            #   반대로 www-data 가 ubuntu 폴더에 못 써 첫 요청이 500(10-21)이 났다 — 두 계정이 같은 폴더를 번갈아 만든 게 원인.
+            sudo -u www-data php artisan view:cache || true
             # Livewire 섬 컴파일 dir 이 ubuntu 0755 로 생기면 www-data 첫 요청이 500 (SKILLS §8 #111 — 09-22·09-24 실측 1건씩)
             sudo chmod -R g+rwX storage/framework/views || true
             php artisan storage:link || true
@@ -108,7 +110,9 @@ jobs:
             fi
             php artisan config:cache || true
             php artisan route:cache || true
-            php artisan view:cache || true
+            # 🔀 2026-10-23 — 웹서버 계정(www-data)으로 캐시를 만든다. ubuntu 로 만들면 www-data 가 만든 캐시 파일을 못 덮어쓰거나(배포 로그 오류)
+            #   반대로 www-data 가 ubuntu 폴더에 못 써 첫 요청이 500(10-21)이 났다 — 두 계정이 같은 폴더를 번갈아 만든 게 원인.
+            sudo -u www-data php artisan view:cache || true
             # Livewire 섬 컴파일 dir 이 ubuntu 0755 로 생기면 www-data 첫 요청이 500 (SKILLS §8 #111 — 09-22·09-24 실측 1건씩)
             sudo chmod -R g+rwX storage/framework/views || true
             php artisan storage:link || true
@@ -168,7 +172,9 @@ jobs:
             fi
             php artisan config:cache || true
             php artisan route:cache || true
-            php artisan view:cache || true
+            # 🔀 2026-10-23 — 웹서버 계정(www-data)으로 캐시를 만든다. ubuntu 로 만들면 www-data 가 만든 캐시 파일을 못 덮어쓰거나(배포 로그 오류)
+            #   반대로 www-data 가 ubuntu 폴더에 못 써 첫 요청이 500(10-21)이 났다 — 두 계정이 같은 폴더를 번갈아 만든 게 원인.
+            sudo -u www-data php artisan view:cache || true
             # Livewire 섬 컴파일 dir 이 ubuntu 0755 로 생기면 www-data 첫 요청이 500 (SKILLS §8 #111 — 09-22·09-24 실측 1건씩)
             sudo chmod -R g+rwX storage/framework/views || true
             php artisan storage:link || true
@@ -225,7 +231,9 @@ jobs:
             php artisan migrate --force
             php artisan config:cache || true
             php artisan route:cache || true
-            php artisan view:cache || true
+            # 🔀 2026-10-23 — 웹서버 계정(www-data)으로 캐시를 만든다. ubuntu 로 만들면 www-data 가 만든 캐시 파일을 못 덮어쓰거나(배포 로그 오류)
+            #   반대로 www-data 가 ubuntu 폴더에 못 써 첫 요청이 500(10-21)이 났다 — 두 계정이 같은 폴더를 번갈아 만든 게 원인.
+            sudo -u www-data php artisan view:cache || true
             # Livewire 섬 컴파일 dir 이 ubuntu 0755 로 생기면 www-data 첫 요청이 500 (SKILLS §8 #111 — 09-22·09-24 실측 1건씩)
             sudo chmod -R g+rwX storage/framework/views || true
             php artisan storage:link || true
