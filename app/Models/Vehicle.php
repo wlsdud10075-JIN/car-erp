@@ -3048,6 +3048,37 @@ class Vehicle extends Model
      * ⚠️ 관계 캐시가 아니라 **DB 를 다시 읽는다**(잠금 뒤의 값이어야 한다). raw update(refreshCaches·배치)는 updated_at 을
      *    안 건드리므로 야간 캐시 재계산은 옛 폼으로 안 보인다.
      */
+    /**
+     * 🧾 입금이 지워지거나 줄어 **미수가 되살아났으면** 확정 전 정산을 정리한다 (jin 2026-10-23, ssancarerp 67머3910).
+     *
+     * 정산은 「완납」이 계기로 생긴다. 그 뒤 입금 줄이 빠져 미수가 다시 생기면, 재무처리 화면은 확정 전 정산을 지웠지만
+     * 차량 패널·채권관리에서 지울 땐 그대로 남아 **「미수인데 정산대기」** 가 됐다. 세 화면이 이 메서드 하나를 부른다.
+     * 다시 완납되면 정산은 종전 계기(잔금 저장)로 새로 생긴다.
+     *
+     * 🚫 지우지 않는 것: 확정·지급된 정산(경고만 — `locked`) · **미수 예외 승인으로 만든 정산**(`gate_override_reason` —
+     *    원래 미수가 있는 상태에서 사람이 승인해 만든 것이다).
+     * ⚠️ 부르는 쪽은 「작업 전엔 미수 0, 작업 뒤 미수 > 0」일 때만 부른다 — 원래부터 미수가 있던 차의 정산은 건드리지 않는다.
+     *
+     * @return array{removed:int, locked:bool}
+     */
+    public function reconcileSettlementsAfterUnpaidRevived(): array
+    {
+        $v = $this->fresh();
+        if (! $v || (float) $v->sale_unpaid_amount <= 0) {
+            return ['removed' => 0, 'locked' => false];
+        }
+        $open = $v->settlements()->whereIn('settlement_status', ['pending', 'calculating'])->whereNull('gate_override_reason')->get();
+        foreach ($open as $s) {
+            AuditLog::recordChange($v, 'settlement_id', $s->id, null, 'settlement_removed_unpaid_revived');
+            $s->delete();
+        }
+
+        return [
+            'removed' => $open->count(),
+            'locked' => $v->settlements()->whereIn('settlement_status', ['confirmed', 'paid'])->exists(),
+        ];
+    }
+
     public function editFingerprint(): string
     {
         $fp = FinalPayment::where('vehicle_id', $this->id)->orderBy('id')->pluck('id')->implode(',');

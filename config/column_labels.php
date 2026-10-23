@@ -168,6 +168,7 @@ return [
         'memo' => '메모',
         'deregistration_date' => '말소일',
         'cancel_loss_settled_at' => '취소 손실 반영일',
+        'settlement_id' => '정산 번호',
     ],
 
     // ─── final_payments / purchase_balance_payments ─────────────────────
@@ -543,6 +544,7 @@ return [
         'dummy_resnap' => '시연용 정산 재계산',
         'payment_confirmed' => '재무 확정',
         'payment_unconfirmed' => '재무 확정 취소',
+        'settlement_removed_unpaid_revived' => '미수 재발생 — 확정 전 정산 정리',
     ],
 
     /*

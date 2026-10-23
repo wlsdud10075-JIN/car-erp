@@ -699,19 +699,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $vehicle instanceof Vehicle) {
             return;
         }
-        $vehicle = $vehicle->fresh();
-        if ((float) $vehicle->sale_unpaid_amount <= 0) {
-            return;
+        // 🔀 2026-10-23 — 판정은 Vehicle::reconcileSettlementsAfterUnpaidRevived 단일 출처(차량 패널·채권관리와 같음).
+        $r = $vehicle->reconcileSettlementsAfterUnpaidRevived();
+        if ($r['removed'] > 0) {
+            $this->dispatch('notify', message: __('transfer.msg.settlement_pending_removed', ['count' => $r['removed']]), type: 'warning');
         }
-
-        $open = $vehicle->settlements()->whereIn('settlement_status', ['pending', 'calculating'])->get();
-        foreach ($open as $s) {
-            $s->delete();
-        }
-        if ($open->isNotEmpty()) {
-            $this->dispatch('notify', message: __('transfer.msg.settlement_pending_removed', ['count' => $open->count()]), type: 'warning');
-        }
-        if ($vehicle->settlements()->whereIn('settlement_status', ['confirmed', 'paid'])->exists()) {
+        if ($r['locked'] && (float) $vehicle->fresh()->sale_unpaid_amount > 0) {
             $this->dispatch('notify', message: __('transfer.msg.settlement_locked_warning'), type: 'warning');
         }
     }
