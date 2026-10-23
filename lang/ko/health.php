@@ -5,6 +5,7 @@
 return [
     'title' => '아침 점검',
     'no_record' => '기록 없음',
+    'alimtalk_no_schedule' => '정기 알림 꺼짐 — 점검 안 함',
     'none' => '없음',
     'stale' => ':date (:days일째 갱신 없음)',
     'count' => ':n건',

@@ -6,6 +6,7 @@ use App\Models\AlimtalkLog;
 use App\Models\DailyExchangeRate;
 use App\Models\Setting;
 use App\Services\SystemHealthReport;
+use App\Support\AlimtalkTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
@@ -84,6 +85,42 @@ class SystemHealthCheckTest extends TestCase
             $row = $this->rowFor($key);
             $this->assertTrue($row['ok'], "{$key}: 기록이 없는 것을 고장으로 찍었다");
         }
+    }
+
+    // ── ②-B 정기 알림이 하나도 안 켜진 회사 (jin 2026-10-23, karabaerp 22일째 매일 X) ──────
+
+    private function alimtalkOn(array $codes): void
+    {
+        $set = config('company.template_set', 'system');
+        foreach (["alimtalk_enabled_{$set}" => '1', "alimtalk_userid_{$set}" => 'u', "alimtalk_profile_{$set}" => 'p'] as $k => $v) {
+            Setting::updateOrCreate(['key' => $k], ['value' => $v, 'type' => 'string']);
+        }
+        foreach (array_keys(AlimtalkTemplates::TEMPLATES) as $code) {
+            $on = in_array($code, $codes, true);
+            Setting::updateOrCreate(['key' => "alimtalk_toggle_{$code}_{$set}"], ['value' => $on ? '1' : '0', 'type' => 'boolean']);
+            Setting::updateOrCreate(['key' => "alimtalk_tmpl_{$code}_{$set}"], ['value' => $on ? $code : '', 'type' => 'string']);
+        }
+    }
+
+    public function test_quiet_company_with_only_event_alerts_on_is_not_flagged(): void
+    {
+        // karabaerp 그대로 — 말소 안내·월정산 3종만 켬. 마지막 발송 22일 전.
+        $this->alimtalkOn(['erp_deregistration_notice', 'erp_payout_request', 'erp_payout_done', 'erp_payout_rejected']);
+        $log = AlimtalkLog::create(['template_code' => 'erp_payout_done', 'phone' => '01000000000', 'status' => 'sent', 'message' => 'x']);
+        $log->forceFill(['created_at' => now()->subDays(22)])->save();
+
+        $row = $this->rowFor('alimtalk_sent');
+        $this->assertTrue($row['ok'], '정기 알림을 안 켠 회사에 매일 X 가 뜨면 아무도 안 읽는다');
+        $this->assertSame(__('health.alimtalk_no_schedule'), $row['detail']);
+    }
+
+    public function test_a_scheduled_alert_on_but_silent_is_still_flagged(): void
+    {
+        $this->alimtalkOn(['erp_daily_summary', 'erp_payout_done']);
+        $log = AlimtalkLog::create(['template_code' => 'erp_daily_summary', 'phone' => '01000000000', 'status' => 'sent', 'message' => 'x']);
+        $log->forceFill(['created_at' => now()->subDays(22)])->save();
+
+        $this->assertFalse($this->rowFor('alimtalk_sent')['ok'], '켜 둔 정기 알림이 22일째 안 나갔으면 이상이다');
     }
 
     // ── ③ 설정으로 바뀐다 ──────────────────────────────────────────────

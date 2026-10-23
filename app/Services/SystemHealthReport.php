@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\AlimtalkLog;
 use App\Models\DailyExchangeRate;
 use App\Models\Setting;
+use App\Support\AlimtalkConfig;
+use App\Support\AlimtalkTemplates;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\File;
@@ -77,6 +79,29 @@ class SystemHealthReport
         return $rows;
     }
 
+    /**
+     * 📮 켜 둔 **정기** 알림톡이 하나라도 있나 (jin 2026-10-23 «몇 개 켜둔 게 있을 텐데 안 나갔을 때만 보자»).
+     *
+     * karabaerp 는 정기 알림(일일·주간·미수 등)을 꺼 두고 말소 안내·월정산 같은 **일이 생길 때만** 가는 것만 켰다.
+     * 그런데 점검이 「7일간 발송 0건」만 봐서 22일째 매일 X 가 떴다 — 계속 뜨는 경고는 안 읽히게 만든다.
+     * ⇒ 정기 알림이 하나도 안 켜져 있으면 이 항목은 O(「정기 알림 꺼짐」)로 둔다.
+     *
+     * 정기 여부 = 발송 시점 안내(`AlimtalkTemplates::WHEN`)가 「매일·매주」로 시작하는 것. 링크 후속본(v2)은 구 코드를 따른다.
+     * ⚠️ 월결산처럼 한 달에 한 번 가는 것만 켠 회사는 이 기준으로도 20일쯤 X 가 뜬다 — 지금은 그런 회사가 없다.
+     */
+    public static function scheduledAlimtalkOn(): bool
+    {
+        $cfg = AlimtalkConfig::active();
+        foreach (array_keys(AlimtalkTemplates::TEMPLATES) as $code) {
+            $when = AlimtalkTemplates::WHEN[AlimtalkTemplates::baseCode($code)] ?? '';
+            if ((str_starts_with($when, '매일') || str_starts_with($when, '매주')) && $cfg->canSend($code)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public static function enabled(string $key): bool
     {
         return (bool) Setting::get("health_check_{$key}_enabled", self::CHECKS[$key]['default_on'] ?? false);
@@ -95,10 +120,9 @@ class SystemHealthReport
                 DailyExchangeRate::where('source', 'naver')->max('rate_date'),
                 self::days('exchange'),
             ),
-            'alimtalk_sent' => $this->fromDate(
-                AlimtalkLog::max('created_at'),
-                self::days('alimtalk_sent'),
-            ),
+            'alimtalk_sent' => self::scheduledAlimtalkOn()
+                ? $this->fromDate(AlimtalkLog::max('created_at'), self::days('alimtalk_sent'))
+                : ['ok' => true, 'detail' => __('health.alimtalk_no_schedule')],
             'alimtalk_failed' => $this->fromCount(AlimtalkLog::needsAttention()->count()),
             'holidays' => $this->fromDate(
                 Setting::get('holidays_auto_synced_at'),
