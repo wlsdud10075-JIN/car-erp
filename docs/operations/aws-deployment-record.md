@@ -895,3 +895,14 @@ jin «배포하고 실무자가 고치게 하자». cherry-pick 5건(dev `305263
 - 통장 잔액 — 외화 계좌에 원화가 같이 기록되던 버그 수정 + 외화 계좌 원화 경고 + 표 「숨김」→「수정」(수정·삭제·감사). 마이그 `2026_10_22_000002`(cash_accounts.is_foreign, 구분 「외화」 백필 → heymanerp 1 · ssancarerp 2).
 - 확인: 로컬 병렬 3,466 pass · 잡 5 green(run 39743577740) · 3사 SHA `ae3ddb15` · `/login` 200 · 배포 뒤 `view:clear`(www-data)+`chmod` · 16:58 캐시 권한 오류 각 1건(정리 직전) 뒤 5분 0건.
 - 🅿️ heymanerp 10-22 원화 합계 2배(외화 계좌 KRW 13,549,873, `cash_account_balances.id 143`) = **실무자가 「수정」으로 원화 칸 비우고 저장**(jin 결정). 운영 쓰기 안 함.
+
+## 2026-10-23 — master `af2807b3` · `a30b1ffb` · `c54bd995` (마이그 1)
+
+- 오전 `af2807b3`: 바이어 「신규」 뱃지 30일 · 차량관리 「미수금」 토글.
+- 낮 `a30b1ffb`(마이그 `2026_10_23_000001` purchase_balance_payments.proof_path): 매입대금 📨 이체확인증 창(붙여넣기·파일·없이) + v3 버튼 준비(BizM 승인요청 3사) · karaba 알림톡 점검 기준 · 지급 줄 감사(PaymentAudit)+차량 감사 칸 21 · 로그 한글 정리 · 엑셀 메모리 한도 올리기만.
+  - ⚠️ 첫 런 39897412997 = CI 메모리 초과로 배포 skipped — VehicleExportController 가 memory_limit 을 1G 로 **낮추던** 것. 고쳐 재런.
+  - 수동 정리 없이 관찰 → 3사 각 1건 13:10:4x = `ViewCacheCommand`(ubuntu 가 www-data 파일을 못 덮어씀, 사용자 무영향).
+- 저녁 `c54bd995`(19:57 push, 업무시간 밖 — jin): 미수 되살아나면 확정 전 정산 정리(3화면 공통) · **deploy.yml view:cache → `sudo -u www-data`** · 통장 잔액 원화 환산 줄·「통장 합계」 카드.
+  - 배포 전 접속 확인: ssancarerp 최영숙 1명(30분 저장 0건).
+  - ✅ 잡 5 green · 3사 SHA `c54bd995` · `/login` 200 · **권한 오류 8→8(배포 중 0건)** · islands = www-data:www-data. 배포 뒤 수동 정리 안 함.
+  - 곁다리: ssancarerp 15:31 DB 연결 끊김 3줄 = 06:31 UTC 자동 보안 업데이트(알려진 정상).
