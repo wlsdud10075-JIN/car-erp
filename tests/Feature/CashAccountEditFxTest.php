@@ -9,6 +9,7 @@ use App\Models\CashSnapshot;
 use App\Models\User;
 use App\Services\CashAccountBalanceService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -136,5 +137,22 @@ class CashAccountEditFxTest extends TestCase
         Volt::test('erp.dashboard')->set('showAddAccount', true)->set('newBank', '국민')->set('newAccountNo', '9')
             ->set('newForeign', true)->call('addCashAccount');
         $this->assertTrue((bool) CashAccount::where('account_no', '9')->value('is_foreign'));
+    }
+
+    /** 💱 외화 잔액의 원화 환산 줄 — 화면 위 실시간 환율과 같은 값으로 (jin 2026-10-23). 표시만. */
+    public function test_totals_show_krw_equivalent_at_live_rates(): void
+    {
+        $fx = CashAccount::create(['bank' => '신한', 'account_no' => '2', 'is_foreign' => true]);
+        $krw = CashAccount::create(['bank' => '신한', 'account_no' => '1']);
+        $svc = app(CashAccountBalanceService::class);
+        $svc->save($krw, now()->toDateString(), ['KRW' => 1_000_000]);
+        $svc->save($fx, now()->toDateString(), ['USD' => 100, 'EUR' => 10]);
+        Cache::put('exchange_rates', ['USD' => 1300.0, 'EUR' => 1500.0], 60);   // ExchangeRateService::CACHE_KEY (private)
+        $this->actingAs($this->finance());
+
+        Volt::test('erp.dashboard')->assertSeeHtml('data-cash-fx-total')
+            ->assertSee('₩1,145,000')    // 1,000,000 + 100×1,300 + 10×1,500
+            ->assertSee('₩130,000')->assertSee('₩15,000');
+        $this->assertSame(1_000_000, (int) CashSnapshot::whereDate('snapshot_date', now()->toDateString())->value('balance_krw'), '저장값은 그대로 — 환산은 표시만');
     }
 }
