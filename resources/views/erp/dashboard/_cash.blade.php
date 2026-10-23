@@ -125,8 +125,12 @@
             <div class="flex justify-between"><span>EUR</span><span class="font-mono">{{ number_format($sums['EUR'], 2) }}</span></div>
             <div class="mt-1 border-t border-gray-200 pt-1 font-normal text-gray-600" data-cash-fx-total>
                 @if($fxTotal !== null)
-                <div class="flex justify-between"><span>{{ __('cash.account.fx_total') }}</span><span class="font-mono font-semibold text-gray-800">₩{{ number_format($fxTotal) }}</span></div>
-                <div class="text-[10px] text-gray-400">USD ≈ ₩{{ number_format($fxUsd) }} · EUR ≈ ₩{{ number_format($fxEur) }} ({{ __('cash.account.fx_rates', ['usd' => number_format($fxRates['USD'], 2), 'eur' => number_format($fxRates['EUR'], 2)]) }})</div>
+                <div class="mb-0.5">{{ __('cash.account.fx_row') }}</div>
+                <div class="flex justify-between"><span>KRW</span><span class="font-mono">₩{{ number_format($sums['KRW']) }}</span></div>
+                <div class="flex justify-between"><span>USD</span><span class="font-mono">+ ₩{{ number_format($fxUsd) }}</span></div>
+                <div class="flex justify-between"><span>EUR</span><span class="font-mono">+ ₩{{ number_format($fxEur) }}</span></div>
+                <div class="flex justify-between font-semibold text-gray-800"><span>{{ __('cash.account.fx_total') }}</span><span class="font-mono">= ₩{{ number_format($fxTotal) }}</span></div>
+                <div class="text-[10px] text-gray-400">{{ __('cash.account.fx_rates', ['usd' => number_format($fxRates['USD'], 2), 'eur' => number_format($fxRates['EUR'], 2)]) }}</div>
                 @else
                 <div class="text-[10px] text-amber-600">{{ __('cash.account.fx_unavailable') }}</div>
                 @endif
@@ -165,11 +169,14 @@
             </tr>
             <tr class="text-gray-600" data-cash-fx-total>
                 @if($fxTotal !== null)
-                <td class="py-1 pr-2">{{ __('cash.account.fx_total') }}</td>
-                <td class="py-1 pr-2 text-right font-mono font-semibold text-gray-800">₩{{ number_format($fxTotal) }}</td>
-                <td class="py-1 pr-2 text-right font-mono text-gray-500">≈ ₩{{ number_format($fxUsd) }}</td>
-                <td class="py-1 pr-2 text-right font-mono text-gray-500">≈ ₩{{ number_format($fxEur) }}</td>
-                <td class="py-1 text-[10px] text-gray-400" colspan="2">{{ __('cash.account.fx_rates', ['usd' => number_format($fxRates['USD'], 2), 'eur' => number_format($fxRates['EUR'], 2)]) }}</td>
+                <td class="py-1 pr-2">{{ __('cash.account.fx_row') }}</td>
+                <td class="py-1 pr-2 text-right font-mono">₩{{ number_format($sums['KRW']) }}</td>
+                <td class="py-1 pr-2 text-right font-mono" title="{{ number_format($sums['USD'], 2) }} × ₩{{ number_format($fxRates['USD'], 2) }}">+ ₩{{ number_format($fxUsd) }}</td>
+                <td class="py-1 pr-2 text-right font-mono" title="{{ number_format($sums['EUR'], 2) }} × ₩{{ number_format($fxRates['EUR'], 2) }}">+ ₩{{ number_format($fxEur) }}</td>
+                <td class="py-1 pr-2 whitespace-nowrap font-mono font-semibold text-gray-800" colspan="2">= ₩{{ number_format($fxTotal) }}</td>
+            </tr>
+            <tr>
+                <td class="pb-1 text-[10px] text-gray-400" colspan="6">{{ __('cash.account.fx_rates', ['usd' => number_format($fxRates['USD'], 2), 'eur' => number_format($fxRates['EUR'], 2)]) }}</td>
                 @else
                 <td class="py-1 pr-2 text-[11px] text-amber-600" colspan="6">{{ __('cash.account.fx_unavailable') }}</td>
                 @endif
