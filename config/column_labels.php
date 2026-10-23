@@ -493,6 +493,7 @@ return [
         'purchase_gate_override' => '매입 게이트 예외 승인',
         'vehicle_deleted_with_reason' => '차량 삭제(사유 기재)',
         'capital_report_viewed' => '자금 보고서 열람',
+        'purchase_proof_viewed' => '이체확인증 열람(딜러 알림톡 링크)',
         'purchase_payment_after_paid' => '지급완료 후 매입금 변경',
         'overpay_converted_to_savings' => '초과입금 → 적립금 전환',
         'overpay_converted_to_misc_loss' => '초과입금 → 잡손실 전환',

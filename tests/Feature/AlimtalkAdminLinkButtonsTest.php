@@ -50,7 +50,8 @@ class AlimtalkAdminLinkButtonsTest extends TestCase
             'erp_weekly_summary_v2' => '/erp/receivables',
             'erp_monthly_closing_v2' => '/erp/settlements',
         ];
-        $this->assertSame(array_keys($expected), array_keys(AlimtalkTemplates::SUCCESSOR_OF));
+        // 대표 링크 후속본 = 카드(아이템리스트)를 가진 구 코드의 후속본. 매입대금 v3(카드 없음, 2026-10-23)는 따로 본다.
+        $this->assertSame(array_keys($expected), array_keys(self::cardSuccessors()));
 
         foreach ($expected as $code => $path) {
             $t = AlimtalkTemplates::TEMPLATES[$code] ?? null;
@@ -68,10 +69,16 @@ class AlimtalkAdminLinkButtonsTest extends TestCase
         }
     }
 
+    /** @return array<string, string> 카드형 구 코드의 후속본만 */
+    private static function cardSuccessors(): array
+    {
+        return array_filter(AlimtalkTemplates::SUCCESSOR_OF, fn ($base) => isset(AlimtalkTemplates::ITEMLIST[$base]));
+    }
+
     /** 카드(아이템리스트)는 구 코드와 동일 payload — 등록본도 같은 카드로 낸다. */
     public function test_cards_are_shared_with_the_base_code(): void
     {
-        foreach (AlimtalkTemplates::SUCCESSOR_OF as $v2 => $base) {
+        foreach (self::cardSuccessors() as $v2 => $base) {
             $vars = AlimtalkTestVars::for($base);
             $this->assertTrue(AlimtalkTemplates::hasItemList($v2));
             $this->assertSame(AlimtalkTemplates::itemListPayload($base, $vars), AlimtalkTemplates::itemListPayload($v2, $vars), "{$v2} 카드가 구 코드와 다르다");

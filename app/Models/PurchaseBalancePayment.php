@@ -16,6 +16,8 @@ class PurchaseBalancePayment extends Model
         'created_by_user_id',
         // 큐 22-C-D (2026-05-20) — type enum: down / selling_fee / balance.
         'type',
+        // 📎 이체확인증 (jin 2026-10-23) — 딜러 알림톡 버튼이 여는 파일. 회계 잠금 대상 아님.
+        'proof_path',
     ];
 
     protected $casts = [

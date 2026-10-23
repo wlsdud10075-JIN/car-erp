@@ -5,6 +5,7 @@ use App\Http\Controllers\BuyerDocumentController;
 use App\Http\Controllers\CapitalReportController;
 use App\Http\Controllers\PayoutApprovalController;
 use App\Http\Controllers\ProvideNiceLookupController;
+use App\Http\Controllers\PurchaseProofController;
 use App\Http\Controllers\SettlementExportController;
 use App\Http\Controllers\SignController;
 use App\Http\Controllers\SignedContractController;
@@ -33,6 +34,12 @@ Route::get('d/deregistration/{vehicle}', [BuyerDocumentController::class, 'dereg
 Route::get('d/business-registration/{vehicle}', [BuyerDocumentController::class, 'businessRegistration'])
     ->middleware('signed')
     ->name('buyer.business-registration');
+
+// 📎 매입 지급 이체확인증 (jin 2026-10-23) — 딜러 알림톡 「이체확인증 보기」 버튼. 로그인 없음, 7일 만료 서명(발급측).
+//   🚨 경로 접두 `a/proof/` 는 BizM 등록 버튼 URL(`https://{도메인}/a/proof/#{url}`)과 같아야 한다 — 바꾸면 재승인.
+Route::get('a/proof/{pbp}', [PurchaseProofController::class, 'show'])
+    ->middleware('signed')
+    ->name('purchase.proof');
 
 // 대표 자금 보고 (2026-07-27, 안건4 3단계) — 로그인 없이 서명 링크로 열람. 주간·월간 공용(기준일만 다름).
 //   ⚠️ 회사 재무 전부가 담긴 화면이라 발급측에서 만료(7일)를 걸고, 열람 시 감사 로그를 남긴다.
