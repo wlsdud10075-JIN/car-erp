@@ -1769,3 +1769,9 @@ jin: *「로그 기록에 계약금·매입잔금·판매잔금 기록한 게 �
 주민번호·계좌는 `AuditLog::MASKED_COLUMNS` 라 old/new 가 둘 다 `[ENCRYPTED … not logged]` 로 남는다. 운영 로그를 「old = new」로 세니 주민번호 518건 중 136건이 나와 **「같은 값 재저장 소음」이라고 보고할 뻔했다** — 그건 표식이 같을 뿐 실제로 바뀌었는지는 모른다.
 - ✅ 그래서 판정을 **저장 시점(복호화된 값)** 으로 옮겼다 — 가려진 칸은 숫자만 같으면 변경으로 안 남긴다(`AuditLog::isRealChange`). 지난 기록은 가를 수 없다고 그대로 적었다.
 - 곁다리 — **pint `single_quote` 가 `"…\n…"` 본문을 실제 개행으로 또 펼쳤다**(§8 #77 재발, 알림톡 v3 본문). 알림톡 문구 파일을 pint 한 뒤엔 `git diff` 로 본문 줄을 꼭 본다.
+
+### 125. ⏰ **`Persistent=true` 인 systemd 타이머는 시각을 옮기고 restart 하는 순간 「놓친 회차」를 즉시 돈다** (2026-10-24 자동 업데이트 시각 이동)
+
+업무시간(15~16시 KST) MySQL 재시작을 피하려고 `apt-daily-upgrade.timer` 를 02:30 KST 로 옮겼다. override 를 쓰고 `systemctl restart` 한 **그 순간**(10:31 KST) 3사가 전부 한 번 돌았다 — 새 OnCalendar 기준으로 「어제 17:30 UTC 회차가 지났는데 안 돌았다」가 되기 때문이다. heymanerp 는 마침 설치할 패키지(`zlib1g`)가 있어 **MySQL 이 4초 재시작**됐다(사용자 영향 0, 운이 좋았다). 피하려던 일을 적용 과정에서 내가 한 번 더 만든 셈.
+- ✅ 시각을 뒤로 옮기는 override 에는 **`Persistent=false` 를 같이 넣거나**, 아니면 **새 창 안에서** 적용한다. 그리고 restart 뒤 `systemctl show -p LastTriggerUSec` 로 「방금 돌았나」를 바로 본다 — `list-timers` 의 `LAST … ago` 가 수십 ms 면 이미 돈 것이다.
+- 🔎 「DB 가 몇 초 끊겼다」가 매일 비슷한 시각이면 `apt-daily-upgrade.timer`(우분투 기본 06:00 UTC+60m 랜덤)부터 — `unattended-upgrades.log` 의 「Packages that will be upgraded」 줄과 `journalctl -u mysql` 의 Stopping/Started 가 같은 분에 있으면 확정이다(이번에 그렇게 확정했다. 추정이었던 10-23 판정을 이것으로 닫는다).

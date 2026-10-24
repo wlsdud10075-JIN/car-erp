@@ -906,3 +906,10 @@ jin «배포하고 실무자가 고치게 하자». cherry-pick 5건(dev `305263
   - 배포 전 접속 확인: ssancarerp 최영숙 1명(30분 저장 0건).
   - ✅ 잡 5 green · 3사 SHA `c54bd995` · `/login` 200 · **권한 오류 8→8(배포 중 0건)** · islands = www-data:www-data. 배포 뒤 수동 정리 안 함.
   - 곁다리: ssancarerp 15:31 DB 연결 끊김 3줄 = 06:31 UTC 자동 보안 업데이트(알려진 정상).
+
+## 2026-10-24 — 서버 설정 변경(코드 배포 없음): 3사 자동 보안 업데이트 시각 15~16시 → 02:30~02:45 KST
+
+jin «(나) 진행» — 새벽 점검 10-24 ④(ssancarerp 10-23 15:31 DB 2초 끊김). 원인 확정 = `apt-daily-upgrade.timer`(우분투 기본 06:00 UTC + 60분 랜덤 = **매일 15~16시 KST**)가 `zlib1g` 등을 설치하면 needrestart 가 MySQL 을 재시작한다(이번 heymanerp 에서 journal 로 직접 확인 — 아래).
+- 적용(3사 동일, `sudo tee`): `/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf` = `OnCalendar=*-*-* 17:30` + `RandomizedDelaySec=15m` + `Persistent=false`. 창 고른 이유 = DB 덤프 16:30 UTC(01:30 KST) 뒤 · karaba 백업 18:00 UTC · 새벽 점검 03:30 KST · 캐시 재계산 05:00 KST 앞. 다음 실행 3사 17:33~17:35 UTC 확인.
+- 🚨 **내가 만든 영향 1건**: 첫 적용 때 `Persistent=true` 인 채 타이머를 restart 하자 「어제 17:30 회차를 놓쳤다」로 판단해 **즉시 실행**됐고, heymanerp 만 어제 못 받은 `zlib1g` 를 설치하며 MySQL 이 **01:31:40~44 UTC(10:31 KST) 4초** 재시작됐다. laravel.log DB 오류 0 · nginx 5xx 0 — 사용자에게 닿지 않음. ssancarerp·karaba 는 설치할 패키지 없음. 그래서 `Persistent=false` 를 추가해 재적용(두 번째 restart 는 LastTrigger 유지 — 재실행 없음). 교훈 = SKILLS §8 #125.
+- 같은 날 확인(읽기 전용): ssancarerp 알림톡 실패 4건 = 1건(179다1793 말소 안내 4회 클릭, 수신자 카톡 없음 K119 → 문자 대체가 **BizM 문자 발신 IP 미등록 M140**). 3사 IPv4 발신 IP = heymanerp `52.79.200.151` · ssancarerp `54.116.7.83` · karabaerp `15.164.91.242` → jin 이 BizM 에 등록. heymanboard 「ERP에서 지운 차」 2대(366저1274 #356·109저3131 #357) = 09-30 00:30 무인 생성 → 같은 날 09:41·09:49 이다은 삭제, 재등록·참조 0.
