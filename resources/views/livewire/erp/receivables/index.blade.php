@@ -992,7 +992,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     ReceivableHistory::create([
                         'vehicle_id' => $vehicle->id,
                         'collected_at' => today(),
-                        'collector_id' => $user->salesman?->id,
+                        // 🐛 2026-10-26 — `$user->salesman?->id` 를 넣고 있었다. collector_id 는 **users.id** 인데 Salesman id 가 들어가
+                        //    10-14 명부 확장으로 재무·관리도 Salesman 으로 미러된 뒤 일반사용자의 전환이 전부 FK 오류(ssancarerp 박수정 5회).
+                        //    업무관리자는 Salesman 이 없어 NULL 로 통과했다 — 「관리는 안 되고 업무관리자는 된다」의 정체.
+                        'collector_id' => $user->id,
                         'method' => $mode,   // 'misc_loss' | 'company_income'
                         'amount' => $excess,
                         'exchange_rate' => $isForeign ? $vehicle->exchange_rate : null,
