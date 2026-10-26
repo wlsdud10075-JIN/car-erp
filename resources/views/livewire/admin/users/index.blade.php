@@ -14,6 +14,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $search      = '';
     public string $permFilter  = '';
+
+    /**
+     * 🔎 권한 → 하위 묶음 칩 (jin 2026-10-26 «일반사용자에서 관리를 찾을 수 있게») — 일반사용자는 역할(영업·재무·수출통관·관리),
+     *   최고관리자는 결재 직급(부장·전무·대표·미지정). 업무관리자·시스템관리자는 하위가 없다. 칩을 누르면 상위 권한까지 같이 잡힌다.
+     *   ⚠️ 메서드명을 프로퍼티와 같게 짓지 말 것(§8 #32) — pickPerm/pickRole/pickTitle.
+     */
+    public string $roleFilter = '';
+
+    public string $titleFilter = '';   // 부장·전무·대표 · '__none' = 직급 미지정
     #[Url] public int $perPage = 10;
 
     /** 검색 실행 — 버튼·Enter 로만 (jin 2026-09-08). 🚨 `search()` 로 짓지 말 것: 프로퍼티와 겹쳐 버튼이 죽는다(SKILLS §8 #32). */
@@ -47,6 +56,36 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 월정산 v3 (2026-10-09) — 최고관리자 결재 직급(부장/전무/대표). 빈값 = 종전(최종 승인자).
     public string $approval_title = '';
 
+    public function pickPerm(string $perm): void
+    {
+        $this->permFilter = ($this->permFilter === $perm && $this->roleFilter === '' && $this->titleFilter === '') ? '' : $perm;
+        $this->roleFilter = '';
+        $this->titleFilter = '';
+        $this->resetPage();
+    }
+
+    public function pickRole(string $role): void
+    {
+        if (! in_array($role, \App\Models\User::ROLES, true)) {
+            return;
+        }
+        $this->permFilter = 'user';
+        $this->roleFilter = ($this->roleFilter === $role) ? '' : $role;
+        $this->titleFilter = '';
+        $this->resetPage();
+    }
+
+    public function pickTitle(string $title): void
+    {
+        if ($title !== '__none' && ! in_array($title, \App\Models\User::APPROVAL_TITLES, true)) {
+            return;
+        }
+        $this->permFilter = 'admin';
+        $this->titleFilter = ($this->titleFilter === $title) ? '' : $title;
+        $this->roleFilter = '';
+        $this->resetPage();
+    }
+
     #[Computed]
     public function users()
     {
@@ -70,6 +109,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                    ->orWhereRaw("REPLACE(phone, '-', '') like ?", ['%'.str_replace('-', '', SearchTerm::of($this->search)).'%'])
             ))
             ->when($this->permFilter, fn($q) => $q->where('permission', $this->permFilter))
+            ->when($this->roleFilter !== '', fn($q) => $q->where('permission', 'user')->where('role', $this->roleFilter))
+            ->when($this->titleFilter === '__none', fn($q) => $q->where('permission', 'admin')->whereNull('approval_title'))
+            ->when($this->titleFilter !== '' && $this->titleFilter !== '__none', fn($q) => $q->where('permission', 'admin')->where('approval_title', $this->titleFilter))
             ->orderBy('name')
             // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
             //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
@@ -482,108 +524,75 @@ new #[Layout('components.layouts.app')] class extends Component {
     <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('user.search_ph') }}"
            class="input-base w-full sm:w-60" />
     <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
-    <select wire:model.live="permFilter" class="input-base w-full sm:w-auto">
-        <option value="">{{ __('user.all_perm') }}</option>
+    {{-- 🔎 권한 → 하위 묶음 칩 (jin 2026-10-26). 누르면 그 묶음만, 다시 누르면 해제. --}}
+    @php
+        $chipOn = 'rounded-full px-2.5 py-0.5 text-xs font-semibold bg-gray-800 text-white';
+        $chipOff = 'rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 hover:bg-gray-200';
+        $subOn = 'rounded-full px-2 py-0.5 text-[11px] font-semibold bg-violet-600 text-white';
+        $subOff = 'rounded-full px-2 py-0.5 text-[11px] font-medium bg-violet-50 text-violet-700 hover:bg-violet-100';
+    @endphp
+    <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 sm:w-auto">
+        <button type="button" wire:click="pickPerm('')" class="{{ $permFilter === '' ? $chipOn : $chipOff }}">{{ __('user.all_perm') }}</button>
+        <span class="flex flex-wrap items-center gap-1 rounded-lg border border-gray-200 px-1.5 py-1">
+            <button type="button" wire:click="pickPerm('user')" class="{{ $permFilter === 'user' && $roleFilter === '' ? $chipOn : $chipOff }}">{{ __('nav.permission.user') }}</button>
+            @foreach(\App\Models\User::ROLES as $r)
+            <button type="button" wire:click="pickRole('{{ $r }}')" class="{{ $roleFilter === $r ? $subOn : $subOff }}">{{ __('domain.role.'.$r) }}</button>
+            @endforeach
+        </span>
+        <button type="button" wire:click="pickPerm('manager')" class="{{ $permFilter === 'manager' ? $chipOn : $chipOff }}">{{ __('nav.permission.manager') }}</button>
+        <span class="flex flex-wrap items-center gap-1 rounded-lg border border-gray-200 px-1.5 py-1">
+            <button type="button" wire:click="pickPerm('admin')" class="{{ $permFilter === 'admin' && $titleFilter === '' ? $chipOn : $chipOff }}">{{ __('nav.permission.admin') }}</button>
+            @foreach(\App\Models\User::APPROVAL_TITLES as $t)
+            <button type="button" wire:click="pickTitle('{{ $t }}')" class="{{ $titleFilter === $t ? $subOn : $subOff }}">{{ $t }}</button>
+            @endforeach
+            <button type="button" wire:click="pickTitle('__none')" class="{{ $titleFilter === '__none' ? $subOn : $subOff }}">{{ __('user.title_none_chip') }}</button>
+        </span>
         @if(auth()->user()->isSuperAdmin())
-        <option value="super">{{ __('nav.permission.super') }}</option>
+        <button type="button" wire:click="pickPerm('super')" class="{{ $permFilter === 'super' ? $chipOn : $chipOff }}">{{ __('nav.permission.super') }}</button>
         @endif
-        <option value="admin">{{ __('nav.permission.admin') }}</option>
-        <option value="manager">{{ __('nav.permission.manager') }}</option>
-        <option value="user">{{ __('nav.permission.user') }}</option>
-    </select>
+    </div>
 </div>
 
-{{-- 테이블 (데스크탑) --}}
-<div class="hidden sm:block overflow-x-auto">
-    <table class="w-full text-sm">
-        <thead>
-            <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">{{ __('user.col.name') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('user.col.perm') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('user.col.role') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('user.col.last_login') }}</th>
-                <th class="pb-2 font-medium"></th>
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-100">
-            @forelse($this->users as $u)
-            @php
-                $permBadge = match($u->permission) {
-                    'super' => 'badge-purple', 'admin' => 'badge-blue', 'manager' => 'badge-teal', default => 'badge-gray',
-                };
-                $permLabel = __('nav.permission.'.($u->permission ?? 'user'));
-            @endphp
-            <tr class="cursor-pointer hover:bg-gray-50" wire:click="openEdit({{ $u->id }})">
-                <td class="py-3 pr-4 font-medium text-gray-800">
-                    {{ $u->name }}
-                    @if($u->id === auth()->id())
-                    <span class="ml-1 text-[10px] text-gray-400">{{ __('user.me') }}</span>
-                    @endif
-                    {{-- 🚪 퇴사 (jin 2026-10-15) — 퇴사 처리·해제는 사내직원관리에서. 여기선 보여만 준다. --}}
-                    @if($u->salesman?->hasLeft())
-                    <span class="badge badge-gray ml-1 text-[10px]" title="{{ __('user.left_hint') }}">{{ __('salesman.left_badge', ['date' => $u->salesman->left_at->format('Y-m-d')]) }}</span>
-                    @endif
-                </td>
-                <td class="py-3 pr-4 text-gray-500">{{ $u->email ?? '-' }}</td>
-                {{-- 전화번호 (jin 2026-08-04) — 비면 알림톡이 로그도 없이 조용히 skip 되므로 미입력을 눈에 띄게 --}}
-                <td class="py-3 pr-4 text-gray-500">
-                    @if(filled($u->phone))
-                        {{ $u->phone }}
-                    @else
-                        <span class="text-amber-600" title="{{ __('user.phone_missing_hint') }}">{{ __('user.phone_missing') }}</span>
-                    @endif
-                </td>
-                <td class="py-3 pr-4">
-                    <span class="badge {{ $permBadge }}">{{ $permLabel }}</span>
-                </td>
-                <td class="py-3 pr-4 text-gray-500">
-                    {{ $u->permission === 'user' && $u->role ? __('domain.role.'.$u->role) : '-' }}
-                </td>
-                <td class="py-3 pr-4 text-gray-400 text-xs">
-                    {{ $u->last_login_at?->format('Y-m-d H:i') ?? __('user.no_login') }}
-                </td>
-                <td class="py-3 text-right">
-                    {{-- 삭제는 super/admin + 업무관리자(super/admin 대상 제외). role='관리'는 삭제 불가 --}}
-                    @if($u->id !== auth()->id() && (auth()->user()->isAdmin() || (auth()->user()->isManager() && ! in_array($u->permission, ['super', 'admin'], true))))
-                    <button wire:click.stop="delete({{ $u->id }})"
-                            wire:confirm="{{ __('user.delete_confirm', ['name' => $u->name]) }}"
-                            class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
-                    @endif
-                </td>
-            </tr>
-            @empty
-            <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">{{ __('user.empty') }}</td></tr>
-            @endforelse
-        </tbody>
-    </table>
-</div>
-
-{{-- 모바일 카드 --}}
-<div class="block sm:hidden space-y-2">
+{{-- 목록 — 카드를 두 열로 (jin 2026-10-26 «가로로 한 화면 다 차지 → 둘로 나눠서 한 행에 나란히»). 폰은 한 열. --}}
+<div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
     @forelse($this->users as $u)
     @php
         $permBadge = match($u->permission) { 'super' => 'badge-purple', 'admin' => 'badge-blue', 'manager' => 'badge-teal', default => 'badge-gray' };
         $permLabel = __('nav.permission.'.($u->permission ?? 'user'));
+        $sub = $u->permission === 'user' ? ($u->role ? __('domain.role.'.$u->role) : null) : ($u->permission === 'admin' ? $u->approval_title : null);
     @endphp
-    <div class="card-tight flex items-center justify-between cursor-pointer" wire:click="openEdit({{ $u->id }})">
-        <div>
-            <div class="font-medium text-gray-800">{{ $u->name }}{{ $u->id === auth()->id() ? ' '.__('user.me') : '' }}</div>
-            <div class="text-xs text-gray-500">{{ $u->email ?? '-' }}</div>
-            <div class="text-xs {{ filled($u->phone) ? 'text-gray-500' : 'text-amber-600' }}">
+    <div class="card-tight flex cursor-pointer items-center justify-between gap-3 hover:bg-gray-50" wire:click="openEdit({{ $u->id }})">
+        <div class="min-w-0">
+            <div class="flex flex-wrap items-center gap-x-1.5 font-medium text-gray-800">
+                <span>{{ $u->name }}</span>
+                @if($u->id === auth()->id())<span class="text-[10px] text-gray-400">{{ __('user.me') }}</span>@endif
+                {{-- 🚪 퇴사 (jin 2026-10-15) — 퇴사 처리·해제는 사내직원관리에서. 여기선 보여만 준다. --}}
+                @if($u->salesman?->hasLeft())
+                <span class="badge badge-gray text-[10px]" title="{{ __('user.left_hint') }}">{{ __('salesman.left_badge', ['date' => $u->salesman->left_at->format('Y-m-d')]) }}</span>
+                @endif
+            </div>
+            <div class="truncate text-xs text-gray-500" title="{{ $u->email ?? '' }}">{{ $u->email ?? '-' }}</div>
+            {{-- 전화번호 (jin 2026-08-04) — 비면 알림톡이 로그도 없이 조용히 skip 되므로 미입력을 눈에 띄게 --}}
+            <div class="text-xs {{ filled($u->phone) ? 'text-gray-500' : 'text-amber-600' }}" @if(! filled($u->phone)) title="{{ __('user.phone_missing_hint') }}" @endif>
                 {{ filled($u->phone) ? $u->phone : __('user.phone_missing') }}
+                <span class="ml-2 text-gray-400">{{ $u->last_login_at?->format('Y-m-d H:i') ?? __('user.no_login') }}</span>
             </div>
         </div>
-        <div class="flex items-center gap-2">
-            <span class="badge {{ $permBadge }}">{{ $permLabel }}</span>
-            @if($u->permission === 'user')
-            <span class="text-xs text-gray-400">{{ $u->role ? __('domain.role.'.$u->role) : '-' }}</span>
+        <div class="flex shrink-0 flex-col items-end gap-1">
+            <div class="flex items-center gap-1.5">
+                <span class="badge {{ $permBadge }}">{{ $permLabel }}</span>
+                @if($sub)<span class="text-xs text-gray-500">{{ $sub }}</span>@endif
+            </div>
+            {{-- 삭제는 super/admin + 업무관리자(super/admin 대상 제외). role='관리'는 삭제 불가 --}}
+            @if($u->id !== auth()->id() && (auth()->user()->isAdmin() || (auth()->user()->isManager() && ! in_array($u->permission, ['super', 'admin'], true))))
+            <button wire:click.stop="delete({{ $u->id }})"
+                    wire:confirm="{{ __('user.delete_confirm', ['name' => $u->name]) }}"
+                    class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
             @endif
         </div>
     </div>
     @empty
-    <div class="py-12 text-center text-sm text-gray-400">{{ __('user.empty') }}</div>
+    <div class="py-12 text-center text-sm text-gray-400 lg:col-span-2">{{ __('user.empty') }}</div>
     @endforelse
 </div>
 
