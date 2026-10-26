@@ -7,6 +7,7 @@ return [
     'create_btn' => 'Add User',
     'search_ph' => 'Name · email · phone',
     'all_perm' => 'All permissions',
+    'title_none_chip' => 'No title',
     'me' => '(me)',
     'left_hint' => 'The leaving date is set and cleared in Staff roster.',
     'no_login' => 'Never',

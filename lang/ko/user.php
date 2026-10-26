@@ -7,6 +7,7 @@ return [
     'create_btn' => '사용자 추가',
     'search_ph' => '이름 · 이메일 · 전화번호',
     'all_perm' => '전체 권한',
+    'title_none_chip' => '직급 미지정',
     'me' => '(나)',
     'left_hint' => '퇴사일은 사내직원관리에서 적고 지웁니다.',
     'no_login' => '없음',
