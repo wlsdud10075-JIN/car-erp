@@ -1701,7 +1701,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="card max-w-md mx-4 shadow-2xl border-rose-200 max-h-[90vh] overflow-y-auto" @click.stop>
         <h3 class="text-base font-semibold text-rose-700">🔒 {{ __('transfer.pbp_gate.title') }}</h3>
         <p class="mt-2 text-sm text-gray-700">
-            {{ __('transfer.pbp_gate.body', ['vehicle' => $paymentGateInfo['vehicle'] ?? '', 'ratio' => $paymentGateInfo['ratio'] ?? 0]) }}
+            {{ __('transfer.pbp_gate.body', ['vehicle' => $paymentGateInfo['vehicle'] ?? '', 'ratio' => $paymentGateInfo['ratio'] ?? 0, 'req' => \App\Models\Setting::lockRequiredPaidPct('purchase_payment')]) }}
         </p>
         @if(auth()->user()?->canApproveUnpaidExport())
             <div class="mt-3">

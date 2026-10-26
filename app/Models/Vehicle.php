@@ -2194,6 +2194,12 @@ class Vehicle extends Model
     /** 위 폴백의 SQL 판 — 우선순위 순. 필터(OR)·정렬(COALESCE)이 화면 표시와 갈리지 않게 하는 단일 출처. */
     public const CONSIGNEE_FALLBACK_COLUMNS = ['export_consignee_id', 'bl_consignee_id', 'consignee_id'];
 
+    /**
+     * 총판매가 SQL (= sale_total_amount 접근자, SKILLS §13 미수 분모) — 정렬·집계에서 식이 필요할 때 이걸 쓴다(옮겨 적지 말 것).
+     *   ⚠️ 차량관리 `vehicles/index` 의 private SALE_TOTAL_SQL · freightTotalsByCurrency() SUM 식도 같은 항이다 — 항을 바꾸면 셋 다.
+     */
+    public const SALE_TOTAL_SQL = '(COALESCE(vehicles.sale_price, 0) + COALESCE(vehicles.transport_fee, 0) + COALESCE(vehicles.sale_other_costs, 0) + COALESCE(vehicles.commission, 0) + COALESCE(vehicles.auto_loading, 0) - COALESCE(vehicles.tax_dc, 0))';
+
     /** 컨사이니 필터 — 3칸 중 어디에 들어 있든 잡는다. */
     public function scopeWhereEffectiveConsignee(Builder $q, int|string $consigneeId): Builder
     {
