@@ -56,6 +56,10 @@ return [
     ],
 
     'delegation' => [
+        'title' => 'Delegate salespeople (leave / stand-in)',
+        'no_team' => 'No salespeople assigned to me',
+        'from_me' => '— Me (my salespeople) —',
+        'note_for_others' => 'Pick who is away and all of their assigned salespeople go to the stand-in at once. It releases automatically after the return date.',
         'my_title' => 'Delegate my salespeople',
         'my_note' => 'While you are away, hand over all of your assigned salespeople at once. It releases automatically after the return date.',
         'to_ph' => '— Stand-in —',
