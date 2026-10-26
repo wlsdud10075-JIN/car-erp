@@ -913,3 +913,11 @@ jin «(나) 진행» — 새벽 점검 10-24 ④(ssancarerp 10-23 15:31 DB 2초 
 - 적용(3사 동일, `sudo tee`): `/etc/systemd/system/apt-daily-upgrade.timer.d/override.conf` = `OnCalendar=*-*-* 17:30` + `RandomizedDelaySec=15m` + `Persistent=false`. 창 고른 이유 = DB 덤프 16:30 UTC(01:30 KST) 뒤 · karaba 백업 18:00 UTC · 새벽 점검 03:30 KST · 캐시 재계산 05:00 KST 앞. 다음 실행 3사 17:33~17:35 UTC 확인.
 - 🚨 **내가 만든 영향 1건**: 첫 적용 때 `Persistent=true` 인 채 타이머를 restart 하자 「어제 17:30 회차를 놓쳤다」로 판단해 **즉시 실행**됐고, heymanerp 만 어제 못 받은 `zlib1g` 를 설치하며 MySQL 이 **01:31:40~44 UTC(10:31 KST) 4초** 재시작됐다. laravel.log DB 오류 0 · nginx 5xx 0 — 사용자에게 닿지 않음. ssancarerp·karaba 는 설치할 패키지 없음. 그래서 `Persistent=false` 를 추가해 재적용(두 번째 restart 는 LastTrigger 유지 — 재실행 없음). 교훈 = SKILLS §8 #125.
 - 같은 날 확인(읽기 전용): ssancarerp 알림톡 실패 4건 = 1건(179다1793 말소 안내 4회 클릭, 수신자 카톡 없음 K119 → 문자 대체가 **BizM 문자 발신 IP 미등록 M140**). 3사 IPv4 발신 IP = heymanerp `52.79.200.151` · ssancarerp `54.116.7.83` · karabaerp `15.164.91.242` → jin 이 BizM 에 등록 → 검증 = 같은 번호로 179다1793 말소 안내 재발송(jin «그냥 보내봐», 로그 24153, super 계정 명의) **`sent`** — 직전 4건이 송신 응답에서 바로 M140 을 돌려줬던 것과 달리 수락됨 ⇒ 등록 반영. 실제 도착은 익일 `alimtalk:poll-report`. heymanboard 「ERP에서 지운 차」 2대(366저1274 #356·109저3131 #357) = 09-30 00:30 무인 생성 → 같은 날 09:41·09:49 이다은 삭제, 재등록·참조 0.
+
+## 2026-10-26 — master `12df1042` · 마이그 0 (업무시간 긴급, jin «가로 해줘»)
+
+- 증상: ssancarerp 채권관리가 안 열림 — 09:47~10:15 `Allowed memory size 134217728 exhausted` 15회(박수정·사용자 3·1). 서버·DB·fpm 정상, 로그인 200.
+- 원인: `receivables/index` `summary()`(KPI) 가 판매 차량 **전량**을 `get()->sum(접근자)` 로 올림 — 날짜 필터 기본값이 없어 ssancarerp 5,351대. 운영 실측 피크 **125MB**(한도 128M 바로 아래) → 차량이 늘며 임계를 넘은 것. 코드 변경 때문이 아님(heymanerp 294대·karaba 무영향).
+- 고침(dev `9f174138` → master `12df1042`): 전량 로드 5곳을 `lazyById(500)` 묶음 합산으로. 접근자 단일 출처 유지(§13 — SQL 로 안 옮김). 운영 실측 두 방식 합계 동일 · 피크 125MB→**24MB** · 0.4초 동일. 정적 가드 `ReceivableSummaryStreamsTest`.
+- 확인: 로컬 병렬 3,490 pass · deploy 런 40255297098 잡 5 success · 3사 SHA `12df1042` · `/login` 200 · 배포 뒤 메모리 오류 0(마지막 10:15, 배포 전).
+- 선택지는 (가) 즉시 3사 배포 / (나) ssancarerp fpm 256M 임시 + 저녁 배포 — jin (가).
