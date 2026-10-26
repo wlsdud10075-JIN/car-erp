@@ -112,6 +112,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->roleFilter !== '', fn($q) => $q->where('permission', 'user')->where('role', $this->roleFilter))
             ->when($this->titleFilter === '__none', fn($q) => $q->where('permission', 'admin')->whereNull('approval_title'))
             ->when($this->titleFilter !== '' && $this->titleFilter !== '__none', fn($q) => $q->where('permission', 'admin')->where('approval_title', $this->titleFilter))
+            // 권한 등급순(시스템관리자 → 최고관리자 → 업무관리자 → 일반사용자) → 역할/직급 → 이름. 목록의 묶음 캡션이 이 순서를 전제한다.
+            ->orderByRaw("CASE permission WHEN 'super' THEN 0 WHEN 'admin' THEN 1 WHEN 'manager' THEN 2 ELSE 3 END")
+            ->orderByRaw("CASE WHEN permission = 'admin' THEN CASE approval_title WHEN '대표' THEN 0 WHEN '전무' THEN 1 WHEN '부장' THEN 2 ELSE 3 END ELSE 0 END")
+            ->orderByRaw("CASE WHEN permission = 'user' THEN CASE role WHEN '관리' THEN 0 WHEN '재무' THEN 1 WHEN '수출통관' THEN 2 WHEN '영업' THEN 3 ELSE 4 END ELSE 0 END")
             ->orderBy('name')
             // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
             //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
@@ -476,10 +480,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- 휴가 대리 위임 — 담당 영업이 있는 사람([관리])에게만 의미가 있다 --}}
 @if(count($this->myTeamNames) > 0)
-<div class="card">
-    <div class="section-header">
-        <span class="section-dot bg-violet-500"></span>
-        <span class="section-title">{{ __('user.delegation.my_title') }}</span>
+<div class="card-tight">
+    <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="section-header !mb-0">
+            <span class="section-dot bg-violet-500"></span>
+            <span class="section-title">{{ __('user.delegation.my_title') }}</span>
+        </div>
+        <span class="text-xs text-gray-400">{{ __('user.delegation.team', ['names' => implode(', ', $this->myTeamNames)]) }}</span>
     </div>
 
     @if($d = $this->myDelegation)
@@ -495,35 +502,38 @@ new #[Layout('components.layouts.app')] class extends Component {
             </button>
         </div>
     @else
-        {{-- 위임 걸기 --}}
-        <p class="mb-2 text-xs text-gray-500">{{ __('user.delegation.my_note') }}</p>
-        <div class="flex flex-wrap items-center gap-2">
-            <select wire:model="delegateTo" class="input-base w-full sm:w-48">
-                <option value="">{{ __('user.delegation.to_ph') }}</option>
-                @foreach($this->delegateCandidates as $c)
-                    <option value="{{ $c->id }}">{{ $c->name }}</option>
-                @endforeach
-            </select>
-            <input type="date" data-date wire:model="delegateUntil"
-                   placeholder="{{ __('user.delegation.until_ph') }}" class="input-base w-full sm:w-40" />
+        {{-- 위임 걸기 — 한 줄(맡길 사람 · 복귀일 · 시작). 폭은 래퍼 div 로 잡는다(.input-base 가 width:100% 라 sm:w-* 가 안 먹는다). --}}
+        <div class="mt-2 flex flex-wrap items-center gap-2">
+            <span class="w-full text-xs text-gray-500 sm:w-auto sm:flex-1">{{ __('user.delegation.my_note') }}</span>
+            <div class="w-full sm:w-44">
+                <select wire:model="delegateTo" class="input-base">
+                    <option value="">{{ __('user.delegation.to_ph') }}</option>
+                    @foreach($this->delegateCandidates as $c)
+                        <option value="{{ $c->id }}">{{ $c->name }}</option>
+                    @endforeach
+                </select>
+            </div>
+            <div class="w-full sm:w-40">
+                <input type="date" data-date wire:model="delegateUntil"
+                       placeholder="{{ __('user.delegation.until_ph') }}" class="input-base" />
+            </div>
             <button wire:click="startDelegation" class="btn-primary text-xs">{{ __('user.delegation.start') }}</button>
         </div>
     @endif
-
-    <p class="mt-2 text-xs text-gray-400">
-        {{ __('user.delegation.team', ['names' => implode(', ', $this->myTeamNames)]) }}
-    </p>
 </div>
 @endif
 
 {{-- 필터 --}}
-<div class="card-tight flex flex-wrap items-center gap-3">
+<div class="card-tight flex flex-col gap-2">
+  <div class="flex flex-wrap items-center gap-2">
     {{-- 🔎 검색은 **버튼(또는 Enter)으로만** 돈다 (jin 2026-09-08).
                  타이핑마다 서버 왕복이면 `LIKE '%…%'` 가 글자 수만큼 돈다 — 이 ERP 의
                  다른 검색칸(차량·재고·바이어·정산 등)이 전부 이 형태다. --}}
-    <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('user.search_ph') }}"
-           class="input-base w-full sm:w-60" />
+    <div class="w-full sm:w-72">
+        <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('user.search_ph') }}" class="input-base" />
+    </div>
     <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+  </div>
     {{-- 🔎 권한 → 하위 묶음 칩 (jin 2026-10-26). 누르면 그 묶음만, 다시 누르면 해제. --}}
     @php
         $chipOn = 'rounded-full px-2.5 py-0.5 text-xs font-semibold bg-gray-800 text-white';
@@ -533,14 +543,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endphp
     <div class="flex w-full flex-wrap items-center gap-x-3 gap-y-1.5 sm:w-auto">
         <button type="button" wire:click="pickPerm('')" class="{{ $permFilter === '' ? $chipOn : $chipOff }}">{{ __('user.all_perm') }}</button>
-        <span class="flex flex-wrap items-center gap-1 rounded-lg border border-gray-200 px-1.5 py-1">
+        <span class="flex flex-wrap items-center gap-1 rounded-lg bg-gray-50 px-1.5 py-1">
             <button type="button" wire:click="pickPerm('user')" class="{{ $permFilter === 'user' && $roleFilter === '' ? $chipOn : $chipOff }}">{{ __('nav.permission.user') }}</button>
             @foreach(\App\Models\User::ROLES as $r)
             <button type="button" wire:click="pickRole('{{ $r }}')" class="{{ $roleFilter === $r ? $subOn : $subOff }}">{{ __('domain.role.'.$r) }}</button>
             @endforeach
         </span>
         <button type="button" wire:click="pickPerm('manager')" class="{{ $permFilter === 'manager' ? $chipOn : $chipOff }}">{{ __('nav.permission.manager') }}</button>
-        <span class="flex flex-wrap items-center gap-1 rounded-lg border border-gray-200 px-1.5 py-1">
+        <span class="flex flex-wrap items-center gap-1 rounded-lg bg-gray-50 px-1.5 py-1">
             <button type="button" wire:click="pickPerm('admin')" class="{{ $permFilter === 'admin' && $titleFilter === '' ? $chipOn : $chipOff }}">{{ __('nav.permission.admin') }}</button>
             @foreach(\App\Models\User::APPROVAL_TITLES as $t)
             <button type="button" wire:click="pickTitle('{{ $t }}')" class="{{ $titleFilter === $t ? $subOn : $subOff }}">{{ $t }}</button>
@@ -553,47 +563,63 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 </div>
 
-{{-- 목록 — 카드를 두 열로 (jin 2026-10-26 «가로로 한 화면 다 차지 → 둘로 나눠서 한 행에 나란히»). 폰은 한 열. --}}
-<div class="grid grid-cols-1 gap-2 lg:grid-cols-2">
+{{-- 목록 — 두 열 행 (jin 2026-10-26 «가로로 한 화면 다 차지 → 둘로 나눠서 한 행에 나란히 … 좀 더 이쁘게»).
+     권한 등급순으로 정렬돼 오므로 등급이 바뀌는 자리에 캡션 한 줄. 폰은 한 열. --}}
+@php
+    $permMeta = [
+        'super' => ['badge-purple', 'bg-purple-100 text-purple-700'],
+        'admin' => ['badge-blue', 'bg-blue-100 text-blue-700'],
+        'manager' => ['badge-teal', 'bg-teal-100 text-teal-700'],
+        'user' => ['badge-gray', 'bg-gray-100 text-gray-600'],
+    ];
+    $prevPerm = null;
+@endphp
+<div class="card-tight !p-0 overflow-hidden">
+  <div class="grid grid-cols-1 lg:grid-cols-2 lg:gap-x-6">
     @forelse($this->users as $u)
     @php
-        $permBadge = match($u->permission) { 'super' => 'badge-purple', 'admin' => 'badge-blue', 'manager' => 'badge-teal', default => 'badge-gray' };
+        [$permBadge, $avatarCls] = $permMeta[$u->permission ?? 'user'] ?? $permMeta['user'];
         $permLabel = __('nav.permission.'.($u->permission ?? 'user'));
         $sub = $u->permission === 'user' ? ($u->role ? __('domain.role.'.$u->role) : null) : ($u->permission === 'admin' ? $u->approval_title : null);
+        $showCaption = $prevPerm !== $u->permission; $prevPerm = $u->permission;
     @endphp
-    <div class="card-tight flex cursor-pointer items-center justify-between gap-3 hover:bg-gray-50" wire:click="openEdit({{ $u->id }})">
-        <div class="min-w-0">
-            <div class="flex flex-wrap items-center gap-x-1.5 font-medium text-gray-800">
+    @if($showCaption)
+    <div class="bg-gray-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500 lg:col-span-2">{{ $permLabel }}</div>
+    @endif
+    <div class="flex cursor-pointer items-center gap-3 border-b border-gray-100 px-3 py-2.5 hover:bg-violet-50/40" wire:click="openEdit({{ $u->id }})">
+        <span class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold {{ $avatarCls }}">{{ mb_substr($u->name, 0, 1) }}</span>
+        <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-center gap-x-1.5 text-sm font-medium text-gray-800">
                 <span>{{ $u->name }}</span>
+                @if($sub)<span class="text-xs font-normal text-gray-500">· {{ $sub }}</span>@endif
                 @if($u->id === auth()->id())<span class="text-[10px] text-gray-400">{{ __('user.me') }}</span>@endif
                 {{-- 🚪 퇴사 (jin 2026-10-15) — 퇴사 처리·해제는 사내직원관리에서. 여기선 보여만 준다. --}}
                 @if($u->salesman?->hasLeft())
                 <span class="badge badge-gray text-[10px]" title="{{ __('user.left_hint') }}">{{ __('salesman.left_badge', ['date' => $u->salesman->left_at->format('Y-m-d')]) }}</span>
                 @endif
             </div>
-            <div class="truncate text-xs text-gray-500" title="{{ $u->email ?? '' }}">{{ $u->email ?? '-' }}</div>
-            {{-- 전화번호 (jin 2026-08-04) — 비면 알림톡이 로그도 없이 조용히 skip 되므로 미입력을 눈에 띄게 --}}
-            <div class="text-xs {{ filled($u->phone) ? 'text-gray-500' : 'text-amber-600' }}" @if(! filled($u->phone)) title="{{ __('user.phone_missing_hint') }}" @endif>
-                {{ filled($u->phone) ? $u->phone : __('user.phone_missing') }}
-                <span class="ml-2 text-gray-400">{{ $u->last_login_at?->format('Y-m-d H:i') ?? __('user.no_login') }}</span>
+            <div class="truncate text-xs text-gray-500" title="{{ $u->email ?? '' }}">
+                {{ $u->email ?? '-' }}
+                {{-- 전화번호 (jin 2026-08-04) — 비면 알림톡이 로그도 없이 조용히 skip 되므로 미입력을 눈에 띄게 --}}
+                <span class="mx-1 text-gray-300">·</span>
+                @if(filled($u->phone))<span>{{ $u->phone }}</span>@else<span class="text-amber-600" title="{{ __('user.phone_missing_hint') }}">{{ __('user.phone_missing') }}</span>@endif
             </div>
         </div>
-        <div class="flex shrink-0 flex-col items-end gap-1">
-            <div class="flex items-center gap-1.5">
-                <span class="badge {{ $permBadge }}">{{ $permLabel }}</span>
-                @if($sub)<span class="text-xs text-gray-500">{{ $sub }}</span>@endif
-            </div>
+        <div class="flex shrink-0 flex-col items-end gap-0.5">
+            <span class="badge {{ $permBadge }}">{{ $permLabel }}</span>
+            <span class="text-[11px] text-gray-400" title="{{ __('user.col.last_login') }}">{{ $u->last_login_at ? $u->last_login_at->format('Y-m-d H:i') : __('user.col.last_login').' '.__('user.no_login') }}</span>
             {{-- 삭제는 super/admin + 업무관리자(super/admin 대상 제외). role='관리'는 삭제 불가 --}}
             @if($u->id !== auth()->id() && (auth()->user()->isAdmin() || (auth()->user()->isManager() && ! in_array($u->permission, ['super', 'admin'], true))))
             <button wire:click.stop="delete({{ $u->id }})"
                     wire:confirm="{{ __('user.delete_confirm', ['name' => $u->name]) }}"
-                    class="text-xs text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
+                    class="text-[11px] text-red-400 hover:text-red-600">{{ __('common.delete') }}</button>
             @endif
         </div>
     </div>
     @empty
     <div class="py-12 text-center text-sm text-gray-400 lg:col-span-2">{{ __('user.empty') }}</div>
     @endforelse
+  </div>
 </div>
 
 <div>{{ $this->users->links() }}</div>
