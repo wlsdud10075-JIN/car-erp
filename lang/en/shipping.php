@@ -52,7 +52,7 @@ return [
     'action' => [
         'start' => 'Mark in progress',
         'entry_locked' => 'Start locked',
-        'entry_locked_tip' => 'Vehicles under 50% paid: :vehicles — need full payment / manager approval, or remove them and re-bundle',
+        'entry_locked_tip' => 'Vehicles under the required paid ratio: :vehicles — need full payment / manager approval, or remove them and re-bundle',
         'entry_locked_tip_aggregate' => 'Bundle total paid ratio is below the required :req% (unpaid :pct%) — increase payment or remove unpaid vehicles and re-bundle',
         'done' => 'Mark done',
         'cancel' => 'Cancel',
@@ -106,7 +106,7 @@ return [
 
     // 🔒 (나)+(a) shipping entry lock — bundle start blocked
     'lock' => [
-        'entry_blocked' => 'Cannot start shipping — vehicles under 50% paid: :vehicles. Pay 50%+ or get manager approval. (Whole bundle waits — to proceed, remove the unpaid vehicles and re-bundle.)',
+        'entry_blocked' => 'Cannot start shipping — vehicles under the required paid ratio: :vehicles. Pay up to the required ratio or get manager approval. (Whole bundle waits — to proceed, remove the unpaid vehicles and re-bundle.)',
         'entry_blocked_aggregate' => 'Cannot start shipping — bundle total paid ratio is below the required :req% (unpaid :pct%). Increase payment or remove unpaid vehicles and re-bundle.',
     ],
 

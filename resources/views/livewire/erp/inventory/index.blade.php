@@ -5,6 +5,7 @@ use App\Models\Consignee;
 use App\Models\Salesman;
 use App\Models\Vehicle;
 use App\Support\SearchTerm;
+use App\Support\StackedHeaderSort;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\On;
@@ -37,6 +38,59 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     use WithPagination;
+
+    use StackedHeaderSort;
+
+    /**
+     * 🔼🔽 헤더 정렬 (jin 2026-10-26 «각 컬럼 헤더에 오름차순/내림차순 · 차량관리에 적용된 내용대로») — 규칙은 `StackedHeaderSort`.
+     *   헤더 키 → 정렬 칼럼. 관계 칸(담당자·바이어·컨사이니)은 이름 서브쿼리(컨사이니는 화면과 같은 폴백 순서).
+     *   입고일(계산값)·채널(단일값)은 뺐다. 빈 값은 방향과 무관하게 뒤로 — 날짜·번호 칸은 빈 행이 많아 앞에 몰리면 정렬한 뜻이 없다.
+     */
+    private const SORTABLE = [
+        'vehicle_number' => 'vehicle_number', 'salesman' => 'salesman', 'status' => 'progress_status_cache',
+        'brand_model' => 'brand', 'vin' => 'nice_reg_vin', 'purchase_date' => 'purchase_date',
+        'deregistration_date' => 'deregistration_date', 'sale_date' => 'sale_date', 'shipping_date' => 'shipping_date',
+        'eta_date' => 'eta_date', 'warehouse_out_date' => 'warehouse_out_date', 'stock_location' => 'stock_location',
+        'vessel_name' => 'vessel_name', 'container_number' => 'container_number',
+        'export_declaration_number' => 'export_declaration_number', 'bl_number' => 'bl_number',
+        'purchase_from' => 'purchase_from', 'purchase_price' => 'purchase_price', 'sale_price' => 'sale_price',
+        'currency_rate' => 'currency', 'buyer' => 'buyer', 'consignee' => 'consignee',
+    ];
+
+    /** 문자열 칸 — 빈 문자열도 「없음」으로 뒤로 보낸다. */
+    private const SORTABLE_TEXT = ['vehicle_number', 'progress_status_cache', 'brand', 'nice_reg_vin', 'stock_location',
+        'vessel_name', 'container_number', 'export_declaration_number', 'bl_number', 'purchase_from', 'currency'];
+
+    protected function sortableKeys(): array
+    {
+        return array_keys(self::SORTABLE);
+    }
+
+    protected function afterSortChanged(): void
+    {
+        unset($this->inventoryVehicles);
+        $this->resetPage();
+    }
+
+    protected function applySortKey($q, string $col, string $dir)
+    {
+        $col = self::SORTABLE[$col];
+        if (in_array($col, ['salesman', 'buyer', 'consignee'], true)) {
+            $fk = match ($col) {
+                'salesman' => 'vehicles.salesman_id',
+                'buyer' => 'vehicles.buyer_id',
+                'consignee' => 'COALESCE('.implode(', ', array_map(fn ($c) => 'vehicles.'.$c, Vehicle::CONSIGNEE_FALLBACK_COLUMNS)).')',
+            };
+            $table = $col === 'salesman' ? 'salesmen' : ($col === 'buyer' ? 'buyers' : 'consignees');
+            $name = "(SELECT name FROM {$table} WHERE {$table}.id = {$fk} LIMIT 1)";
+
+            return $q->orderByRaw("{$name} IS NULL ASC")->orderByRaw("{$name} {$dir}");
+        }
+        $q = $q->orderByRaw($this->emptyLastExpression($col, in_array($col, self::SORTABLE_TEXT, true)))->orderBy($col, $dir);
+
+        return $col === 'brand' ? $q->orderBy('model_type', $dir) : $q;
+    }
+
 
     #[Url] public string $salesmanFilter = '';
 
@@ -128,12 +182,13 @@ new #[Layout('components.layouts.app')] class extends Component
                 ->orWhereHas('buyer', fn ($q3) => $q3->where('name', 'like', SearchTerm::like($this->search)))
             ))
             // 출고완료는 "언제 나갔나"가 관심사 → 최근 출고순. 재고는 기존 담당자·매입일 순 유지.
-            ->when($isShippedOut,
-                fn ($q) => $q->orderByDesc('warehouse_out_date')->orderByDesc('id'),
+            // 🔼🔽 헤더 정렬(겹침)이 있으면 그걸로, 기본이면 종전 순서.
+            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q->when($isShippedOut,
+                fn ($q2) => $q2->orderByDesc('warehouse_out_date')->orderByDesc('id'),
                 // 동점 tie-break (jin 2026-09-11) — 매입일이 같은 차가 많아 페이지가 흔들린다(SKILLS §8 #92).
                 //   출고완료 분기는 이미 id 를 쓰고 있다.
-                fn ($q) => $q->orderByRaw('salesman_id IS NULL ASC')->orderBy('salesman_id')->orderBy('purchase_date')->orderBy('id')
-            )
+                fn ($q2) => $q2->orderByRaw('salesman_id IS NULL ASC')->orderBy('salesman_id')->orderBy('purchase_date')->orderBy('id')
+            ))
             ->paginate($this->perPage);
 
         // 출고일 draft 초기화 — 현재 페이지 차량 중 draft 없는 것만 DB값으로 채움(사용자 편집 보존).
@@ -524,31 +579,40 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="overflow-x-auto">
         <table class="w-full text-sm">
             <thead>
+                @php
+                    // 🔼🔽 헤더 정렬 버튼 — 차량관리와 같은 모양(▲/▼, 겹치면 순번). 규칙 = StackedHeaderSort.
+                    $sortBtn = function (string $key, string $label, string $align = 'left'): string {
+                        $cls = $align === 'right' ? 'justify-end ml-auto' : '';
+
+                        return '<button type="button" wire:click="clickSort(\''.$key.'\')" title="'.e(__('vehicle.sort.shift_hint')).'" class="flex items-center gap-1 hover:text-gray-700 '.$cls.'">'
+                            .e($label).' <span class="whitespace-nowrap text-[10px]">'.$this->sortIndicator($key).'</span></button>';
+                    };
+                @endphp
                 <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.number') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.salesman') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('vehicle.col.status') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{{ __('vehicle.col.brand_model') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['vin']">{{ __('vehicle.col.vin') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{!! $sortBtn('vehicle_number', __('vehicle.col.number'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman', __('vehicle.col.salesman'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium">{!! $sortBtn('status', __('vehicle.col.status'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{!! $sortBtn('brand_model', __('vehicle.col.brand_model'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['vin']">{!! $sortBtn('vin', __('vehicle.col.vin'), 'left') !!}</th>
                     <th class="pb-2 pr-4 font-medium" x-show="visible['warehouse_in']">{{ __('inventory.col_warehouse_in') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_date']">{{ __('vehicle.col.purchase_date') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['deregistration_date']">{{ __('vehicle.col.deregistration_date') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{{ __('vehicle.col.sale_date') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_date']">{{ __('inventory.col_shipping') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['eta_date']">{{ __('vehicle.col.eta_date') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_warehouse_out') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('inventory.col_location') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['vessel_name']">{{ __('inventory.col_vessel') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{{ __('vehicle.col.container_number') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{{ __('vehicle.col.export_declaration_number') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{{ __('vehicle.col.bl_number') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_from']">{{ __('vehicle.col.purchase_from') }}</th>
-                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{{ __('vehicle.col.purchase_price') }}</th>
-                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{{ __('vehicle.col.sale_price') }}</th>
-                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{{ __('vehicle.col.currency_rate') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_date']">{!! $sortBtn('purchase_date', __('vehicle.col.purchase_date'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['deregistration_date']">{!! $sortBtn('deregistration_date', __('vehicle.col.deregistration_date'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{!! $sortBtn('sale_date', __('vehicle.col.sale_date'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_date']">{!! $sortBtn('shipping_date', __('inventory.col_shipping'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['eta_date']">{!! $sortBtn('eta_date', __('vehicle.col.eta_date'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium">{!! $sortBtn('warehouse_out_date', __('inventory.col_warehouse_out'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium">{!! $sortBtn('stock_location', __('inventory.col_location'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['vessel_name']">{!! $sortBtn('vessel_name', __('inventory.col_vessel'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{!! $sortBtn('container_number', __('vehicle.col.container_number'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{!! $sortBtn('export_declaration_number', __('vehicle.col.export_declaration_number'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{!! $sortBtn('bl_number', __('vehicle.col.bl_number'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_from']">{!! $sortBtn('purchase_from', __('vehicle.col.purchase_from'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', __('vehicle.col.purchase_price'), 'right') !!}</th>
+                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', __('vehicle.col.sale_price'), 'right') !!}</th>
+                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{!! $sortBtn('currency_rate', __('vehicle.col.currency_rate'), 'right') !!}</th>
                     <th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{{ __('vehicle.col.channel') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{{ __('inventory.col_buyer') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['consignee']">{{ __('inventory.col_consignee') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer', __('inventory.col_buyer'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['consignee']">{!! $sortBtn('consignee', __('inventory.col_consignee'), 'left') !!}</th>
                     <th class="pb-2 font-medium"></th>
                 </tr>
             </thead>

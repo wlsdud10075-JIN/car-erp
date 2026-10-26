@@ -13,6 +13,7 @@ use App\Models\Vehicle;
 use App\Services\BuyerCashService;
 use App\Services\VehicleLedgerUnlockService;
 use App\Support\SearchTerm;
+use App\Support\StackedHeaderSort;
 use Illuminate\Support\Facades\DB;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -42,6 +43,51 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 🚫 기본값을 바꾸지 말 것 — 종전 순서(미납금 큰 순)를 그대로 둔다. 바꾸면 익숙한 화면이 흔들린다.
      */
     #[Url(as: 'sort')] public string $sortKey = 'unpaid';
+
+    use StackedHeaderSort;
+
+    /**
+     * 🔼🔽 헤더 정렬 (jin 2026-10-26 «채권관리탭에도 하는 김에») — 규칙·겹침은 `StackedHeaderSort`(차량관리와 같은 동작).
+     *   기본 정렬(sortColumn='')은 종전대로 미수 큰 순(`$sortKey`=unpaid) / 오래된 순(`$sortKey`=age — 대시보드 링크 `?sort=age` 호환).
+     *   헤더 키 → 정렬식. 바이어는 화면과 같은 폴백(통관 바이어 → 판매 바이어). 총판매가·미수율은 Vehicle::SALE_TOTAL_SQL(§13 분모).
+     */
+    private const SORTABLE = ['no', 'vehicle_no', 'brand_type', 'vin', 'salesman', 'buyer', 'sale_total', 'unpaid',
+        'unpaid_ratio', 'progress', 'bl', 'age', 'risk', 'manager'];
+
+    protected function sortableKeys(): array
+    {
+        return self::SORTABLE;
+    }
+
+    protected function afterSortChanged(): void
+    {
+        unset($this->vehicles);
+        $this->resetPage();
+    }
+
+    protected function applySortKey($q, string $col, string $dir)
+    {
+        $name = fn (string $table, string $fk) => "(SELECT name FROM {$table} WHERE {$table}.id = {$fk} LIMIT 1)";
+
+        return match ($col) {
+            'no' => $q->orderBy('vehicles.id', $dir),
+            'vehicle_no' => $q->orderBy('vehicles.vehicle_number', $dir),
+            'brand_type' => $q->orderByRaw($this->emptyLastExpression('vehicles.brand', true))->orderBy('vehicles.brand', $dir)->orderBy('vehicles.model_type', $dir),
+            'vin' => $q->orderByRaw($this->emptyLastExpression('vehicles.nice_reg_vin', true))->orderBy('vehicles.nice_reg_vin', $dir),
+            'salesman' => $q->orderByRaw($name('salesmen', 'vehicles.salesman_id').' IS NULL ASC')->orderByRaw($name('salesmen', 'vehicles.salesman_id')." {$dir}"),
+            'buyer' => $q->orderByRaw($name('buyers', 'COALESCE(vehicles.export_buyer_id, vehicles.buyer_id)').' IS NULL ASC')
+                ->orderByRaw($name('buyers', 'COALESCE(vehicles.export_buyer_id, vehicles.buyer_id)')." {$dir}"),
+            'sale_total' => $q->orderByRaw(Vehicle::SALE_TOTAL_SQL." {$dir}"),
+            'unpaid' => $q->orderBy('vehicles.sale_unpaid_amount_krw_cache', $dir),
+            'unpaid_ratio' => $q->orderByRaw('(vehicles.sale_unpaid_amount_krw_cache * 1.0 / NULLIF('.Vehicle::SALE_TOTAL_SQL." * COALESCE(vehicles.exchange_rate, 0), 0)) {$dir}"),
+            'progress' => $q->orderBy('vehicles.progress_status_cache', $dir),
+            'bl' => $q->orderByRaw("(vehicles.bl_document IS NOT NULL) {$dir}"),
+            // 경과일 = 판매일부터 — ▲(오름차순) = 경과일 적은 순 = 판매일 최신순. 빈 판매일은 뒤로.
+            'age' => $q->orderByRaw('vehicles.sale_date IS NULL ASC')->orderBy('vehicles.sale_date', $dir === 'asc' ? 'desc' : 'asc'),
+            'risk' => $q->orderByRaw("(CASE vehicles.receivable_risk WHEN 'critical' THEN 5 WHEN 'danger' THEN 4 WHEN 'caution' THEN 3 WHEN 'grace' THEN 2 WHEN 'safe' THEN 1 ELSE 0 END) {$dir}"),
+            'manager' => $q->orderByRaw($name('users', 'vehicles.receivable_manager_id').' IS NULL ASC')->orderByRaw($name('users', 'vehicles.receivable_manager_id')." {$dir}"),
+        };
+    }
     // 큐 10 확장 — G3 미수 분류 (회의록 v5 §G3, 사용자 결정 2026-05-18).
     // '' 전체 / 'before_shipping' 선적전 / 'after_shipping' 선적후 / 'deposit' 디파짓(적립금 사용분).
     #[Url] public string $classification = '';
@@ -209,8 +255,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         $this->sortKey = $key;
-        unset($this->vehicles);
-        $this->resetPage();
+        $this->resetSort();   // 헤더 겹침 정렬을 비우고 종전 기준(미수순/오래된순)으로
     }
 
     public function updatedPerPage(): void
@@ -230,13 +275,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->with(['exportBuyer', 'buyer', 'salesman', 'receivableManager'])
             // 📅 오래된 순 = 판매일 오름차순. 판매일이 빈 행은 **맨 뒤로** 보낸다
             //    (MySQL 은 NULL 을 ASC 에서 맨 앞에 놓는다 — 그대로 두면 「가장 오래된 것」 자리에 빈칸이 온다).
-            ->when($this->sortKey === 'age',
-                fn ($q) => $q->orderByRaw('sale_date IS NULL, sale_date ASC'),
-                fn ($q) => $q->orderByDesc('sale_unpaid_amount_krw_cache'))
-            // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
-            //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
-            //   🚨 오래된 순은 **같은 판매일이 무더기**로 생긴다(적재 한 번이면 수백 대) — 여기가 특히 중요하다.
-            ->orderByDesc('id')
+            // 🔼🔽 헤더 정렬(겹침)이 있으면 그걸로(id 동점 고정 포함). 기본이면 종전 미수순/오래된순.
+            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q, 'vehicles.id'), fn ($q) => $q
+                ->when($this->sortKey === 'age',
+                    fn ($q2) => $q2->orderByRaw('sale_date IS NULL, sale_date ASC'),
+                    fn ($q2) => $q2->orderByDesc('sale_unpaid_amount_krw_cache'))
+                // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
+                //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
+                //   🚨 오래된 순은 **같은 판매일이 무더기**로 생긴다(적재 한 번이면 수백 대) — 여기가 특히 중요하다.
+                ->orderByDesc('id'))
             ->paginate($this->perPage);
     }
 
@@ -1362,31 +1409,35 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="card overflow-x-auto hidden sm:block">
         <table class="w-full text-sm">
             <thead class="border-b border-gray-200 text-xs uppercase text-gray-500">
+                @php
+                    // 🔼🔽 헤더 정렬 버튼 — 차량관리와 같은 모양(▲/▼, 겹치면 순번). 규칙 = StackedHeaderSort.
+                    //   기본 정렬(아무 칸도 안 누름)일 땐 종전 기준(미수순/오래된순)을 그 칸에 ▼ 로 보여 준다.
+                    $sortBtn = function (string $key, string $label, string $align = 'left'): string {
+                        $ind = $this->sortIndicator($key);
+                        if ($ind === '' && $this->isDefaultSort() && $key === ($this->sortKey === 'age' ? 'age' : 'unpaid')) {
+                            $ind = '▼';
+                        }
+                        $cls = $align === 'right' ? 'justify-end ml-auto' : '';
+
+                        return '<button type="button" wire:click="clickSort(\''.$key.'\')" title="'.e(__('vehicle.sort.shift_hint')).'" class="inline-flex items-center gap-1 uppercase hover:text-gray-700 '.$cls.'">'
+                            .e($label).'<span class="text-[10px]">'.$ind.'</span></button>';
+                    };
+                @endphp
                 <tr>
-                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.no') }}</th>
-                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.vehicle_no') }}</th>
-                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.brand_type') }}</th>
-                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.vin') }}</th>
-                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.salesman') }}</th>
-                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.buyer') }}</th>
-                    <th class="py-2 pr-3 text-right">{{ __('receivable.col.sale_total') }}</th>
-                    <th class="py-2 pr-3 text-right">
-                        <button type="button" wire:click="applySort('unpaid')"
-                                class="inline-flex items-center gap-1 uppercase {{ $sortKey === 'unpaid' ? 'font-bold text-violet-700' : 'hover:text-gray-700' }}">
-                            {{ __('receivable.col.unpaid') }}<span class="text-[10px]">{{ $sortKey === 'unpaid' ? '▼' : '↕' }}</span>
-                        </button>
-                    </th>
-                    <th class="py-2 pr-3 text-right">{{ __('receivable.col.unpaid_ratio') }}</th>
-                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.progress') }}</th>
-                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.bl') }}</th>
-                    <th class="py-2 pr-3 text-right">
-                        <button type="button" wire:click="applySort('age')"
-                                class="inline-flex items-center gap-1 uppercase {{ $sortKey === 'age' ? 'font-bold text-violet-700' : 'hover:text-gray-700' }}">
-                            {{ __('receivable.col.age') }}<span class="text-[10px]">{{ $sortKey === 'age' ? '▼' : '↕' }}</span>
-                        </button>
-                    </th>
-                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.risk') }}</th>
-                    <th class="py-2 pr-3 text-left">{{ __('receivable.col.manager') }}</th>
+                    <th class="py-2 pr-3 text-left">{!! $sortBtn('no', __('receivable.col.no')) !!}</th>
+                    <th class="py-2 pr-3 text-left">{!! $sortBtn('vehicle_no', __('receivable.col.vehicle_no')) !!}</th>
+                    <th class="py-2 pr-3 text-left">{!! $sortBtn('brand_type', __('receivable.col.brand_type')) !!}</th>
+                    <th class="py-2 pr-3 text-left">{!! $sortBtn('vin', __('receivable.col.vin')) !!}</th>
+                    <th class="py-2 pr-3 text-left">{!! $sortBtn('salesman', __('receivable.col.salesman')) !!}</th>
+                    <th class="py-2 pr-3 text-left">{!! $sortBtn('buyer', __('receivable.col.buyer')) !!}</th>
+                    <th class="py-2 pr-3 text-right">{!! $sortBtn('sale_total', __('receivable.col.sale_total'), 'right') !!}</th>
+                    <th class="py-2 pr-3 text-right">{!! $sortBtn('unpaid', __('receivable.col.unpaid'), 'right') !!}</th>
+                    <th class="py-2 pr-3 text-right">{!! $sortBtn('unpaid_ratio', __('receivable.col.unpaid_ratio'), 'right') !!}</th>
+                    <th class="py-2 pr-3 text-left">{!! $sortBtn('progress', __('receivable.col.progress')) !!}</th>
+                    <th class="py-2 pr-3 text-left">{!! $sortBtn('bl', __('receivable.col.bl')) !!}</th>
+                    <th class="py-2 pr-3 text-right">{!! $sortBtn('age', __('receivable.col.age'), 'right') !!}</th>
+                    <th class="py-2 pr-3 text-left">{!! $sortBtn('risk', __('receivable.col.risk')) !!}</th>
+                    <th class="py-2 pr-3 text-left">{!! $sortBtn('manager', __('receivable.col.manager')) !!}</th>
                     {{-- 큐 16 — 계산서1/2 컬럼 제거 (헤이맨/카풀 폐기). --}}
                 </tr>
             </thead>
