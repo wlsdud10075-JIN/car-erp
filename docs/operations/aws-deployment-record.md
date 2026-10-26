@@ -934,3 +934,16 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - `73c2ede7` 채권관리 🚢 운항중 / ⚓ 도착예정 토글 · `2cb12f2b` 도착 임박 잔금 안내 배별 묶음(설정 10일) + 도착 후 미수 주간 요약(신규 템플릿 `erp_arrived_unpaid_weekly`, 3사 BizM 승인요청 완료 — 승인 뒤 tmplId) · `da155728` 통장 마감잔액 기준일 ‹ › 화살표
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
+
+## 2026-10-26(3차, 저녁) — master `c8f12fc5` · 마이그 0 (jin «배포해줘», 코드 커밋 8개 cherry-pick)
+
+dev `73c2ede7`·`2cb12f2b`·`da155728`·`d3aa3139`·`dbfeff1b`·`284de182`·`97e310fd`·`1406e20d` → master `a4d2aa6a`…`c8f12fc5`. dev 전용 `scripts/notion-cards/cards.json`·`notion-guide-publish.php` 는 충돌 → 삭제 유지.
+1. 채권관리 🚢 운항중 / ⚓ 도착예정 토글(버튼 숫자 = 미수 대수·합계, 바이어·담당자 AND, KPI 따라감)
+2. 「도착 임박 잔금 안내」 보강 — 리드 = 기능설정 ETA 임박 일수(기본 10), 배별 묶음, [100% 미수][우회 승인][선적대기 허용 항로], 바이어 합계(재승인 없음, 즉시 적용)
+3. 「도착 후 미수 요약」 신규(`erp_arrived_unpaid_weekly`, 월 09:00, 바이어별 묶음) — 3사 스케줄 등록 확인. **BizM 승인 뒤 tmplId 입력 전까지 skipped**
+4. 통장 마감잔액 기준일 ‹ › 화살표(하루씩, 오늘 뒤 비활성)
+5. 과입금 잡손실·회사이익 전환 collector_id 버그(Salesman id → users.id, §8 #126) — ssancarerp 관리 일반사용자 전환 복구
+6. 사용자관리: 권한 하위 묶음 칩(역할/직급) + 두 열 카드 + UX 재편(위임 한 줄·등급순 정렬·캡션·아바타)
+7. 담당 영업 위임: 관리 이상 전부 표시 · rank≥2 는 남의 팀 대신 위임 · 진행 중 목록·종료
+8. 감사로그 이전→이후 160자(폰 100자)까지 그대로, 넘으면 …+호버
+- 확인: 로컬 병렬 3,517 pass · deploy 런 40311084523 잡 5 success · 3사 SHA `c8f12fc5` · `/login` 200 · 배포 뒤 production.ERROR 0(ssancarerp 15:56 PDOException 은 내 읽기 프로브) · 3사 `schedule:list` 에 `arrived-unpaid-weekly` 1건.
