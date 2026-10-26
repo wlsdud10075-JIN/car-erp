@@ -365,6 +365,41 @@ new #[Layout('components.layouts.app')] class extends Component {
     public string $delegateTo = '';
     public string $delegateUntil = '';
 
+    /**
+     * 🔀 2026-10-26 (jin «슈퍼 계정에서는 모든 게 다 보이고 다 되어야 해 … 관리 이상은 다 보이고 되어야») —
+     *   ① 블록은 **관리 이상**(approvalRank ≥ 1) 전부에게 보인다(담당 영업이 0명이어도). 종전엔 「내 팀」이 있어야만 떴다.
+     *   ② 업무관리자·최고관리자·super(rank ≥ 2)는 **남의 팀을 대신** 넘긴다 — 연차 쓴 [관리]가 자리에 없을 때.
+     *   ③ 진행 중인 위임 목록을 보여 주고, rank ≥ 2 는 남의 위임도 끌 수 있다(본인 것은 종전대로).
+     *   `delegateFrom` = 자리를 비우는 사람(팀 보유자). 비면 나.
+     */
+    public string $delegateFrom = '';
+
+    /** 남의 팀을 대신 넘길 수 있나 — 업무관리자·최고관리자·super. [관리]는 본인 팀만. */
+    public function canDelegateForOthers(): bool
+    {
+        return auth()->user()->approvalRank() >= 2;
+    }
+
+    /** 자리를 비울 수 있는 사람 = 담당 영업이 1명 이상인 관리 이상. 대신 걸 때 고르는 목록. */
+    #[Computed]
+    public function delegators()
+    {
+        return User::where('id', '!=', auth()->id())
+            ->orderBy('name')->get(['id', 'name', 'permission', 'role'])
+            ->filter(fn (User $u) => $u->approvalRank() >= 1 && $u->ownManagedSalesmanUserIds() !== [])
+            ->values();
+    }
+
+    /** 진행 중인 위임 — rank ≥ 2 는 전부, 그 외는 내 것만. */
+    #[Computed]
+    public function activeDelegations()
+    {
+        return \App\Models\UserDelegation::with(['fromUser', 'toUser'])
+            ->effective()
+            ->when(! $this->canDelegateForOthers(), fn ($q) => $q->where('from_user_id', auth()->id()))
+            ->orderBy('ends_at')->get();
+    }
+
     /** 지금 내가 켜 둔 위임 (효력 있는 것 1건). */
     #[Computed]
     public function myDelegation()
@@ -400,11 +435,19 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function startDelegation(): void
     {
         $to = (int) $this->delegateTo;
+        $from = (int) ($this->delegateFrom ?: auth()->id());
         $until = trim($this->delegateUntil);
 
         abort_unless(auth()->user()->canManageUsers(), 403);
         // 후보 목록 밖의 id 주입 방어 (SKILLS §8 #26) — 스코프를 넓히는 기능이라 대상 검증이 핵심.
-        abort_unless($this->delegateCandidates->contains('id', $to), 403);
+        // 남의 팀을 대신 넘기는 건 rank ≥ 2 만, 그리고 「팀 보유자 목록」 안의 사람만 (SKILLS §8 #26 — id 는 클라이언트가 준다).
+        if ($from !== (int) auth()->id()) {
+            abort_unless($this->canDelegateForOthers() && $this->delegators->contains('id', $from), 403);
+        }
+        // 후보 목록 밖의 id 주입 방어 (SKILLS §8 #26) — 스코프를 넓히는 기능이라 대상 검증이 핵심. 자기 자신에게는 못 넘긴다.
+        //   대신 걸 때는 나(관리자)도 맡을 수 있다 — 후보 목록은 「나 제외」라 따로 허용한다.
+        $toOk = $this->delegateCandidates->contains('id', $to) || ($from !== (int) auth()->id() && $to === (int) auth()->id());
+        abort_unless($to !== $from && $toOk, 403);
 
         if ($until === '' || strtotime($until) === false) {
             session()->flash('error', __('user.delegation.need_end_date'));
@@ -418,13 +461,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $d = \App\Models\UserDelegation::updateOrCreate(
-            ['from_user_id' => auth()->id(), 'to_user_id' => $to],
+            ['from_user_id' => $from, 'to_user_id' => $to],
             ['is_active' => true, 'ends_at' => $until, 'created_by' => auth()->id()],
         );
         \App\Models\AuditLog::recordEvent($d, 'delegation_activated');
 
-        $this->delegateTo = $this->delegateUntil = '';
-        unset($this->myDelegation);
+        $this->delegateTo = $this->delegateUntil = $this->delegateFrom = '';
+        unset($this->myDelegation, $this->activeDelegations);
         session()->flash('success', __('user.delegation.activated', ['name' => $d->toUser?->name ?? '']));
     }
 
@@ -432,12 +475,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function stopDelegation(int $id): void
     {
         $d = \App\Models\UserDelegation::findOrFail($id);
-        abort_unless($d->from_user_id === auth()->id(), 403);
+        // 본인 것, 또는 rank ≥ 2(남의 것도 — 연차 간 사람 대신). id 주입 방어는 그 둘로.
+        abort_unless($d->from_user_id === auth()->id() || $this->canDelegateForOthers(), 403);
 
         $d->update(['is_active' => false]);
         \App\Models\AuditLog::recordEvent($d, 'delegation_deactivated');
 
-        unset($this->myDelegation);
+        unset($this->myDelegation, $this->activeDelegations);
         session()->flash('success', __('user.delegation.deactivated'));
     }
 }; ?>
@@ -478,48 +522,62 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 </div>
 
-{{-- 휴가 대리 위임 — 담당 영업이 있는 사람([관리])에게만 의미가 있다 --}}
-@if(count($this->myTeamNames) > 0)
+{{-- 휴가 대리 위임 — 관리 이상 전부에게 (jin 2026-10-26). rank ≥ 2 는 남의 팀을 대신 넘기고, 진행 중인 위임을 전부 본다. --}}
+@if(auth()->user()->approvalRank() >= 1)
 <div class="card-tight">
     <div class="flex flex-wrap items-center justify-between gap-2">
         <div class="section-header !mb-0">
             <span class="section-dot bg-violet-500"></span>
-            <span class="section-title">{{ __('user.delegation.my_title') }}</span>
+            <span class="section-title">{{ __('user.delegation.title') }}</span>
         </div>
-        <span class="text-xs text-gray-400">{{ __('user.delegation.team', ['names' => implode(', ', $this->myTeamNames)]) }}</span>
+        <span class="text-xs text-gray-400">
+            @if(count($this->myTeamNames) > 0){{ __('user.delegation.team', ['names' => implode(', ', $this->myTeamNames)]) }}@else{{ __('user.delegation.no_team') }}@endif
+        </span>
     </div>
 
-    @if($d = $this->myDelegation)
-        {{-- 위임 중 --}}
-        <div class="flex flex-wrap items-center gap-3">
-            <span class="badge badge-green">{{ __('user.delegation.on', ['date' => optional($d->ends_at)->format('Y-m-d') ?? '-']) }}</span>
-            <span class="text-sm text-gray-800">
-                {{ __('user.delegation.handed_to', ['name' => $d->toUser?->name ?? '-', 'count' => count($this->myTeamNames)]) }}
-            </span>
-            <button wire:click="stopDelegation({{ $d->id }})"
-                    class="ml-auto rounded border border-gray-300 px-3 py-1.5 text-xs text-gray-700 hover:bg-gray-50">
-                {{ __('user.delegation.stop') }}
-            </button>
-        </div>
-    @else
-        {{-- 위임 걸기 — 한 줄(맡길 사람 · 복귀일 · 시작). 폭은 래퍼 div 로 잡는다(.input-base 가 width:100% 라 sm:w-* 가 안 먹는다). --}}
-        <div class="mt-2 flex flex-wrap items-center gap-2">
-            <span class="w-full text-xs text-gray-500 sm:w-auto sm:flex-1">{{ __('user.delegation.my_note') }}</span>
-            <div class="w-full sm:w-44">
-                <select wire:model="delegateTo" class="input-base">
-                    <option value="">{{ __('user.delegation.to_ph') }}</option>
-                    @foreach($this->delegateCandidates as $c)
-                        <option value="{{ $c->id }}">{{ $c->name }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <div class="w-full sm:w-40">
-                <input type="date" data-date wire:model="delegateUntil"
-                       placeholder="{{ __('user.delegation.until_ph') }}" class="input-base" />
-            </div>
-            <button wire:click="startDelegation" class="btn-primary text-xs">{{ __('user.delegation.start') }}</button>
-        </div>
+    {{-- 진행 중 — 누가 → 누구에게 · 언제까지 · [종료] --}}
+    @if($this->activeDelegations->isNotEmpty())
+    <div class="mt-2 flex flex-wrap gap-1.5">
+        @foreach($this->activeDelegations as $d)
+        <span class="inline-flex items-center gap-1.5 rounded-full bg-green-50 px-2.5 py-1 text-xs text-green-800">
+            <span class="font-semibold">{{ $d->fromUser?->name ?? '-' }}</span> → {{ $d->toUser?->name ?? '-' }}
+            <span class="text-green-600">· {{ optional($d->ends_at)->format('Y-m-d') ?? '-' }}</span>
+            @if($d->from_user_id === auth()->id() || $this->canDelegateForOthers())
+            <button wire:click="stopDelegation({{ $d->id }})" class="ml-1 rounded px-1 text-[11px] text-green-700 hover:bg-green-100">{{ __('user.delegation.stop') }}</button>
+            @endif
+        </span>
+        @endforeach
+    </div>
     @endif
+
+    {{-- 걸기 — (대신 걸 사람) · 맡길 사람 · 복귀일 · 시작. 폭은 래퍼 div 로(.input-base 가 width:100%). --}}
+    @php $fromId = (int) ($delegateFrom ?: auth()->id()); @endphp
+    <div class="mt-2 flex flex-wrap items-center gap-2">
+        <span class="w-full text-xs text-gray-500 sm:w-auto sm:flex-1">{{ $this->canDelegateForOthers() ? __('user.delegation.note_for_others') : __('user.delegation.my_note') }}</span>
+        @if($this->canDelegateForOthers())
+        <div class="w-full sm:w-44">
+            <select wire:model.live="delegateFrom" class="input-base">
+                <option value="">{{ __('user.delegation.from_me') }}</option>
+                @foreach($this->delegators as $f)
+                    <option value="{{ $f->id }}">{{ $f->name }}</option>
+                @endforeach
+            </select>
+        </div>
+        @endif
+        <div class="w-full sm:w-44">
+            <select wire:model="delegateTo" class="input-base">
+                <option value="">{{ __('user.delegation.to_ph') }}</option>
+                @foreach($this->delegateCandidates as $c)
+                    @if($c->id !== $fromId)<option value="{{ $c->id }}">{{ $c->name }}</option>@endif
+                @endforeach
+                @if($fromId !== (int) auth()->id())<option value="{{ auth()->id() }}">{{ auth()->user()->name }} {{ __('user.me') }}</option>@endif
+            </select>
+        </div>
+        <div class="w-full sm:w-40">
+            <input type="date" data-date wire:model="delegateUntil" placeholder="{{ __('user.delegation.until_ph') }}" class="input-base" />
+        </div>
+        <button wire:click="startDelegation" class="btn-primary text-xs">{{ __('user.delegation.start') }}</button>
+    </div>
 </div>
 @endif
 

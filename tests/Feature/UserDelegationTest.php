@@ -260,12 +260,59 @@ class UserDelegationTest extends TestCase
         $this->assertSame(0, UserDelegation::count());
     }
 
-    /** 담당 영업이 없으면 넘길 게 없다 — 카드도 안 뜬다(업무관리자·대표는 원래 전체 스코프). */
-    public function test_card_hidden_when_no_team(): void
+    /** 🔀 2026-10-26 — 담당 영업이 없어도 **관리 이상이면 카드가 뜬다**(jin «슈퍼 계정에서는 모든 게 다 보이고 다 되어야»). 영업(rank 0)은 안 뜬다. */
+    public function test_card_shows_for_manager_rank_even_without_a_team(): void
     {
         $manager = $this->user('manager');
         $this->actingAs($manager);
+        $c = Volt::test('admin.users.index');
+        $this->assertSame([], $c->get('myTeamNames'));
+        $this->assertStringContainsString(__('user.delegation.title'), $c->html(), '팀이 없어도 블록이 보인다');
+        $this->assertStringContainsString(__('user.delegation.no_team'), $c->html());
+    }
 
-        $this->assertSame([], Volt::test('admin.users.index')->get('myTeamNames'));
+    /** 업무관리자·최고관리자·super 는 자리를 비운 [관리]의 팀을 **대신** 넘긴다 — 위임 주체는 그 [관리]다. */
+    public function test_admin_can_delegate_on_behalf_of_an_absent_manager(): void
+    {
+        $boss = $this->user('admin');
+        $absent = $this->user('user', '관리');
+        $standIn = $this->user('user', '관리');
+        $s = $this->salesmanUnder($absent);
+
+        $this->actingAs($boss);
+        Volt::test('admin.users.index')
+            ->set('delegateFrom', (string) $absent->id)
+            ->set('delegateTo', (string) $standIn->id)
+            ->set('delegateUntil', now()->addDays(3)->toDateString())
+            ->call('startDelegation');
+
+        $d = UserDelegation::first();
+        $this->assertNotNull($d);
+        $this->assertSame($absent->id, $d->from_user_id, '위임 주체 = 자리를 비운 사람');
+        $this->assertSame($boss->id, $d->created_by, '건 사람 = 관리자');
+        $standIn->forgetDelegationMemo();
+        $this->assertContains($s->id, $standIn->getSubordinateSalesmanIds());
+
+        // rank ≥ 2 는 남의 위임도 끈다
+        Volt::test('admin.users.index')->call('stopDelegation', $d->id);
+        $this->assertFalse($d->fresh()->is_active);
+    }
+
+    /** 🚨 [관리](rank 1)는 남의 팀을 대신 못 넘긴다 — delegateFrom 은 클라이언트가 준다(SKILLS §8 #26). */
+    public function test_a_plain_manager_cannot_delegate_someone_elses_team(): void
+    {
+        $peer = $this->user('user', '관리');
+        $absent = $this->user('user', '관리');
+        $standIn = $this->user('user', '관리');
+        $this->salesmanUnder($absent);
+
+        $this->actingAs($peer);
+        Volt::test('admin.users.index')
+            ->set('delegateFrom', (string) $absent->id)
+            ->set('delegateTo', (string) $standIn->id)
+            ->set('delegateUntil', now()->addDays(3)->toDateString())
+            ->call('startDelegation')
+            ->assertStatus(403);
+        $this->assertSame(0, UserDelegation::count());
     }
 }
