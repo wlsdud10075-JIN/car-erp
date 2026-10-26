@@ -34,6 +34,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $progressFilter = '';
     #[Url] public string $riskFilter = '';        // safe/caution/danger/critical
     #[Url] public string $unpaidRatioMin = '';    // 30 / 50 / 70
+
+    /**
+     * 🚢 운항 토글 (jin 2026-10-26 «차량관리의 운항중·도착예정 토글을 채권관리에도») — 차량관리와 같은 버튼·같은 판정(`Vehicle::scopeSailing`).
+     *   알바니아 RORO 처럼 선적대기 항로는 미수 100% 로도 승인 없이 실리고, 회사는 선적사 RORO 리스트를 넣을 때 그걸 안다 —
+     *   그때 「운항중 + 미수」를 두 번 클릭으로 보려는 토글. 바이어·담당자 필터와 AND 로 걸린다(buildQuery 안).
+     *   KPI·탭 건수도 같이 따라간다(다른 필터와 같은 자리). 🚫 조건을 옮겨 적지 말 것 — scopeSailing 만.
+     */
+    #[Url(as: 'sailing')] public string $sailingFilter = '';
     /*
      * 📅 정렬 (jin 2026-09-15) — 'unpaid' 미납금 큰 순(종전 기본) / 'age' 오래된 순.
      *
@@ -243,6 +251,40 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         unset($this->buyers);
         $this->resetPage();
+    }
+
+    /** 🚢 운항 토글 — 같은 걸 다시 누르면 해제. ⚠️ 메서드명을 `sailingFilter` 로 하지 말 것(§8 #32). */
+    public function toggleSailing(string $phase): void
+    {
+        if (! in_array($phase, Vehicle::SAILING_PHASES, true)) {
+            return;
+        }
+        $this->sailingFilter = ($this->sailingFilter === $phase) ? '' : $phase;
+        unset($this->vehicles, $this->sailingCounts);
+        $this->resetPage();
+    }
+
+    /**
+     * 운항 토글 옆 숫자 = 그 단계에서 **미수가 남은 차** 대수·미수 합계(원화) — 토글을 제외한 현재 필터 기준.
+     *   「전체 몇 대」가 아니라 미수 대수를 보여 주는 이유 = 채권관리에서 묻는 건 「배 위/도착한 차 중 받을 돈」이라서.
+     */
+    #[Computed]
+    public function sailingCounts(): array
+    {
+        $saved = $this->sailingFilter;
+        $this->sailingFilter = '';
+        try {
+            $base = $this->buildQuery(false)->where('sale_unpaid_amount_krw_cache', '>', 0);
+        } finally {
+            $this->sailingFilter = $saved;
+        }
+        $out = [];
+        foreach (Vehicle::SAILING_PHASES as $phase) {
+            $q = (clone $base)->sailing($phase);
+            $out[$phase] = ['count' => (clone $q)->count(), 'unpaid_krw' => (int) (clone $q)->sum('sale_unpaid_amount_krw_cache')];
+        }
+
+        return $out;
     }
 
     /**
@@ -1103,6 +1145,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             }))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->riskFilter, fn ($q) => $q->where('receivable_risk', $this->riskFilter))
+            // 🚢 운항 토글 — 차량관리와 같은 판정(선적일+ETA, 오늘 기준). 단일 출처 Vehicle::scopeSailing.
+            ->when(in_array($this->sailingFilter, Vehicle::SAILING_PHASES, true), fn ($q) => $q->sailing($this->sailingFilter))
             // 매입취소 필터 — 취소차도 위약금(sale_price)이 채권으로 잡히므로 기본은 함께 노출, 필터로 분리.
             ->when($this->cancelFilter === 'cancelled', fn ($q) => $q->where('cancel_status', '!=', Vehicle::CANCEL_NONE))
             ->when($this->cancelFilter === 'normal', fn ($q) => $q->where('cancel_status', Vehicle::CANCEL_NONE))
@@ -1403,6 +1447,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="50">{{ __('receivable.ratio_min', ['percent' => 50]) }}</option>
             <option value="70">{{ __('receivable.ratio_min', ['percent' => 70]) }}</option>
         </select>
+        {{-- 🚢 운항 토글 (jin 2026-10-26) — 차량관리와 같은 버튼. 숫자 = 그 단계의 미수 차 대수 · 미수 합계. --}}
+        <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3">
+            @foreach([
+                ['phase' => 'in_transit', 'icon' => '🚢', 'label' => __('domain.sailing.'.\App\Models\Vehicle::SAILING_IN_TRANSIT),
+                 'on' => 'bg-blue-600 text-white shadow-sm', 'off' => 'bg-blue-100 text-blue-700 hover:bg-blue-200'],
+                ['phase' => 'arrived',    'icon' => '⚓', 'label' => __('domain.sailing.'.\App\Models\Vehicle::SAILING_ARRIVED),
+                 'on' => 'bg-emerald-600 text-white shadow-sm', 'off' => 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'],
+            ] as $s)
+            @php $isOn = $sailingFilter === $s['phase']; $sc = $this->sailingCounts[$s['phase']]; @endphp
+            <button type="button" wire:click="toggleSailing('{{ $s['phase'] }}')"
+                    title="{{ __('receivable.sailing_hint') }}{{ $isOn ? __('domain.sailing_hint_on') : '' }}"
+                    class="rounded-full px-2.5 py-0.5 text-xs transition {{ $isOn ? $s['on'].' font-semibold' : $s['off'].' font-medium' }}">
+                {{ $isOn ? '✓ ' : '' }}{{ $s['icon'] }} {{ $s['label'] }} ({{ number_format($sc['count']) }}{{ $sc['unpaid_krw'] > 0 ? ' · '.\App\Support\Money::krwShort($sc['unpaid_krw']) : '' }})
+            </button>
+            @endforeach
+        </div>
     </div>
 
     {{-- 테이블 (데스크탑) --}}

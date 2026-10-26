@@ -62,6 +62,7 @@ return [
         'import_cleared' => 'Import write-down only',
     ],
     'ratio_all' => 'Unpaid % ALL',
+    'sailing_hint' => 'Vehicles with both a shipping date and an ETA — the number is how many still have unpaid balance and the total. Combines with buyer/salesman filters',
     'ratio_min' => ':percent%+',
 
     'risk' => [

@@ -67,6 +67,7 @@ return [
         'import_cleared' => '임포트 정리만',
     ],
     'ratio_all' => '미납률 ALL',
+    'sailing_hint' => '선적일(출항)과 도착예정일이 모두 있는 차 — 숫자는 그 단계에서 미수가 남은 차 대수와 미수 합계. 바이어·담당자 필터와 함께 걸립니다',
     'ratio_min' => ':percent%↑',
 
     'risk' => [
