@@ -5,6 +5,8 @@ return [
     'input_title' => '통장 마감잔액 입력',
     'last_input' => '마지막 입력',
     'date' => '기준일',
+    'date_prev' => '하루 전',
+    'date_next' => '하루 뒤',
     'krw' => '원화 (KRW)',
     'usd' => '달러 (USD)',
     'eur' => '유로 (EUR)',
