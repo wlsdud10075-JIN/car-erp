@@ -262,10 +262,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         //   전체 보기: 기존대로 행 단위 KRW 환산 후 합산.
         if ($cur !== '') {
             $base = (clone $base)->where('currency', $cur);
-            $totalSale = (clone $base)->get()->sum(fn ($v) => $v->sale_total_amount);
-            $totalUnpaid = $unpaidOnly($base)->get()->sum(fn ($v) => $v->sale_unpaid_amount);
+            $totalSale = (clone $base)->lazyById(500)->sum(fn ($v) => $v->sale_total_amount);
+            $totalUnpaid = $unpaidOnly($base)->lazyById(500)->sum(fn ($v) => $v->sale_unpaid_amount);
         } else {
-            $totalSale = (clone $base)->get()->sum(function ($v) {
+            $totalSale = (clone $base)->lazyById(500)->sum(function ($v) {
                 $total = $v->sale_total_amount;
 
                 return $v->currency === 'KRW' ? $total : $total * ($v->exchange_rate ?: 0);
@@ -280,7 +280,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
             $q = (clone $q)->excludeReceivableGrace();
             $part = $cur !== ''
-                ? (float) (clone $q)->where('currency', $cur)->get()->sum(fn ($v) => $v->sale_unpaid_amount)
+                ? (float) (clone $q)->where('currency', $cur)->lazyById(500)->sum(fn ($v) => $v->sale_unpaid_amount)
                 : (float) (clone $q)->sum('sale_unpaid_amount_krw_cache');
 
             return round($part / $totalUnpaid * 100, 1);
@@ -325,7 +325,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 미납률 — **미수 차량만** 놓고 본 비율(jin 2026-08-20: "완납은 빼고 잔금 남은 것들끼리
             //   나눠야 채권관리에 의미가 있지 않나"). 미수율(완납 포함)과 나란히 둬야 둘 다 뜻이 산다.
             //   ⚠️ 라벨 없이 두 % 를 붙여 두면 또 섞여 읽힌다 — 각 카드에 모수를 함께 적는다.
-            'unpaid_only_sale_krw' => $unpaidOnlySale = (int) round($unpaidOnly($base)->get()->sum(
+            'unpaid_only_sale_krw' => $unpaidOnlySale = (int) round($unpaidOnly($base)->lazyById(500)->sum(
                 fn ($v) => $cur !== '' ? $v->sale_total_amount
                     : ($v->currency === 'KRW' ? $v->sale_total_amount : $v->sale_total_amount * ($v->exchange_rate ?: 0))
             )),
