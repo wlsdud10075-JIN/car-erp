@@ -1777,3 +1777,11 @@ jin: *「로그 기록에 계약금·매입잔금·판매잔금 기록한 게 �
 업무시간(15~16시 KST) MySQL 재시작을 피하려고 `apt-daily-upgrade.timer` 를 02:30 KST 로 옮겼다. override 를 쓰고 `systemctl restart` 한 **그 순간**(10:31 KST) 3사가 전부 한 번 돌았다 — 새 OnCalendar 기준으로 「어제 17:30 UTC 회차가 지났는데 안 돌았다」가 되기 때문이다. heymanerp 는 마침 설치할 패키지(`zlib1g`)가 있어 **MySQL 이 4초 재시작**됐다(사용자 영향 0, 운이 좋았다). 피하려던 일을 적용 과정에서 내가 한 번 더 만든 셈.
 - ✅ 시각을 뒤로 옮기는 override 에는 **`Persistent=false` 를 같이 넣거나**, 아니면 **새 창 안에서** 적용한다. 그리고 restart 뒤 `systemctl show -p LastTriggerUSec` 로 「방금 돌았나」를 바로 본다 — `list-timers` 의 `LAST … ago` 가 수십 ms 면 이미 돈 것이다.
 - 🔎 「DB 가 몇 초 끊겼다」가 매일 비슷한 시각이면 `apt-daily-upgrade.timer`(우분투 기본 06:00 UTC+60m 랜덤)부터 — `unattended-upgrades.log` 의 「Packages that will be upgraded」 줄과 `journalctl -u mysql` 의 Stopping/Started 가 같은 분에 있으면 확정이다(이번에 그렇게 확정했다. 추정이었던 10-23 판정을 이것으로 닫는다).
+
+### 126. 🪪 **「관리는 안 되고 업무관리자는 된다」는 권한 문제가 아니었다 — 외래키에 다른 표의 id 를 넣고 있었다** (2026-10-26 과입금 회사이익 전환)
+
+jin: *「ssancarerp 에서 관리인데 회사이익 전환이 안 됐다고 하더라고? 업무관리자는 됐는데」*. 권한 판정(`canConfirmFinance`)은 둘 다 통과였다. 로그를 보니 `receivable_histories.collector_id`(→ **users.id**) 에 **`$user->salesman?->id`** 를 넣고 있었다.
+- 업무관리자는 Salesman 이 없어 **NULL** 로 들어가 통과 / 재무·관리 일반사용자는 10-14 명부 확장으로 Salesman 이 생겨 **그 id 가 들어가 FK 실패**(박수정 user 8 / salesman 73 → 5회 실패). 10-14 전엔 아무도 안 걸렸고, 걸려도 **id 가 우연히 겹치면 엉뚱한 사람이 수집자로 기록**된다.
+- 🔎 **「A 는 되고 B 는 안 된다」 제보에서 A·B 의 차이가 권한이 아닐 수 있다** — 두 사람의 **관계 데이터 유무**(Salesman 미러·담당 배정·전화)로 갈리는지 먼저 본다. 로그에 `1452 … foreign key constraint fails` 가 있으면 권한 코드는 읽을 필요가 없다.
+- 🧪 SQLite 테스트는 기본으로 FK 를 안 지켜 이 부류를 **못 잡는다** — 재현 테스트는 `PRAGMA foreign_keys = ON` 을 켜고, Salesman id ≠ user id 가 되게 더미를 먼저 만든다(`OverpayCollectorIsUserTest`).
+- 🧭 `users.id` 를 받는 칸에 `auth()->id()` 가 아닌 것을 넣는 코드는 `grep "collector_id' =>"` 로 전부 대조했다 — 다른 3곳은 `auth()->id()`.

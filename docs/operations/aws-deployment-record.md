@@ -927,3 +927,10 @@ jin «(나) 진행» — 새벽 점검 10-24 ④(ssancarerp 10-23 15:31 DB 2초 
 - dev `3f171212` cherry-pick(dev 전용 `scripts/notion-cards/cards.json`·`notion-guide-publish.php` 는 master 에서 삭제 유지). 재고관리·채권관리 헤더 겹침 정렬(`App\Support\StackedHeaderSort`, 차량관리와 같은 규칙) + 재무처리 매입 지급 락 문구 「50%」→설정값 + `Vehicle::SALE_TOTAL_SQL`.
 - 확인: 로컬 병렬 3,499 pass · deploy 런 40261781604 잡 5 success · 3사 SHA `c01f91a9` · `/login` 200 · 배포 뒤 production.ERROR 0(각 서버 마지막 오류는 배포 전 것).
 - ⚠️ 오늘 업무시간 배포 2회(10:39 긴급 + 12:5x 기능) — jin «한번에 해야 되는데». 이후 규칙 = 긴급 아니면 저녁에 그날치 한 번(메모리 feedback_master_deploy_confirm).
+
+## 2026-10-26 — 저녁 배포 대기 묶음(마이그 0) — 코드 완료, 미배포
+
+jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev 커밋 5개:
+- `73c2ede7` 채권관리 🚢 운항중 / ⚓ 도착예정 토글 · `2cb12f2b` 도착 임박 잔금 안내 배별 묶음(설정 10일) + 도착 후 미수 주간 요약(신규 템플릿 `erp_arrived_unpaid_weekly`, 3사 BizM 승인요청 완료 — 승인 뒤 tmplId) · `da155728` 통장 마감잔액 기준일 ‹ › 화살표
+- 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
+- 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
