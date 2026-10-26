@@ -52,6 +52,8 @@ Schedule::command('alimtalk:receivable-status')->dailyAt('09:00')->weekdays()->w
 Schedule::command('alimtalk:weekly-summary')->weeklyOn(5, '18:00')->withoutOverlapping();
 // 대표 주간 자금/손익 보고 (2026-07-23) — 월요일 09:00. 최신 통장 스냅샷 기준. 미설정/미입력 시 내부 skip(inert).
 Schedule::command('alimtalk:capital-weekly')->weeklyOn(1, '09:00')->withoutOverlapping();
+// 도착 후 미수 요약 — 매주 월 09:00, 관리 (jin 2026-10-26). 도착 임박 알림이 끊기는 도착 뒤를 덮는다.
+Schedule::command('alimtalk:arrived-unpaid-weekly')->weeklyOn(1, '09:00')->withoutOverlapping();
 // 🚫 월말 마감 보고(말일 18:00, 07-27~)는 2026-10-19 jin «매주 월 09시에만, 매월 말일엔 하지 마» 로 폐지.
 //    월요일이 말일이면 같은 날 두 통이 갔다. 월 단위 결산은 월결산 알림(alimtalk:monthly-closing)이 맡는다.
 // 월결산 = **월배치 정산이 최종 승인된 때** 발송한다 (jin 2026-07-31).
