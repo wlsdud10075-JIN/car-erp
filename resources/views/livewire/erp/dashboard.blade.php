@@ -83,6 +83,23 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->reset(['cashAmounts', 'cashEditAccountId', 'cashFxWarn', 'cashFxConfirmed']);   // 날짜가 바뀌면 수정 대상도 바뀐다
     }
 
+    /**
+     * 기준일 ‹ › 화살표 — 하루씩 이동 (jin 2026-10-26 «기준일 옆에 화살표로 좌우 … ux 깨지 않는 선에서»).
+     *   달력을 열지 않고 어제·그제 잔액을 차례로 채우는 흐름. 오늘 뒤로는 못 간다(입력칸 max 와 같은 경계).
+     *   날짜가 바뀌면 updatedCashDate() 와 같은 정리를 한다(칸 비움·수정 대상 해제).
+     */
+    public function shiftCashDate(int $days): void
+    {
+        $days = max(-1, min(1, $days));
+        $base = \Carbon\Carbon::parse($this->cashDate ?: now()->toDateString())->startOfDay();
+        $next = $base->copy()->addDays($days)->min(now()->startOfDay());
+        if ($next->toDateString() === $base->toDateString()) {
+            return;
+        }
+        $this->cashDate = $next->toDateString();
+        $this->updatedCashDate();
+    }
+
     /** 계좌를 바꾸면 칸을 비운다 — 앞 계좌에 쓰던 숫자가 다음 계좌로 넘어가지 않게(2026-10-22). */
     public function updatedCashAccountId(): void
     {

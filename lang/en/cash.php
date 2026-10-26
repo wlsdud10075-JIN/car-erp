@@ -4,6 +4,8 @@ return [
     'input_title' => 'Closing Bank Balance',
     'last_input' => 'Last entry',
     'date' => 'Date',
+    'date_prev' => 'Previous day',
+    'date_next' => 'Next day',
     'krw' => 'KRW',
     'usd' => 'USD',
     'eur' => 'EUR',

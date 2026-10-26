@@ -25,9 +25,17 @@
         $fxTotal = ($fxUsd !== null && $fxEur !== null) ? $sums['KRW'] + $fxUsd + $fxEur : null;
     @endphp
     <div class="flex flex-wrap items-end gap-2" data-cash-accounts>
-        <div class="w-full sm:w-40">
+        <div class="w-full sm:w-52">
             <label class="text-xs text-gray-500">{{ __('cash.date') }}</label>
-            <input type="date" wire:model.live="cashDate" max="{{ now()->toDateString() }}" class="input-base w-full" />
+            {{-- ‹ › = 하루씩 이동 (jin 2026-10-26). 달력 입력은 그대로 두고 양옆에만 붙인다 — 오늘 뒤로는 비활성. --}}
+            <div class="flex items-center gap-1">
+                <button type="button" wire:click="shiftCashDate(-1)" title="{{ __('cash.date_prev') }}" aria-label="{{ __('cash.date_prev') }}"
+                        class="shrink-0 rounded border border-gray-200 px-1.5 py-1.5 text-xs leading-none text-gray-500 hover:bg-gray-50 hover:text-gray-700">‹</button>
+                <input type="date" wire:model.live="cashDate" max="{{ now()->toDateString() }}" class="input-base w-full min-w-0" />
+                <button type="button" wire:click="shiftCashDate(1)" title="{{ __('cash.date_next') }}" aria-label="{{ __('cash.date_next') }}"
+                        @disabled(($cashDate ?: now()->toDateString()) >= now()->toDateString())
+                        class="shrink-0 rounded border border-gray-200 px-1.5 py-1.5 text-xs leading-none text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent">›</button>
+            </div>
         </div>
         <div class="w-full sm:w-64">
             <label class="text-xs text-gray-500">{{ __('cash.account.label') }}</label>
@@ -198,7 +206,14 @@
     <div class="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <div>
             <label class="text-xs text-gray-500">{{ __('cash.date') }}</label>
-            <input type="date" wire:model="cashDate" max="{{ now()->toDateString() }}" class="input-base w-full" />
+            <div class="flex items-center gap-1">
+                <button type="button" wire:click="shiftCashDate(-1)" title="{{ __('cash.date_prev') }}" aria-label="{{ __('cash.date_prev') }}"
+                        class="shrink-0 rounded border border-gray-200 px-1.5 py-1.5 text-xs leading-none text-gray-500 hover:bg-gray-50 hover:text-gray-700">‹</button>
+                <input type="date" wire:model="cashDate" max="{{ now()->toDateString() }}" class="input-base w-full min-w-0" />
+                <button type="button" wire:click="shiftCashDate(1)" title="{{ __('cash.date_next') }}" aria-label="{{ __('cash.date_next') }}"
+                        @disabled(($cashDate ?: now()->toDateString()) >= now()->toDateString())
+                        class="shrink-0 rounded border border-gray-200 px-1.5 py-1.5 text-xs leading-none text-gray-500 hover:bg-gray-50 hover:text-gray-700 disabled:cursor-default disabled:opacity-30 disabled:hover:bg-transparent">›</button>
+            </div>
         </div>
         <div>
             <label class="text-xs text-gray-500">{{ __('cash.krw') }}</label>
