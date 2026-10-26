@@ -921,3 +921,9 @@ jin «(나) 진행» — 새벽 점검 10-24 ④(ssancarerp 10-23 15:31 DB 2초 
 - 고침(dev `9f174138` → master `12df1042`): 전량 로드 5곳을 `lazyById(500)` 묶음 합산으로. 접근자 단일 출처 유지(§13 — SQL 로 안 옮김). 운영 실측 두 방식 합계 동일 · 피크 125MB→**24MB** · 0.4초 동일. 정적 가드 `ReceivableSummaryStreamsTest`.
 - 확인: 로컬 병렬 3,490 pass · deploy 런 40255297098 잡 5 success · 3사 SHA `12df1042` · `/login` 200 · 배포 뒤 메모리 오류 0(마지막 10:15, 배포 전).
 - 선택지는 (가) 즉시 3사 배포 / (나) ssancarerp fpm 256M 임시 + 저녁 배포 — jin (가).
+
+## 2026-10-26(2차) — master `c01f91a9` · 마이그 0 (jin «컬럼 오름차순/내림차순 이거 배포해줘»)
+
+- dev `3f171212` cherry-pick(dev 전용 `scripts/notion-cards/cards.json`·`notion-guide-publish.php` 는 master 에서 삭제 유지). 재고관리·채권관리 헤더 겹침 정렬(`App\Support\StackedHeaderSort`, 차량관리와 같은 규칙) + 재무처리 매입 지급 락 문구 「50%」→설정값 + `Vehicle::SALE_TOTAL_SQL`.
+- 확인: 로컬 병렬 3,499 pass · deploy 런 40261781604 잡 5 success · 3사 SHA `c01f91a9` · `/login` 200 · 배포 뒤 production.ERROR 0(각 서버 마지막 오류는 배포 전 것).
+- ⚠️ 오늘 업무시간 배포 2회(10:39 긴급 + 12:5x 기능) — jin «한번에 해야 되는데». 이후 규칙 = 긴급 아니면 저녁에 그날치 한 번(메모리 feedback_master_deploy_confirm).
