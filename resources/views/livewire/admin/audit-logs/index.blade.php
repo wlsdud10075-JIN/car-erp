@@ -12,6 +12,11 @@ use Livewire\WithPagination;
 
 new #[Layout('components.layouts.app')] class extends Component
 {
+    /** 이전→이후 값을 그대로 보여 주는 최대 글자 수 — 넘으면 … 으로 자르고 title(호버)에 전문 (jin 2026-10-26). */
+    public const VALUE_SHOW = 160;
+
+    public const VALUE_SHOW_MOBILE = 100;
+
     use WithPagination;
 
     /**
@@ -379,15 +384,17 @@ new #[Layout('components.layouts.app')] class extends Component
                         @if($log->column_name) title="{{ $log->column_name }}" @endif>
                         {{ $columnLabel }}
                     </td>
-                    <td class="py-2 pr-4 text-xs text-gray-600 max-w-md">
+                    {{-- 이전→이후 (jin 2026-10-26 «내용 다 나오게 하되, UX 를 해칠 길이면 … + 호버»): 40자에서 자르던 것을 VALUE_SHOW 자까지 그대로 보이고
+                         줄바꿈(break-words)으로 펼친다. 그보다 길면 … 으로 자르고 title 에 전문 — 잘리든 아니든 title 은 늘 붙인다. --}}
+                    <td class="py-2 pr-4 text-xs text-gray-600 max-w-md break-words">
                         @php
-                            $oldV = \App\Support\ColumnLabel::value($log->auditable_type, $log->column_name, $log->old_value);
-                            $newV = \App\Support\ColumnLabel::value($log->auditable_type, $log->column_name, $log->new_value);
+                            $oldV = \App\Support\ColumnLabel::value($log->auditable_type, $log->column_name, $log->old_value) ?? '(null)';
+                            $newV = \App\Support\ColumnLabel::value($log->auditable_type, $log->column_name, $log->new_value) ?? '(null)';
                         @endphp
                         @if($log->old_value !== null || $log->new_value !== null)
-                            <span class="text-red-500 line-through">{{ \Illuminate\Support\Str::limit($oldV ?? '(null)', 40) }}</span>
+                            <span class="text-red-500 line-through" title="{{ $oldV }}">{{ \Illuminate\Support\Str::limit($oldV, $this::VALUE_SHOW) }}</span>
                             <span class="mx-1 text-gray-400">→</span>
-                            <span class="text-emerald-600">{{ \Illuminate\Support\Str::limit($newV ?? '(null)', 40) }}</span>
+                            <span class="text-emerald-600" title="{{ $newV }}">{{ \Illuminate\Support\Str::limit($newV, $this::VALUE_SHOW) }}</span>
                         @else
                             <span class="text-gray-300">-</span>
                         @endif
@@ -434,10 +441,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 $oldVM = \App\Support\ColumnLabel::value($log->auditable_type, $log->column_name, $log->old_value);
                 $newVM = \App\Support\ColumnLabel::value($log->auditable_type, $log->column_name, $log->new_value);
             @endphp
-            <div class="mt-1 text-xs">
-                <span class="text-red-500 line-through">{{ \Illuminate\Support\Str::limit($oldVM ?? '(null)', 30) }}</span>
+            <div class="mt-1 break-words text-xs">
+                <span class="text-red-500 line-through" title="{{ $oldVM ?? '(null)' }}">{{ \Illuminate\Support\Str::limit($oldVM ?? '(null)', $this::VALUE_SHOW_MOBILE) }}</span>
                 →
-                <span class="text-emerald-600">{{ \Illuminate\Support\Str::limit($newVM ?? '(null)', 30) }}</span>
+                <span class="text-emerald-600" title="{{ $newVM ?? '(null)' }}">{{ \Illuminate\Support\Str::limit($newVM ?? '(null)', $this::VALUE_SHOW_MOBILE) }}</span>
             </div>
             @endif
         </div>
