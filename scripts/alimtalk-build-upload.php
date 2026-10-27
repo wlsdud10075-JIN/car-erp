@@ -3,7 +3,13 @@
 /**
  * BizM 템플릿 등록 xlsx 생성기 — **기본형(버튼·카드 없는) 템플릿용**.
  *
- * 사용법:  php scripts/alimtalk-build-upload.php <템플릿코드> [카테고리코드] [--only=헤이맨,싼카]
+ * 사용법:  php scripts/alimtalk-build-upload.php <템플릿코드> <카테고리코드> [--only=헤이맨,싼카]
+ *          php scripts/alimtalk-build-upload.php erp_arrived_unpaid_weekly 008002
+ *
+ * 🏷️ 카테고리는 **필수**다(2026-10-27) — 종전엔 빠뜨리면 조용히 004001 이 들어갔고, 그걸로 「도착후미수요약」이
+ *    «수신 대상을 확인하기 어렵다» 로 반려됐다(SKILLS §8 #127). 관리·재무 등 **직원에게 가는 내부 알림 = 008002**
+ *    (업무알림 › 내부 업무 알림), 딜러·바이어에게 가는 발급·이용 안내 = 004001(서비스이용 › 이용안내/공지).
+ *    표 = Desktop\알림톡\tmp_category_list.xlsx.
  * 예)      php scripts/alimtalk-build-upload.php erp_purchase_paid 004001
  *          php scripts/alimtalk-build-upload.php erp_purchase_paid_v3 004001 --only=헤이맨,싼카
  *
@@ -36,7 +42,7 @@ $app->make(Kernel::class)->bootstrap();
 
 $args = array_values(array_filter(array_slice($argv, 1), fn ($a) => ! str_starts_with($a, '--')));
 $CODE = $args[0] ?? null;
-$CATEGORY = $args[1] ?? '004001';
+$CATEGORY = $args[1] ?? null;   // 🏷️ 필수 — 기본값 없음(2026-10-27, 반려 재발 방지)
 $ONLY = null;
 foreach ($argv as $a) {
     if (str_starts_with($a, '--only=')) {
@@ -44,8 +50,9 @@ foreach ($argv as $a) {
     }
 }
 
-if (! $CODE || ! isset(AlimtalkTemplates::TEMPLATES[$CODE])) {
-    fwrite(STDERR, "사용법: php scripts/alimtalk-build-upload.php <템플릿코드> [카테고리코드]\n");
+if (! $CODE || ! isset(AlimtalkTemplates::TEMPLATES[$CODE]) || ! preg_match('/^\d{6}$/', (string) $CATEGORY)) {
+    fwrite(STDERR, "사용법: php scripts/alimtalk-build-upload.php <템플릿코드> <카테고리코드>\n");
+    fwrite(STDERR, "카테고리는 필수 — 직원 내부 알림 008002 / 딜러·바이어 안내 004001 (빠뜨리면 조용히 틀린 값이 들어가 반려된다, 2026-10-27)\n");
     fwrite(STDERR, '알 수 있는 코드: '.implode(', ', array_keys(AlimtalkTemplates::TEMPLATES))."\n");
     exit(1);
 }
