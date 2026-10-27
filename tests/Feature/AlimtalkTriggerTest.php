@@ -451,6 +451,7 @@ class AlimtalkTriggerTest extends TestCase
         $this->assertCount(1, $logs, '차량 2대여도 목록형 1건(건건이 아님)');
         $this->assertStringContainsString('11가1111', $logs[0]->message);
         $this->assertStringContainsString('22나2222', $logs[0]->message);
+        $this->assertStringContainsString("미입금 2건 · 합계 2,000만\n\n★ DONI\n  11가1111 · 1,000만\n  22나2222 · 1,000만", $logs[0]->message, '10-27 폰 형식: 합계 줄 + ★ 바이어 › 차량');
         $this->assertStringContainsString('채권관리', $logs[0]->message, 'ERP 위치 안내 포함');
     }
 

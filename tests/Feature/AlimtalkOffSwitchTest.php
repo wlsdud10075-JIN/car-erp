@@ -107,8 +107,8 @@ class AlimtalkOffSwitchTest extends TestCase
         $this->artisan('alimtalk:shipping-due')->assertSuccessful();
 
         $msg = (string) AlimtalkLog::where('template_code', 'erp_shipping_due')->value('message');
-        $this->assertStringContainsString('[60%미만·사유: 대표 승인]', $msg, '표시 = 설정된 필요 입금률');
-        $this->assertStringNotContainsString('[50%미만·', $msg);
+        $this->assertStringContainsString("⚠ 우회 진행 1대\n★ SD-B 22나2222\n  D-2 · 미수100% · 60%미만\n  사유: 대표 승인", $msg, '표시 = 설정된 필요 입금률');
+        $this->assertStringNotContainsString('· 50%미만', $msg, '줄에 붙는 기준은 설정값(고정 꼬리 문장의 [50%미만]은 승인본이라 그대로)');
     }
 
     public function test_monthly_closing_payout_includes_payroll_and_adjustments_but_profit_skips_deposit_returns(): void

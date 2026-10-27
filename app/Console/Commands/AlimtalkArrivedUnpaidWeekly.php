@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
 use App\Support\AlimtalkRecipients;
+use App\Support\AlimtalkText;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
@@ -71,29 +72,40 @@ class AlimtalkArrivedUnpaidWeekly extends Command
     }
 
     /**
-     * 바이어별 묶음 — 합계 큰 순.
-     *   ▶ {바이어} · {n}대 · {합계}원 · 가장 오래된 도착 {날짜}
+     * 바이어별 묶음 — 합계 큰 순. 🔀 2026-10-27 (jin, 폰 가독성) — 「최장」 대신 바이어명 옆에 ETA(그 바이어 차 중 가장 먼저 도착한 날),
+     *   줄 바꿔 대수·금액·며칠 지났는지. 변수 안쪽만 바뀐다(승인 본문 무변경). 미리보기 = 2026-10-27 아티팩트 「알림톡 모바일 미리보기」.
+     *
+     *   ★ {바이어} · ETA {월/일}
+     *     {n}대 · {만} · {N}일 지남
      *
      * @param  Collection<int, Vehicle>  $rows
      */
     public static function buildList(Collection $rows): string
     {
+        $today = now()->startOfDay();
         $groups = $rows->groupBy(fn (Vehicle $v) => (int) ($v->buyer_id ?? 0))
             ->map(fn (Collection $g) => [
-                'name' => $g->first()->buyer?->name ?? '바이어 미지정',
+                'name' => AlimtalkText::buyerShort($g->first()->buyer?->name ?? '바이어 미지정'),
                 'n' => $g->count(),
                 'sum' => (int) $g->sum('sale_unpaid_amount_krw_cache'),
-                'oldest' => optional($g->min('eta_date'))->format('Y-m-d') ?? '-',
+                'oldest' => $g->min('eta_date'),
             ])
             ->sortByDesc('sum')
             ->values();
 
         $lines = $groups->take(self::MAX_BUYER_LINES)
-            ->map(fn (array $g) => sprintf('▶ %s · %d대 · %s원 · 가장 오래된 도착 %s', $g['name'], $g['n'], number_format($g['sum']), $g['oldest']))
+            ->map(function (array $g) use ($today) {
+                $oldest = $g['oldest'];
+                $since = $oldest ? max(0, (int) $oldest->copy()->startOfDay()->diffInDays($today)) : 0;
+
+                return sprintf("★ %s · ETA %s\n  %d대 · %s · %d일 지남",
+                    $g['name'], $oldest ? $oldest->format('m/d') : '-', $g['n'], AlimtalkText::man($g['sum']), $since);
+            })
             ->all();
         if ($groups->count() > self::MAX_BUYER_LINES) {
             $rest = $groups->slice(self::MAX_BUYER_LINES);
-            $lines[] = '▶ 외 '.$rest->count().'곳 · '.$rest->sum('n').'대';
+            $lines[] = '';
+            $lines[] = '외 '.$rest->count().'곳 '.$rest->sum('n').'대 → 채권관리';
         }
 
         return implode("\n", $lines);
