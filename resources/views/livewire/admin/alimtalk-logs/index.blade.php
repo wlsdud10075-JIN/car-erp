@@ -196,7 +196,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </td>
                     <td class="py-2 pr-4 text-gray-700 whitespace-nowrap">{{ $log->vehicle?->vehicle_number ?? '-' }}</td>
                     <td class="py-2 pr-4 text-xs max-w-sm whitespace-normal break-words {{ $log->reasonLabel() ? 'text-red-600' : 'text-gray-500' }}" title="{{ $log->error ?? $log->message }}">
-                        {{ $log->reasonLabel() ?? \Illuminate\Support\Str::limit($log->message, 40) }}
+                        {{ $log->reasonLabel() ?? $log->smsFallbackLabel() ?? \Illuminate\Support\Str::limit($log->message, 40) }}
                     </td>
                     <td class="py-2 pr-4 whitespace-nowrap">
                         @if(is_null($log->acknowledged_at) && ($log->status === 'failed' || $log->report_status === 'undelivered'))
@@ -237,7 +237,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div class="text-xs text-gray-500">{{ $log->template_code }} @if($log->vehicle) · {{ $log->vehicle->vehicle_number }} @endif</div>
             <div class="text-[11px] text-gray-400">{{ $log->created_at?->format('Y-m-d H:i') }}</div>
-            @if($log->reasonLabel())<div class="text-[11px] text-red-500">{{ $log->reasonLabel() }}</div>@endif
+            @if($log->reasonLabel())<div class="text-[11px] text-red-500">{{ $log->reasonLabel() }}</div>
+            @elseif($log->smsFallbackLabel())<div class="text-[11px] text-gray-500">{{ $log->smsFallbackLabel() }}</div>@endif
             @if(is_null($log->acknowledged_at) && ($log->status === 'failed' || $log->report_status === 'undelivered'))
                 <button type="button" wire:click="acknowledge({{ $log->id }})"
                         class="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600">{{ __('log.at_ack') }}</button>
