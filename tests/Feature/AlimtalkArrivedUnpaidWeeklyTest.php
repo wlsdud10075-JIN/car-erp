@@ -65,7 +65,7 @@ class AlimtalkArrivedUnpaidWeeklyTest extends TestCase
         $log = AlimtalkLog::where('template_code', 'erp_arrived_unpaid_weekly')->where('status', 'sent')->first();
         $this->assertNotNull($log);
         $m = $log->message;
-        $this->assertStringContainsString("[사내 업무용] 도착 후 미수 요약\n\n사내 차량관리 ERP에서 채권 관리 담당자로 지정된 임직원에게 매주 월요일 발송되는 내부 업무 알림입니다.\n도착예정일이 지났는데 잔금이 남은 차량을 바이어별로 모았습니다.", $m, '등록 고정 문구 — 2차 반려 뒤 수신자·발송 시점 명시판');
+        $this->assertStringContainsString("[사내 업무용] 도착 후 미수 요약\n\n채권 담당 임직원에게 매주 보내는 사내 알림입니다. 도착 후 미수 차량입니다.", $m, '등록 고정 문구 — 2차 반려 뒤 수신자·주기 명시판(jin 안 3)');
         $this->assertStringContainsString('★ MCK · ETA '.now()->subDays(20)->format('m/d')."\n  2대 · 400만 · 20일 지남", $m);
         $this->assertStringContainsString('★ AUTO TROY · ETA '.now()->subDays(2)->format('m/d')."\n  1대 · 50만 · 2일 지남", $m);
         $this->assertLessThan(strpos($m, 'AUTO TROY'), strpos($m, 'MCK'), '합계 큰 바이어 먼저');
