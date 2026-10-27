@@ -112,6 +112,12 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public array $bulkVesselConflict = [];
 
+    /** 반입지 일괄 (jin 2026-10-27) — 수출 탭과 같은 항구 마스터(unloading) 이름. 빈 칸이면 기존 값 유지. */
+    public string $bulkLoadingLocation = '';
+
+    /** 대상 안에 서로 다른 반입지가 섞였을 때의 분포 — 선박명 충돌 경고와 같은 장치. */
+    public array $bulkLoadingConflict = [];
+
     // 컨테이너 접두어 일괄 교체 (jin 2026-09-01) — `6.08_G RORO 12-33_5` → `6.09_A RORO 12-33_5`.
     //   선적이 밀려 한 배가 통째로 다음 배로 넘어갈 때 쓴다. 뒤 화물 자리는 그대로 둔다.
     public string $bulkContainerFrom = '';
@@ -3091,6 +3097,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkEtaDate = '';
         $this->bulkVessel = '';
         $this->bulkVesselConflict = [];
+        $this->bulkLoadingLocation = '';
+        $this->bulkLoadingConflict = [];
         $this->bulkContainerFrom = '';
         $this->bulkContainerTo = '';
         $this->bulkDateReason = '';
@@ -3143,6 +3151,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 return;   // 적용 안 함 — 확인 화면으로 전환
             }
         }
+        // 🏗️ 반입지도 같은 장치 (jin 2026-10-27) — 다른 항구에 세워 둔 차의 반입지를 모르고 덮지 않게.
+        if ($this->bulkLoadingLocation !== '' && $this->bulkLoadingConflict === []) {
+            $breakdown = $service->valueBreakdown($this->filteredVehicleQuery(), 'bl_loading_location');
+            if (\App\Services\BulkVehicleShippingDateService::distinctCount($breakdown) > 1) {
+                $this->bulkLoadingConflict = $breakdown;
+
+                return;
+            }
+        }
 
         try {
             $result = $service->apply(
@@ -3151,6 +3168,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     'shipping_date' => $this->bulkShipDate,
                     'eta_date' => $this->bulkEtaDate,
                     'vessel_name' => $this->bulkVessel,
+                    'bl_loading_location' => $this->bulkLoadingLocation,
                 ],
                 $user,
                 $this->bulkDateReason !== '' ? $this->bulkDateReason : __('vehicle.bulk_date.reason_default'),
@@ -3167,12 +3185,19 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->bulkDateOpen = false;
         $this->bulkVesselConflict = [];
+        $this->bulkLoadingConflict = [];
         unset($this->vehicles, $this->bulkContainerPrefixes);
         $this->dispatch('notify', type: 'success', message: __('vehicle.bulk_date.done', [
             'applied' => $result['applied'],
             'unchanged' => $result['unchanged'],
             'skipped' => count($result['skipped']),
         ]));
+        // 🚪 제외된 차는 사유까지 보여준다(§8 #67) — 게이트(말소·컨사이니·입금률)에 걸린 반입지 기입이 조용히 빠지면 사람이 모른다.
+        $gated = array_values(array_filter($result['skipped'], fn ($x) => str_starts_with((string) $x['reason'], 'gate:')));
+        if ($gated !== []) {
+            $lines = array_map(fn ($x) => ($x['number'] ?? $x['id']).' — '.substr((string) $x['reason'], 5), array_slice($gated, 0, 5));
+            $this->dispatch('notify', type: 'warning', message: __('vehicle.bulk_date.gated', ['count' => count($gated), 'list' => implode(' / ', $lines)]));
+        }
     }
 
     /**
@@ -12366,6 +12391,24 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     {{ __('vehicle.bulk_date.vsl_force') }}
                 </button>
             </div>
+        @elseif($bulkLoadingConflict !== [])
+            {{-- 🏗️ 반입지 충돌 경고 (jin 2026-10-27) — 선박명 경고와 같은 장치. 다른 항구에 세운 차를 모르고 덮지 않게. --}}
+            <div class="mt-4 rounded-md border border-amber-200 bg-amber-50 p-3">
+                <p class="text-sm font-semibold text-amber-800">{{ __('vehicle.bulk_date.loading_conflict') }}</p>
+                <ul class="mt-2 space-y-1">
+                    @foreach($bulkLoadingConflict as $locName => $locCount)
+                        <li class="flex items-baseline justify-between gap-3 text-xs">
+                            <span class="{{ $locName === '' ? 'text-gray-400' : 'font-medium text-gray-700' }}">{{ $locName === '' ? __('vehicle.bulk_date.vsl_empty') : $locName }}</span>
+                            <span class="shrink-0 tabular-nums text-gray-500">{{ number_format($locCount) }}{{ __('vehicle.bulk_date.unit') }}</span>
+                        </li>
+                    @endforeach
+                </ul>
+                <p class="mt-3 text-xs text-amber-800">{{ __('vehicle.bulk_date.loading_overwrite', ['count' => number_format($this->vehicles->total()), 'loc' => $bulkLoadingLocation]) }}</p>
+            </div>
+            <div class="mt-5 flex justify-end gap-2">
+                <button type="button" wire:click="$set('bulkLoadingConflict', [])" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+                <button type="button" wire:click="applyBulkDate" wire:loading.attr="disabled" class="rounded-md bg-amber-600 px-3 py-2 text-sm font-medium text-white hover:bg-amber-700">{{ __('vehicle.bulk_date.vsl_force') }}</button>
+            </div>
         @else
         <div class="mt-4 space-y-3">
             {{-- 날짜칸은 프로젝트 표준 data-date(flatpickr) — 20260728 8자리 타이핑·달력 둘 다 됨(SKILLS §14). --}}
@@ -12381,6 +12424,17 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 <label class="label-base">{{ __('vehicle.bulk_date.vsl') }}</label>
                 <input wire:model="bulkVessel" type="text" class="input-base"
                        placeholder="{{ __('vehicle.bulk_date.vsl_ph') }}" />
+            </div>
+            {{-- 반입지 일괄 (jin 2026-10-27) — 수출 탭 반입지와 같은 목록(unloadingPorts). 게이트(말소·컨사이니·입금률)에 걸린 차는 사유와 함께 제외된다. --}}
+            <div>
+                <label class="label-base">{{ __('vehicle.bulk_date.loading') }}</label>
+                <select wire:model="bulkLoadingLocation" class="input-base">
+                    <option value="">{{ __('vehicle.bulk_date.loading_keep') }}</option>
+                    @foreach($this->unloadingPorts as $p)
+                    <option value="{{ $p->name }}">{{ $p->display_name }}</option>
+                    @endforeach
+                </select>
+                <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_date.loading_hint') }}</p>
             </div>
             {{-- 컨테이너 접두어 교체 (jin 2026-09-01) — 선적이 밀려 한 배가 다음 배로 넘어갈 때.
                  앞 토큰만 갈아끼우고 뒤 화물 자리(`RORO 12-33_5`)는 그대로 둔다.
