@@ -154,15 +154,18 @@ class AlimtalkDeregistration extends Command
     /** 본문에 들어갈 여러 줄 목록. 구입처는 길이가 들쭉날쭉해(실측 25~30자) 잘라 넣는다(§8 #35 의 그 필드). */
     private function listOf(Collection $rows): string
     {
+        // 🔀 2026-10-27 (jin, 폰 가독성) — 「· 차량번호 · N일째 (완납 월/일)」 한 줄 + 구입처 한 줄.
+        //   변수 안쪽만 바뀐다(승인 본문 무변경). 미리보기 = 2026-10-27 아티팩트 「알림톡 모바일 미리보기」.
         $lines = $rows->take(self::LIST_CAP)->map(fn (Vehicle $v) => sprintf(
-            '▶ %s · %s · 완납 %d일 경과',
+            "· %s · %d일째 (%s)\n  %s",
             $v->vehicle_number,
-            mb_substr((string) ($v->purchase_from ?: '-'), 0, 12),
-            $this->elapsedDays($v)
+            $this->elapsedDays($v),
+            $v->warehouse_in_date?->format('m/d') ?? '-',
+            mb_substr((string) ($v->purchase_from ?: '-'), 0, 12)
         ))->implode("\n");
 
         return $rows->count() > self::LIST_CAP
-            ? $lines."\n▶ 외 ".($rows->count() - self::LIST_CAP).'건'
+            ? $lines."\n외 ".($rows->count() - self::LIST_CAP).'건 → 차량관리'
             : $lines;
     }
 }

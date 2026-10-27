@@ -216,7 +216,7 @@ class AlimtalkTriggerTest extends TestCase
         $this->assertSame('sent', $log->status);
         $this->assertSame('01055551111', $log->phone);
         Http::assertSent(fn ($req) => str_contains($req->data()[0]['msg'] ?? '', '11가1234')
-            && str_contains($req->data()[0]['msg'] ?? '', '완납 3일 경과'));
+            && str_contains($req->data()[0]['msg'] ?? '', '· 3일째'));
     }
 
     public function test_deregistration_skips_within_grace_days(): void
@@ -311,7 +311,7 @@ class AlimtalkTriggerTest extends TestCase
 
         $this->artisan('alimtalk:deregistration')->assertSuccessful();
 
-        Http::assertSent(fn ($req) => str_contains($req->data()[0]['msg'] ?? '', '완납 4일 경과'));
+        Http::assertSent(fn ($req) => str_contains($req->data()[0]['msg'] ?? '', '· 4일째'));
     }
 
     // ── 단계별 확대 (jin 2026-09-07) — 영업·관리 D+2 → 업무관리자 D+3 → 최고관리자 D+4, 누적 ──
