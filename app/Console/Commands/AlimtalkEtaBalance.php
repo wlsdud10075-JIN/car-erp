@@ -6,6 +6,7 @@ use App\Models\Setting;
 use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
 use App\Support\AlimtalkRecipients;
+use App\Support\AlimtalkText;
 use Carbon\CarbonInterface;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
@@ -87,18 +88,20 @@ class AlimtalkEtaBalance extends Command
 
     /**
      * 배(선박명)별 묶음 본문 — 도착일 빠른 배부터. 선박명이 비면 「선박 미입력」 묶음.
-     *   ▶ VSL {선박} · 도착 {ETA}(D-n) · 미수 {k}대 · 합계 {원}
-     *      · {차량번호} · {바이어}(바이어 합계 {원}) · {미수}원 [100% 미수][우회 승인][선적대기 허용 항로]
-     * 바이어 합계는 이 메시지 안에서 그 바이어 차가 2대 이상일 때 **첫 줄에만** 붙인다(매 줄 붙이면 시끄럽고, 1대면 미수와 같다).
+     * 🔀 2026-10-27 (jin, 폰 가독성) — 배 안에서 **바이어로 한 번 더** 묶는다. 바이어명이 차량마다 반복되지 않고,
+     *   바이어 합계는 ★ 줄에(2대 이상일 때만 — 1대면 차량 줄 금액과 같다). 원 → 만 단위, 날짜 월/일, 꼬리표는 있을 때만 차량 줄 아래 한 줄.
+     *   미리보기 = 2026-10-27 아티팩트 「알림톡 모바일 미리보기」. 변수 안쪽만 바뀐다(승인 본문 무변경, §8 #40).
+     *
+     *   🚢 {선박}
+     *   도착 {월/일} (D-n) · {k}대 · {만}
+     *   ★ {바이어} · {m}대 · {만}        ← m ≥ 2 일 때만 숫자
+     *     {차량번호} · {미수 만}
+     *     ⚠100%미수 ·우회승인 ·대기항로   ← 있을 때만
      *
      * @param  Collection<int, Vehicle>  $rows
      */
     public static function buildList(Collection $rows, CarbonInterface $today): string
     {
-        $byBuyer = $rows->groupBy(fn (Vehicle $v) => (int) ($v->buyer_id ?? 0))
-            ->map(fn (Collection $g) => ['n' => $g->count(), 'sum' => (int) $g->sum('sale_unpaid_amount_krw_cache')]);
-        $buyerShown = [];
-
         $groups = $rows->groupBy(fn (Vehicle $v) => trim((string) $v->vessel_name) !== '' ? trim((string) $v->vessel_name) : '선박 미입력')
             ->sortBy(fn (Collection $g, string $name) => [optional($g->min('eta_date'))->format('Y-m-d') ?? '9999', $name]);
 
@@ -111,46 +114,59 @@ class AlimtalkEtaBalance extends Command
             }
             $eta = $g->min('eta_date');
             $daysLeft = $eta ? max(0, $today->diffInDays($eta, false)) : 0;
-            $lines[] = sprintf('▶ VSL %s · 도착 %s(D-%d) · 미수 %d대 · 합계 %s원',
-                $vessel, $eta ? $eta->format('Y-m-d') : '-', $daysLeft, $g->count(), number_format((int) $g->sum('sale_unpaid_amount_krw_cache')));
-            foreach ($g->sortByDesc('sale_unpaid_amount_krw_cache') as $v) {
+            if ($lines !== []) {
+                $lines[] = '';
+            }
+            $lines[] = '🚢 '.$vessel;
+            $lines[] = sprintf('도착 %s (D-%d) · %d대 · %s', $eta ? $eta->format('m/d') : '-', $daysLeft, $g->count(),
+                AlimtalkText::man((int) $g->sum('sale_unpaid_amount_krw_cache')));
+
+            $byBuyer = $g->groupBy(fn (Vehicle $v) => (int) ($v->buyer_id ?? 0))
+                ->sortByDesc(fn (Collection $bg) => (int) $bg->sum('sale_unpaid_amount_krw_cache'));
+            foreach ($byBuyer as $bg) {
                 if ($shown >= self::MAX_VEHICLE_LINES) {
                     break;
                 }
-                $bid = (int) ($v->buyer_id ?? 0);
-                $buyer = $v->buyer?->name ?? '-';
-                if (($byBuyer[$bid]['n'] ?? 0) >= 2 && ! isset($buyerShown[$bid])) {
-                    $buyer .= '(바이어 합계 '.number_format($byBuyer[$bid]['sum']).'원)';
-                    $buyerShown[$bid] = true;
+                $name = AlimtalkText::buyerShort($bg->first()->buyer?->name);
+                $lines[] = $bg->count() >= 2
+                    ? sprintf('★ %s · %d대 · %s', $name, $bg->count(), AlimtalkText::man((int) $bg->sum('sale_unpaid_amount_krw_cache')))
+                    : '★ '.$name;
+                foreach ($bg->sortByDesc('sale_unpaid_amount_krw_cache') as $v) {
+                    if ($shown >= self::MAX_VEHICLE_LINES) {
+                        break;
+                    }
+                    $lines[] = sprintf('  %s · %s', $v->vehicle_number, AlimtalkText::man((int) $v->sale_unpaid_amount_krw_cache));
+                    if (($f = self::flags($v)) !== '') {
+                        $lines[] = '  '.$f;
+                    }
+                    $shown++;
                 }
-                $lines[] = sprintf('   · %s · %s · %s원%s', $v->vehicle_number, $buyer,
-                    number_format((int) $v->sale_unpaid_amount_krw_cache), self::flags($v));
-                $shown++;
             }
         }
         if ($shown < $total) {
-            $lines[] = '▶ 외 '.($total - $shown).'대';
+            $lines[] = '';
+            $lines[] = '외 '.($total - $shown).'대 → 채권관리 ⚓도착예정';
         }
 
         return implode("\n", $lines);
     }
 
-    /** 차량 줄 꼬리표 — 사실상 전액 미수 · 우회 승인 이력 · 선적대기 허용 항로(승인 없이 통과). 없으면 빈 문자열. */
+    /** 차량 줄 꼬리표 — 사실상 전액 미수 · 우회 승인 이력 · 선적대기 허용 항로(승인 없이 통과). 없으면 빈 문자열. 🔀 10-27 짧은 표기(폰). */
     public static function flags(Vehicle $v): string
     {
         $out = [];
         $rate = (float) ($v->exchange_rate ?? 0);
         $totalKrw = $rate > 0 ? (float) $v->sale_total_amount * $rate : 0.0;
         if ($totalKrw > 0 && (float) $v->sale_unpaid_amount_krw_cache >= 0.99 * $totalKrw) {
-            $out[] = '[100% 미수]';
+            $out[] = '⚠100%미수';
         }
         if ($v->relationLoaded('unpaidExportOverrides') ? $v->unpaidExportOverrides->isNotEmpty() : $v->unpaidExportOverrides()->exists()) {
-            $out[] = '[우회 승인]';
+            $out[] = '·우회승인';
         }
         if ($v->isShippingWaitRoute()) {
-            $out[] = '[선적대기 허용 항로]';
+            $out[] = '·대기항로';
         }
 
-        return $out === [] ? '' : ' '.implode('', $out);
+        return $out === [] ? '' : implode(' ', $out);
     }
 }

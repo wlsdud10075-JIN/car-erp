@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
 use App\Support\AlimtalkRecipients;
+use App\Support\AlimtalkText;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -36,13 +37,36 @@ class AlimtalkSaleUnpaid extends Command
                 return self::SUCCESS;
             }
 
-            $cap = 20;   // 알림톡 본문 1000자 제한 — 목록 상한. 초과분은 "외 N건", 상세는 채권관리.
-            $listOf = fn ($rows) => collect($rows)->take($cap)->map(fn (Vehicle $v) => sprintf(
-                '▶ %s · %s · %s원',
-                $v->vehicle_number,
-                $v->buyer?->name ?? '-',
-                number_format((int) $v->sale_unpaid_amount_krw_cache)
-            ))->implode("\n").(count($rows) > $cap ? "\n▶ 외 ".(count($rows) - $cap).'건' : '');
+            $cap = 20;   // 알림톡 본문 1000자 제한 — 목록 상한(차량 줄). 초과분은 "외 N건", 상세는 채권관리.
+            // 🔀 2026-10-27 (jin, 폰 가독성) — 맨 위 「미입금 N건 · 합계」, 그 아래 ★ 바이어 › 차량번호 · 만 단위.
+            //   같은 바이어 차가 여럿이면 ★ 한 번에 차량 줄만 늘어난다. 바이어 합계 큰 순, 안에서는 금액 큰 순.
+            //   변수 안쪽만 바뀐다(승인 본문 무변경). 미리보기 = 2026-10-27 아티팩트 「알림톡 모바일 미리보기」.
+            $listOf = function ($rows) use ($cap): string {
+                $rows = collect($rows);
+                $groups = $rows->groupBy(fn (Vehicle $v) => (int) ($v->buyer_id ?? 0))
+                    ->sortByDesc(fn ($g) => (int) $g->sum('sale_unpaid_amount_krw_cache'));
+                $lines = [sprintf('미입금 %d건 · 합계 %s', $rows->count(), AlimtalkText::man((int) $rows->sum('sale_unpaid_amount_krw_cache'))), ''];
+                $shown = 0;
+                foreach ($groups as $g) {
+                    if ($shown >= $cap) {
+                        break;
+                    }
+                    $lines[] = '★ '.AlimtalkText::buyerShort($g->first()->buyer?->name);
+                    foreach ($g->sortByDesc('sale_unpaid_amount_krw_cache') as $v) {
+                        if ($shown >= $cap) {
+                            break;
+                        }
+                        $lines[] = sprintf('  %s · %s', $v->vehicle_number, AlimtalkText::man((int) $v->sale_unpaid_amount_krw_cache));
+                        $shown++;
+                    }
+                }
+                if ($shown < $rows->count()) {
+                    $lines[] = '';
+                    $lines[] = '외 '.($rows->count() - $shown).'건 → 채권관리';
+                }
+
+                return implode("\n", $lines);
+            };
 
             // 🎯 사람마다 **자기가 볼 수 있는 차만** 담아 보낸다 (jin 2026-08-24).
             $targets = AlimtalkRecipients::scopedFor('erp_sale_unpaid', $rows);

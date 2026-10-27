@@ -76,13 +76,12 @@ class AlimtalkEtaBalanceGroupedTest extends TestCase
         $this->assertStringContainsString("[도착 임박 잔금 안내]\n\n도착 예정일이 임박했으나 잔금이 남은 차량이 있습니다.", $m, '등록 고정 문구 유지');
         $this->assertStringContainsString('자세한 내용은 ERP 「채권관리」 메뉴에서 확인·처리해 주세요.', $m);
         $this->assertLessThan(strpos($m, 'MORNING CALYPSO'), strpos($m, 'GLOVIS SUN'), '도착 빠른 배가 먼저');
-        $this->assertStringContainsString('▶ VSL MORNING CALYPSO · 도착 '.$eta.'(D-9) · 미수 3대 · 합계 2,400,000원', $m);
-        $this->assertStringContainsString('ETA-1 · MCK(바이어 합계 1,400,000원) · 1,000,000원 [100% 미수][우회 승인]', $m);
-        $this->assertStringContainsString('ETA-2 · MCK · 400,000원', $m, '같은 바이어 두 번째 줄엔 합계 없음');
-        $this->assertStringContainsString('ETA-4 · Tevi(바이어 합계 2,000,000원) · 1,000,000원 [100% 미수]', $m, '바이어 합계는 메시지에서 그 바이어 첫 줄(도착 빠른 배)에');
-        $this->assertStringContainsString('ETA-3 · Tevi · 1,000,000원 [100% 미수][선적대기 허용 항로]', $m);
+        $this->assertStringContainsString("🚢 MORNING CALYPSO\n도착 ".now()->addDays(9)->format('m/d').' (D-9) · 3대 · 240만', $m);
+        $this->assertStringContainsString("★ MCK · 2대 · 140만\n  ETA-1 · 100만\n  ⚠100%미수 ·우회승인\n  ETA-2 · 40만", $m, '배 안에서 바이어로 묶고, 바이어 합계는 ★ 줄에, 꼬리표는 차량 줄 아래');
+        $this->assertStringContainsString("🚢 GLOVIS SUN\n도착 ".now()->addDays(3)->format('m/d')." (D-3) · 1대 · 100만\n★ Tevi\n  ETA-4 · 100만\n  ⚠100%미수", $m, '배 안에 그 바이어 차가 1대면 ★ 줄에 숫자 없음');
+        $this->assertStringContainsString("★ Tevi\n  ETA-3 · 100만\n  ⚠100%미수 ·대기항로", $m);
         $this->assertStringNotContainsString('LATE SHIP', $m, '10일 밖은 안 들어간다');
-        $this->assertSame(1, substr_count($m, '바이어 합계 1,400,000원'));
+        $this->assertSame(1, substr_count($m, '★ MCK'), '바이어는 배 안에서 한 번만');
     }
 
     public function test_lead_days_follow_the_dashboard_eta_setting(): void
@@ -108,8 +107,8 @@ class AlimtalkEtaBalanceGroupedTest extends TestCase
             $rows->push($this->car($b, ['vessel_name' => 'V'.($i % 3), 'eta_date' => now()->addDays(2 + $i % 3)->toDateString()]));
         }
         $text = AlimtalkEtaBalance::buildList(Vehicle::with(['buyer', 'dischargePort', 'unpaidExportOverrides'])->get(), now()->startOfDay());
-        $this->assertSame(AlimtalkEtaBalance::MAX_VEHICLE_LINES, substr_count($text, "\n   · "));
-        $this->assertStringEndsWith('▶ 외 3대', $text);
+        $this->assertSame(AlimtalkEtaBalance::MAX_VEHICLE_LINES, preg_match_all('/^  ETA-\d+ · /m', $text), '차량 줄 수 = 상한');
+        $this->assertStringEndsWith('외 3대 → 채권관리 ⚓도착예정', $text);
         $this->assertLessThan(1000, mb_strlen($text), '알림톡 본문 1000자 안');
     }
 }

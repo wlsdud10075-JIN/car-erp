@@ -66,10 +66,10 @@ class AlimtalkArrivedUnpaidWeeklyTest extends TestCase
         $this->assertNotNull($log);
         $m = $log->message;
         $this->assertStringContainsString("[도착 후 미수 요약]\n\n도착예정일이 지났는데 잔금이 남은 차량을 바이어별로 모았습니다.", $m);
-        $this->assertStringContainsString('▶ MCK · 2대 · 4,000,000원 · 가장 오래된 도착 '.now()->subDays(20)->toDateString(), $m);
-        $this->assertStringContainsString('▶ AUTO TROY · 1대 · 500,000원', $m);
+        $this->assertStringContainsString('★ MCK · ETA '.now()->subDays(20)->format('m/d')."\n  2대 · 400만 · 20일 지남", $m);
+        $this->assertStringContainsString('★ AUTO TROY · ETA '.now()->subDays(2)->format('m/d')."\n  1대 · 50만 · 2일 지남", $m);
         $this->assertLessThan(strpos($m, 'AUTO TROY'), strpos($m, 'MCK'), '합계 큰 바이어 먼저');
-        $this->assertStringNotContainsString('9,000,000', $m, '아직 운항중인 차는 안 들어간다');
+        $this->assertStringNotContainsString('900만', $m, '아직 운항중인 차는 안 들어간다');
     }
 
     public function test_skips_when_nothing_arrived_unpaid_and_caps_long_lists(): void
@@ -83,8 +83,8 @@ class AlimtalkArrivedUnpaidWeeklyTest extends TestCase
             $rows->push($this->car($b, ['eta_date' => now()->subDays(3)->toDateString(), 'sale_price' => 100_000 * ($i + 1)]));
         }
         $text = AlimtalkArrivedUnpaidWeekly::buildList(Vehicle::with('buyer')->get());
-        $this->assertSame(AlimtalkArrivedUnpaidWeekly::MAX_BUYER_LINES + 1, substr_count($text, '▶ '));
-        $this->assertStringEndsWith('▶ 외 3곳 · 3대', $text);
+        $this->assertSame(AlimtalkArrivedUnpaidWeekly::MAX_BUYER_LINES, substr_count($text, '★ '));
+        $this->assertStringEndsWith('외 3곳 3대 → 채권관리', $text);
     }
 
     public function test_scheduled_weekly_on_monday_morning(): void
