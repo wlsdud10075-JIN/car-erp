@@ -251,12 +251,14 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
 | 챗봇 기능 카드 43장 | `scripts/notion-cards/cards.json` | 카드마다 `audience` **필수** |
 | 부서 가이드 4페이지(공통·수출통관·재무·관리) | `scripts/notion-guide-publish.php` `blocks_*()` | `$PAGE_AUDIENCE` |
 | 워크플로우·에러 2페이지 | `scripts/notion-workflow-lock-guide.php` | `$PAGE_AUDIENCE` |
+| 개발 현황판(배포 기록 카드, jin 기록용) | `docs/operations/aws-deployment-record.md` 날짜 머리 항목 | `scripts/notion-dev-status-sync.php` — 야간 04:30 PHP 가 직접 `--apply`(Codex 안 거침, 2026-10-27). 한 번 올린 카드는 안 고침 |
 
 ```bash
 # 대조 — 읽기 전용이라 언제든 안전. 무엇이 어긋났는지 그 줄이 그대로 나온다.
 php scripts/notion-cards/publish.php --verify
 php scripts/notion-guide-publish.php --verify
 php scripts/notion-workflow-lock-guide.php --verify
+php scripts/notion-dev-status-sync.php --verify      # 개발 현황판 ← 배포 기록 (빠진 카드 목록)
 ```
 
 - **발행(`--apply`)은 Codex 몫**이다. jin 이 "Notion 반영해줘" 하면 Codex 가 위 `--verify` 로 대상을 찾아 반영한다(전달문서 불필요). Claude 는 repo 만 고치고 푸시한다.

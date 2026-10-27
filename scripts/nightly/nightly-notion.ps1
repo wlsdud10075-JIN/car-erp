@@ -1,6 +1,7 @@
 ﻿# Notion 발행 순찰 (회사 GPU PC, 매일 04:30) — 야간 배치 실행기 4단계 (#6, jin 2026-09-29 착수)
 #   1) 최신 코드 pull (car-erp · board dev)
 #   2) Notion --verify 4종 (car-erp 카드·부서 가이드·워크플로우 / board 카드) — 전부 읽기 전용, LLM 없이 PHP 만
+#   2b) 개발 현황판 ← 배포 기록 동기화 (scripts/notion-dev-status-sync.php) — --verify 뒤 -Apply 면 --apply 를 PHP 가 직접 (LLM 없음, 2026-10-27 jin «내 기록용»)
 #   3) -Apply 가 켜져 있고 불일치가 있을 때만 Codex 를 부른다 (AGENTS.md → CODEX_NOTION_HANDOFF.md §9-A/9-B 대로 타깃 발행 → 재검증)
 #   4) 결과 = reports\notion-YYYYMMDD.md  (텔레그램은 관찰 뒤 -SendTelegram)
 # 🚫 기본값(-Apply 없음)은 Notion 에 아무것도 쓰지 않는다. --verify 는 불일치가 있으면 exit 1 이 정상이다(실패가 아니다).
@@ -104,6 +105,27 @@ if ($v1.blocked.Count) { [void]$rep.AppendLine(($v1.blocked | ForEach-Object { '
 [void]$rep.AppendLine('')
 [void]$rep.AppendLine('## 1차 --verify')
 [void]$rep.AppendLine($v1.text)
+
+# 2b) 개발 현황판 ← 배포 기록 (PHP 가 직접, Codex 안 거침) ----------------------------
+$devScript = "$repo\scripts\notion-dev-status-sync.php"
+[void]$rep.AppendLine('## 개발 현황판 (배포 기록 동기화)')
+if (Test-Path $devScript) {
+    Push-Location $repo
+    try {
+        $d1 = RunCapture $php @($devScript, '--verify') $null 300
+        Log "dev-status verify: exit $($d1.code)"
+        $dLines = ($d1.out -split "`r?`n")
+        [void]$rep.AppendLine((($(if ($dLines.Count -gt 60) { @('… (앞부분 생략)') + $dLines[-60..-1] } else { $dLines })) -join "`n").Trim())
+        if ($Apply -and $d1.code -eq 1) {
+            $d2 = RunCapture $php @($devScript, '--apply') $null 600
+            Log "dev-status apply: exit $($d2.code)"
+            [void]$rep.AppendLine('')
+            [void]$rep.AppendLine("### --apply (exit $($d2.code))")
+            [void]$rep.AppendLine((($d2.out -split "`r?`n") | Select-Object -Last 40) -join "`n")
+        }
+    } finally { Pop-Location }
+} else { [void]$rep.AppendLine('scripts/notion-dev-status-sync.php 없음 — car-erp dev 가 아직 안 당겨졌는지 확인.') }
+[void]$rep.AppendLine('')
 
 # 3) Codex 발행 (-Apply + 불일치 있을 때만) ------------------------------------
 if ($Apply -and $v1.mismatch -gt 0) {
