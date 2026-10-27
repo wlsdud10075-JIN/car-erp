@@ -9129,6 +9129,10 @@ function vehicleColumnsToggle(columns, serverKnows) {
                             <span class="ml-1 opacity-75">
                                 {{ __('vehicle.board_requested_by', ['email' => $brq->requested_by_email, 'date' => $brq->requested_at?->format('m-d')]) }}
                             </span>
+                            {{-- 🔁 재전송 (jin 2026-10-27) — 영업이 재촉한 횟수·마지막 시각. 사람이 보는 「재전송 항목」. --}}
+                            @if((int) $brq->resent_count > 0)
+                                <span class="badge badge-amber ml-1 text-[10px]">{{ __('vehicle.board_resent', ['n' => $brq->resent_count, 'time' => $brq->last_resent_at?->format('m-d H:i')]) }}</span>
+                            @endif
                         </span>
                         @if(($brqMeta['manual_confirm'] ?? false) && auth()->user()?->canConfirmFinance())
                             <span class="flex shrink-0 items-center gap-1">

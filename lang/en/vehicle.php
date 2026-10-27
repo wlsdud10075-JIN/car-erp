@@ -243,6 +243,7 @@ return [
     'board_reject_send' => 'Send rejection',
     'board_reject_done' => 'Rejected — board will be notified.',
     'board_requested_by' => ':email · requested :date',
+    'board_resent' => 'Resent :n× · last :time',
     'deposit_badge_paid' => 'Deposit-buy paid',
     'deposit_purchase_waiting' => 'Deposit purchase · awaiting buyer sale payment',
     'deposit_purchase_paid' => 'Deposit purchase · fully paid (0 receivable)',

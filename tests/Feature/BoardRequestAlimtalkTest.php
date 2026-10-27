@@ -574,4 +574,32 @@ class BoardRequestAlimtalkTest extends TestCase
         Carbon::setTestNow();
         parent::tearDown();
     }
+
+    /** 🔁 재전송(2026-10-27)은 알림톡을 다시 보내되 「재전송 N회」를 밝힌다. 금액도 바뀌면 「금액 수정 · 재전송 N회」. */
+    public function test_resend_sends_alimtalk_marked_with_the_count(): void
+    {
+        Carbon::setTestNow('2026-08-11 10:00:00');
+        $this->manager('010-1111-1111');
+        $sm = $this->salesman();
+        $v = $this->vehicle($sm->id);
+
+        $send = fn (int $amount, bool $resend) => $this->signedPost('/api/internal/board/requests', [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_PURCHASE_DEPOSIT,
+            'vehicle_ids' => [$v->id],
+            'amount_krw' => $amount,
+        ] + ($resend ? ['resend' => true] : []));
+
+        $send(3_000_000, false)->assertStatus(201);
+        $send(3_000_000, true)->assertStatus(201);
+        $send(3_500_000, true)->assertStatus(201);
+
+        $this->assertSame(3, AlimtalkLog::where('template_code', 'erp_board_request')->count(), '재전송마다 카톡이 다시 가야 재촉이 된다');
+        $second = Http::recorded()[1][0]->data()[0]['msg'] ?? '';
+        $this->assertStringContainsString('(재전송 1회)', $second);
+        $this->assertStringContainsString('3,000,000원', $second);
+        $third = Http::recorded()[2][0]->data()[0]['msg'] ?? '';
+        $this->assertStringContainsString('(금액 수정 · 재전송 2회)', $third);
+        $this->assertStringContainsString('3,500,000원', $third);
+    }
 }

@@ -94,6 +94,13 @@ class BoardRequest extends Model
     public const REJECT_REASON_MAX = 200;
 
     /**
+     * 🔁 재전송 상한 — 열린 요청 하나당 (jin 2026-10-27, board 세션 §11). 6회째는 `skipped(resend_limit)`.
+     *    board 는 이 값을 라벨 분모(「계약금 재전송 (N/5)」)로만 쓰고 판정은 ERP skipped 를 따른다 — GET /requests head 의
+     *    `resend_limit` 로 실어 보내므로 board 에 리터럴을 두지 않는다(§8 #44). 연타 방어는 board confirm 창뿐(ERP 최소 간격 없음).
+     */
+    public const RESEND_LIMIT = 5;
+
+    /**
      * type 별 성격 — **단일 출처**. 새 type 을 늘리려면 여기 한 줄만 추가한다.
      *
      * - `badge`/`title`/`action` = lang 키(ko·en 양쪽에 있어야 한다).
@@ -188,6 +195,7 @@ class BoardRequest extends Model
         'batch_id', 'type', 'vehicle_id', 'buyer_id', 'amount_krw', 'status',
         'requested_by_email', 'requested_at', 'confirmed_by_id', 'confirmed_at', 'note',
         'reject_reason', 'rejected_by_id', 'rejected_at',
+        'resent_count', 'last_resent_at',
     ];
 
     protected $casts = [
@@ -195,6 +203,8 @@ class BoardRequest extends Model
         'confirmed_at' => 'datetime',
         'rejected_at' => 'datetime',
         'amount_krw' => 'integer',
+        'resent_count' => 'integer',
+        'last_resent_at' => 'datetime',
     ];
 
     /** type 의 성격 한 줄. 모르는 type(옛 데이터)이면 빈 배열 — 호출측이 ?? 로 degrade. */
@@ -331,6 +341,57 @@ class BoardRequest extends Model
     }
 
     /**
+     * 🔁 재전송 — 열린 요청을 **그대로 다시 알린다** (jin 2026-10-27, board 세션 §11 합의안).
+     *
+     * 영업이 확인 전 재촉할 길이 없어 「계약금 재전송 (N/5)」 버튼이 생겼다. 행을 새로 만들지 않고(멱등 유지)
+     * 회차·마지막 시각만 적고, 알람을 다시 「안 읽음」으로 돌리고, 감사로그에 회차를 남긴다. 알림톡은 호출측이 보낸다.
+     *
+     * 분기표(M2) — 호출측(API)이 `resend=true` 일 때만 여기로 온다:
+     *   금액 다름 → 금액도 갱신(`amountChanged`) + 회차 +1  (본문 「금액 수정 · 재전송 N회」)
+     *   금액 같음 → 회차 +1 만                              (본문 「재전송 N회」)
+     *   회차가 이미 RESEND_LIMIT → 아무것도 안 바꾸고 `resend_limit` (알림톡 없음)
+     *   열린 행 없음 → `no_open` (호출측이 신규 생성으로 간다 — stale 칩으로 눌렀을 때 영업이 두 번 안 누르게)
+     *   금액 없는 type(판매대금확인·구 입금요청) → `not_resendable` (호출측은 종전 already_open 으로)
+     *
+     * ⚠️ 회차는 **트랜잭션 안에서** 올린다(M1) — 알림톡은 fire-and-forget 이라 실패해도 회차는 소비된 것으로 본다.
+     *
+     * @return array{row: ?self, reason: ?string, amountChanged: bool}
+     */
+    public static function resend(int $vehicleId, string $type, ?int $amountKrw): array
+    {
+        if (! (self::meta($type)['amount'] ?? false)) {
+            return ['row' => null, 'reason' => 'not_resendable', 'amountChanged' => false];
+        }
+        $row = self::query()->where('vehicle_id', $vehicleId)->ofType($type)->open()->lockForUpdate()->first();
+        if (! $row) {
+            return ['row' => null, 'reason' => 'no_open', 'amountChanged' => false];
+        }
+        if ((int) $row->resent_count >= self::RESEND_LIMIT) {
+            return ['row' => null, 'reason' => 'resend_limit', 'amountChanged' => false];
+        }
+
+        $amountChanged = $amountKrw && (int) $row->amount_krw !== (int) $amountKrw;
+        $before = (int) $row->resent_count;
+        $row->update([
+            'amount_krw' => $amountChanged ? $amountKrw : $row->amount_krw,
+            'resent_count' => $before + 1,
+            'last_resent_at' => now(),
+        ]);
+        $row->syncTaskAlarm(reAlert: true);
+
+        // 감사 — 연동 API 경로라 행위자가 빈다(§8 #56). 요청자 이메일을 old_value 자리에 남겨 누가 눌렀는지 찾을 수 있게.
+        AuditLog::create([
+            'user_id' => null,
+            'auditable_type' => self::class, 'auditable_id' => $row->id,
+            'action' => 'board_request_resent', 'column_name' => 'resent_count',
+            'old_value' => (string) $before, 'new_value' => (string) ($before + 1),
+            'ip_address' => request()?->ip(),
+        ]);
+
+        return ['row' => $row->refresh(), 'reason' => null, 'amountChanged' => $amountChanged];
+    }
+
+    /**
      * 열린 요청의 **금액만** 고쳐 쓴다 — 오타 정정 재전송 (jin 2026-08-11).
      *
      * 멱등키가 `(vehicle_id, type)` 이라 재전송은 `raise()` 에서 null 이 된다. 그런데 **금액이 이
@@ -367,7 +428,7 @@ class BoardRequest extends Model
      * **admin·업무관리자는 전체 / role='관리' 는 본인 팀**(휴가 위임 포함)이 본다 —
      * `canSeeAlarm` 과의 lockstep 을 건드리지 않는다.
      */
-    public function syncTaskAlarm(): void
+    public function syncTaskAlarm(bool $reAlert = false): void
     {
         if (! Schema::hasTable('task_alarms') || $this->status !== self::STATUS_OPEN) {
             return;
@@ -379,6 +440,11 @@ class BoardRequest extends Model
             'resolved_at' => null,
         ]);
         $alarm->target_role = '관리';
+        if ($reAlert) {
+            // 🔁 재전송(2026-10-27) — 이미 「확인」한 벨을 다시 안 읽음으로. 안 돌리면 재촉이 벨에 안 보인다(기능의 목적이 무너진다).
+            $alarm->confirmed_at = null;
+            $alarm->confirmed_by = null;
+        }
         $alarm->message_meta = TaskAlarm::sanitizeMeta([
             'vehicle_number' => $this->vehicle?->vehicle_number,
         ]);

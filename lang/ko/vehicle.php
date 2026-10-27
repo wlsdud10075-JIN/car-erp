@@ -254,6 +254,7 @@ return [
     'board_reject_send' => '거절 회신',
     'board_reject_done' => '거절했습니다 — board 에 회신됩니다.',
     'board_requested_by' => ':email · :date 요청',
+    'board_resent' => '재전송 :n회 · 마지막 :time',
     'deposit_badge_paid' => '보증금매입 완납',
     'deposit_purchase_waiting' => '보증금 매입 · 바이어 판매입금 대기',
     'deposit_purchase_paid' => '보증금 매입 · 완납(미수 0)',

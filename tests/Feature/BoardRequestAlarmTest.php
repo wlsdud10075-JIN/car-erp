@@ -178,4 +178,19 @@ class BoardRequestAlarmTest extends TestCase
         $sale->markDone();
         $this->assertSame(2, BoardRequest::openCount(), '닫힌 신호가 뱃지에 남았다');
     }
+
+    /** 🔁 재전송(2026-10-27)은 이미 「확인」한 벨을 다시 안 읽음으로 돌린다 — 안 돌리면 재촉이 벨에 안 보인다. */
+    public function test_resend_makes_a_confirmed_alarm_unread_again(): void
+    {
+        $v = $this->vehicle();
+        BoardRequest::raise($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 'sales@ex.com', amountKrw: 1_000_000);
+        $alarm = TaskAlarm::where('vehicle_id', $v->id)->open()->first();
+        $alarm->update(['confirmed_at' => now()]);
+
+        $r = BoardRequest::resend($v->id, BoardRequest::TYPE_PURCHASE_BALANCE, 1_000_000);
+
+        $this->assertNotNull($r['row']);
+        $this->assertNull($alarm->refresh()->confirmed_at);
+        $this->assertSame(1, TaskAlarm::where('vehicle_id', $v->id)->open()->count(), '알람이 두 개가 됐다');
+    }
 }
