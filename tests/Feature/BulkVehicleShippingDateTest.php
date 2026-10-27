@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\AuditLog;
+use App\Models\Buyer;
+use App\Models\Consignee;
 use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -333,5 +335,64 @@ class BulkVehicleShippingDateTest extends TestCase
         $this->assertSame(1, $breakdown['']);
         $this->assertSame(2, BulkVehicleShippingDateService::distinctCount($breakdown));
         $this->assertSame(1, BulkVehicleShippingDateService::distinctCount(['MV A' => 5, '' => 9]));
+    }
+
+    // ── 🏗️ 반입지 일괄 (jin 2026-10-27) ───────────────────────────────────────
+
+    /** 반입지는 수출 탭과 같은 값으로 찍히고, AUDITED_COLUMNS 라 컬럼 감사가 남으며, 진행상태가 「선적중」으로 넘어간다. */
+    public function test_loading_location_applies_and_moves_to_loading_stage(): void
+    {
+        $v = $this->vehicle('11가1111', 'MV A');
+        $v->update(['is_deregistered' => true]);   // C4 — 말소 체크 뒤라야 수출 진입
+        $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
+        $cons = Consignee::create(['buyer_id' => $buyer->id, 'name' => 'CONS']);
+        $v->update(['bl_consignee_id' => $cons->id]);
+
+        $result = app(BulkVehicleShippingDateService::class)->apply(
+            Vehicle::query()->whereKey($v->id), ['bl_loading_location' => '평택항'], $this->clearanceUser(), 'test'
+        );
+
+        $this->assertSame(1, $result['applied']);
+        $this->assertSame('평택항', $v->fresh()->bl_loading_location);
+        $this->assertSame('선적중', $v->fresh()->progress_status_cache);
+        $this->assertTrue(AuditLog::where('auditable_id', $v->id)->where('column_name', 'bl_loading_location')->exists(), '반입지 컬럼 감사가 없다');
+    }
+
+    /** 게이트(말소 미체크)에 걸린 차는 묶음 전체가 죽지 않고 그 차만 사유와 함께 제외된다(§8 #67). */
+    public function test_loading_location_skips_gated_vehicle_with_reason(): void
+    {
+        $ok = $this->vehicle('11가1111', 'MV A');
+        $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
+        $cons = Consignee::create(['buyer_id' => $buyer->id, 'name' => 'CONS']);
+        $ok->update(['is_deregistered' => true, 'bl_consignee_id' => $cons->id]);
+        $blocked = $this->vehicle('22나2222', 'MV A');   // 말소 체크 없음 → C4 가 던진다
+
+        $result = app(BulkVehicleShippingDateService::class)->apply(
+            Vehicle::query()->whereIn('id', [$ok->id, $blocked->id]), ['bl_loading_location' => '평택항'], $this->clearanceUser(), 'test'
+        );
+
+        $this->assertSame(1, $result['applied']);
+        $this->assertCount(1, $result['skipped']);
+        $this->assertSame('22나2222', $result['skipped'][0]['number']);
+        $this->assertStringStartsWith('gate:', $result['skipped'][0]['reason']);
+        $this->assertStringContainsString('말소', $result['skipped'][0]['reason']);
+        $this->assertNull($blocked->fresh()->bl_loading_location, '막힌 차에 반입지가 들어갔다');
+        $this->assertSame('평택항', $ok->fresh()->bl_loading_location, '한 대가 막혔다고 나머지까지 안 들어갔다');
+    }
+
+    /** 반입지가 서로 다른 차가 섞여 있으면 모달이 한 번 멈춘다(선박명과 같은 장치). */
+    public function test_loading_location_conflict_stops_once(): void
+    {
+        $a = $this->vehicle('11가1111', 'MV A');
+        $b = $this->vehicle('22나2222', 'MV A');
+        $a->update(['bl_loading_location' => '평택항']);
+        $b->update(['bl_loading_location' => '인천항']);
+        $breakdown = app(BulkVehicleShippingDateService::class)->valueBreakdown(Vehicle::query()->whereIn('id', [$a->id, $b->id]), 'bl_loading_location');
+        $this->assertSame(2, BulkVehicleShippingDateService::distinctCount($breakdown));
+
+        $c = Volt::actingAs($this->clearanceUser())->test('erp.vehicles.index')
+            ->set('bulkDateOpen', true)->set('bulkLoadingLocation', '부산항')->call('applyBulkDate');
+        $this->assertNotSame([], $c->get('bulkLoadingConflict'), '섞여 있는데 경고 없이 덮였다');
+        $this->assertSame('평택항', $a->fresh()->bl_loading_location);
     }
 }

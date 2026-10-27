@@ -8,6 +8,7 @@ use App\Models\Vehicle;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 
 /**
@@ -47,10 +48,13 @@ class BulkVehicleShippingDateService
      * 🔀 2026-09-17 `bl_number` 추가 (jin) — 선적요청 묶음 화면에만 있던 것을 차량관리 「번호 일괄 기입」
      *    에서도 쓸 수 있게. 🚫 **`bl_document`(파일)는 넣지 않는다** — 그건 G1 100% 완납 게이트가 걸린
      *    자리이고, 선적요청 묶음 폼도 같은 이유로 제외해 뒀다.
+     * 🔀 2026-10-27 `bl_loading_location`(반입지) 추가 (jin «모달에 선적일·도착일·선박명 아래 반입지») — 수출 탭 반입지와 같은
+     *    항구 마스터(unloading) 값을 찍는다. ⚠️ **반입지는 v4 cascade(선적중)·수출 진입 게이트(말소 체크·컨사이니·입금률)를 탄다** —
+     *    게이트에 걸린 차는 예외로 묶음 전체가 죽지 않게 **그 차만 skipped(gate:사유)** 로 돌려준다(§8 #67). 선박명처럼 섞임 경고도 탄다.
      * 🔑 `bl_number` 는 **진행상태·게이트 판정에 안 쓰인다**(2026-09-14 실측으로 기각 — 자유 입력칸이라
      *    빈 문자열·`-`·한글 메모가 실재한다, §8 #97). 그래서 일괄로 찍어도 단계가 넘어가지 않는다.
      */
-    public const FIELDS = ['shipping_date', 'eta_date', 'vessel_name', 'export_declaration_number', 'container_number', 'bl_number'];
+    public const FIELDS = ['shipping_date', 'eta_date', 'vessel_name', 'export_declaration_number', 'container_number', 'bl_number', 'bl_loading_location'];
 
     /** 날짜로 다룰 컬럼(8자리 정규화·형식 검사 대상). 나머지는 문자열 그대로. */
     private const DATE_FIELDS = ['shipping_date', 'eta_date'];
@@ -276,7 +280,23 @@ class BulkVehicleShippingDateService
                         continue;
                     }
 
-                    $vehicle->update($diff);
+                    try {
+                        $vehicle->fill($diff);
+                        // 🚪 수출 진입 게이트(C4 말소 체크 · 컨사이니 · C5 입금률)는 모델 훅이 아니라 **패널 저장이 직접 부른다**
+                        //    (vehicles/index::save → guardStageOrderForExport). 반입지는 그 게이트의 진입 신호라 여기서도 같은 함수를
+                        //    부른다 — 안 부르면 일괄 기입이 게이트를 통째로 우회한다. 선적일·ETA 만 찍는 종전 호출은 그대로(동작 보존).
+                        if (array_key_exists('bl_loading_location', $diff)) {
+                            $vehicle->guardStageOrderForExport();
+                        }
+                        $vehicle->save();
+                    } catch (ValidationException $e) {
+                        // 🚪 반입지는 수출 진입 게이트(말소 체크·컨사이니·입금률)를 탄다 — 한 대가 막혔다고 묶음 전체를 죽이지 않고
+                        //    그 차만 사유와 함께 제외한다(§8 #67). 저장 훅이 던졌으니 DB 엔 아무것도 안 남았다.
+                        $first = collect($e->errors())->flatten()->first();
+                        $skipped[] = ['id' => $vehicle->id, 'number' => $vehicle->vehicle_number, 'reason' => 'gate:'.(string) $first];
+
+                        continue;
+                    }
                     AuditLog::create([
                         'user_id' => $by->id,
                         'auditable_type' => Vehicle::class,
