@@ -461,7 +461,8 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
   "vehicle_ids": [12],
   "amount_krw": 3000000,  // purchase_deposit·purchase_balance 필수 / 그 외는 생략(보내도 버림)
   "buyer_id": 7,          // sale_payment_confirm 필수 / 매입 신호는 생략
-  "note": "5/12 송금분"    // 선택, 200자
+  "note": "5/12 송금분",   // 선택, 200자
+  "resend": true          // 선택 (2026-10-27) — 열린 요청 재전송(재촉). 매입 3종만. 판매대금확인은 무시
 }
 ```
 
@@ -471,8 +472,10 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
   "batch_id": "9f1c…",                     // sale_payment_confirm 만. 매입 신호는 **null**
   "created": ["18누0304", "19더49065"],
   "updated": ["19더49065"],                // created 의 **부분집합** — 금액만 갱신된 차량
+  "resent": ["18누0304"],                  // created 의 **부분집합** — 재전송된 차량 (2026-10-27)
   "skipped": [
     { "vehicle_number": "21모1234", "reason": "already_open" },  // 내 차 → 차량번호로 돌려준다
+    { "vehicle_number": "22모5678", "reason": "resend_limit" },  // 재전송 상한(5회) 초과 — 행 무변경·알림 없음
     { "vehicle_id": 9999,          "reason": "forbidden" }       // 남의 차 → **id 만**(차량번호를 알려주지 않는다)
   ]
 }
@@ -490,6 +493,26 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
   - ⚠️ **갱신분은 `created` 에 담겨 돌아온다**(`updated` 는 그 **부분집합**). board 가 `created`·`skipped`
     만 읽어도 "N건 전송"이 맞게 뜨도록 한 것 — ERP 가 먼저 배포되므로 board 무변경으로도 동작한다.
     board 가 "N건 중 M건 금액 수정"을 보여주고 싶을 때만 `updated` 를 읽으면 된다.
+- 🔁 **재전송 (2026-10-27, jin 승인 · board 세션 §14-2 와 짝)** — 영업이 확인 전 재촉할 길이 없어 생겼다. board 는 열린
+  요청이 있는 차의 버튼을 「계약금 재전송 (N/limit)」 로 바꾸고 confirm 창(연타 방어는 이것뿐 — ERP 최소 간격 없음) 뒤
+  **같은 POST 에 `resend: true`** 를 실어 보낸다. 받는 쪽 분기(단일 출처 `BoardRequest::resend()`):
+
+  | 상태 | resend | 결과 |
+  |---|---|---|
+  | open 행 있음 · 금액 같음 | true | 행 그대로, `resent_count+1`·`last_resent_at`, 알림톡 「(재전송 N회)」, `created`+`resent` |
+  | open 행 있음 · 금액 다름 | true | 금액 갱신 + 회차 +1, 알림톡 「(금액 수정 · 재전송 N회)」, `created`+`updated`+`resent` |
+  | open 행 있음 · `resent_count ≥ 5` | true | **아무것도 안 바꾸고** `skipped(resend_limit)`, 알림톡 없음 |
+  | open 행 없음(done·rejected 뒤, 또는 stale 칩) | true | 플래그 무시 → **새 요청**(종전 `created`) — 영업이 두 번 안 누르게 |
+  | open 행 있음 · 금액 같음 | 없음/false | 종전대로 `skipped(already_open)` (구 board 호환) |
+  | `sale_payment_confirm` | true | 플래그 무시(종전 경로). 422 아님 — 판매대금확인엔 회차 개념이 없다 |
+
+  - 상한 = `BoardRequest::RESEND_LIMIT`(5) — **GET head 의 `resend_limit`** 로 실어 준다. board 는 라벨 분모로만 쓰고 판정은 ERP skipped 를 따른다(리터럴 금지, §8 #44).
+  - 회차는 **트랜잭션 안에서** 올린다 — 알림톡은 fire-and-forget 이라 실패해도 회차는 소비된 것으로 본다(「금액 수정」과 같은 원칙).
+  - ERP 쪽 부수 효과: task_alarm 의 「확인」을 다시 안 읽음으로(재촉이 벨에 보이게) · 감사로그 `board_request_resent`(new_value = 회차, 연동 경로라 행위자 없음) ·
+    차량 패널 드로어 라인에 「재전송 N회 · 마지막 MM-DD HH:MM」 배지.
+  - 알림톡 표기는 `#{요청내역}` 변수 안쪽이라 BizM 재승인 없음. 하이라이트 `#{구분}` 은 전부 재전송분일 때만 「계약금 재전송 N회」(19자 안).
+  - 구 ERP 는 미선언 키를 버리므로(`$request->validate`) board 가 먼저 나가도 깨지지 않는다(already_open). 배포는 ERP 먼저 권장.
+  - 행이 닫히고(done·rejected) 새 요청이 열리면 새 행이라 회차는 0 부터. 가드 = `BoardRequestApiTest` 재전송 7건 · `BoardRequestAlimtalkTest` · `BoardRequestAlarmTest`.
 - **스코프 재인가**: `vehicle_ids` 는 §2 로 매칭된 영업 것만 통과. 남의 차량 id 는 `skipped(reason: forbidden)`.
   (전량 거부 대신 부분 성공 — 한 대 때문에 묶음 전체가 죽지 않게.)
 - `sale_payment_confirm` 은 **모든 차량이 `buyer_id` 소속**이어야 한다. 아니면 `422 buyer_mismatch`(오배치 방지).
@@ -525,12 +548,15 @@ prefix `/api/internal/board`, 미들웨어 = §1 `VerifyBoardReadHmac` + `thrott
     "status": "partial",                   // open | partial | done | rejected | cancelled
     "buyer_name": "ABC TRADING",
     "amount_krw": null,                    // 매입 신호면 요청 금액, 판매대금확인이면 null
+    "resent_count": 0,                     // 재전송 회차 (2026-10-27) — 매입 신호는 1대=1묶음이라 head = 그 줄
+    "last_resent_at": null,                // 마지막 재전송 시각 (ISO8601 · 없으면 null)
+    "resend_limit": 5,                     // 상한 — board 는 「계약금 재전송 (N/5)」 분모로만 쓴다
     "requested_at": "2026-08-07T10:00:00+09:00",
     "resolved_at": "2026-08-07T14:20:00+09:00",   // 확인·거절 공통 처리 시각 — 묶음은 가장 늦게 처리된 라인 (2026-10-12)
     "resolved_by": "재무담당",                     // 처리자 표시 이름(자동 해소면 null)
     "reject_reason": null,                        // 묶음 안 첫 거절 라인의 사유
     "vehicles": [
-      { "vehicle_number": "18누0304", "status": "done", "amount_krw": null, "confirmed_at": "2026-08-07T14:20:00+09:00",
+      { "vehicle_number": "18누0304", "status": "done", "amount_krw": null, "resent_count": 0, "last_resent_at": null, "confirmed_at": "2026-08-07T14:20:00+09:00",
         "resolved_at": "2026-08-07T14:20:00+09:00", "resolved_by": "재무담당", "reject_reason": null },
       { "vehicle_number": "22가1111", "status": "rejected", "amount_krw": null, "confirmed_at": null,
         "resolved_at": "2026-08-07T15:00:00+09:00", "resolved_by": "재무담당", "reject_reason": "바이어 입금 전이라 잔금 송금 불가" }

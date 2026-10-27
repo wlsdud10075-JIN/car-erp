@@ -70,9 +70,13 @@ class BoardRequestController extends Controller
             // 표시 전용 금액. 상한 = 1조 미만(오타 방어). 회계엔 안 쓰지만 화면에 그대로 뜨므로
             // 말도 안 되는 자릿수가 들어오면 목록이 깨진다.
             'amount_krw' => ['nullable', 'integer', 'min:0', 'max:999999999999'],
+            // 🔁 재전송 플래그 (jin 2026-10-27, §11) — 열린 요청을 다시 알린다. 구 board 는 안 보내고, 구 ERP 는 미선언 키라 버린다(순서 무관).
+            'resend' => ['nullable', 'boolean'],
         ]);
 
         $isSaleConfirm = $data['type'] === BoardRequest::TYPE_SALE_PAYMENT_CONFIRM;
+        // 판매대금확인엔 재전송 개념이 없다(M4) — 플래그를 떼고 종전 경로(already_open)로. 422 를 내면 stale 칩으로 누른 영업이 오류를 본다.
+        $resend = (bool) ($data['resend'] ?? false) && ! $isSaleConfirm;
         $buyerId = $data['buyer_id'] ?? null;
         $amountKrw = $data['amount_krw'] ?? null;
 
@@ -113,9 +117,11 @@ class BoardRequestController extends Controller
         $createdRows = [];
         $updated = [];
         $updatedIds = [];
+        $resent = [];
+        $resentIds = [];
         $skipped = [];
 
-        DB::transaction(function () use ($data, $vehicles, $salesman, $buyerId, $amountKrw, $isSaleConfirm, $batchId, &$created, &$createdRows, &$updated, &$updatedIds, &$skipped) {
+        DB::transaction(function () use ($data, $vehicles, $salesman, $buyerId, $amountKrw, $isSaleConfirm, $resend, $batchId, &$created, &$createdRows, &$updated, &$updatedIds, &$resent, &$resentIds, &$skipped) {
             foreach ($data['vehicle_ids'] as $vid) {
                 $vehicle = $vehicles->get($vid);
                 if (! $vehicle) {
@@ -135,6 +141,24 @@ class BoardRequestController extends Controller
                     amountKrw: $amountKrw,
                 );
 
+                if ($row === null && $resend) {
+                    // 🔁 재전송(jin 2026-10-27) — 열린 행을 그대로 다시 알린다. 분기표·상한은 BoardRequest::resend().
+                    $r = BoardRequest::resend($vehicle->id, $data['type'], $amountKrw);
+                    if ($r['row'] !== null) {
+                        $row = $r['row'];
+                        $resent[] = $vehicle->vehicle_number;
+                        $resentIds[] = $row->id;
+                        if ($r['amountChanged']) {
+                            $updated[] = $vehicle->vehicle_number;
+                            $updatedIds[] = $row->id;
+                        }
+                    } elseif ($r['reason'] === 'resend_limit') {
+                        $skipped[] = ['vehicle_number' => $vehicle->vehicle_number, 'reason' => 'resend_limit'];
+
+                        continue;
+                    }
+                    // no_open 은 raise() 가 이미 만들었을 자리라 여기 올 수 없다 / not_resendable 은 아래 종전 경로로.
+                }
                 if ($row === null) {
                     // 이미 열려 있다 — 금액을 고쳐 다시 보낸 것이면 그 금액만 갱신한다(오타 정정).
                     $row = BoardRequest::refreshAmount($vehicle->id, $data['type'], $amountKrw);
@@ -158,12 +182,13 @@ class BoardRequestController extends Controller
         // 🔔 알림톡은 **트랜잭션이 끝난 뒤** 보낸다 — 롤백됐는데 카톡만 나가면 되돌릴 수가 없다.
         //    `skipped`(already_open·forbidden)에는 안 보낸다: 중복 카톡의 원인이다.
         // 카드에는 이름을 쓴다 — 아이템 내용이 20자에서 잘려 이메일이 뭉개진다(이름 없으면 이메일 폴백).
-        $this->notifyCreated($data['type'], $createdRows, (string) ($salesman->name ?: $salesman->email), $updatedIds);
+        $this->notifyCreated($data['type'], $createdRows, (string) ($salesman->name ?: $salesman->email), $updatedIds, $resentIds);
 
         return response()->json([
             'batch_id' => $isSaleConfirm ? $batchId : null,
             'created' => $created,
             'updated' => $updated,   // created 의 **부분집합** — 금액만 갱신된 차량
+            'resent' => $resent,     // created 의 **부분집합** — 재전송된 차량 (2026-10-27)
             'skipped' => $skipped,
         ], 201);
     }
@@ -183,7 +208,7 @@ class BoardRequestController extends Controller
      * @param  array<int, int>  $updatedIds  그중 **금액만 갱신된** 행 id — 본문에 정정임을 밝힌다.
      *                                       안 밝히면 받는 사람이 두 번째 카톡을 새 요청으로 읽고 **두 번 보낸다**.
      */
-    private function notifyCreated(string $type, array $rows, string $requester, array $updatedIds = []): void
+    private function notifyCreated(string $type, array $rows, string $requester, array $updatedIds = [], array $resentIds = []): void
     {
         if ($rows === []) {
             return;
@@ -218,7 +243,15 @@ class BoardRequestController extends Controller
             foreach ($rows as $r) {
                 $v = $r->vehicle;
                 // 금액 정정분은 반드시 밝힌다 — 안 밝히면 두 번째 카톡을 새 요청으로 읽고 두 번 보낸다.
-                $mark = in_array($r->id, $updatedIds, true) ? ' (금액 수정)' : '';
+                // 🔁 재전송분도 밝힌다(2026-10-27) — 「재전송 N회」. 둘 다면 「금액 수정 · 재전송 N회」. 변수 안이라 BizM 재승인 없음.
+                $marks = [];
+                if (in_array($r->id, $updatedIds, true)) {
+                    $marks[] = '금액 수정';
+                }
+                if (in_array($r->id, $resentIds, true)) {
+                    $marks[] = '재전송 '.(int) $r->resent_count.'회';
+                }
+                $mark = $marks === [] ? '' : ' ('.implode(' · ', $marks).')';
                 $lines[] = '■ '.$label.$mark.' · '.($v?->vehicle_number ?? '-');
                 if ($r->amount_krw !== null) {
                     $lines[] = '  '.number_format($r->amount_krw).'원';
@@ -233,10 +266,13 @@ class BoardRequestController extends Controller
             // 카드 하이라이트도 정정임을 밝힌다(전부 정정일 때만 — 섞이면 본문 줄이 가른다).
             //   ⚠️ 하이라이트 설명은 19자 상한이다. '매입잔금 수정' = 7자로 여유가 있다.
             $allUpdated = count($updatedIds) === count($rows);
+            // 전부 재전송분이면 하이라이트도 「계약금 재전송 N회」(최장 '대표계약금 재전송 5회' = 11자 < 19). 수정이 섞이면 수정이 우선.
+            $allResent = $resentIds !== [] && count($resentIds) === count($rows);
+            $resentMark = $allResent ? ' 재전송 '.(int) $rows[0]->resent_count.'회' : '';
 
             $vars = [
                 '건수' => count($rows),
-                '구분' => $label.($allUpdated ? ' 수정' : ''),
+                '구분' => $label.($allUpdated ? ' 수정' : $resentMark),
                 '차량' => count($numbers) > 1
                     ? ($numbers[0].' 외 '.(count($numbers) - 1).'대')
                     : ($numbers[0] ?? '-'),
@@ -320,6 +356,10 @@ class BoardRequestController extends Controller
                 // 매입 신호는 1대 = 1묶음이라 묶음 금액 = 그 한 줄의 금액. 판매대금확인은 null.
                 // 라인에도 같은 값을 싣는다 — board 가 어느 쪽을 읽든 같은 숫자가 나오게.
                 'amount_krw' => $head->amount_krw,
+                // 🔁 재전송(2026-10-27) — board 버튼 「계약금 재전송 (N/limit)」·칩이 이걸로 그린다. 매입 신호는 1대=1묶음이라 head = 그 줄.
+                'resent_count' => (int) $head->resent_count,
+                'last_resent_at' => $head->last_resent_at?->toIso8601String(),
+                'resend_limit' => BoardRequest::RESEND_LIMIT,
                 'requested_at' => $head->requested_at?->toIso8601String(),
                 'resolved_at' => $resolved?->resolvedAt()?->toIso8601String(),
                 'resolved_by' => $resolved?->resolvedByName(),
@@ -328,6 +368,8 @@ class BoardRequestController extends Controller
                     'vehicle_number' => $r->vehicle?->vehicle_number,
                     'status' => $r->status,
                     'amount_krw' => $r->amount_krw,
+                    'resent_count' => (int) $r->resent_count,
+                    'last_resent_at' => $r->last_resent_at?->toIso8601String(),
                     'confirmed_at' => $r->confirmed_at?->toIso8601String(),   // 구 board 가 읽는 키 — 거절 라인은 null 유지
                     'resolved_at' => $r->resolvedAt()?->toIso8601String(),
                     'resolved_by' => $r->resolvedByName(),

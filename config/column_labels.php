@@ -318,6 +318,8 @@ return [
     'board_requests' => [
         'status' => '요청 상태',
         'reject_reason' => '거절 사유',    // 2026-10-12 거절 씬 — 감사로그 board_request_rejected 가 쓴다
+        'resent_count' => '재전송 횟수',   // 2026-10-27 재전송 — 감사로그 board_request_resent 가 쓴다
+        'last_resent_at' => '마지막 재전송',
         'amount_krw' => '요청 금액',
         'note' => '요청 메모',
     ],
@@ -533,6 +535,8 @@ return [
         'delegation_deactivated' => '담당 영업 위임 종료',
         // 2026-10-12 — board 요청 거절(드로어 「거절」+사유). new_value = 사유.
         'board_request_rejected' => 'board 요청 거절',
+        // 2026-10-27 — board 영업의 재전송(재촉). new_value = 회차, 행위자 없음(연동 API).
+        'board_request_resent' => 'board 요청 재전송',
         'buyer_rebound' => '바이어 재연결(삭제된 바이어 정리)',
         'payout_incentive_added_via_link' => '인센티브 추가(승인 링크)',
         'contract_signed' => '전자서명 완료',

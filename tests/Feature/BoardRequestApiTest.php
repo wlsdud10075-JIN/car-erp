@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\BoardRequest;
 use App\Models\Buyer;
 use App\Models\Salesman;
@@ -521,5 +522,139 @@ class BoardRequestApiTest extends TestCase
         ])->assertStatus(401);
 
         $this->assertSame(0, BoardRequest::count());
+    }
+
+    // ── 🔁 재전송 (jin 2026-10-27, board 세션 §11 합의안 M1~M4) ──────────────────────
+
+    private function sendDeposit(Vehicle $v, int $amount, bool $resend = false)
+    {
+        $payload = [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_PURCHASE_DEPOSIT,
+            'vehicle_ids' => [$v->id],
+            'amount_krw' => $amount,
+        ];
+        if ($resend) {
+            $payload['resend'] = true;
+        }
+
+        return $this->signedPost('/api/internal/board/requests', $payload);
+    }
+
+    /** 같은 금액 + resend=true → 행은 그대로, 회차 +1, created 와 resent 에 담긴다(updated 는 비어 있다). */
+    public function test_resend_flag_bumps_the_count_and_is_reported(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+        $this->sendDeposit($v, 3_000_000)->assertStatus(201);
+
+        $this->sendDeposit($v, 3_000_000, resend: true)
+            ->assertStatus(201)
+            ->assertJsonPath('created', ['11가1111'])
+            ->assertJsonPath('resent', ['11가1111'])
+            ->assertJsonCount(0, 'updated')
+            ->assertJsonCount(0, 'skipped');
+
+        $this->assertSame(1, BoardRequest::count(), '재전송이 행을 새로 만들었다 — 뱃지가 두 개 뜬다');
+        $row = BoardRequest::first();
+        $this->assertSame(1, $row->resent_count);
+        $this->assertNotNull($row->last_resent_at);
+        $this->assertSame(3_000_000, $row->amount_krw);
+    }
+
+    /** 금액 다름 + resend=true → 금액 갱신 + 회차 +1 (updated·resent 둘 다). */
+    public function test_resend_with_a_new_amount_updates_and_counts(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+        $this->sendDeposit($v, 3_000_000)->assertStatus(201);
+
+        $this->sendDeposit($v, 3_500_000, resend: true)
+            ->assertStatus(201)
+            ->assertJsonPath('updated', ['11가1111'])
+            ->assertJsonPath('resent', ['11가1111']);
+
+        $row = BoardRequest::first();
+        $this->assertSame(3_500_000, $row->amount_krw);
+        $this->assertSame(1, $row->resent_count);
+    }
+
+    /** 행당 5회. 6회째는 skipped(resend_limit) — 행 무변경·알림 없음. */
+    public function test_resend_limit_rejects_the_sixth(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+        $this->sendDeposit($v, 3_000_000)->assertStatus(201);
+        for ($i = 1; $i <= BoardRequest::RESEND_LIMIT; $i++) {
+            $this->sendDeposit($v, 3_000_000, resend: true)->assertStatus(201)->assertJsonPath('resent', ['11가1111']);
+        }
+        $this->assertSame(BoardRequest::RESEND_LIMIT, BoardRequest::first()->resent_count);
+
+        $this->sendDeposit($v, 3_000_000, resend: true)
+            ->assertStatus(201)
+            ->assertJsonCount(0, 'created')
+            ->assertJsonCount(0, 'resent')
+            ->assertJsonPath('skipped.0.reason', 'resend_limit');
+        $this->assertSame(BoardRequest::RESEND_LIMIT, BoardRequest::first()->resent_count, '6회째가 회차를 올렸다');
+        $this->assertSame(1, BoardRequest::count());
+    }
+
+    /** resend=true 인데 열린 행이 없으면 플래그를 무시하고 새 요청(stale 칩으로 눌러도 영업이 두 번 안 누르게). */
+    public function test_resend_flag_without_an_open_request_creates_a_new_one(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+
+        $this->sendDeposit($v, 3_000_000, resend: true)
+            ->assertStatus(201)
+            ->assertJsonPath('created', ['11가1111'])
+            ->assertJsonCount(0, 'resent');
+        $this->assertSame(0, BoardRequest::first()->resent_count);
+    }
+
+    /** 판매대금확인엔 재전송이 없다(M4) — 플래그를 떼고 종전 already_open. 422 가 아니다. */
+    public function test_resend_flag_is_ignored_for_sale_confirm(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $buyer = Buyer::create(['name' => 'DONI', 'is_active' => true]);
+        $v = $this->vehicle($sm->id, '11가1111', $buyer->id);
+        $payload = ['salesman_email' => 'a@ex.com', 'type' => BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'vehicle_ids' => [$v->id], 'buyer_id' => $buyer->id];
+        $this->signedPost('/api/internal/board/requests', $payload)->assertStatus(201);
+
+        $this->signedPost('/api/internal/board/requests', $payload + ['resend' => true])
+            ->assertStatus(201)
+            ->assertJsonCount(0, 'resent')
+            ->assertJsonPath('skipped.0.reason', 'already_open');
+        $this->assertSame(0, BoardRequest::first()->resent_count);
+    }
+
+    /** GET 라인·head 에 resent_count·last_resent_at, head 에 resend_limit(M3 — board 는 분모를 여기서 읽는다). */
+    public function test_index_exposes_resend_fields(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+        $this->sendDeposit($v, 3_000_000)->assertStatus(201);
+        $this->sendDeposit($v, 3_000_000, resend: true)->assertStatus(201);
+
+        $this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'open'])
+            ->assertOk()
+            ->assertJsonPath('requests.0.resent_count', 1)
+            ->assertJsonPath('requests.0.resend_limit', BoardRequest::RESEND_LIMIT)
+            ->assertJsonPath('requests.0.vehicles.0.resent_count', 1);
+        $this->assertNotNull($this->signedGet('/api/internal/board/requests', ['salesman_email' => 'a@ex.com', 'status' => 'open'])->json('requests.0.last_resent_at'));
+    }
+
+    /** 감사로그 board_request_resent — new_value = 회차. 연동 경로라 행위자는 빈다. */
+    public function test_resend_writes_an_audit_row(): void
+    {
+        $sm = $this->salesman('a@ex.com');
+        $v = $this->vehicle($sm->id, '11가1111');
+        $this->sendDeposit($v, 3_000_000)->assertStatus(201);
+        $this->sendDeposit($v, 3_000_000, resend: true)->assertStatus(201);
+
+        $log = AuditLog::where('action', 'board_request_resent')->first();
+        $this->assertNotNull($log);
+        $this->assertSame('1', $log->new_value);
+        $this->assertSame(BoardRequest::first()->id, (int) $log->auditable_id);
     }
 }
