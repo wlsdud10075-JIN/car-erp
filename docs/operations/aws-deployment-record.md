@@ -935,6 +935,14 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-10-27 (저녁) — master `123ffd55` · **마이그 1** (jin «배포해줘», 코드 커밋 4개 cherry-pick)
+
+dev `7bd8bec4`(.md 빼고)·`da5efc84`·`cd3ce485`·`2eae1b67` → master `61ccdfd6`·`fb4c6c11`·`58b564e1`·`123ffd55`. `board-portal-api.md` 는 modify/delete 충돌 → 삭제 유지. dev 전용(개발 현황판 동기화 `b88b18d2`·가이드 2건) 제외.
+1. board 입금요청 「재전송」(jin 승인, board 세션 §11 합의안 M1~M4) — `board_requests.resent_count`·`last_resent_at`, POST `resend` 분기(금액 같음 회차+1 / 다름 갱신+회차 / ≥5 `resend_limit` / open 없음 신규 / 판매대금확인 무시), 응답 `resent[]`, GET `resent_count`·`last_resent_at`·`resend_limit`, 알림톡 「(재전송 N회)」, 벨 재알림, 감사 `board_request_resent`, 드로어 배지
+2. 차량관리 선적일·ETA·VSL 일괄 모달에 「반입지」 — 수출 탭과 같은 항구 목록, 수출 진입 게이트(말소·컨사이니·입금률) 걸린 차는 `gate:사유` 로 제외, 섞인 반입지 경고
+3. 도착후미수요약 본문 → 「[사내 업무용] … 채권 담당 임직원에게 매주 보내는 사내 알림입니다.」(2차 반려 대응, jin 안 3) — 승인 전이라 발송 0, 코드=등록본
+- 확인: 로컬 병렬 3,531 pass(실패 0·skip 1) · deploy 런 40499856625 잡 5 success · 3사 SHA `123ffd55` · `/login` 200 ×3 · ssancarerp Pending 0 · 가이드 `--verify` 새 불일치 0(카드·가이드 한 줄씩 추가)
+- 후속: board 세션 배포(ERP 선배포 통지 완료) → jin 실호출 1건 대조 · 도착후미수요약 3차 재신청(jin) · 선적 임박 선박 묶음 첫 발송 로그(10-28)
 ## 2026-10-27 (점심) — master `ec5591e2` · 마이그 0 (jin «배포할거 배포해줘. 점심시간이다», 코드 커밋 3개 cherry-pick)
 
 dev `31fff15b`·`c57051fe`·`e956bd5a` → master `8ed65c69`·`61c5a696`·`ec5591e2`. dev `87a6a127`(SKILLS.md + dev 전용 `scripts/alimtalk-build-upload.php`)은 제외.
