@@ -6,6 +6,7 @@ use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
 use App\Services\LockThresholdResolver;
 use App\Support\AlimtalkRecipients;
+use App\Support\AlimtalkText;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -86,17 +87,25 @@ class AlimtalkDepositCash extends Command
             }
 
             $cap = 20;   // 본문 1000자 제한 — 목록 상한. 상세는 채권관리.
-            $line = fn (Vehicle $v, int $days, bool $showReq): string => sprintf(
-                '▶ %s · %s · %d%% 입금 (%s경과 %d일)',
-                $v->vehicle_number,
-                $v->buyer?->name ?? '-',
-                (int) round((1 - (float) $v->unpaid_ratio) * 100),
-                $showReq ? '기준 '.LockThresholdResolver::requiredPaidPct($v->buyer, 'shipping_entry').'%, ' : '',
-                $days
-            );
-            $listOf = fn ($rows, bool $showReq): string => collect($rows)->take($cap)
-                ->map(fn ($x) => $line($x[0], $x[1], $showReq))->implode("\n")
-                .(count($rows) > $cap ? "\n▶ 외 ".(count($rows) - $cap).'건' : '');
+            // 🔀 2026-10-27 (jin, 폰 가독성) — 「★ 바이어 차량번호」 한 줄 + 「입금률 · 경과일」 한 줄, 경과일 큰 순.
+            //   「기준 N%」는 줄마다 반복하지 않고 맨 위 한 줄(전역값)로. 바이어 재정의가 전역과 다른 차만 줄 끝에 붙인다.
+            //   변수 안쪽만 바뀐다(승인 본문 무변경, §8 #40). 미리보기 = 2026-10-27 아티팩트 「알림톡 모바일 미리보기」.
+            $globalReq = LockThresholdResolver::requiredPaidPct(null, 'shipping_entry');
+            $line = function (Vehicle $v, int $days, bool $showReq) use ($globalReq): string {
+                $req = LockThresholdResolver::requiredPaidPct($v->buyer, 'shipping_entry');
+                $tail = ($showReq && $req !== $globalReq) ? " · 기준 {$req}%" : '';
+
+                return sprintf("★ %s %s\n  %d%% 입금 · %d일째%s",
+                    AlimtalkText::buyerShort($v->buyer?->name), $v->vehicle_number,
+                    (int) round((1 - (float) $v->unpaid_ratio) * 100), $days, $tail);
+            };
+            $listOf = function (array $rows, bool $showReq) use ($cap, $line, $globalReq): string {
+                $sorted = collect($rows)->sortByDesc(fn ($x) => $x[1])->values();
+                $body = $sorted->take($cap)->map(fn ($x) => $line($x[0], $x[1], $showReq))->implode("\n");
+                $head = $showReq ? "기준 {$globalReq}% 미달 · 경과일 순\n" : '';
+
+                return $head.$body.($sorted->count() > $cap ? "\n외 ".($sorted->count() - $cap).'건 → 채권관리' : '');
+            };
 
             $svc = BizmAlimtalkService::active();
             $sent = 0;
