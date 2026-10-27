@@ -12,6 +12,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  *
  * status: sent(발송 접수 성공, msgid 있음) / failed(BizM 오류·예외) / skipped(게이트 off·미설정 등 발송 안 함).
  * report_status: delivered(실제 도달) / undelivered(미도달) / null(미확인) — alimtalk:poll-report 가 채움.
+ *   🔀 2026-10-27 (jin) — 알림톡이 실패해 **대체문자가 성공(M000)** 한 건도 delivered 다(받는 사람에겐 도달했다).
+ *   「알림톡은 실패했다」는 report_raw.originMessage 에 남고 smsFallbackLabel() 이 로그 사유 칸에 회색으로 보여 준다.
  *   ⚠️ status=sent 은 "BizM 접수 성공"까지만 의미. 실제 카톡 도달은 report_status 로만 확정된다.
  * vehicle_id·user_id 는 트리거 맥락이 있으면 채우고, 없으면(일일요약 등) null.
  */
@@ -84,6 +86,23 @@ class AlimtalkLog extends Model
         return $message !== '' ? '미도달 '.$label($message) : null;
     }
 
+    /**
+     * 알림톡은 실패했지만 대체문자로 도달한 건(2026-10-27) — 「도달」이라 주의 목록엔 안 들지만,
+     * 문자 요금이 나갔고 그 번호는 알림톡을 못 받는다는 사실은 로그에 남겨야 한다. 로그 화면 사유 칸(회색).
+     */
+    public function smsFallbackLabel(): ?string
+    {
+        if ($this->report_status !== 'delivered' || ! is_array($this->report_raw)) {
+            return null;
+        }
+        $origin = (string) ($this->report_raw['originMessage'] ?? '');
+        if ($origin === '') {
+            return null;
+        }
+
+        return '알림톡 실패 '.(BizmResultCodes::describe($origin) ?? $origin).' → 문자로 도달';
+    }
+
     /** 로그 화면 「사유」 칸 — 발송 거부·skip 사유가 먼저, 없으면 미도달 사유. */
     public function reasonLabel(): ?string
     {
@@ -129,7 +148,11 @@ class AlimtalkLog extends Model
         $message = (string) ($body['message'] ?? '');
         $origin = (string) ($body['originMessage'] ?? '');
 
-        if ($origin !== '' || str_contains($message, ':')) {
+        if ($origin !== '') {
+            // 알림톡 실패 → 대체문자 전환. 🔀 2026-10-27 (jin «문자 발송 성공이면 제외해야») — 문자가 성공(M000)이면 도달.
+            return str_starts_with($message, 'M000') ? 'delivered' : 'undelivered';
+        }
+        if (str_contains($message, ':')) {
             return 'undelivered';
         }
         if ($message === '') {

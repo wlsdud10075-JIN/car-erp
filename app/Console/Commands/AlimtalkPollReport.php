@@ -55,7 +55,23 @@ class AlimtalkPollReport extends Command
                 }
             });
 
-        $this->info("report poll done — delivered={$delivered} undelivered={$undelivered} pending={$pending}");
+        // 🔀 2026-10-27 — 분류 규칙이 바뀌면(대체문자 성공 = 도달) 이미 미도달로 찍힌 행을 저장된 응답으로 다시 분류한다.
+        //   API 호출 없음. 규칙이 같으면 0건이라 매일 돌아도 무해하다.
+        $reclassified = 0;
+        AlimtalkLog::query()
+            ->where('report_status', 'undelivered')
+            ->whereNotNull('report_raw')
+            ->chunkById(200, function ($logs) use (&$reclassified) {
+                foreach ($logs as $log) {
+                    if (AlimtalkLog::classifyReport($log->report_raw) === 'delivered') {
+                        $log->report_status = 'delivered';
+                        $log->save();
+                        $reclassified++;
+                    }
+                }
+            });
+
+        $this->info("report poll done — delivered={$delivered} undelivered={$undelivered} pending={$pending} reclassified={$reclassified}");
 
         return self::SUCCESS;
     }

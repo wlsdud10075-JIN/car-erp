@@ -48,8 +48,9 @@ class AlimtalkReportPollTest extends TestCase
         // 에러코드(':' 포함) → 미도달
         $this->assertSame('undelivered', AlimtalkLog::classifyReport(['code' => 'success', 'data' => ['msgid' => 'x'], 'message' => 'M101:NotAvailableSendMessage']));
 
-        // originMessage 존재(알림톡 실패 → 대체문자 전환) → 미도달 (SMS 성공이어도 알림톡 자체는 미도달)
-        $this->assertSame('undelivered', AlimtalkLog::classifyReport(['code' => 'success', 'data' => ['msgid' => 'x'], 'message' => 'M000', 'originMessage' => 'K105:NoMatchedTemplate']));
+        // originMessage 존재(알림톡 실패 → 대체문자 전환): 🔀 2026-10-27 (jin) 문자가 성공(M000)이면 도달, 문자도 실패면 미도달
+        $this->assertSame('delivered', AlimtalkLog::classifyReport(['code' => 'success', 'data' => ['msgid' => 'x'], 'message' => 'M000', 'originMessage' => 'K105:NoMatchedTemplate']));
+        $this->assertSame('undelivered', AlimtalkLog::classifyReport(['code' => 'success', 'data' => ['msgid' => 'x'], 'message' => 'M103:DeniedByReceiver', 'originMessage' => 'K101:NotAvailableSendMessage']));
 
         // code != success (조회 실패/미준비) → 미확정(null, 재조회)
         $this->assertNull(AlimtalkLog::classifyReport(['code' => 'fail', 'data' => ['msgid' => 'x'], 'message' => 'E110:RequestMsgIdNotFound']));
@@ -123,6 +124,43 @@ class AlimtalkReportPollTest extends TestCase
         $this->artisan('alimtalk:poll-report')->assertSuccessful();
 
         Http::assertNothingSent();
+    }
+
+    /** 🔀 2026-10-27 — 알림톡 실패 → 대체문자 성공은 주의 목록에서 빠지고, 사유 칸엔 회색으로 남는다. */
+    public function test_sms_fallback_success_is_delivered_and_not_flagged(): void
+    {
+        $this->configure();
+        $log = $this->makeLog('WEB-SMS');
+        Http::fake(['*' => Http::response(['code' => 'success', 'data' => ['msgid' => 'WEB-SMS'], 'message' => 'M000', 'originMessage' => 'K101:NotAvailableSendMessage'], 200)]);
+
+        $this->artisan('alimtalk:poll-report')->assertSuccessful();
+
+        $log->refresh();
+        $this->assertSame('delivered', $log->report_status);
+        $this->assertSame(0, AlimtalkLog::query()->needsAttention()->count());
+        $this->assertNull($log->reasonLabel());
+        $this->assertStringContainsString('문자로 도달', (string) $log->smsFallbackLabel());
+        $this->assertStringContainsString('K101', (string) $log->smsFallbackLabel());
+    }
+
+    /** 옛 규칙으로 미도달이 찍힌 행(ssancarerp 10-27 실제 1건)은 다음 폴링이 저장된 응답으로 다시 분류한다 — API 호출 0. */
+    public function test_poll_reclassifies_old_undelivered_rows_with_sms_success(): void
+    {
+        $this->configure();
+        $old = AlimtalkLog::create(['template_code' => 'erp_deregistration_notice', 'phone' => '01000000000', 'status' => 'sent', 'msgid' => 'WEB-OLD',
+            'report_status' => 'undelivered', 'report_checked_at' => now()->subDay(),
+            'report_raw' => ['code' => 'success', 'data' => ['msgid' => 'WEB-OLD'], 'message' => 'M000', 'originMessage' => 'K101:NotAvailableSendMessage']]);
+        $stillBad = AlimtalkLog::create(['template_code' => 'erp_deregistration_notice', 'phone' => '01000000001', 'status' => 'sent', 'msgid' => 'WEB-BAD',
+            'report_status' => 'undelivered', 'report_checked_at' => now()->subDay(),
+            'report_raw' => ['code' => 'success', 'data' => ['msgid' => 'WEB-BAD'], 'message' => 'M103:DeniedByReceiver', 'originMessage' => 'K101:NotAvailableSendMessage']]);
+        Http::fake();
+
+        $this->artisan('alimtalk:poll-report')->expectsOutputToContain('reclassified=1')->assertSuccessful();
+
+        Http::assertNothingSent();
+        $this->assertSame('delivered', $old->refresh()->report_status);
+        $this->assertSame('undelivered', $stillBad->refresh()->report_status);
+        $this->assertSame(1, AlimtalkLog::query()->needsAttention()->count());
     }
 
     public function test_failed_send_counts_as_attention(): void
