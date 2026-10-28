@@ -233,6 +233,22 @@
 - ⚠️ **전용 엔드포인트(§14-2)는 덮어쓰기** — 두 경로의 규칙이 다르다. board 는 won 전엔 동봉, won 뒤엔 전용 엔드포인트(Q2-12).
 - 감사 = `AUDITED_COLUMNS`(+ `remitter_id` 는 `MASKED_COLUMNS`). 🚫 응답·읽기 API 에 `remitter_id` 를 싣지 않는다.
 - 가드(착수 때) = `PurchaseSyncReceiverTest` 에 동봉 저장 · 재전송 `already_set` · 빈 문자열 무시 · 감사 가림 4건.
+## 연동 B — 딜러 서류 OCR 동봉: 법인명·대표자·휴대폰 (2026-11 주말 기획 ④, jin 10-28 결정 · ⏳ 미구현)
+
+> 정본 기획 = board `meetings/plan-2026-11-weekend-freight-passport.md` ④. board 가 구매확정 첨부 5장(사업자등록증·명함)을 OCR 해 영업이 드로어에서 후보를 [적용]하면 purchase-sync 에 동봉한다. **ERP 는 OCR 을 하지 않는다**(비전 클라이언트 없음, 확인 주체 = 영업).
+
+- **`contract_version` 상향 없음**(모르는 필드 무시). payload 선택 필드 3개(분리):
+  `seller_company`(string ≤100, 법인명/상호) · `seller_ceo`(string ≤50, 대표자) · `seller_phone`(string ≤20, **숫자만** — board 가 하이픈 없이 보낸다).
+- 저장:
+  | 필드 | ERP 컬럼 | 규칙 |
+  |---|---|---|
+  | `seller_company` + `seller_ceo` | `vehicles.purchase_from`(자유서식) | **ERP 가 합성** = `{법인명}/{대표자}`, 하나만 오면 그것만(「/」 없음). **출처 접두사 없음**(출처는 `purchase_source`). **빈 칸만** — 사람이 친 구입처는 보호 |
+  | `seller_phone` | `vehicles.deregistration_notice_phone`(string 20) | `PhoneFormat::format()` 으로 **하이픈 형식**으로 저장(화면 저장과 동일, 발송 전엔 숫자만 남김). **빈 칸만** |
+- **신규·재전송 모두 빈 칸만**. 이미 있으면 `fields_skipped.purchase_from = 'already_set'` / `fields_skipped.deregistration_notice_phone = 'already_set'`(**ERP 컬럼명**으로 돌려준다). 빈 문자열은 「안 보낸 것」.
+- 감사 = `purchase_from` 은 이미 `AUDITED_COLUMNS`. **`deregistration_notice_phone` 을 `AUDITED_COLUMNS` 에 추가**(착수 때, ERP 몫 — board 가 쓰기 시작하는 첫 칸이라 누가 넣었는지 남겨야 한다). 휴대폰은 ERP 감사에서 가리지 않는다(`MASKED_COLUMNS` 아님 — 딜러 전화는 화면·알림톡 로그에 이미 평문).
+- 📏 함정 — 말소 재촉 알림톡 본문은 구입처를 **12자에서 자른다**(`AlimtalkDeregistration::listOf`). 긴 법인명이면 대표자가 안 보인다(현행과 같음, 고치지 않는다).
+- 🚫 흡수 금지 — ERP 가 OCR·후보 판정을 하지 않는다. `purchase_from` 을 구조화 컬럼으로 쪼개지 않는다(자유서식 유지). 이 두 값을 board 로 **되돌려 주지 않는다**(§3 연락처 금지).
+- 가드(착수 때) = `PurchaseSyncReceiverTest` 에 합성 3형(둘 다/법인명만/대표자만) · 빈 칸만·`already_set` · 전화 하이픈 저장 · 감사 행 1건.
 ## 응답 / 에러 계약
 | 상황 | 코드 | board 동작 |
 |---|---|---|
