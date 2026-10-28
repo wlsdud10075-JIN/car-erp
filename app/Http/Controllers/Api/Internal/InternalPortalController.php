@@ -7,6 +7,7 @@ use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
+use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\ExchangeRateService;
 use App\Services\PurchaseRegistrationGate;
@@ -30,6 +31,26 @@ class InternalPortalController extends Controller
     private function salesmanId(Request $request): int
     {
         return SalesmanResolver::resolveActiveOrFail((string) $request->query('salesman_email', ''))->id;
+    }
+
+    /**
+     * 🔓 `scope=all` — **ERP super 계정 한 사람만** 전 바이어·컨사이니를 본다 (jin 2026-10-28, e2e 시험용).
+     *
+     *   board 가 「로그인 사용자가 super 다」라고 붙여 보내지만, 그 말을 믿지 않는다 — `salesman_email` 자리에 온
+     *   이메일이 **이 회사 ERP 의 super 계정**(`users.permission='super'`)일 때만 연다. 아니면 종전대로 403.
+     *   §2 의 「서명 + 매핑 이중」은 그대로다: 매핑 대상이 Salesman 이 아니라 User(super) 로 바뀔 뿐이다.
+     *   영업·관리는 이 플래그를 붙여도 403 — 본인 스코프(2026-06-23 jin 결정)는 super 외엔 예외가 없다.
+     *   ⚠️ 쓰기(선적요청·신호)는 이 플래그를 보지 않는다 — 읽기 드롭다운 두 개뿐이다.
+     */
+    private function superScopeAll(Request $request): bool
+    {
+        if ((string) $request->query('scope', '') !== 'all') {
+            return false;
+        }
+        $user = User::where('email', (string) $request->query('salesman_email', ''))->first();
+        abort_unless($user !== null && $user->isSuperAdmin(), 403, 'Forbidden');
+
+        return true;
     }
 
     /** 영업 본인 담당 차량 base 쿼리 (IDOR 단일출처). */
@@ -441,9 +462,11 @@ class InternalPortalController extends Controller
      */
     public function buyers(Request $request): JsonResponse
     {
-        $sid = $this->salesmanId($request);
-        $buyers = Buyer::query()->where('salesman_id', $sid)->where('is_active', true)
-            ->with('country')->orderBy('name')->get();
+        // 🔓 super 전체 보기(scope=all) — 아니면 종전대로 본인 영업 스코프. 판정은 superScopeAll() 한 곳.
+        $all = $this->superScopeAll($request);
+        $sid = $all ? null : $this->salesmanId($request);
+        $buyers = Buyer::query()->when(! $all, fn ($q) => $q->where('salesman_id', $sid))->where('is_active', true)
+            ->with(['country', 'salesman:id,name'])->orderBy('name')->get();
 
         // 🔒 매입 등록 락 (2026-08-10) — board 가 **낙찰 전에** 막을 수 있게 같이 내려준다.
         //   ERP 차량관리는 저장 시점에 막지만, board 는 이미 `status='won'`(= 돈이 나간 뒤)에
@@ -460,6 +483,9 @@ class InternalPortalController extends Controller
                 'id' => $b->id,
                 'name' => $b->name,
                 'country' => $b->country?->name,
+                // 누구 바이어인지 — scope=all 에서 super 가 고를 때 본다(이름뿐, PII 아님). 본인 스코프에선 늘 본인.
+                'salesman_id' => $b->salesman_id,
+                'salesman_name' => $b->salesman?->name,
                 // 평탄한 bool — board 가 최소 구현으로도 막을 수 있게.
                 'purchase_locked' => (bool) ($v['locked'] ?? false),
                 // 사람에게 "왜 막혔는지"를 보여주기 위한 근거. 락이 아니어도 함께 내려간다
@@ -528,11 +554,13 @@ class InternalPortalController extends Controller
      */
     public function consignees(Request $request): JsonResponse
     {
-        $sid = $this->salesmanId($request);
+        // 🔓 super 전체 보기(scope=all) — 소유 검사만 건너뛴다(바이어 존재·활성은 그대로).
+        $all = $this->superScopeAll($request);
+        $sid = $all ? null : $this->salesmanId($request);
         $buyerId = (int) $request->query('buyer_id', 0);
 
         $ownsBuyer = $buyerId > 0
-            && Buyer::where('id', $buyerId)->where('salesman_id', $sid)->exists();
+            && Buyer::where('id', $buyerId)->when(! $all, fn ($q) => $q->where('salesman_id', $sid))->exists();
 
         $data = $ownsBuyer
             ? Consignee::query()->where('buyer_id', $buyerId)->where('is_active', true)

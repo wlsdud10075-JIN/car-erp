@@ -10,6 +10,7 @@ use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\ShippingRequest;
 use App\Models\TaskAlarm;
+use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -518,6 +519,53 @@ class BoardPortalApiTest extends TestCase
         $res->assertJsonPath('count', 1);
         $res->assertJsonFragment(['id' => $c->id, 'name' => 'C1']);
         $res->assertJsonMissing(['name' => 'Cdead']);
+    }
+
+    /**
+     * 🔓 `scope=all` — ERP super 계정 이메일이면 전 활성 바이어(+ 담당 영업 이름) (jin 2026-10-28 e2e 시험용).
+     *    판정은 ERP 가 한다 — board 가 붙인 플래그만으로는 안 열린다.
+     */
+    public function test_scope_all_opens_every_active_buyer_for_the_erp_super_account(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        Buyer::create(['name' => 'Mine', 'salesman_id' => $me->id, 'is_active' => true]);
+        Buyer::create(['name' => 'Theirs', 'salesman_id' => $other->id, 'is_active' => true]);
+        Buyer::create(['name' => 'Dead', 'salesman_id' => $other->id, 'is_active' => false]);
+        User::factory()->create(['email' => 'super@a.com', 'permission' => 'super']);
+
+        $res = $this->signedGet('/api/internal/board/buyers', ['salesman_email' => 'super@a.com', 'scope' => 'all'])->assertOk();
+        $res->assertJsonPath('count', 2);
+        $res->assertJsonFragment(['name' => 'Theirs', 'salesman_name' => $other->name]);
+        $res->assertJsonMissing(['name' => 'Dead']);
+    }
+
+    /** 영업·관리가 `scope=all` 을 붙여도 403 — super 외엔 예외가 없다. super 이메일이라도 플래그 없으면 종전(403: Salesman 매핑 없음). */
+    public function test_scope_all_is_refused_for_anyone_but_the_super_account(): void
+    {
+        $me = $this->salesman('me@a.com');
+        Buyer::create(['name' => 'Mine', 'salesman_id' => $me->id, 'is_active' => true]);
+        User::factory()->create(['email' => 'admin@a.com', 'permission' => 'admin']);
+        User::factory()->create(['email' => 'super@a.com', 'permission' => 'super']);
+
+        $this->signedGet('/api/internal/board/buyers', ['salesman_email' => 'me@a.com', 'scope' => 'all'])->assertForbidden();
+        $this->signedGet('/api/internal/board/buyers', ['salesman_email' => 'admin@a.com', 'scope' => 'all'])->assertForbidden();
+        $this->signedGet('/api/internal/board/buyers', ['salesman_email' => 'super@a.com'])->assertForbidden();
+        $this->signedGet('/api/internal/board/consignees', ['salesman_email' => 'me@a.com', 'scope' => 'all', 'buyer_id' => '1'])->assertForbidden();
+    }
+
+    /** `scope=all` 컨사이니 — 남의 바이어 밑 활성 컨사이니도 본다(소유 검사만 건너뛴다). */
+    public function test_scope_all_consignees_skip_the_ownership_check(): void
+    {
+        $other = $this->salesman('other@a.com');
+        $theirBuyer = Buyer::create(['name' => 'TB', 'salesman_id' => $other->id, 'is_active' => true]);
+        $c = Consignee::create(['name' => 'TC', 'buyer_id' => $theirBuyer->id, 'is_active' => true]);
+        Consignee::create(['name' => 'Tdead', 'buyer_id' => $theirBuyer->id, 'is_active' => false]);
+        User::factory()->create(['email' => 'super@a.com', 'permission' => 'super']);
+
+        $res = $this->signedGet('/api/internal/board/consignees', ['salesman_email' => 'super@a.com', 'scope' => 'all', 'buyer_id' => (string) $theirBuyer->id])->assertOk();
+        $res->assertJsonPath('count', 1);
+        $res->assertJsonFragment(['id' => $c->id, 'name' => 'TC']);
     }
 
     public function test_consignees_idor_other_salesman_buyer_returns_empty(): void
