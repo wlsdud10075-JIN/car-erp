@@ -234,6 +234,14 @@ board 의 **전송 감사 명령 `board:purchase-sync-audit`**(board dev `cb9974
   - 💵 **`transport_fee_usd_total`** (2026-08-11, 인계 §7) — 묶음 총액(USD 정수). **`CONTAINER` 묶음에서만** 받는다(RORO 면 서버가 버린다 — board 를 믿지 않는다). 멤버 차량에 **1/N** 로 `vehicles.transport_fee_usd`(회계 미포함 기록칸)에 기입.
     - 🧮 **분할 규칙**(단일 출처 = `ShippingRequest::splitFreightUsd`): 몫 = `intdiv(총액, 묶음 전체 대수)`, **나머지는 최소 `vehicle_id` 한 대**가 받는다(재전송해도 같은 차가 받아 값이 안 흔들린다).
     - **비어 있을 때만 채운다**(jin 확정. NULL·0 둘 다 빈 것으로 봄). 그래서 **기입 합계가 총액과 안 맞을 수 있다** — 분모는 언제나 전체 대수이고 수기값은 보호되기 때문. 의도된 결과다.
+    - 💱 **판매통화 환산 → `vehicles.transport_fee` (2026-11 주말 기획, jin 10-28 결정 · ⏳ 미구현 — board 변경 0)**
+      같은 1/N 적용 지점(`applyBundleToVehicle`)에서 **USD 몫 × (`usd_exchange_rate` ÷ `exchange_rate`)** 를 **판매통화 운임비 `transport_fee`** 에 넣는다. 정본 기획 = board `meetings/plan-2026-11-weekend-freight-passport.md` ① 「✅ 결정값」.
+      - **빈 칸만**(USD 칸과 같은 규칙 — `transport_fee` NULL·0 일 때만). 덮어쓰기 ❌ — 관리가 친 값 보호 + 2차 마감 차는 `transport_fee` 가 원장 락이라 sync 가 예외로 죽는 경로를 안 만든다.
+      - **`usd_exchange_rate` 또는 `exchange_rate` 가 없으면(NULL·0) 기록하지 않는다**(jin «환율 없는 차는 기록하지 마»). 당일 환율 자동 대입 ❌. 응답 `skipped[]` 사유 `no_rate` 로만 알린다.
+      - **판매가 고정** — 총판매가(`sale_total_amount`)·면장 기준액(`declaration_base_amount`, 운임 포함)·통관 SET `구매리스트!D15` 는 전부 `transport_fee` 에서 **파생**이라 따로 안 건드린다. 면장이 수기(CIF/FOB)인 차는 저장 훅 ③ 보존 규칙대로 안 움직인다.
+      - sync 마다 재계산 ❌ · 묶음 이탈 차는 남긴다 · 기존 차 소급 ❌.
+      - 실효과 = CFR 컨테이너 차의 정산 블로커 `freight_unconfirmed`(`Vehicle::isFreightConfirmedForSettlement`) 가 풀리고 `saved` 훅(`wasChanged('transport_fee')`)이 정산 자동 생성을 다시 건다 — **기존 동작 그대로**(결정 기록 없음, 운영 첫 사례에서 확인). 감사는 `AUDITED_COLUMNS` 의 `transport_fee` 로 자동.
+      - 가드(착수 때) = 환산값 1건 · 빈 칸만 · 환율 없으면 skip · 재sync 무변경 · 면장 자동 추종 · 2차 마감 차 무예외.
   - diff(트랜잭션): desired에 있고 open 없음→**생성** / `requested`이고 attrs 변경→**갱신**(bundle 이동 시 batch 재배치) / **`requested`이고 attrs 전부 동일→no-op**(갱신·`requested_at`·관리 알람·`updated[]` 전부 없음, 응답 어느 배열에도 안 셈 — 2026-10-14 board 요청, 가드 `BoardPortalApiTest::test_sync_leaves_unchanged_requested_rows_alone`) / desired에 없고 `requested`→**자동취소**(+알람 resolve) / `in_progress`→**잠금**(desired 유무로 자동변경·자동취소 안 함).
   - 응답 `{created:[], updated:[], cancelled:[], skipped:[], locked:[]}`.
   - **⚠️ board 측 강제**: payload는 **반드시 영업 전체 desired 묶음**. 일부만 보내면 빠진 `requested` 차가 **의도치 않게 자동취소**됨 → board는 `/bundles`로 전체를 그려놓고 영업이 빼/옮긴 것만 반영해 통째 전송.
@@ -753,3 +761,49 @@ board 는 조정의 존재조차 모르므로 배치를 미러해야 숫자가 �
   사내직원 tier 판정이 `per_unit_tier_enabled` 를 읽어 **정산액이 통째로 틀어진다**(예외·경고 0).
 - 가드 = `tests/Feature/BoardPayoutBatchApiTest` — **응답 본문 문자열**로 전체 스냅샷 누출을 검사한다
   (매핑 배열만 보는 테스트는 새어도 통과한다). 조정이 운영에 1건뿐이라 **fixture 를 직접** 만든다.
+
+## 14. 송금인(바이어 고객) Name·ID — `vehicles.remitter_*` (2026-11 주말 기획, jin 10-28 결정 · ⏳ 미구현)
+
+> 정본 기획 = board `meetings/plan-2026-11-weekend-freight-passport.md` ② 「✅ 결정값」·「분담」. board 는 **이 절의 키 이름을 그대로** 쓴다.
+> 배경: 바이어 밑의 실제 손님(송금증에 찍히는 사람)이 차마다 달라 **차량 단위**로 기록한다(바이어 `passport_id`·컨사이니 `id_value` 와 다른 사람). ERP 에서는 **차량관리 검색 「송금증이름」** 으로 찾는 용도뿐이다.
+> 🚫 **서류는 ERP 무관** — Travel Services Invoice 는 board 전용 문서(jin 이 양식을 board 에 직접 준다). ERP 통관 SET 양식·매핑·`BOARD_ALLOWED_TYPES` 는 **손대지 않는다**(§6 403 그대로).
+
+### 14-1. 저장 (ERP)
+
+| 컬럼 | 타입 | 비고 |
+|---|---|---|
+| `vehicles.remitter_name` | string(100) nullable | **평문**(검색용) · `AUDITED_COLUMNS` |
+| `vehicles.remitter_id` | text nullable | 여권/ID 번호 · **`$casts` `'encrypted'`**(`purchase_seller_account` 와 같은 관행) · `AuditLog::MASKED_COLUMNS` · `AUDITED_COLUMNS` |
+
+- 화면 = 차량 편집 **기본정보 탭, 영업담당자 옆** 2칸(라벨 「송금인 이름 / 송금인 ID (board 기록)」). 판매 탭 ❌ — 매입예정 단계에 오는 값이라 바이어가 없을 때도 들어온다. `config/column_labels.php` 에 두 컬럼 추가.
+- 검색 = `Vehicle::scopeSearchAny` 에 `->orWhere('remitter_name', 'like', …)` 한 줄(누적검색도 같은 scope). 🚨 **ID 는 암호화라 LIKE 불가 — 검색은 이름만.** 가이드·챗봇 카드에 그렇게 적는다.
+- 🚫 §3 응답 화이트리스트에 넣지 않는다(읽기 API 로 안 내려준다). board 가 자기 DB 에 보관하는 값이다.
+
+### 14-2. `POST /vehicles/{id}/remitter` — 전용 전송 (won 뒤, ERP 차량이 있을 때)
+
+prefix `/api/internal/board`, 미들웨어·서명·replay = §1 그대로(POST raw body 포함), 스코프 = §2(`salesman_email` 본인 차만 — 남의 차·없는 차 = §2 와 같은 코드).
+
+```jsonc
+{
+  "salesman_email": "sales@example.com",
+  "remitter_name": "JOHN DOE",     // 필수, 100자, trim
+  "remitter_id":   "AB1234567"     // 선택, 64자 — 빈 문자열이면 **비우지 않고 무시**(지우기는 ERP 화면에서)
+}
+```
+
+- **덮어쓰기 + 감사**(jin) — purchase-sync 동봉과 규칙이 **다르다**(14-3). 값이 같으면 no-op(감사 0, `AuditLog::isRealChange`).
+- 응답 `200 { "vehicle_id": 12, "updated": ["remitter_name","remitter_id"], "had_previous": true }` — `updated` 는 실제로 바뀐 칸만. `had_previous` = 덮어쓰기 전에 값이 있었나(board 가 「덮어썼다」를 표시할 때).
+- 422 = 이름 없음·길이 초과. 차량 soft delete 는 §2 코드.
+- 감사 `AuditLog` = `AUDITED_COLUMNS` 훅 그대로(행위자 = 세션 없는 경로라 `user_id` NULL + `note` 에 board·`salesman_email`, §8 #56 과 같은 처리).
+
+### 14-3. purchase-sync 동봉 (won 전에 적은 경우) — `purchase-sync-receiver.md` 「송금인 Name·ID 동봉」
+
+`contract_version` 상향 없음(모르는 필드 무시). **빈 칸만** 채운다(그 컨트롤러의 fill-if-empty 규칙, 있으면 `fields_skipped.remitter_name='already_set'`). ⇒ **두 경로의 규칙이 다르다**: 전용 엔드포인트 = 덮어쓰기 / 동봉 = 빈 칸만. 기획서에 명시(board Q2-12: won 전엔 드로어 전송 버튼 비활성 + 「구매확정 시 함께 전송」 안내).
+
+### 14-4. board 측 작업 (board repo·board 세션 — 복사 금지)
+
+OCR(MRZ, 후보 제시만 · 자동 기입 ❌) · 이미지 폐기 · Name·ID 보관(여권번호 encrypted) · 묶음/바이어 같은 차에 복사 체크 · Travel Services Invoice 생성. 전부 board 정본 기획서.
+
+### 14-5. 흡수 금지
+
+- 🚫 ERP 가 OCR 하지 않는다. 🚫 Travel 시트를 ERP 서류 탭·`BOARD_ALLOWED_TYPES` 에 넣지 않는다. 🚫 `remitter_id` 를 읽기 API·포털 응답에 싣지 않는다. 🚫 바이어 `passport_id` 와 동기화하지 않는다(다른 사람일 수 있다).
