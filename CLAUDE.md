@@ -451,8 +451,7 @@ dev-only = `scripts/notion-*`·`docs/*.html`·`.md`·Notion 테스트 2.
 > 🚨 **알림톡은 BizM 승인 대기라 실발송 0건** — 승인 전까지 게이트에서 skipped. 등록 파일·문안 = jin 몫.
 > ⚠️ **board 는 아직 master 미머지**(ERP 선배포 완료 상태) — board 세션에서 올려야 새 버튼이 산다.
 
-**남은 작업**: 코드 착수 대기 **0건**. 진행 중인 안건은 전부 jin 운영 몫이거나 board 세션 몫이라
-`MEMORY.md` 의 「jin 운영 몫」·「외부·타 세션 병목」 섹션을 볼 것.
+**남은 작업**: 🗓️ **주말(11-01~02) 개발 5갈래** — board 기획 ①컨테이너 운임비 USD→판매통화 ②송금인 Name·ID ②-바이어 주소·전화 조회 ③포털 적립금 ④딜러 서류 OCR 수신. jin 결정·스펙 문서(`docs/integration/board-portal-api.md` §5·§14·§4·§3, `purchase-sync-receiver.md`) 전부 끝, 코드 0 — 착수 체크리스트 = 메모리 `project_weekend_plan_freight_passport_2026_11`. 그 외는 jin 운영 몫·board 세션 몫(`MEMORY.md` 「jin 운영 몫」·「외부·타 세션 병목」).
 
 ## 대시보드 명칭 및 설계 원칙 (확정)
 
