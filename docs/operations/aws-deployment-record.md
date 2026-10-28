@@ -935,6 +935,13 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-10-28 (오후) — master `2349598f` · 마이그 0 (jin «지금 1,2 배포할 수 있나?» → 즉시, 코드 커밋 2개 cherry-pick)
+
+dev `4cfbc6aa`(scripts/notion-* 2개는 modify/delete → 삭제 유지)·`76f6d618` → master `82151b99`·`2349598f`.
+1. 입금완료 📨(계약금·잔금) — 딜러 번호가 비어 있으면 **담당영업(사내 수신자)에게만**(v2/v3 본문 「딜러와 사내 담당 임직원」). 사내도 아무도 못 받으면 오류 토스트. v1(옛 템플릿)은 종전대로 번호 없이는 차단. 번호칸 힌트·가이드·카드 한 줄
+2. board `GET /buyers`·`/consignees` **`scope=all`** — `salesman_email` 이 이 회사 ERP super 계정(`users.permission='super'`) 이메일일 때만 전 활성 바이어·컨사이니(판정 ERP, 그 외 403). 행에 `salesman_id`·`salesman_name` 추가. e2e 시험용(jin). board 는 super 로그인 때 플래그 한 줄(배포 요청함)
+- 확인: 로컬 병렬 3,537 pass(실패 0·skip 1) · deploy 런 40645833957 잡 5 success · 3사 SHA `2349598f` · `/login` 200 ×3
+- 후속: board 배포(그쪽 몫) → jin board super 매핑에 ERP super 이메일 → e2e 시험. super 확정 차의 담당 영업 폴백은 미결(수동 배정)
 ## 2026-10-27 (저녁) — master `123ffd55` · **마이그 1** (jin «배포해줘», 코드 커밋 4개 cherry-pick)
 
 dev `7bd8bec4`(.md 빼고)·`da5efc84`·`cd3ce485`·`2eae1b67` → master `61ccdfd6`·`fb4c6c11`·`58b564e1`·`123ffd55`. `board-portal-api.md` 는 modify/delete 충돌 → 삭제 유지. dev 전용(개발 현황판 동기화 `b88b18d2`·가이드 2건) 제외.
