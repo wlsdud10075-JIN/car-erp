@@ -477,4 +477,58 @@ class PurchasePaidNoticeV2Test extends TestCase
             'BizM 등록본과 어긋난다 — 고치려면 재등록·재승인이다'
         );
     }
+
+    /**
+     * 📵 딜러 번호가 비어 있으면 v2 는 **담당영업에게만** 보낸다 (jin 2026-10-28 «번호 적으면 딜러+담당영업, 안 적으면 담당영업만»).
+     *    본문이 「딜러와 사내 담당 임직원에게 발송되는」 이라 사내만 받아도 거짓이 아니다.
+     */
+    public function test_empty_dealer_phone_sends_to_the_salesman_only_on_v2(): void
+    {
+        $this->configureV1();
+        $this->configureV2();
+        $this->okHttp();
+        $this->actingAs($this->finance());
+
+        $v = $this->vehicle('010-1111-2222');
+        $this->pay($v);
+
+        $this->send($v, '');
+
+        $logs = AlimtalkLog::all();
+        $this->assertCount(1, $logs, '딜러 번호가 없으면 담당영업 한 통만');
+        $this->assertSame('01011112222', $this->digits($logs->first()->phone));
+        $this->assertSame('sent', $logs->first()->status);
+        $this->assertSame('erp_purchase_paid_v2', $logs->first()->template_code);
+    }
+
+    /** 옛 템플릿(v1)은 수신 대상이 «딜러» 로 못 박혀 있어 번호 없이는 종전대로 막는다. */
+    public function test_empty_dealer_phone_still_blocks_the_old_template(): void
+    {
+        $this->configureV1();
+        $this->okHttp();
+        $this->actingAs($this->finance());
+
+        $v = $this->vehicle('010-1111-2222');
+        $this->pay($v);
+
+        $this->send($v, '');
+
+        $this->assertCount(0, AlimtalkLog::all(), 'v1 은 딜러 번호 없이 아무 데도 안 나간다');
+    }
+
+    /** 딜러 번호도 없고 담당영업 전화도 없으면 아무 데도 안 나간다 — 성공 토스트가 뜨면 거짓 신호다. */
+    public function test_empty_dealer_phone_and_no_salesman_phone_sends_nothing(): void
+    {
+        $this->configureV1();
+        $this->configureV2();
+        $this->okHttp();
+        $this->actingAs($this->finance());
+
+        $v = $this->vehicle(null);
+        $this->pay($v);
+
+        $this->send($v, '');
+
+        $this->assertCount(0, AlimtalkLog::all());
+    }
 }

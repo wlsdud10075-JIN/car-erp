@@ -1215,7 +1215,7 @@ return [
 
     // Deregistration certificate AlimTalk delivery to domestic buyer (purchase tab)
     'deregnotice' => [
-        'hint_paid' => 'The [Notify] buttons next to the down payment and balance rows also use this number.',
+        'hint_paid' => 'The [Notify] buttons next to the down payment and balance rows also use this number. If the number is empty, it goes to the salesperson only.',
         'label' => 'Deregistration cert. AlimTalk (domestic dealer)',
         'hint' => 'Sends a link to the deregistration certificate via KakaoTalk AlimTalk. (Link expires in 3 days · configure AlimTalk in Feature Settings)',
         'send_btn' => 'Send AlimTalk',
@@ -1259,6 +1259,8 @@ return [
         'also_sent' => 'Also sent to :count internal recipient(s).',
         'sales_failed' => 'Sending to the internal recipients failed.',
         'sales_no_phone' => 'No salesperson phone number, so it was sent to the dealer only.',
+        'internal_only_sent' => 'No dealer phone number, so it was sent only to :count internal recipient(s).',
+        'internal_only_none' => 'No dealer phone number and no internal recipient (salesperson phone) — nothing was sent.',
         'mortgage_pending' => 'The mortgage notice was not included (template pending approval).',
         'confirm_mortgage_on' => ' * The mortgage release request will be included.',
         'confirm_mortgage_pending' => ' * Marked as mortgaged, but the notice is not sent yet (template pending approval).',

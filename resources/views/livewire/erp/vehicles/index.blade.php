@@ -5285,11 +5285,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
 
         $phone = trim($this->deregistrationBuyerPhone);
-        if ($phone === '') {
-            $this->dispatch('notify', message: __('vehicle.paidnotice.no_phone'), type: 'error');
-
-            return;
-        }
 
         // 금액 — 화면 draft 가 아니라 **DB 의 확정 행**에서 읽는다(저장 전 입력값을 보내면 거짓 통지).
         if ($kind === 'down') {
@@ -5322,6 +5317,16 @@ new #[Layout('components.layouts.app')] class extends Component {
             $proofSkipped = true;   // 파일은 지급 행에 저장됐지만 버튼 템플릿 승인 전 — 토스트로 알린다
         }
         $isV2 = in_array($code, ['erp_purchase_paid_v2', 'erp_purchase_paid_v3'], true);
+
+        // 📵 딜러 번호가 비어 있으면 — v2/v3 는 **사내 수신자에게만** 보낸다(jin 2026-10-28 «번호 적으면 딜러+담당영업, 안 적으면
+        //    담당영업만»). 본문이 「딜러와 사내 담당 임직원에게 발송되는」 이라 사내만 받아도 거짓이 아니다.
+        //    옛 템플릿(v1)은 수신 대상이 «딜러» 로 못 박혀 있어 번호 없이는 종전대로 막는다.
+        $dealerSkipped = $phone === '';
+        if ($dealerSkipped && ! $isV2) {
+            $this->dispatch('notify', message: __('vehicle.paidnotice.no_phone'), type: 'error');
+
+            return;
+        }
 
         // 🚨 토글만 하고 저장을 안 했으면 막는다 — 발송은 **DB 값**을 읽으므로 화면과 다른 내용이
         //    나간다. 「저당을 켜고 보냈는데 문구가 없다」 가 되면 아무도 눈치 못 챈다.
@@ -5366,12 +5371,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
-        $log = \App\Services\BizmAlimtalkService::active()->send($code, $phone, $vars, $meta, $buttons);
+        if (! $dealerSkipped) {
+            $log = \App\Services\BizmAlimtalkService::active()->send($code, $phone, $vars, $meta, $buttons);
 
-        if ($log->status !== 'sent') {
-            $this->dispatch('notify', message: __('vehicle.paidnotice.failed', ['reason' => $log->error ?: $log->status]), type: 'error');
+            if ($log->status !== 'sent') {
+                $this->dispatch('notify', message: __('vehicle.paidnotice.failed', ['reason' => $log->error ?: $log->status]), type: 'error');
 
-            return;
+                return;
+            }
         }
 
         // 사내 동시 수신 (jin 2026-08-21) — **v2 에서만**. 옛 본문은 수신 대상을 «딜러» 로 못 박고
@@ -5388,7 +5395,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $extraNotice = '';
         if ($isV2) {
             $digits = fn (?string $p): string => preg_replace('/\D/', '', (string) $p) ?? '';
-            $already = [$digits($phone)];
+            $already = $dealerSkipped ? [] : [$digits($phone)];
 
             // 🎯 체크가 유일한 스위치, 범위는 역할이 정한다 (jin 2026-08-24).
             //    구 코드는 담당 영업을 **코드에 박아** 자동 발송했다 — 화면에 안 보이니
@@ -5409,7 +5416,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 }
             }
 
-            if ($ok > 0) {
+            // 📵 딜러 없이 사내도 아무도 못 받았으면 **아무 데도 안 나간 것** — 성공 토스트를 띄우면 거짓 신호다.
+            if ($dealerSkipped && $ok === 0) {
+                $this->dispatch('notify', message: __('vehicle.paidnotice.internal_only_none'), type: 'error');
+
+                return;
+            }
+            if ($dealerSkipped) {
+                $extraNotice = __('vehicle.paidnotice.internal_only_sent', ['count' => $ok]);
+            } elseif ($ok > 0) {
                 $extraNotice = __('vehicle.paidnotice.also_sent', ['count' => $ok]);
             } elseif ($tried > 0) {
                 $extraNotice = __('vehicle.paidnotice.sales_failed');
