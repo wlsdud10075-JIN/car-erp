@@ -941,7 +941,7 @@ dev `4cfbc6aa`(scripts/notion-* 2개는 modify/delete → 삭제 유지)·`76f6d
 1. 입금완료 📨(계약금·잔금) — 딜러 번호가 비어 있으면 **담당영업(사내 수신자)에게만**(v2/v3 본문 「딜러와 사내 담당 임직원」). 사내도 아무도 못 받으면 오류 토스트. v1(옛 템플릿)은 종전대로 번호 없이는 차단. 번호칸 힌트·가이드·카드 한 줄
 2. board `GET /buyers`·`/consignees` **`scope=all`** — `salesman_email` 이 이 회사 ERP super 계정(`users.permission='super'`) 이메일일 때만 전 활성 바이어·컨사이니(판정 ERP, 그 외 403). 행에 `salesman_id`·`salesman_name` 추가. e2e 시험용(jin). board 는 super 로그인 때 플래그 한 줄(배포 요청함)
 - 확인: 로컬 병렬 3,537 pass(실패 0·skip 1) · deploy 런 40645833957 잡 5 success · 3사 SHA `2349598f` · `/login` 200 ×3
-- 후속: board 배포(그쪽 몫) → jin board super 매핑에 ERP super 이메일 → e2e 시험. super 확정 차의 담당 영업 폴백은 미결(수동 배정)
+- ✅ board 도 같은 날 배포 master `f525c3b`(heymanboard·ssancarboard success, 마이그 0) — super 로그인 시 `scope=all` + 드롭다운 「· salesman_name」. 담당 자동 배정 안 함(jin: super 확정은 시험용·즉시 삭제). 후속: jin board super 매핑에 ERP super 이메일 → e2e 시험
 ## 2026-10-27 (저녁) — master `123ffd55` · **마이그 1** (jin «배포해줘», 코드 커밋 4개 cherry-pick)
 
 dev `7bd8bec4`(.md 빼고)·`da5efc84`·`cd3ce485`·`2eae1b67` → master `61ccdfd6`·`fb4c6c11`·`58b564e1`·`123ffd55`. `board-portal-api.md` 는 modify/delete 충돌 → 삭제 유지. dev 전용(개발 현황판 동기화 `b88b18d2`·가이드 2건) 제외.
