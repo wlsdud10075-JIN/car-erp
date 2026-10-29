@@ -123,7 +123,7 @@ return [
     // placeholder = 칸에 보이는 대표 항목만. 전체 목록은 호버(title)로 — 칸을 넓히면 필터바가 줄바꿈된다.
     //   ⚠️ 차대번호는 이 칸이 아니라 **옆 VIN 전용 칸**의 기능이다 — 여기 적지 말 것.
     'search_placeholder' => '차량번호 · B/L · 신고번호 · 선박 · 컨테이너',
-    'search_title' => '차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호 · B/L번호 · 선박명 · 컨테이너번호 · 구입처 · EMS/DHL 운송장번호',
+    'search_title' => '차량번호 · 브랜드 · 차종 · 소유자 · 수출신고번호 · B/L번호 · 선박명 · 컨테이너번호 · 구입처 · 송금인 이름 · EMS/DHL 운송장번호',
     'search_btn' => '조회',
     'reset_btn' => '초기화',
     'reset_hint' => '검색·기간·필터·누적을 차량관리 진입 상태로 되돌립니다.',
@@ -529,6 +529,8 @@ return [
         'mileage' => '주행거리 (km)',
         'color' => '색상',
         'salesman' => '영업담당자',
+        'remitter_name' => '송금인 이름',
+        'remitter_id' => '송금인 ID (board 기록)',
         'vin' => '차대번호',
         'engine_no' => '원동기형식',
         'fuel_type' => '연료종류',
@@ -1356,6 +1358,7 @@ return [
     ],
 
     'ph' => [
+        'remitter_id' => '여권/ID 번호 — 이름으로만 검색됩니다',
         'brand' => '현대',
         'model_type' => '쏘나타',
         'color' => '흰색',

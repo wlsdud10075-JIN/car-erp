@@ -1355,6 +1355,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 매입 ──────────────────────────────────────────────────────
     public string $purchase_date = '';
     public string $salesman_id_str = '';
+    // 2026-11 ② — 송금인 Name·ID (board 기록, 차량 단위). 기본정보 탭 영업담당자 옆 2칸.
+    public string $remitter_name = '';
+    public string $remitter_id = '';
     public string $purchase_from  = '';
     // karaba 전용 매입탭 2단 캐스케이드 (Phase 1, 2026-07-22) — 매입등록(1단) → 증빙유형(2단) + 매매상 체크
     public string $purchase_registration_type = '';
@@ -4654,6 +4657,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 매입
         $this->purchase_date       = $v->purchase_date ? $v->purchase_date->format('Y-m-d') : '';
         $this->salesman_id_str     = $v->salesman_id   ? (string)$v->salesman_id : '';
+        $this->remitter_name       = $v->remitter_name ?? '';
+        $this->remitter_id         = $v->remitter_id ?? '';   // encrypted cast 가 복호화
         $this->purchase_from       = $v->purchase_from ?? '';
         $this->purchase_registration_type = $v->purchase_registration_type ?? '';
         $this->purchase_evidence_subtype  = $v->purchase_evidence_subtype  ?? '';
@@ -5772,6 +5777,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_spec_max_power'   => ['nullable', 'string', 'max:30'],
 
             'salesman_id_str'           => [Rule::when($this->salesman_id_str !== '', ['exists:salesmen,id'])],
+            'remitter_name'             => ['nullable', 'string', 'max:100'],
+            'remitter_id'               => ['nullable', 'string', 'max:64'],
             'buyer_id_str'              => [Rule::when($this->buyer_id_str !== '', ['exists:buyers,id'])],
             'consignee_id_str'          => [Rule::when($this->consignee_id_str !== '', ['exists:consignees,id'])],
             'export_buyer_id_str'       => [Rule::when($this->export_buyer_id_str !== '', ['exists:buyers,id'])],
@@ -6362,6 +6369,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 매입
             'purchase_date'    => $toDate($this->purchase_date),
             'salesman_id'      => $toId($this->salesman_id_str),
+            'remitter_name'    => trim($this->remitter_name) ?: null,   // 2026-11 ②
+            'remitter_id'      => trim($this->remitter_id) ?: null,
             'purchase_from'    => $this->purchase_from ?: null,
             'purchase_registration_type' => $this->purchase_registration_type ?: null,
             'purchase_evidence_subtype'  => $this->purchase_evidence_subtype  ?: null,
@@ -7830,6 +7839,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_reg_vin','nice_reg_engine_no','nice_reg_fuel_type','nice_reg_use_type','nice_reg_vehicle_form',
             'nice_reg_first_date','nice_reg_date','nice_reg_owner_name','nice_reg_owner_addr','nice_reg_owner_rrn',
             'nice_reg_max_load_str','nice_reg_passengers_str',
+            'remitter_name','remitter_id',
             'nice_spec_maker','nice_spec_model','nice_spec_year','nice_spec_displacement_str',
             'nice_spec_length_str','nice_spec_width_str',
             'nice_spec_height_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
@@ -9375,6 +9385,19 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         @endforeach
                     </select>
                     @error('salesman_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                </div>
+                {{-- 2026-11 ② (jin 10-28) — 송금인 Name·ID. board 가 적어 보내는 값(차량 단위, 바이어 passport 와 다른 사람일 수 있다).
+                     ERP 용도는 검색뿐 — 이름만 LIKE, ID 는 암호화. 판매 탭이 아니라 여기인 이유 = 매입예정 단계에 바이어 없이도 들어온다. --}}
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.remitter_name') }}</label>
+                    <input wire:model="remitter_name" type="text" class="input-base" maxlength="100" autocomplete="off" />
+                    @error('remitter_name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                </div>
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.remitter_id') }}</label>
+                    <input wire:model="remitter_id" type="text" class="input-base" maxlength="64" autocomplete="off" data-1p-ignore data-lpignore="true"
+                           placeholder="{{ __('vehicle.ph.remitter_id') }}" />
+                    @error('remitter_id')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
             </div>
 

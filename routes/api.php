@@ -54,6 +54,10 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('consignees', [InternalPortalController::class, 'consignees'])->name('consignees');
         // 2026-11 ③ — 바이어 적립금 잔액+이력(영업 본인 바이어만, 남의 것 404). 권위 §4 행.
         Route::get('buyers/{id}/savings', [InternalPortalController::class, 'buyerSavings'])->whereNumber('id')->name('buyers.savings');
+        // 2026-11 ② — 바이어 한 건(주소·전화, 서류 생성용 §3 예외 · 접근 기록 1행). 본인(super scope=all 전체), 남의 것 404.
+        Route::get('buyers/{id}', [InternalPortalController::class, 'buyer'])->whereNumber('id')->name('buyers.show');
+        // 2026-11 ② — 송금인 Name·ID 전용 전송(덮어쓰기, won 뒤). 권위 §14-2. 본인 차만(아니면 403).
+        Route::post('vehicles/{id}/remitter', [InternalPortalController::class, 'remitter'])->whereNumber('id')->name('vehicles.remitter');
         // ③ 선적·B/L 묶음 v2 (2026-06-30 회의 조건부 GO) — 권위 §5
         Route::get('shippable', [ShippingRequestController::class, 'shippable'])->name('shippable');          // 새로 묶을 차 후보
         // 포워딩사 명부 (2026-08-11) — board 는 고르기만 한다(신규 생성 없음). 활성 {id,name} 만.

@@ -109,6 +109,9 @@ class PurchaseSyncController extends Controller
             'seller_company' => ['nullable', 'string', 'max:100'],
             'seller_ceo' => ['nullable', 'string', 'max:50'],
             'seller_phone' => ['nullable', 'string', 'max:20'],   // 숫자만 오는 게 계약이지만 하이픈이 섞여도 PhoneFormat 이 걸러낸다(세트 통째 422 는 과하다)
+            // 2026-11 ② — 송금인 Name·ID 동봉(won 전에 적은 경우). 저장·화면·검색 = board-portal-api.md §14. 빈 칸만.
+            'remitter_name' => ['nullable', 'string', 'max:100'],
+            'remitter_id' => ['nullable', 'string', 'max:64'],   // 숫자만 오는 게 계약이지만 하이픈이 섞여도 PhoneFormat 이 걸러낸다(세트 통째 422 는 과하다)
             // 연동 B v5 — 재고매입(바이어 미정). board 가 「바이어를 일부러 안 정하고 사 두는 매입」임을
             //   명시한다. 🚫 `buyer_id` 가 비었다는 사실만으로는 대신할 수 없다 — 그러면 **실수로 빠뜨린
             //   차**와 구분이 안 되고, 그 구분이 이 플래그의 존재 이유다(vehicles/index.blade.php:4629).
@@ -254,6 +257,12 @@ class PurchaseSyncController extends Controller
         }
         if (($phone = PhoneFormat::format($data['seller_phone'] ?? null)) !== null) {
             $vehicle->deregistration_notice_phone = $phone;
+        }
+        // 2026-11 ② — 송금인 Name·ID 동봉. 빈 문자열은 「안 보낸 것」. remitter_id 는 모델 cast 로 암호화.
+        foreach (['remitter_name', 'remitter_id'] as $col) {
+            if (trim((string) ($data[$col] ?? '')) !== '') {
+                $vehicle->{$col} = trim((string) $data[$col]);
+            }
         }
 
         // ── NICE 차량조회로 VIN·차량정보 채우기 ─────────────────────────
@@ -619,6 +628,20 @@ class PurchaseSyncController extends Controller
             } else {
                 $vehicle->deregistration_notice_phone = $phone;
                 $filled[] = 'deregistration_notice_phone';
+            }
+        }
+
+        // 2026-11 ② — 송금인 동봉도 빈 칸만(⚠️ 전용 엔드포인트 §14-2 는 덮어쓰기 — 경로마다 규칙이 다르다).
+        foreach (['remitter_name', 'remitter_id'] as $col) {
+            $incoming = trim((string) ($data[$col] ?? ''));
+            if ($incoming === '') {
+                continue;
+            }
+            if (trim((string) $vehicle->{$col}) !== '') {
+                $skipped[$col] = 'already_set';
+            } else {
+                $vehicle->{$col} = $incoming;
+                $filled[] = $col;
             }
         }
 

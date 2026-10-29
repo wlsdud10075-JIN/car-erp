@@ -119,7 +119,7 @@ return [
     'export_pinned_hint' => '· Vehicle no. and VIN are always included, so settlement-only exports stay traceable.',
 
     'search_placeholder' => 'Vehicle no. · B/L · decl. no. · vessel · container',
-    'search_title' => 'Vehicle no. · brand · model · owner · export decl. no. · B/L no. · vessel · container no. · supplier · EMS/DHL tracking no.',
+    'search_title' => 'Vehicle no. · brand · model · owner · export decl. no. · B/L no. · vessel · container no. · supplier · remitter name · EMS/DHL tracking no.',
     'search_btn' => 'Search',
     'reset_btn' => 'Reset',
     'reset_hint' => 'Restore search, dates, filters and accumulation to the initial state.',
@@ -516,6 +516,8 @@ return [
         'mileage' => 'Mileage (km)',
         'color' => 'Color',
         'salesman' => 'Salesman',
+        'remitter_name' => 'Remitter name',
+        'remitter_id' => 'Remitter ID (from board)',
         'vin' => 'VIN',
         'engine_no' => 'Engine Type',
         'fuel_type' => 'Fuel Type',
@@ -1332,6 +1334,7 @@ return [
     ],
 
     'ph' => [
+        'remitter_id' => 'Passport/ID no. — searchable by name only',
         'brand' => 'Hyundai',
         'model_type' => 'Sonata',
         'color' => 'White',
