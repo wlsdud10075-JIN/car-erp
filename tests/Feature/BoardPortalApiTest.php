@@ -7,11 +7,13 @@ use App\Http\Controllers\VehicleDocumentController;
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Salesman;
+use App\Models\SavingsStatus;
 use App\Models\Settlement;
 use App\Models\ShippingRequest;
 use App\Models\TaskAlarm;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\SavingsLedger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
@@ -784,5 +786,91 @@ class BoardPortalApiTest extends TestCase
 
         // 서명 없이 → 401 (전역값이라도 인증은 필수)
         $this->get('/api/internal/board/rates?')->assertStatus(401);
+    }
+
+    // ── 2026-11 ③ 포털 적립금 (jin 10-28 «적립금만») — /by-buyer savings_balances[] · GET /buyers/{id}/savings ──
+
+    /** 통화별 잔액 = 바이어탭과 같은 값(최신 행 balance 스냅샷) · balance_krw = 적립 시점 환율. 행 없는 바이어는 []. */
+    public function test_by_buyer_carries_savings_balances_per_currency(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $rich = Buyer::create(['name' => 'RICH', 'is_active' => true, 'salesman_id' => $me->id]);
+        $poor = Buyer::create(['name' => 'POOR', 'is_active' => true, 'salesman_id' => $me->id]);
+        Vehicle::create(['vehicle_number' => '11가1111', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'sale_price' => 1000, 'currency' => 'USD', 'exchange_rate' => 1200, 'buyer_id' => $rich->id]);
+        Vehicle::create(['vehicle_number' => '22나2222', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'sale_price' => 500, 'currency' => 'USD', 'exchange_rate' => 1200, 'buyer_id' => $poor->id]);
+        SavingsStatus::create(['buyer_id' => $rich->id, 'currency' => 'USD', 'transaction_type' => 'EARNED', 'savings' => 100, 'balance' => 100, 'exchange_rate' => 1300]);
+        SavingsStatus::create(['buyer_id' => $rich->id, 'currency' => 'USD', 'transaction_type' => 'USED', 'savings' => -30, 'balance' => 70]);
+        SavingsStatus::create(['buyer_id' => $rich->id, 'currency' => 'JPY', 'transaction_type' => 'EARNED', 'savings' => 5000, 'balance' => 5000, 'exchange_rate' => 9]);
+
+        $res = $this->signedGet('/api/internal/board/by-buyer', ['salesman_email' => 'me@a.com'])->assertOk();
+        $rows = collect($res->json('data'))->keyBy('buyer');
+
+        $usd = collect($rows['RICH']['savings_balances'])->firstWhere('currency', 'USD');
+        $this->assertSame(70.0, (float) $usd['balance']);
+        $this->assertSame(91000, $usd['balance_krw'], '70 USD × 적립 시점 환율 1300');
+        $jpy = collect($rows['RICH']['savings_balances'])->firstWhere('currency', 'JPY');
+        $this->assertSame(45000, $jpy['balance_krw']);
+        $this->assertSame([], $rows['POOR']['savings_balances']);
+
+        // 화면(바이어탭)과 같은 값 — 단일 출처 SavingsLedger::balances()
+        $screen = app(SavingsLedger::class)->balances($rich->id);
+        ksort($screen);
+        $this->assertSame(['JPY' => 5000.0, 'USD' => 70.0], $screen);
+    }
+
+    /** 이력 = 최신순 · limit(기본 20 · 최대 100) · 차량번호 동봉 · note 는 절대 안 나간다. */
+    public function test_buyer_savings_history_is_newest_first_without_notes(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $b = Buyer::create(['name' => 'RICH', 'is_active' => true, 'salesman_id' => $me->id]);
+        $v = $this->exportVehicle($me->id, '33다3333');
+        $r1 = SavingsStatus::create(['buyer_id' => $b->id, 'currency' => 'USD', 'transaction_type' => 'EARNED', 'savings' => 100, 'balance' => 100, 'exchange_rate' => 1300, 'note' => 'SECRET-NOTE-ONE']);
+        $r2 = SavingsStatus::create(['buyer_id' => $b->id, 'currency' => 'USD', 'transaction_type' => 'USED', 'savings' => -30, 'balance' => 70, 'vehicle_id' => $v->id, 'note' => 'SECRET-NOTE-TWO']);
+        $r3 = SavingsStatus::create(['buyer_id' => $b->id, 'currency' => 'USD', 'transaction_type' => 'ADJUSTMENT', 'savings' => 5, 'balance' => 75, 'note' => '사유는 내부용']);
+
+        $res = $this->signedGet('/api/internal/board/buyers/'.$b->id.'/savings', ['salesman_email' => 'me@a.com', 'limit' => '2'])->assertOk();
+        $res->assertJsonPath('buyer_id', $b->id)
+            ->assertJsonPath('balances.0.currency', 'USD')
+            ->assertJsonPath('balances.0.balance', 75)
+            ->assertJsonPath('history.0.id', $r3->id)
+            ->assertJsonPath('history.0.type', 'ADJUSTMENT')
+            ->assertJsonPath('history.1.id', $r2->id)
+            ->assertJsonPath('history.1.amount', -30)
+            ->assertJsonPath('history.1.vehicle_number', '33다3333')
+            ->assertJsonCount(2, 'history');
+        $this->assertStringNotContainsString('SECRET-NOTE', $res->getContent());
+        $this->assertStringNotContainsString('내부용', $res->getContent());
+        $this->assertStringNotContainsString('"note"', $res->getContent());
+
+        // limit 상한 100 · 기본 20
+        $this->signedGet('/api/internal/board/buyers/'.$b->id.'/savings', ['salesman_email' => 'me@a.com', 'limit' => '999'])->assertOk()->assertJsonCount(3, 'history');
+        $this->signedGet('/api/internal/board/buyers/'.$b->id.'/savings', ['salesman_email' => 'me@a.com'])->assertOk()->assertJsonCount(3, 'history');
+        $this->assertNotNull($r1);
+    }
+
+    /** IDOR — 남의 바이어·없는 id·지운 바이어 = 404(목록과 달리 빈 응답이 아니다). */
+    public function test_buyer_savings_of_someone_else_is_404(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $theirs = Buyer::create(['name' => 'THEIRS', 'is_active' => true, 'salesman_id' => $other->id]);
+        $gone = Buyer::create(['name' => 'GONE', 'is_active' => true, 'salesman_id' => $me->id]);
+        SavingsStatus::create(['buyer_id' => $theirs->id, 'currency' => 'USD', 'transaction_type' => 'EARNED', 'savings' => 100, 'balance' => 100]);
+        $gone->delete();
+
+        $this->signedGet('/api/internal/board/buyers/'.$theirs->id.'/savings', ['salesman_email' => 'me@a.com'])->assertNotFound();
+        $this->signedGet('/api/internal/board/buyers/999999/savings', ['salesman_email' => 'me@a.com'])->assertNotFound();
+        $this->signedGet('/api/internal/board/buyers/'.$gone->id.'/savings', ['salesman_email' => 'me@a.com'])->assertNotFound();
+    }
+
+    /** 환율 없는 적립분이 섞이면 balance_krw 는 null — 반쪽 원화를 보여 주지 않는다. */
+    public function test_savings_balance_krw_is_null_when_a_lot_has_no_rate(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $b = Buyer::create(['name' => 'NORATE', 'is_active' => true, 'salesman_id' => $me->id]);
+        SavingsStatus::create(['buyer_id' => $b->id, 'currency' => 'EUR', 'transaction_type' => 'EARNED', 'savings' => 100, 'balance' => 100]);
+
+        $res = $this->signedGet('/api/internal/board/buyers/'.$b->id.'/savings', ['salesman_email' => 'me@a.com'])->assertOk();
+        $res->assertJsonPath('balances.0.balance', 100)->assertJsonPath('balances.0.balance_krw', null);
     }
 }
