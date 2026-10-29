@@ -760,16 +760,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 적립금 ────────────────────────────────────────────────────
     private function loadSavings(int $buyerId): void
     {
-        // 통화별 최신 잔액
-        $this->balances = SavingsStatus::where('buyer_id', $buyerId)
-            ->orderByDesc('id')
-            ->get()
-            ->unique('currency')
-            ->pluck('balance', 'currency')
-            ->toArray();
-
         // 선입선출 원장 (jin 2026-07-29) — 환율은 적립 시점 값. SavingsLedger 단일 출처.
         $ledger = app(\App\Services\SavingsLedger::class);
+        // 통화별 최신 잔액 — 2026-11 ③ 부터 board 포털(/by-buyer·/buyers/{id}/savings)과 같은 함수(§8 #44 복사 금지).
+        $this->balances = $ledger->balances($buyerId);
         $this->balancesKrw = [];
         $this->lots = [];
         $details = [];
@@ -1001,12 +995,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->sv_date = $this->sv_date ?: now()->toDateString();
 
-        $this->savingsUseBalances = SavingsStatus::where('buyer_id', $buyerId)
-            ->orderByDesc('id')->get()->unique('currency')
-            ->pluck('balance', 'currency')
-            ->map(fn ($b) => (float) $b)
-            ->filter(fn ($b) => abs($b) > 0.005)
-            ->toArray();
+        // 통화별 잔액 — SavingsLedger::balances() 단일 출처(2026-11 ③, 복사 금지 §8 #44). 0 인 통화는 고를 수 없게 뺀다.
+        $this->savingsUseBalances = array_filter(
+            app(\App\Services\SavingsLedger::class)->balances($buyerId),
+            fn ($b) => abs($b) > 0.005,
+        );
 
         // 미수 차량 — 적립금은 그 차 잔금에만 쓴다. 통화가 다른 차는 고를 수 없다(잔액은 통화별).
         $this->savingsUseVehicles = Vehicle::where('buyer_id', $buyerId)

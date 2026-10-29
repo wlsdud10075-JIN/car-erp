@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Internal;
 use App\Http\Controllers\Controller;
 use App\Models\Buyer;
 use App\Models\Consignee;
+use App\Models\SavingsStatus;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
@@ -12,6 +13,7 @@ use App\Models\Vehicle;
 use App\Services\ExchangeRateService;
 use App\Services\PurchaseRegistrationGate;
 use App\Services\SalesmanResolver;
+use App\Services\SavingsLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -435,6 +437,13 @@ class InternalPortalController extends Controller
             }
         }
 
+        // 2026-11 ③ (jin 10-28) — 적립금 통화별 잔액. 바이어탭과 같은 값(SavingsLedger 단일 출처). 행이 없는 바이어는 [].
+        $ledger = app(SavingsLedger::class);
+        $withSavings = array_keys($ledger->balancesFor(array_keys($byBuyer)));
+        foreach ($withSavings as $bid) {
+            $byBuyer[$bid]['savings_balances'] = $ledger->portalBalances((int) $bid);
+        }
+
         $data = collect($byBuyer)
             ->map(fn (array $row, $bid) => ['buyer_id' => (int) $bid] + $row)
             ->sortByDesc('payout_total_krw')   // 이득 큰 바이어부터 (채권 TOP10 패턴)
@@ -452,7 +461,41 @@ class InternalPortalController extends Controller
             'sales_by_currency' => [],
             'payout_total_krw' => 0,
             'payout_paid_krw' => 0,
+            'savings_balances' => [],   // 2026-11 ③ — [{currency, balance, balance_krw}]
         ];
+    }
+
+    /**
+     * 2026-11 ③ (jin 10-28 «적립금만») — 바이어 한 명의 적립금 잔액 + 이력. board 새 탭 「적립금」.
+     *
+     * - 스코프 = `buyers.salesman_id` **본인만** — 남의 바이어·없는 id·지운 바이어 = 404(§2 IDOR, 목록과 달리 빈 목록이 아니다).
+     * - 현금 디파짓(`BuyerCashReceipt`)은 다른 돈 — 싣지 않는다.
+     * - 🚫 `note` 는 내려주지 않는다(자유 입력 내부 메모 `sv_note` 가 섞인다). ADJUSTMENT·CANCELLED 는 라벨만.
+     * - `limit` 기본 20 · 최대 100 · 최신순(id desc).
+     */
+    public function buyerSavings(Request $request, int $id): JsonResponse
+    {
+        $sid = $this->salesmanId($request);
+        abort_unless(Buyer::where('id', $id)->where('salesman_id', $sid)->exists(), 404);
+
+        $limit = max(1, min(100, (int) $request->query('limit', 20)));
+        $history = SavingsStatus::where('buyer_id', $id)
+            ->with('vehicle:id,vehicle_number')
+            ->orderByDesc('id')->limit($limit)->get()
+            ->map(fn (SavingsStatus $t) => [
+                'id' => $t->id,
+                'type' => $t->transaction_type,
+                'amount' => (float) $t->savings,
+                'currency' => $t->currency,
+                'date' => $t->created_at?->toDateString(),
+                'vehicle_number' => $t->vehicle?->vehicle_number,
+            ])->values();
+
+        return response()->json([
+            'buyer_id' => $id,
+            'balances' => app(SavingsLedger::class)->portalBalances($id),
+            'history' => $history,
+        ]);
     }
 
     /**

@@ -52,6 +52,8 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         // 연동 B v3 — board 드로어 바이어/컨사이니 드롭다운 (영업 본인 스코프).
         Route::get('buyers', [InternalPortalController::class, 'buyers'])->name('buyers');
         Route::get('consignees', [InternalPortalController::class, 'consignees'])->name('consignees');
+        // 2026-11 ③ — 바이어 적립금 잔액+이력(영업 본인 바이어만, 남의 것 404). 권위 §4 행.
+        Route::get('buyers/{id}/savings', [InternalPortalController::class, 'buyerSavings'])->whereNumber('id')->name('buyers.savings');
         // ③ 선적·B/L 묶음 v2 (2026-06-30 회의 조건부 GO) — 권위 §5
         Route::get('shippable', [ShippingRequestController::class, 'shippable'])->name('shippable');          // 새로 묶을 차 후보
         // 포워딩사 명부 (2026-08-11) — board 는 고르기만 한다(신규 생성 없음). 활성 {id,name} 만.

@@ -180,6 +180,58 @@ class SavingsLedger
     }
 
     /**
+     * 통화별 **현재 잔액** = 통화별 최신 행의 `balance` 스냅샷 (2026-11 ③ — 바이어탭 `loadSavings()` 와
+     * board 포털 `/by-buyer`·`/buyers/{id}/savings` 가 같은 값을 보게 여기 한 곳).
+     *
+     * @return array<string, float> currency => balance (최신 행 순)
+     */
+    public function balances(int $buyerId): array
+    {
+        return $this->balancesFor([$buyerId])[$buyerId] ?? [];
+    }
+
+    /**
+     * 여러 바이어의 통화별 잔액을 **질의 두 번**에(`/by-buyer` 가 바이어마다 묻지 않게). 행이 없는 바이어는 키가 없다.
+     *
+     * @param  array<int, int>  $buyerIds
+     * @return array<int, array<string, float>> buyer_id => [currency => balance]
+     */
+    public function balancesFor(array $buyerIds): array
+    {
+        $buyerIds = array_values(array_unique(array_map('intval', $buyerIds)));
+        if ($buyerIds === []) {
+            return [];
+        }
+
+        $latestIds = SavingsStatus::whereIn('buyer_id', $buyerIds)
+            ->selectRaw('MAX(id) as id')->groupBy('buyer_id', 'currency')->pluck('id');
+
+        $out = [];
+        foreach (SavingsStatus::whereIn('id', $latestIds)->orderByDesc('id')->get(['id', 'buyer_id', 'currency', 'balance']) as $r) {
+            $out[(int) $r->buyer_id][$r->currency] = (float) $r->balance;
+        }
+
+        return $out;
+    }
+
+    /**
+     * 포털 응답용 `[{currency, balance, balance_krw}]` — `balance_krw` 는 FIFO lot 의 적립 시점 환율 합(`balanceKrw`).
+     * 환율 없는 적립분이 섞여 있으면 **null**(반쪽 숫자를 원화로 보여 주지 않는다).
+     *
+     * @return array<int, array{currency:string, balance:float, balance_krw:int|null}>
+     */
+    public function portalBalances(int $buyerId): array
+    {
+        $rows = [];
+        foreach ($this->balances($buyerId) as $cur => $bal) {
+            $krw = $this->balanceKrw($buyerId, $cur);
+            $rows[] = ['currency' => $cur, 'balance' => $bal, 'balance_krw' => $krw['unrated'] > 0 ? null : $krw['krw']];
+        }
+
+        return $rows;
+    }
+
+    /**
      * 잔여 적립금의 원화 환산 합.
      *
      * @return array{krw:int, unrated:float} unrated = 환율이 없어 환산 못한 잔여 외화액
