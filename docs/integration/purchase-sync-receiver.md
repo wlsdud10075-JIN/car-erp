@@ -233,12 +233,12 @@
 - ⚠️ **전용 엔드포인트(§14-2)는 덮어쓰기** — 두 경로의 규칙이 다르다. board 는 won 전엔 동봉, won 뒤엔 전용 엔드포인트(Q2-12).
 - 감사 = `AUDITED_COLUMNS`(+ `remitter_id` 는 `MASKED_COLUMNS`). 🚫 응답·읽기 API 에 `remitter_id` 를 싣지 않는다.
 - 가드(착수 때) = `PurchaseSyncReceiverTest` 에 동봉 저장 · 재전송 `already_set` · 빈 문자열 무시 · 감사 가림 4건.
-## 연동 B — 딜러 서류 OCR 동봉: 법인명·대표자·휴대폰 (2026-11 주말 기획 ④, jin 10-28 결정 · ⏳ 미구현)
+## 연동 B — 딜러 서류 OCR 동봉: 법인명·대표자·휴대폰 (2026-11 주말 기획 ④, jin 10-28 결정 · ✅ 2026-10-29 구현, dev — `PurchaseSyncController::composePurchaseFrom`, 가드 `PurchaseSyncReceiverTest::test_seller_documents_*` 3건)
 
 > 정본 기획 = board `meetings/plan-2026-11-weekend-freight-passport.md` ④. board 가 구매확정 첨부 5장(사업자등록증·명함)을 OCR 해 영업이 드로어에서 후보를 [적용]하면 purchase-sync 에 동봉한다. **ERP 는 OCR 을 하지 않는다**(비전 클라이언트 없음, 확인 주체 = 영업).
 
 - **`contract_version` 상향 없음**(모르는 필드 무시). payload 선택 필드 3개(분리):
-  `seller_company`(string ≤100, 법인명/상호) · `seller_ceo`(string ≤50, 대표자) · `seller_phone`(string ≤20, **숫자만** — board 가 하이픈 없이 보낸다).
+  `seller_company`(string ≤100, 법인명/상호) · `seller_ceo`(string ≤50, 대표자) · `seller_phone`(string ≤20, **숫자만** — board 가 하이픈 없이 보낸다). ERP 는 하이픈이 섞여 와도 422 로 끊지 않고 숫자만 뽑아 쓴다(세트 통째 거절은 과하다).
 - 저장:
   | 필드 | ERP 컬럼 | 규칙 |
   |---|---|---|

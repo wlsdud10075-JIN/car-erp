@@ -871,4 +871,68 @@ class PurchaseSyncReceiverTest extends TestCase
         $this->assertSame($id, $again->json('vehicle_id'));
         $this->assertTrue((bool) Vehicle::find($id)->buyer_undecided);   // 그대로
     }
+
+    // ── 2026-11 ④ 딜러 서류 OCR 동봉 (jin 10-28) — 구입처 「법인명/대표자」 합성 · 말소 알림 번호 하이픈 · 빈 칸만 ──
+
+    /** 둘 다 오면 `{법인명}/{대표자}` · 휴대폰은 하이픈 형식으로 저장(화면 저장과 같은 PhoneFormat). */
+    public function test_seller_documents_fill_supplier_and_dealer_phone_on_create(): void
+    {
+        $res = $this->postSigned($this->validPayload([
+            'vehicle_number' => '41오4101', 'seller_company' => '싼카모터스', 'seller_ceo' => '홍길동', 'seller_phone' => '01012345678',
+        ]));
+        $res->assertStatus(201);
+
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertSame('싼카모터스/홍길동', $v->purchase_from);
+        $this->assertSame('010-1234-5678', $v->deregistration_notice_phone);
+    }
+
+    /** 하나만 오면 그것만 — 「/」 없음. 빈 문자열은 「안 보낸 것」. */
+    public function test_seller_documents_compose_with_one_side_only(): void
+    {
+        $a = $this->postSigned($this->validPayload(['vehicle_number' => '41오4102', 'seller_company' => ' 싼카모터스 ', 'seller_ceo' => '']));
+        $this->assertSame('싼카모터스', Vehicle::find($a->json('vehicle_id'))->purchase_from);
+
+        $b = $this->postSigned($this->validPayload(['vehicle_number' => '41오4103', 'seller_ceo' => '홍길동']));
+        $this->assertSame('홍길동', Vehicle::find($b->json('vehicle_id'))->purchase_from);
+
+        $c = $this->postSigned($this->validPayload(['vehicle_number' => '41오4104', 'seller_company' => '', 'seller_ceo' => '', 'seller_phone' => '']));
+        $v = Vehicle::find($c->json('vehicle_id'));
+        $this->assertNull($v->purchase_from);
+        $this->assertNull($v->deregistration_notice_phone);
+    }
+
+    /** 재전송 = 빈 칸만. 사람이 친 구입처는 보호(`already_set`, ERP 컬럼명) · 비어 있던 번호는 채우고 감사 1행. */
+    public function test_seller_documents_on_resend_fill_only_empty_fields_and_audit(): void
+    {
+        Salesman::create(['name' => '김영업', 'email' => 'sales@car-erp.test', 'type' => 'freelance', 'is_active' => true]);
+        $first = $this->postSigned($this->validPayload(['vehicle_number' => '41오4105']));
+        $id = $first->json('vehicle_id');
+        Vehicle::whereKey($id)->update(['purchase_from' => '경매-사람이친값']);   // 관리가 ERP 에서 친 구입처
+
+        $again = $this->postSigned($this->validPayload([
+            'vehicle_number' => '41오4105', 'seller_company' => '싼카모터스', 'seller_ceo' => '홍길동', 'seller_phone' => '010-1234-5678',
+        ]));
+        $again->assertStatus(200)
+            ->assertJsonPath('fields_skipped.purchase_from', 'already_set')
+            ->assertJsonFragment(['fields_filled' => ['deregistration_notice_phone']]);
+
+        $v = Vehicle::find($id);
+        $this->assertSame('경매-사람이친값', $v->purchase_from, '사람이 친 구입처는 그대로');
+        $this->assertSame('010-1234-5678', $v->deregistration_notice_phone);
+
+        // board 가 쓰기 시작하는 첫 칸 — 누가 넣었는지 감사로 남는다(AUDITED_COLUMNS 등재).
+        $rows = AuditLog::where('auditable_id', $id)->where('column_name', 'deregistration_notice_phone')->get();
+        $this->assertCount(1, $rows);
+        $this->assertSame('010-1234-5678', $rows->first()->new_value);
+
+        // 한 번 더 보내면 둘 다 already_set — 덮어쓰지 않는다.
+        $third = $this->postSigned($this->validPayload([
+            'vehicle_number' => '41오4105', 'seller_company' => '다른회사', 'seller_phone' => '01099990000',
+        ]));
+        $third->assertStatus(200)
+            ->assertJsonPath('fields_skipped.purchase_from', 'already_set')
+            ->assertJsonPath('fields_skipped.deregistration_notice_phone', 'already_set');
+        $this->assertSame('010-1234-5678', Vehicle::find($id)->deregistration_notice_phone);
+    }
 }
