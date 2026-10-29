@@ -189,6 +189,8 @@ class BoardPortalVehicleMetaTest extends TestCase
                 // 월정산 미러(2026-08-31)는 **급여 명세**다 — 차량번호·금액·지급일이면 족하고
                 // board 도 그 세 칸만 요청했다. 차대번호·브랜드는 이 화면에서 할 일이 없다.
                 'payoutBatches' => false,
+                // 적립금 이력(2026-11 ③)은 **돈 줄**이다 — 어느 차 잔금에 썼나(차량번호)면 족하고 board 적립금 탭도 그 한 칸만 그린다.
+                'buyerSavings' => false,
             ],
             'ShippingRequestController.php' => [
                 'shippable' => true,
