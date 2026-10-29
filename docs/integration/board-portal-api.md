@@ -237,16 +237,16 @@ board 의 **전송 감사 명령 `board:purchase-sync-audit`**(board dev `cb9974
   - 💵 **`transport_fee_usd_total`** (2026-08-11, 인계 §7) — 묶음 총액(USD 정수). **`CONTAINER` 묶음에서만** 받는다(RORO 면 서버가 버린다 — board 를 믿지 않는다). 멤버 차량에 **1/N** 로 `vehicles.transport_fee_usd`(회계 미포함 기록칸)에 기입.
     - 🧮 **분할 규칙**(단일 출처 = `ShippingRequest::splitFreightUsd`): 몫 = `intdiv(총액, 묶음 전체 대수)`, **나머지는 최소 `vehicle_id` 한 대**가 받는다(재전송해도 같은 차가 받아 값이 안 흔들린다).
     - **비어 있을 때만 채운다**(jin 확정. NULL·0 둘 다 빈 것으로 봄). 그래서 **기입 합계가 총액과 안 맞을 수 있다** — 분모는 언제나 전체 대수이고 수기값은 보호되기 때문. 의도된 결과다.
-    - 💱 **판매통화 환산 → `vehicles.transport_fee` (2026-11 주말 기획, jin 10-28 결정 · ⏳ 미구현 — board 변경 0)**
+    - 💱 **판매통화 환산 → `vehicles.transport_fee` (2026-11 주말 기획, jin 10-28 결정 · ✅ 2026-10-29 구현, dev — `ShippingRequestController::applyBundleToVehicle`, 가드 `BoardShippableScopeTest::test_container_freight_conversion_*` 4건 — board 변경 0)**
       같은 1/N 적용 지점(`applyBundleToVehicle`)에서 **USD 몫 × (`usd_exchange_rate` ÷ `exchange_rate`)** 를 **판매통화 운임비 `transport_fee`** 에 넣는다. 정본 기획 = board `meetings/plan-2026-11-weekend-freight-passport.md` ① 「✅ 결정값」.
       - **빈 칸만**(USD 칸과 같은 규칙 — `transport_fee` NULL·0 일 때만). 덮어쓰기 ❌ — 관리가 친 값 보호 + 2차 마감 차는 `transport_fee` 가 원장 락이라 sync 가 예외로 죽는 경로를 안 만든다.
-      - **`usd_exchange_rate` 또는 `exchange_rate` 가 없으면(NULL·0) 기록하지 않는다**(jin «환율 없는 차는 기록하지 마»). 당일 환율 자동 대입 ❌. 응답 `skipped[]` 사유 `no_rate` 로만 알린다.
+      - **`usd_exchange_rate` 또는 `exchange_rate` 가 없으면(NULL·0) 기록하지 않는다**(jin «환율 없는 차는 기록하지 마»). 당일 환율 자동 대입 ❌. 응답은 **별도 키 `freight_skipped`** = `{"<vehicle_id>": "no_rate" | "ledger_closed"}`(없으면 `{}`) — 기존 `skipped[]` 는 IDOR 뜻이라 섞지 않는다. `ledger_closed` = 2차 마감 차(원장 락이라 건너뜀, 예외 없음).
       - **판매가 고정** — 총판매가(`sale_total_amount`)·면장 기준액(`declaration_base_amount`, 운임 포함)·통관 SET `구매리스트!D15` 는 전부 `transport_fee` 에서 **파생**이라 따로 안 건드린다. 면장이 수기(CIF/FOB)인 차는 저장 훅 ③ 보존 규칙대로 안 움직인다.
       - sync 마다 재계산 ❌ · 묶음 이탈 차는 남긴다 · 기존 차 소급 ❌.
       - 실효과 = CFR 컨테이너 차의 정산 블로커 `freight_unconfirmed`(`Vehicle::isFreightConfirmedForSettlement`) 가 풀리고 `saved` 훅(`wasChanged('transport_fee')`)이 정산 자동 생성을 다시 건다 — **기존 동작 그대로**(결정 기록 없음, 운영 첫 사례에서 확인). 감사는 `AUDITED_COLUMNS` 의 `transport_fee` 로 자동.
       - 가드(착수 때) = 환산값 1건 · 빈 칸만 · 환율 없으면 skip · 재sync 무변경 · 면장 자동 추종 · 2차 마감 차 무예외.
   - diff(트랜잭션): desired에 있고 open 없음→**생성** / `requested`이고 attrs 변경→**갱신**(bundle 이동 시 batch 재배치) / **`requested`이고 attrs 전부 동일→no-op**(갱신·`requested_at`·관리 알람·`updated[]` 전부 없음, 응답 어느 배열에도 안 셈 — 2026-10-14 board 요청, 가드 `BoardPortalApiTest::test_sync_leaves_unchanged_requested_rows_alone`) / desired에 없고 `requested`→**자동취소**(+알람 resolve) / `in_progress`→**잠금**(desired 유무로 자동변경·자동취소 안 함).
-  - 응답 `{created:[], updated:[], cancelled:[], skipped:[], locked:[]}`.
+  - 응답 `{created:[], updated:[], cancelled:[], skipped:[], locked:[], freight_skipped:{}}`(2026-10-29 `freight_skipped` 추가 — 위 💱).
   - **⚠️ board 측 강제**: payload는 **반드시 영업 전체 desired 묶음**. 일부만 보내면 빠진 `requested` 차가 **의도치 않게 자동취소**됨 → board는 `/bundles`로 전체를 그려놓고 영업이 빼/옮긴 것만 반영해 통째 전송.
 - **`POST /bundles/{batch}/bl-request`** — 기존 묶음의 **B/L요청 재사용**. `{ salesman_email, bl_type:"original|surrender" }` → `bl_type` 확정 + `bl_status='requested'` + 관리 알람. (선적요청을 베낀 별도 시스템 아님 = 같은 묶음의 상태 전이.)
 - **`POST /bundles/{batch}/bl-cancel`** — **B/L요청 무름**(영업 오발송 정정, 2026-06-30 board 요청). `{ salesman_email }` → `bl_status='requested'→'none'`(`bl_type`은 유지=재요청 prefill) + 관리 `bl_requested` 알람 resolve. **이미 발급(`issued`)됐으면 `409 already_issued`**(관리가 발급함 → 무름 불가, 관리에게 문의). IDOR — batch 의 모든 행이 본인 차.

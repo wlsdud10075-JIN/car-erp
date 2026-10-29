@@ -206,8 +206,9 @@ class ShippingRequestController extends Controller
         $cancelled = [];
         $skipped = [];
         $locked = [];
+        $freightSkipped = [];   // 💱 2026-11 ① — 운임비 환산을 못 넣은 차 {vehicle_id: no_rate|ledger_closed}
 
-        DB::transaction(function () use ($salesman, $data, &$created, &$updated, &$cancelled, &$skipped, &$locked) {
+        DB::transaction(function () use ($salesman, $data, &$created, &$updated, &$cancelled, &$skipped, &$locked, &$freightSkipped) {
             // 본인 차 open(requested/in_progress) 현재 행 — 트랜잭션 잠금(in_progress 전환 race 차단)
             $current = ShippingRequest::whereIn('status', ShippingRequest::OPEN_STATUSES)
                 ->whereHas('vehicle', fn ($q) => $q->where('salesman_id', $salesman->id))
@@ -271,7 +272,7 @@ class ShippingRequestController extends Controller
                         }
                         $forwardingChanged = (int) $ex->forwarding_company_id !== (int) $forwardingId;
                         $ex->update($attrs + ['requested_at' => now()]);
-                        $this->applyBundleToVehicle($vid, $salesman, $forwardingId, $forwardingChanged, $freightShare[$vid] ?? null);
+                        $this->applyBundleToVehicle($vid, $salesman, $forwardingId, $forwardingChanged, $freightShare[$vid] ?? null, $freightSkipped);
                         $this->fireShippingAlarm($ex->vehicle ?? Vehicle::find($vid), $bundle['shipping_method']);
                         $updated[] = $vid;
 
@@ -285,7 +286,7 @@ class ShippingRequestController extends Controller
                         'status' => ShippingRequest::STATUS_REQUESTED,
                         'requested_at' => now(),
                     ]);
-                    $this->applyBundleToVehicle($vid, $salesman, $forwardingId, true, $freightShare[$vid] ?? null);
+                    $this->applyBundleToVehicle($vid, $salesman, $forwardingId, true, $freightShare[$vid] ?? null, $freightSkipped);
                     $this->fireShippingAlarm(Vehicle::find($vid), $bundle['shipping_method']);
                     $created[] = $vid;
                 }
@@ -301,7 +302,8 @@ class ShippingRequestController extends Controller
             }
         });
 
-        return response()->json(compact('created', 'updated', 'cancelled', 'skipped', 'locked'), 200);
+        // `freight_skipped` 는 빈 배열이면 {} 로 — board 가 키로 찾는다(§5 「💱 판매통화 환산」).
+        return response()->json(compact('created', 'updated', 'cancelled', 'skipped', 'locked') + ['freight_skipped' => (object) $freightSkipped], 200);
     }
 
     /**
@@ -489,7 +491,19 @@ class ShippingRequestController extends Controller
         return true;
     }
 
-    private function applyBundleToVehicle(int $vehicleId, Salesman $salesman, ?int $forwardingId, bool $forwardingChanged, ?int $freightShare): void
+    /**
+     * 묶음 속성을 차량에 민다 — 포워딩사(바뀌었을 때만) · USD 운임 1/N 몫(빈 칸만) · 💱 판매통화 운임비(빈 칸만).
+     *
+     * 💱 **2026-11 ① (jin 10-28)** — 컨테이너 USD 몫을 `usd_exchange_rate ÷ exchange_rate` 로 **판매통화**로 환산해
+     *   `transport_fee`(총판매가·면장 기준액·통관 SET 의 원천)에 넣는다. 규칙(권위 = `board-portal-api.md` §5 「💱 판매통화 환산」):
+     *   - 빈 칸만(NULL·0) — 관리가 친 값·수기 보호. sync 마다 재계산 ❌, 묶음 이탈 차 남김, 기존 차 소급 ❌.
+     *   - `usd_exchange_rate`·`exchange_rate` 둘 다 있어야(jin «환율 없는 차는 기록하지 마») — 아니면 `freight_skipped[vid]='no_rate'`. 당일 환율 대입 ❌.
+     *   - 2차 마감 차는 `transport_fee` 가 원장 락이라 **건너뛴다**(`ledger_closed`) — sync 가 예외로 죽는 경로를 만들지 않는다.
+     *   - 판매가 고정. 면장은 저장 훅이 「면장 기준액」을 자동 추종(비었거나 자동복사분일 때) · 감사는 AUDITED_COLUMNS 의 transport_fee.
+     *   - 실효과 = CFR 컨테이너 차의 정산 블로커 `freight_unconfirmed` 해제 → `saved` 훅이 정산 자동생성을 다시 건다(기존 동작).
+     *   - RORO 는 `$freightShare` 가 늘 null(sync 가 CONTAINER 만 총액을 받는다) — 여기서 따로 가르지 않는다.
+     */
+    private function applyBundleToVehicle(int $vehicleId, Salesman $salesman, ?int $forwardingId, bool $forwardingChanged, ?int $freightShare, array &$freightSkipped = []): void
     {
         $vehicle = Vehicle::find($vehicleId);
         if (! $vehicle) {
@@ -502,6 +516,17 @@ class ShippingRequestController extends Controller
         }
         if ($freightShare && ! $vehicle->transport_fee_usd) {
             $attrs['transport_fee_usd'] = $freightShare;
+        }
+        if ($freightShare && (float) $vehicle->transport_fee <= 0) {
+            $usdRate = (float) $vehicle->usd_exchange_rate;
+            $saleRate = (float) $vehicle->exchange_rate;
+            if ($usdRate <= 0 || $saleRate <= 0) {
+                $freightSkipped[$vehicleId] = 'no_rate';
+            } elseif ($vehicle->hasClosedSecondarySettlement()) {
+                $freightSkipped[$vehicleId] = 'ledger_closed';
+            } else {
+                $attrs['transport_fee'] = round($freightShare * $usdRate / $saleRate, 2);
+            }
         }
 
         if ($attrs !== []) {
