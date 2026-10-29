@@ -141,4 +141,45 @@ class InventoryCategoryTest extends TestCase
             'column_name' => 'warehouse_out_date',
         ]);
     }
+
+    // ── 🚚 2026-10-29 (jin (가)) — 선적일이 지난 차는 출고일 없이도 재고에서 빠져 출고완료로 간다 ──
+
+    public function test_a_shipped_car_leaves_stock_without_an_out_date(): void
+    {
+        $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
+        $gone = $this->stockVehicle(sold: true, num: '81가8101');
+        $gone->update(['shipping_date' => now()->subDays(3)->toDateString()]);   // 통관완료까지 갔는데 B/L 파일이 없는 흔한 모양
+        $booked = $this->stockVehicle(sold: true, num: '82나8202');
+        $booked->update(['shipping_date' => now()->addDays(5)->toDateString()]);   // 배 예약 — 아직 안 나감
+        $today = $this->stockVehicle(sold: false, num: '83다8303');
+        $today->update(['shipping_date' => now()->toDateString()]);   // 오늘 선적 = 떠난 것(경계 포함)
+        $this->assertNull($gone->fresh()->warehouse_out_date, '출고일 데이터는 안 건드린다');
+
+        $this->assertSame(['82나8202'], Vehicle::query()->inStock()->pluck('vehicle_number')->all());
+        $this->assertSame(['82나8202'], Vehicle::query()->preShippingStock()->pluck('vehicle_number')->all());
+        $this->assertSame([], Vehicle::query()->generalStock()->pluck('vehicle_number')->all());
+        $left = Vehicle::query()->leftStock()->pluck('vehicle_number')->all();
+        sort($left);
+        $this->assertSame(['81가8101', '83다8303'], $left);
+        $this->assertSame(['81가8101', '83다8303'], Vehicle::query()->inventoryShippedOut()->orderBy('vehicle_number')->pluck('vehicle_number')->all(), 'board /inventory shipped_out 도 같은 경계');
+
+        // 화면 — 출고완료 탭에 두 대, 재고 카운트엔 한 대
+        $c = Volt::test('erp.inventory.index');
+        $c->call('setCategory', 'shipped_out')->assertSee('81가8101')->assertSee('83다8303')->assertDontSee('82나8202');
+        $counts = $c->instance()->categoryCounts();
+        $this->assertSame(2, $counts['shipped_out']);
+        $this->assertSame(1, $counts['pre_ship']);
+    }
+
+    /** 출고일을 먼저 찍어도 종전대로 즉시 빠진다 — 두 신호의 합집합. */
+    public function test_still_in_yard_and_left_stock_are_complements(): void
+    {
+        $a = $this->stockVehicle(sold: false, num: '84라8404', shippedOut: true);
+        $b = $this->stockVehicle(sold: false, num: '85마8505');
+        $this->assertSame(['84라8404'], Vehicle::query()->leftStock()->pluck('vehicle_number')->all());
+        $this->assertSame(['85마8505'], Vehicle::query()->stillInYard()->pluck('vehicle_number')->all());
+        $this->assertSame(Vehicle::count(), Vehicle::query()->leftStock()->count() + Vehicle::query()->stillInYard()->count());
+        $this->assertNotNull($a);
+        $this->assertNotNull($b);
+    }
 }

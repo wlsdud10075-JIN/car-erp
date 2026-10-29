@@ -3275,7 +3275,7 @@ class Vehicle extends Model
     {
         $endOfToday = now()->toDateString().' 23:59:59';
 
-        return $query->whereNotNull('warehouse_out_date')
+        return $query->leftStock()
             ->where(fn ($q) => $q->whereNull('progress_status_cache')
                 ->orWhere('progress_status_cache', '!=', '거래완료')
                 ->orWhere('cancel_status', '!=', self::CANCEL_NONE)
@@ -3283,7 +3283,32 @@ class Vehicle extends Model
     }
 
     /**
+     * 🚚 **재고 관점 「나갔나」** (jin 2026-10-29 (가)) = 출고일 있음 **또는 선적일이 오늘 이전**.
+     *
+     *   출고일 자동 채움은 「거래완료가 되는 순간」(B/L 파일·FOB포워더 완납)에만 돌아서, 통관완료까지 가고
+     *   B/L 파일을 안 올리는 차는 **떠났는데 영원히 재고**였다(10-29 실측 ssancarerp 857 · heymanerp 38 · karabaerp 7 —
+     *   9월 「선적후 미수 0」과 같은 뿌리, §8 #97). 미수의 `departed()` 가 쓰는 신호 중 **선적일**만 가져온다 —
+     *   B/L 발행일·B/L 파일은 거래완료라 재고 스코프가 이미 뺀다. 미래 선적일(배 예약)은 아직 안 나간 것.
+     *   🚫 출고일 데이터는 안 건드린다(매입 등록 락 pivot = 출고일, SKILLS §13 박스) — 판정만 넓힌다.
+     *   `scopeInStock`·`scopeInventoryShippedOut`·재고 화면 출고완료 탭이 전부 이 둘을 쓴다 — 조건을 옮겨 적지 말 것(§8 #44).
+     */
+    public function scopeLeftStock(Builder $query): Builder
+    {
+        return $query->where(fn ($q) => $q
+            ->whereNotNull('warehouse_out_date')
+            ->orWhere('shipping_date', '<=', self::departedDateBoundary()));
+    }
+
+    /** `scopeLeftStock` 의 여집합 — 출고일 없음 AND (선적일 없음 OR 미래). */
+    public function scopeStillInYard(Builder $query): Builder
+    {
+        return $query->whereNull('warehouse_out_date')
+            ->where(fn ($q) => $q->whereNull('shipping_date')->orWhere('shipping_date', '>', self::departedDateBoundary()));
+    }
+
+    /**
      * 재고 (jin 2026-07-09) = 매입 완납(입고됨) AND 출고일 없음 AND 거래완료 아님.
+     *   🔀 2026-10-29 (jin (가)) — 「출고일 없음」이 「아직 안 나감」(`stillInYard`: 출고일 없음 AND 선적일 없거나 미래)으로 넓어졌다.
      *   미완납 = 입고 전(제외) / 출고일 찍힘 = 출고됨(제외).
      *   거래완료(출항) = 출고일 미입력이어도 제외 (jin 2026-07-23) — 거래완료는 확실히 나간 것.
      *     선적중 등 그 외 진행상태는 미출고면 재고 잔존(진행상태 무관 원칙 유지, 거래완료만 예외).
@@ -3403,7 +3428,7 @@ class Vehicle extends Model
             //    ⚠️ 청산가치의 「재고」는 **다른 함수**다(CapitalStatusService::inventoryKrw — 선적일 기준).
             //       거기도 같은 제외가 들어가 있다.
             ->where('cancel_status', self::CANCEL_NONE)
-            ->whereNull('warehouse_out_date')
+            ->stillInYard()
             ->where(function ($q) {
                 $q->where('progress_status_cache', '!=', '거래완료')
                     ->orWhereNull('progress_status_cache');

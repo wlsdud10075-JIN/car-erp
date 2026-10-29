@@ -133,7 +133,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
         // 출고완료(jin 2026-07-28) — 출고일이 찍히면 재고에서 빠져 어디서도 못 보던 문제.
-        //   inStock() 은 whereNull(warehouse_out_date) 라 이 카테고리와 배타적 → 스코프를 분기한다.
+        //   inStock() 은 stillInYard() 라 이 카테고리(leftStock = 출고일 있음 OR 선적일 지남, 2026-10-29 (가))와 배타적 → 스코프를 분기한다.
         //   재고 이력 조회용이라 매입완납 조건은 걸지 않는다(출고된 차는 이미 재고를 떠난 것).
         $isShippedOut = $this->category === 'shipped_out';
         $isAwaitingPayment = $this->category === 'awaiting_payment';
@@ -144,7 +144,7 @@ new #[Layout('components.layouts.app')] class extends Component
             // 지급대기(jin 2026-08-09) = 매입 대금이 남은 차 = 입고 전. inStock() 과 배타적이라 스코프를 분기한다.
             ->when($isAwaitingPayment, fn ($q) => $q->awaitingPurchasePayment())
             ->when(! $isAwaitingPayment, fn ($q) => $q->when($isShippedOut,
-                fn ($q2) => $q2->whereNotNull('warehouse_out_date'),
+                fn ($q2) => $q2->leftStock(),
                 fn ($q2) => $q2->inStock()
             ))
             ->when($this->category === 'general', fn ($q) => $q->where(fn ($q2) => $q2->whereNull('sale_price')->orWhere('sale_price', '<=', 0)))
@@ -306,7 +306,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'general' => $scoped(Vehicle::query()->generalStock())->count(),
             'pre_ship' => $scoped(Vehicle::query()->preShippingStock())->count(),
             // 출고완료는 재고가 아니라 "나간 이력" — 전체 합계(cat_all)에는 더하지 않는다.
-            'shipped_out' => $scoped(Vehicle::query()->whereNotNull('warehouse_out_date'))->count(),
+            'shipped_out' => $scoped(Vehicle::query()->leftStock())->count(),   // 출고일 있음 OR 선적일 지남 (2026-10-29 (가))
             // 지급대기 = 입고 전이라 재고 합계(cat_all)에도 안 더한다.
             'awaiting_payment' => $scoped(Vehicle::query()->awaitingPurchasePayment())->count(),
         ];
