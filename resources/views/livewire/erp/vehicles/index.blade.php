@@ -9386,6 +9386,9 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     </select>
                     @error('salesman_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
+            </div>
+            {{-- 송금인 2칸은 영업담당자 **아랫줄**에 나란히 (jin 10-29) — 위 그리드(2/3열)에 섞이면 담당자 옆으로 붙는다. --}}
+            <div class="mt-3 grid grid-cols-2 gap-3">
                 {{-- 2026-11 ② (jin 10-28) — 송금인 Name·ID. board 가 적어 보내는 값(차량 단위, 바이어 passport 와 다른 사람일 수 있다).
                      ERP 용도는 검색뿐 — 이름만 LIKE, ID 는 암호화. 판매 탭이 아니라 여기인 이유 = 매입예정 단계에 바이어 없이도 들어온다. --}}
                 <div>
