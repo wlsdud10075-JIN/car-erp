@@ -7,6 +7,7 @@ use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\PurchaseBalancePayment;
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehiclePhoto;
@@ -997,5 +998,100 @@ class PurchaseSyncReceiverTest extends TestCase
         $res = $this->postSigned($this->validPayload(['vehicle_number' => '42오4204', 'remitter_id' => 'SECRET-ID-77']));
         $this->assertStringNotContainsString('SECRET-ID-77', $res->getContent());
         $this->assertSame(0, AuditLog::where('new_value', 'like', '%SECRET-ID-77%')->count());
+    }
+
+    // ── 2026-10-29 (jin) — 재전송 금액 덮어쓰기 amounts_overwrite ──
+
+    private function soldViaSync(string $no, array $extra = []): int
+    {
+        Salesman::firstOrCreate(['email' => 'sales@car-erp.test'], ['name' => '김영업', 'type' => 'freelance', 'is_active' => true]);
+
+        return $this->postSigned($this->validPayload(array_merge([
+            'vehicle_number' => $no, 'sale_price' => 5000, 'sale_currency' => 'USD', 'sale_exchange_rate' => 1350,
+            'transport_fee' => 400, 'transport_fee_usd' => 400, 'usd_exchange_rate' => 1350,
+        ], $extra)))->assertStatus(201)->json('vehicle_id');
+    }
+
+    /** 플래그가 있으면 판매측 6칸을 덮어쓴다 — 바뀐 칸만 fields_overwritten, 같은 값·안 보낸 칸은 어디에도 없음, 감사 출처 행 1. */
+    public function test_amounts_overwrite_replaces_sale_side_fields_and_audits(): void
+    {
+        $id = $this->soldViaSync('43오4301');
+
+        $res = $this->postSigned($this->validPayload([
+            'vehicle_number' => '43오4301', 'amounts_overwrite' => true,
+            'sale_price' => 5200, 'sale_currency' => 'USD', 'sale_exchange_rate' => 1350,   // 판매가만 바뀜, 통화·환율 같음
+            'transport_fee' => 450,                                                          // 바뀜
+            // transport_fee_usd·usd_exchange_rate 안 보냄 → 그대로
+        ]));
+        $res->assertStatus(200);
+        $this->assertSame(['sale_price', 'transport_fee'], $res->json('fields_overwritten'));
+        $this->assertSame([], $res->json('fields_filled'));
+        $this->assertArrayNotHasKey('sale_price', (array) $res->json('fields_skipped'));
+
+        $v = Vehicle::find($id);
+        $this->assertSame(5200.0, (float) $v->sale_price);
+        $this->assertSame(450.0, (float) $v->transport_fee);
+        $this->assertSame(400, (int) $v->transport_fee_usd, '안 보낸 칸은 안 건드린다');
+        $this->assertSame(1350.0, (float) $v->exchange_rate);
+
+        $src = AuditLog::where('auditable_id', $id)->where('action', 'purchase_sync_amounts_overwritten')->get();
+        $this->assertCount(1, $src);
+        $this->assertSame('sale_price,transport_fee', $src->first()->column_name);
+        $this->assertSame(1, AuditLog::where('auditable_id', $id)->where('column_name', 'sale_price')->where('action', 'updated')->count(), '컬럼 변경 행은 updated 훅이 남긴다');
+
+        // 같은 값을 다시 보내면 아무 목록에도 없고 감사 행도 안 는다
+        $again = $this->postSigned($this->validPayload(['vehicle_number' => '43오4301', 'amounts_overwrite' => true, 'sale_price' => 5200, 'transport_fee' => 450]));
+        $this->assertSame([], $again->json('fields_overwritten'));
+        $this->assertSame(1, AuditLog::where('auditable_id', $id)->where('action', 'purchase_sync_amounts_overwritten')->count());
+    }
+
+    /** 플래그 없으면 종전 그대로 빈 칸만 — already_set. */
+    public function test_without_the_flag_a_resend_still_fills_only_empty_fields(): void
+    {
+        $id = $this->soldViaSync('43오4302');
+        $res = $this->postSigned($this->validPayload(['vehicle_number' => '43오4302', 'sale_price' => 9999, 'sale_exchange_rate' => 1000, 'transport_fee' => 1]));
+        $res->assertStatus(200)->assertJsonPath('fields_skipped.sale_price', 'already_set')->assertJsonPath('fields_skipped.transport_fee', 'already_set');
+        $this->assertSame([], $res->json('fields_overwritten'));
+        $this->assertSame(5000.0, (float) Vehicle::find($id)->sale_price);
+    }
+
+    /** 안전장치 — 정산 확정/지급 차는 settlement_locked, 2차 마감 차는 ledger_closed. 6칸 전부 그대로. */
+    public function test_amounts_overwrite_is_refused_for_settled_or_closed_vehicles(): void
+    {
+        $a = $this->soldViaSync('43오4303');
+        $b = $this->soldViaSync('43오4304');
+        $sm = Salesman::where('email', 'sales@car-erp.test')->first();
+        Settlement::create(['vehicle_id' => $a, 'salesman_id' => $sm->id, 'settlement_type' => 'per_unit', 'per_unit_amount' => 100000, 'settlement_status' => 'confirmed']);
+        Settlement::create(['vehicle_id' => $b, 'salesman_id' => $sm->id, 'settlement_type' => 'per_unit', 'per_unit_amount' => 100000, 'settlement_status' => 'paid', 'secondary_status' => 'closed']);
+
+        foreach ([['43오4303', $a, 'settlement_locked'], ['43오4304', $b, 'ledger_closed']] as [$no, $id, $reason]) {
+            $res = $this->postSigned($this->validPayload(['vehicle_number' => $no, 'amounts_overwrite' => true, 'sale_price' => 7777, 'sale_exchange_rate' => 1000, 'transport_fee' => 1]));
+            $res->assertStatus(200)->assertJsonPath('fields_skipped.amounts', $reason)->assertJsonPath('fields_skipped.sale_price', 'already_set');
+            $this->assertSame([], $res->json('fields_overwritten'));
+            $v = Vehicle::find($id);
+            $this->assertSame(5000.0, (float) $v->sale_price);
+            $this->assertSame(400.0, (float) $v->transport_fee);
+        }
+        $this->assertSame(0, AuditLog::where('action', 'purchase_sync_amounts_overwritten')->count());
+    }
+
+    /** 판매가만 보내고 환율이 안 오면 기존 환율을 유지한다 · 통화 변경은 보냈을 때만 · 빈 칸은 종전대로 filled. */
+    public function test_amounts_overwrite_keeps_the_existing_rate_when_none_is_sent(): void
+    {
+        $id = $this->soldViaSync('43오4305');
+        Vehicle::whereKey($id)->update(['transport_fee' => 0]);   // 운임비는 비어 있는 상태
+
+        $res = $this->postSigned($this->validPayload(['vehicle_number' => '43오4305', 'amounts_overwrite' => true, 'sale_price' => 6000, 'transport_fee' => 300]));
+        $res->assertStatus(200);
+        $this->assertSame(['sale_price'], $res->json('fields_overwritten'));
+        $this->assertSame(['transport_fee'], $res->json('fields_filled'), '빈 칸은 덮어쓰기가 아니라 채움');
+        $v = Vehicle::find($id);
+        $this->assertSame(6000.0, (float) $v->sale_price);
+        $this->assertSame(1350.0, (float) $v->exchange_rate, '환율 안 왔으면 유지');
+        $this->assertSame('USD', $v->currency);
+
+        $cur = $this->postSigned($this->validPayload(['vehicle_number' => '43오4305', 'amounts_overwrite' => true, 'sale_price' => 6000, 'sale_currency' => 'EUR', 'sale_exchange_rate' => 1500]));
+        $this->assertSame(['sale_exchange_rate', 'sale_currency'], $cur->json('fields_overwritten'));
+        $this->assertSame('EUR', Vehicle::find($id)->currency);
     }
 }

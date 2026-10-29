@@ -514,6 +514,7 @@ return [
         'payout_approved_via_link' => '정산 지급 승인(카톡)',
         'payout_rejected_via_link' => '정산 지급 반려(카톡)',
         'inbound_purchase_sync' => '매입 자동 등록(board)',
+        'purchase_sync_amounts_overwritten' => 'board 재전송 금액 덮어쓰기',   // 2026-10-29 — amounts_overwrite 로 판매측 칸이 바뀐 차
         // 2026-07-31 — 운영 감사로그 실측으로 확인된 미매핑 액션(영문 노출분).
         'assistant_query' => '챗봇 질문',
         'purchase_gate_override' => '매입 게이트 예외 승인',
