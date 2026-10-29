@@ -129,6 +129,7 @@ return [
     'fin' => [
         'fully_paid' => '완납',
         'unpaid' => '미수',
+        'unpaid_krw_tip' => '원화 환산 합계 :krw원 (환율 미입력 차 제외)',
         'fx_missing' => '환율 미입력 :n대',
         'surrender_warning' => '⚠ 써랜더 + 미완납 — 실물 leverage 포기 주의',
         'forwarding' => '포워딩사',

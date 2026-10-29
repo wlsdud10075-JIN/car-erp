@@ -215,7 +215,7 @@ board 의 **전송 감사 명령 `board:purchase-sync-audit`**(board dev `cb9974
 - **`GET /bundles?salesman_email=`** — **영업 본인 묶음 전체(전 상태, 안 사라짐).** 묶음별:
   - `batch_id`·`shipping_method`·`bl_type`·**`ship_status`**(선적단계 — ⚠️ 키 이름은 `ship_status`, 스펙 초기 텍스트의 `status` 아님. 권위=구현)·`bl_status`·`vehicles[]`(번호·차별 status).
   - **⚠️ `buyer`/`consignee` = `{id, name}` 객체** (이름 문자열 아님 — board 가 sync 재전송 시 `buyer_id` 필요. 문자열만이면 묶음 누락→자동취소 footgun. 2026-06-30 board e2e 차단이슈) + **`consignees`=`[{id,name}]`**(그 바이어 컨사이니 옵션, 편집용). buyer 없으면 `null`·`[]`.
-  - **재무 집계**(아래 5-4): `sales_by_currency`·`unpaid_total_krw`·`fx_missing_count`·`fully_paid`·`unpaid_ratio`·`surrender_unpaid_warning`.
+  - **재무 집계**(아래 5-4): `sales_by_currency`·**`unpaid_by_currency`**(2026-10-29, 판매 통화별 미수 — board 묶음 카드는 이걸 표시, 원화 `unpaid_total_krw` 는 게이지·완납용)·`unpaid_total_krw`·`fx_missing_count`·`fully_paid`·`unpaid_ratio`·`surrender_unpaid_warning`. 차량 행(`/shippable`·`bundles.vehicles[]`)에는 `unpaid`(판매 통화 금액, `currency` 옆) 추가.
   - **묶음 속성 되돌려주기 (2026-08-11)**: `forwarding_company`(=`{id,name}`|null)·`transport_fee_usd_total`(int|null). 없으면 board 가 묶음을 다시 열었을 때 칸이 비고, 그대로 재전송하면 값이 날아간다.
   - `change_requested`(in_progress 변경요청 대기 여부).
   - 📊 **`vehicles[]` 행마다 미수 4필드 (2026-10-14, board 요청·jin 승인)**: `currency`·`unpaid_krw`·`unpaid_ratio`·`fully_paid` — `/shippable` 과 **같은 이름·같은 의미**(원본 = `shippable()` map). 묶인 차는 `/shippable` 에서 빠지므로 이 행이 유일한 출처다. `unpaid_krw` null = 환율 미입력(0 아님), `fully_paid` 는 cache 가 있고 ≤ 0 일 때만 true. 차량이 지워진 행은 전부 null/false. 가드 = `BoardPortalApiTest::test_bundles_vehicle_rows_carry_the_same_unpaid_fields_as_shippable`.
@@ -264,6 +264,7 @@ board 의 **전송 감사 명령 `board:purchase-sync-audit`**(board dev `cb9974
 > 구현 = **기존 `InternalPortalController`(`/finance`·`/by-buyer`) 집계 패턴 재사용**. 새 저장·새 accessor 없음.
 ```
 unpaid_total_krw  = Σ sale_unpaid_amount_krw_cache (멤버, NULL 제외)
+unpaid_by_currency = 통화별 Σ max(0, sale_unpaid_amount)   // 💱 2026-10-29 jin — 판매 통화 그대로. 환율 없는 차도 포함(통화 금액은 있다). 화면 표시는 이걸로
 sales_by_currency = 통화별 Σ sale_price
 fx_missing_count  = count(sale_unpaid_amount_krw_cache === null)        // 환율 미입력 차
 unpaid_ratio      = Σ unpaid_krw / Σ(sale_total_amount × exchange_rate)  // fx-missing 양쪽 제외 → 게이지 fill

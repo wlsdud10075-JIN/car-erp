@@ -896,6 +896,9 @@ new #[Layout('components.layouts.app')] class extends Component
                         default => 'badge-gray',
                     };
                     $ratioPct = $b['unpaid_ratio'] !== null ? round($b['unpaid_ratio'] * 100, 1) : null;
+                    // 💱 미수는 판매 통화 그대로(jin 2026-10-29 «왜 한화로 보이지») — 원화 합계는 툴팁으로만.
+                    $unpaidByCur = collect((array) ($b['unpaid_by_currency'] ?? []))->filter(fn ($amt) => $amt > 0)
+                        ->map(fn ($amt, $cur) => $cur.' '.number_format((float) $amt, $cur === 'KRW' || $cur === 'JPY' ? 0 : 2))->implode(' · ');
                 @endphp
                 <div class="card">
                     <div class="flex flex-wrap items-start justify-between gap-2">
@@ -1022,8 +1025,8 @@ new #[Layout('components.layouts.app')] class extends Component
                                     <div class="h-full rounded-full {{ $ratioPct > 50 ? 'bg-red-500' : ($ratioPct > 0 ? 'bg-amber-400' : 'bg-emerald-500') }}"
                                          style="width: {{ min(100, $ratioPct) }}%"></div>
                                 </div>
-                                <span class="text-[11px] text-gray-500">
-                                    {{ __('shipping.fin.unpaid') }} {{ number_format($b['unpaid_total_krw']) }}원 ({{ $ratioPct }}%)
+                                <span class="text-[11px] text-gray-500" title="{{ __('shipping.fin.unpaid_krw_tip', ['krw' => number_format($b['unpaid_total_krw'])]) }}">
+                                    {{ __('shipping.fin.unpaid') }} {{ $unpaidByCur !== '' ? $unpaidByCur : '0' }} ({{ $ratioPct }}%)
                                 </span>
                             </div>
                         @endif

@@ -88,6 +88,7 @@ class ShippingRequestController extends Controller
                     ? $v->buyer->consignees->map(fn ($c) => ['id' => $c->id, 'name' => $c->name])->values()
                     : [],
                 'currency' => $v->currency,
+                'unpaid' => round(max(0.0, (float) $v->sale_unpaid_amount), 2),   // 💱 판매 통화 금액(2026-10-29) — 환율 없어도 있다
                 'unpaid_krw' => $v->sale_unpaid_amount_krw_cache,   // null = 환율 미입력 (완납 아님)
                 'unpaid_ratio' => $v->unpaid_ratio,                 // 0~1 | 0.0(완납) | null
                 'fully_paid' => $v->sale_unpaid_amount_krw_cache !== null && $v->sale_unpaid_amount_krw_cache <= 0,
@@ -165,6 +166,7 @@ class ShippingRequestController extends Controller
                     //    이 행에만 실린다. 없으면 board 가 「필드 없음」을 환율 미입력으로 읽어 35대 전부 거짓 경고(heymanboard 실측).
                     //    ⚠️ unpaid_krw 의 null 은 그대로(= 환율 미입력), 0 으로 바꾸지 말 것. 차량이 지워졌으면 전부 null.
                     'currency' => $r->vehicle?->currency,
+                    'unpaid' => $r->vehicle ? round(max(0.0, (float) $r->vehicle->sale_unpaid_amount), 2) : null,   // 💱 판매 통화 금액
                     'unpaid_krw' => $r->vehicle?->sale_unpaid_amount_krw_cache,
                     'unpaid_ratio' => $r->vehicle?->unpaid_ratio,
                     'fully_paid' => $r->vehicle !== null && $r->vehicle->sale_unpaid_amount_krw_cache !== null && $r->vehicle->sale_unpaid_amount_krw_cache <= 0,
