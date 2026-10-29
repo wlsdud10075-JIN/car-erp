@@ -167,6 +167,23 @@
 
 테스트 = `PurchaseSyncFillIfEmptyTest` 13케이스.
 
+## 연동 B — 재전송 금액 **덮어쓰기** `amounts_overwrite` (2026-10-29 jin, board 세션에서 결정 · ✅ 구현 dev)
+
+> 「금액만 ERP 로 보내기」가 빈 칸만 채우면 쓸모가 없다(jin «board 도 쓰기 시작했고 ERP 로 전송되니 덮어쓰기 허용이 맞다»). 10-16 보류했던 옵션을 켠다. **v5 규칙 1(불가침)의 유일한 예외.**
+
+- payload 선택 플래그 **`amounts_overwrite: true`**(boolean). board 는 드로어 「금액만 ERP 로 보내기」·저장 시 금액 변경 자동 재전송에서만 붙인다(신규 생성·첨부 전용·재고매입엔 없음). `contract_version` 상향 없음.
+- 플래그가 있으면 **판매측 6칸만** board 값으로 덮어쓴다: `sale_price`·`sale_currency`·`sale_exchange_rate`·`transport_fee`·`transport_fee_usd`·`usd_exchange_rate`. **null/0 으로 지우진 않는다**(안 보낸 칸은 건너뜀). 같은 값이면 어느 목록에도 안 든다. 바이어·컨사이니·payee·매입측(`purchase_price_krw`·`selling_fee_krw`)·첨부·`buyer_undecided` 는 종전 규칙 그대로(바이어 락 게이트 우회 방지).
+- 판매가를 덮을 때 `sale_exchange_rate` 가 안 오면 **기존 환율 유지**(chk_sale_required). 기존 환율도 0 이면 `fields_skipped.sale_price='missing_exchange_rate'`.
+- 🔒 **안전장치(jin 10-29)** — 아래 차는 6칸 전부 건너뛰고 `fields_skipped.amounts` 에 사유(ERP 에서 사람이 고친다):
+  | 사유 | 조건 |
+  |---|---|
+  | `ledger_closed` | 2차 마감 정산 있음(`Vehicle::hasClosedSecondarySettlement`, 원장 락) |
+  | `settlement_locked` | 정산 `confirmed`/`paid` 있음(판매가·환율이 바뀌면 마진·미수가 움직인다) |
+- 응답 200 에 **`fields_overwritten[]`**(값이 있었는데 바뀐 칸, board 키 이름) — `fields_filled`(빈 칸 채움)·`fields_skipped` 와 별개. board 배너 「반영됨 / 덮어씀 / 변경 없음」.
+- 감사 = 컬럼별 변경 행(`updated`) + 출처 행 `purchase_sync_amounts_overwritten`(컬럼 콤마 목록, `new_value` = 「board 재전송 덮어쓰기 (이메일)」, 행위자 = `salesman_email` 의 User).
+- 운임비 1/N 환산(§5 💱)과의 관계: board 가 `transport_fee` 를 덮어쓰면 그게 최종. 선적요청 환산은 종전대로 빈 칸만.
+- 가드 = `PurchaseSyncReceiverTest::test_amounts_overwrite_*` 4건.
+
 ## 연동 B `contract_version: 5` — 재고매입(바이어 미정) (2026-09-08)
 
 > 발신 권위 = board `SKILLS.md §12`. 인계 = board `meetings/handoff-carerp-stock-purchase-no-buyer.md`,
