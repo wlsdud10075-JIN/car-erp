@@ -116,6 +116,9 @@ class PurchaseSyncController extends Controller
             //   명시한다. 🚫 `buyer_id` 가 비었다는 사실만으로는 대신할 수 없다 — 그러면 **실수로 빠뜨린
             //   차**와 구분이 안 되고, 그 구분이 이 플래그의 존재 이유다(vehicles/index.blade.php:4629).
             'buyer_undecided' => ['nullable', 'boolean'],
+            // 2026-10-29 (jin, board 세션 결정) — 재전송 금액 **덮어쓰기** 플래그. board 「금액만 ERP 로 보내기」·저장 시 금액 변경 재전송에서만 붙는다.
+            //   판매측 6칸(sale_price·sale_currency·sale_exchange_rate·transport_fee·transport_fee_usd·usd_exchange_rate)만. 신규 생성엔 무의미.
+            'amounts_overwrite' => ['nullable', 'boolean'],
             // 연동 B v2 — 차량 사진/서류 첨부(공유 S3 키만, 바이트 아님). 전방호환: 없으면 무시.
             'attachments' => ['nullable', 'array', 'max:50'],
             'attachments.*.s3_path' => ['required_with:attachments', 'string', 'max:1024'],
@@ -141,7 +144,7 @@ class PurchaseSyncController extends Controller
             $synced = $this->syncAttachments($existing, $data['attachments'] ?? []);
             // 2026-08-18 (board 인계 ①) — 급해서 매입가만 보낸 차의 **판매가를 나중에 채워 재전송**하면
             //   비어 있는 칸만 채운다. 이미 값이 있으면 안 건드린다(관리가 ERP 에서 고친 값 보호).
-            [$filled, $skipped] = $this->fillEmptyFields($existing, $data);
+            [$filled, $skipped, $overwritten] = $this->fillEmptyFields($existing, $data);
             Log::info('[purchase-sync] 멱등 스킵 — 기존 vehicle_number', [
                 'vehicle_id' => $existing->id,
                 'vehicle_number' => $data['vehicle_number'],
@@ -149,6 +152,7 @@ class PurchaseSyncController extends Controller
                 'attachments_failed' => $this->attachmentsFailed,
                 'fields_filled' => $filled,
                 'fields_skipped' => $skipped,
+                'fields_overwritten' => $overwritten,
             ]);
 
             return response()->json([
@@ -160,6 +164,8 @@ class PurchaseSyncController extends Controller
                 //   board 가 200 만 보고 "판매가 반영됨" 으로 기록하면 조용한 실패가 된다.
                 'fields_filled' => $filled,
                 'fields_skipped' => (object) $skipped,
+                // 2026-10-29 — amounts_overwrite 로 **값이 있었는데 바뀐** 칸(같은 값이면 안 들어간다). board 배너 「덮어씀」.
+                'fields_overwritten' => $overwritten,
             ], 200);
         }
 
@@ -526,62 +532,93 @@ class PurchaseSyncController extends Controller
      *    「사람이 껐음」을 구분할 수 없다 — 재전송이 ERP 에서 끈 체크를 되살리면 규칙 1 위반이다.
      *    뒤처리도 필요 없다: 재전송이 `buyer_id` 를 채우면 아래 `save()` 에서 `Vehicle::saving` 이 자동 해제한다.
      *
-     * @return array{0: list<string>, 1: array<string, string>} [채운 필드, 필드=>스킵사유]
+     * 🔀 **2026-10-29 (jin, board 세션에서 결정) — `amounts_overwrite: true` 면 판매측 6칸은 덮어쓴다.**
+     *    규칙 1(불가침)의 예외다 — 「금액만 ERP 로 보내기」가 빈 칸만 채우면 쓸모가 없어서. 대상 = sale_price·sale_currency·
+     *    sale_exchange_rate·transport_fee·transport_fee_usd·usd_exchange_rate **뿐**(바이어·컨사이니·payee·매입측·첨부는 종전).
+     *    - null/0 으로 **지우진 않는다**(board 가 안 보낸 칸은 건너뜀). 같은 값이면 아무 목록에도 안 든다.
+     *    - 🔒 안전장치(jin 10-29): 2차 마감 차 = `ledger_closed` · 정산 confirmed/paid 가 있는 차 = `settlement_locked` → 6칸 전부 건너뛰고
+     *      `fields_skipped.amounts` 에 사유. 그 차는 ERP 에서 사람이 고친다(마진·미수가 움직이는 값이라).
+     *    - 판매가를 덮을 때 환율이 안 왔으면 기존 환율을 쓴다(chk_sale_required). 기존 환율도 0 이면 `missing_exchange_rate`.
+     *    - 응답 `fields_overwritten[]` + 감사 행 `purchase_sync_amounts_overwritten`(컬럼 콤마 목록, 출처 = board 재전송·요청 이메일).
+     *
+     * @return array{0: list<string>, 1: array<string, string>, 2: list<string>} [채운 필드, 필드=>스킵사유, 덮어쓴 필드]
      */
     private function fillEmptyFields(Vehicle $vehicle, array $data): array
     {
         $filled = [];
         $skipped = [];
+        $overwritten = [];
+
+        $overwrite = (bool) ($data['amounts_overwrite'] ?? false);
+        if ($overwrite && ($lock = $this->amountsLockReason($vehicle)) !== null) {
+            $skipped['amounts'] = $lock;
+            $overwrite = false;   // 잠긴 차는 종전 규칙(빈 칸만)으로 떨어진다
+        }
+        // 금액 칸 하나를 「빈 칸만 / 덮어쓰기」 규칙으로 놓는다. 같은 값은 어느 목록에도 안 든다.
+        $amount = function (string $col, string $name, float $incoming, callable $cast) use ($vehicle, $overwrite, &$filled, &$skipped, &$overwritten): void {
+            if ($incoming <= 0) {
+                return;
+            }
+            $old = (float) $vehicle->{$col};
+            if ($old <= 0) {
+                $vehicle->{$col} = $cast($incoming);
+                $filled[] = $name;
+            } elseif (! $overwrite) {
+                $skipped[$name] = 'already_set';
+            } elseif (abs($old - (float) $cast($incoming)) > 0.000001) {
+                $vehicle->{$col} = $cast($incoming);
+                $overwritten[] = $name;
+            }
+        };
 
         $salePrice = isset($data['sale_price']) ? (float) $data['sale_price'] : 0.0;
         $saleRate = isset($data['sale_exchange_rate']) ? (float) $data['sale_exchange_rate'] : 0.0;
 
         if ($salePrice > 0) {
-            if ((float) $vehicle->sale_price > 0) {
+            $hasSale = (float) $vehicle->sale_price > 0;
+            // 덮어쓸 땐 환율이 안 와도 기존 환율로 세트를 유지한다(chk_sale_required).
+            $rate = $saleRate > 0 ? $saleRate : ($hasSale && $overwrite ? (float) $vehicle->exchange_rate : 0.0);
+            if ($hasSale && ! $overwrite) {
                 $skipped['sale_price'] = 'already_set';
-            } elseif ($saleRate <= 0) {
+            } elseif ($rate <= 0) {
                 // 환율 없이 판매가만 쓰면 CHECK 위반 → 세트 통째 보류(신규 경로와 동일 판단).
                 $skipped['sale_price'] = 'missing_exchange_rate';
-            } else {
+            } elseif (! $hasSale) {
                 $vehicle->sale_price = $salePrice;
-                $vehicle->exchange_rate = $saleRate;
+                $vehicle->exchange_rate = $rate;
                 $vehicle->currency = $data['sale_currency'] ?? 'KRW';
                 $vehicle->sale_date = now()->toDateString();
                 $filled[] = 'sale_price';
                 $filled[] = 'sale_exchange_rate';
                 $filled[] = 'sale_currency';
                 $filled[] = 'sale_date';
+            } else {
+                // 덮어쓰기 — 바뀐 칸만 기록. 통화는 보냈을 때만.
+                if (abs((float) $vehicle->sale_price - $salePrice) > 0.000001) {
+                    $vehicle->sale_price = $salePrice;
+                    $overwritten[] = 'sale_price';
+                }
+                if (abs((float) $vehicle->exchange_rate - $rate) > 0.000001) {
+                    $vehicle->exchange_rate = $rate;
+                    $overwritten[] = 'sale_exchange_rate';
+                }
+                if (isset($data['sale_currency']) && $data['sale_currency'] !== $vehicle->currency) {
+                    $vehicle->currency = $data['sale_currency'];
+                    $overwritten[] = 'sale_currency';
+                }
+                if (blank($vehicle->sale_date)) {
+                    $vehicle->sale_date = now()->toDateString();
+                    $filled[] = 'sale_date';
+                }
             }
         }
 
         // ⚠️ 운임비 = **판매통화** 기준(board 가 환산해 보냄). USD raw 컬럼(`transport_fee_usd`)이 따로 있으니
         //    헷갈리지 말 것 — 여기에 USD 를 넣으면 미수율 분모가 부풀어 게이트 판정이 틀어진다.
-        if (isset($data['transport_fee']) && (float) $data['transport_fee'] > 0) {
-            if ((float) $vehicle->transport_fee > 0) {
-                $skipped['transport_fee'] = 'already_set';
-            } else {
-                $vehicle->transport_fee = $data['transport_fee'];
-                $filled[] = 'transport_fee';
-            }
-        }
-
-        // 2026-10-22 — USD 메모 2칸도 같은 규칙(빈 칸만). 이미 선적요청 1/N 이나 사람이 넣은 값은 안 건드린다.
-        if ((float) ($data['transport_fee_usd'] ?? 0) > 0) {
-            if ((int) $vehicle->transport_fee_usd > 0) {
-                $skipped['transport_fee_usd'] = 'already_set';
-            } else {
-                $vehicle->transport_fee_usd = (int) round((float) $data['transport_fee_usd']);
-                $filled[] = 'transport_fee_usd';
-            }
-        }
-        if ((float) ($data['usd_exchange_rate'] ?? 0) > 0) {
-            if ((float) $vehicle->usd_exchange_rate > 0) {
-                $skipped['usd_exchange_rate'] = 'already_set';
-            } else {
-                $vehicle->usd_exchange_rate = $data['usd_exchange_rate'];
-                $filled[] = 'usd_exchange_rate';
-            }
-        }
+        $amount('transport_fee', 'transport_fee', (float) ($data['transport_fee'] ?? 0), fn (float $x) => $x);
+        // 2026-10-22 — USD 메모 2칸도 같은 규칙. 선적요청 1/N 이 넣은 값은 덮어쓰기 플래그가 와야만 바뀐다.
+        $amount('transport_fee_usd', 'transport_fee_usd', (float) ($data['transport_fee_usd'] ?? 0), fn (float $x) => (int) round($x));
+        $amount('usd_exchange_rate', 'usd_exchange_rate', (float) ($data['usd_exchange_rate'] ?? 0), fn (float $x) => $x);
 
         [$buyerId, $consigneeId] = $this->resolveBuyerConsignee($data['buyer_id'] ?? null, $data['consignee_id'] ?? null);
 
@@ -645,19 +682,51 @@ class PurchaseSyncController extends Controller
             }
         }
 
-        if ($filled === []) {
-            return [$filled, $skipped];
+        if ($filled === [] && $overwritten === []) {
+            return [$filled, $skipped, $overwritten];
         }
 
         // 감사 귀속 — HMAC 경로엔 세션이 없어 `auth()->id()` 가 늘 null 이고, 감사 화면엔 「시스템」으로 찍혀
         //   cron 이 바꾼 것과 구분이 안 된다(SKILLS §8 #56). `buyer_id` 는 감사 대상 컬럼이라 특히 필요하다.
         //   연결된 User 가 없는 영업이면 null 로 남는다(그건 종전과 같음).
         $userId = User::where('email', $data['salesman_email'])->value('id');
-        AuditLog::actingAs($userId, function () use ($vehicle) {
+        AuditLog::actingAs($userId, function () use ($vehicle, $overwritten, $data) {
             $vehicle->save();
+            if ($overwritten !== []) {
+                // 출처 표시 한 줄 — 컬럼별 변경 행(updated 훅)과 별도로 「board 재전송이 덮어썼다」를 남긴다(§8 #108 곁다리와 같은 두 줄 패턴).
+                AuditLog::create([
+                    'user_id' => AuditLog::currentActorId(),
+                    'auditable_type' => Vehicle::class, 'auditable_id' => $vehicle->id,
+                    'action' => 'purchase_sync_amounts_overwritten',
+                    'column_name' => implode(',', self::overwrittenColumns($overwritten)),
+                    'old_value' => null, 'new_value' => 'board 재전송 덮어쓰기 ('.$data['salesman_email'].')',
+                    'ip_address' => request()?->ip(),
+                ]);
+            }
         });
 
-        return [$filled, $skipped];
+        return [$filled, $skipped, $overwritten];
+    }
+
+    /** 덮어쓰기를 막는 사유 — 2차 마감(원장 락) · 정산 확정/지급(마진·미수가 움직인다, jin 10-29). null = 허용. */
+    private function amountsLockReason(Vehicle $vehicle): ?string
+    {
+        if ($vehicle->hasClosedSecondarySettlement()) {
+            return 'ledger_closed';
+        }
+        if ($vehicle->settlements()->whereIn('settlement_status', ['confirmed', 'paid'])->exists()) {
+            return 'settlement_locked';
+        }
+
+        return null;
+    }
+
+    /** 응답 이름(board 키) → ERP 컬럼명 — 감사 행의 컬럼 목록은 ERP 사전으로 번역돼야 한다(§8 #41). */
+    private static function overwrittenColumns(array $names): array
+    {
+        $map = ['sale_exchange_rate' => 'exchange_rate', 'sale_currency' => 'currency'];
+
+        return array_map(fn (string $n) => $map[$n] ?? $n, $names);
     }
 
     /**
