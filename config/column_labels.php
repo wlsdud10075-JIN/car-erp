@@ -163,7 +163,9 @@ return [
         'unpaid_override_stage' => '미수 우회 단계',
         'unlock_reason' => '잠금해제 사유',
         'purchase_from' => '구입처',
-        'deregistration_notice_phone' => '국내 딜러 알림톡 번호',   // 2026-11 ④ — board OCR 동봉이 쓰는 첫 칸, AUDITED 등재
+        'deregistration_notice_phone' => '국내 딜러 알림톡 번호',
+        'remitter_name' => '송금인 이름',   // 2026-11 ② — board 기록(차량 단위)
+        'remitter_id' => '송금인 ID',   // 2026-11 ④ — board OCR 동봉이 쓰는 첫 칸, AUDITED 등재
         'cancel_status' => '매입취소 상태',
         'stock_location' => '보관위치',
         'memo' => '메모',
@@ -538,6 +540,7 @@ return [
         'board_request_rejected' => 'board 요청 거절',
         // 2026-10-27 — board 영업의 재전송(재촉). new_value = 회차, 행위자 없음(연동 API).
         'board_request_resent' => 'board 요청 재전송',
+        'board_buyer_contact_read' => 'board 바이어 연락처 조회 (서류 생성용)',   // 2026-11 ② — GET /buyers/{id} 접근 기록
         'buyer_rebound' => '바이어 재연결(삭제된 바이어 정리)',
         'payout_incentive_added_via_link' => '인센티브 추가(승인 링크)',
         'contract_signed' => '전자서명 완료',

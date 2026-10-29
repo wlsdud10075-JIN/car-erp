@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Http\Controllers\Api\Internal\InternalDocumentController;
 use App\Http\Controllers\VehicleDocumentController;
+use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Salesman;
@@ -872,5 +873,106 @@ class BoardPortalApiTest extends TestCase
 
         $res = $this->signedGet('/api/internal/board/buyers/'.$b->id.'/savings', ['salesman_email' => 'me@a.com'])->assertOk();
         $res->assertJsonPath('balances.0.balance', 100)->assertJsonPath('balances.0.balance_krw', null);
+    }
+
+    // ── 2026-11 ② 송금인 전용 전송 POST /vehicles/{id}/remitter (§14-2) — 덮어쓰기 · no-op · 403 · 422 ──
+
+    /** 덮어쓰기 + had_previous + updated 는 실제로 바뀐 칸만. 감사 = 이름 평문 · ID 가림. 응답에 ID 값 없음. */
+    public function test_remitter_endpoint_overwrites_and_audits(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $user = User::factory()->create(['email' => 'me@a.com', 'permission' => 'user', 'role' => '영업']);
+        $v = $this->exportVehicle($me->id, '51가5101');
+
+        $first = $this->signedPost('/api/internal/board/vehicles/'.$v->id.'/remitter', ['salesman_email' => 'me@a.com', 'remitter_name' => ' JOHN DOE ', 'remitter_id' => 'AB1234567'])->assertOk();
+        $first->assertJsonPath('vehicle_id', $v->id)->assertJsonPath('had_previous', false)->assertJsonPath('updated', ['remitter_name', 'remitter_id']);
+        $this->assertStringNotContainsString('AB1234567', $first->getContent());
+
+        $second = $this->signedPost('/api/internal/board/vehicles/'.$v->id.'/remitter', ['salesman_email' => 'me@a.com', 'remitter_name' => 'JANE ROE', 'remitter_id' => ''])->assertOk();
+        $second->assertJsonPath('had_previous', true)->assertJsonPath('updated', ['remitter_name']);
+
+        $v->refresh();
+        $this->assertSame('JANE ROE', $v->remitter_name, '동봉과 달리 덮어쓴다');
+        $this->assertSame('AB1234567', $v->remitter_id, '빈 문자열은 비우지 않고 무시');
+
+        $rows = AuditLog::where('auditable_id', $v->id)->whereIn('column_name', ['remitter_name', 'remitter_id'])->orderBy('id')->get();
+        $this->assertSame(['remitter_name', 'remitter_id', 'remitter_name'], $rows->pluck('column_name')->all());
+        $this->assertSame('JANE ROE', $rows->last()->new_value);
+        $this->assertSame(AuditLog::MASKED_COLUMNS['remitter_id'], $rows[1]->new_value);
+        $this->assertSame($user->id, $rows->last()->user_id, '행위자 = salesman_email 의 User(§8 #56)');
+    }
+
+    /** 같은 값이면 no-op — updated [] · 감사 행 0. */
+    public function test_remitter_endpoint_same_values_are_a_noop(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $v = $this->exportVehicle($me->id, '51가5102');
+        $this->signedPost('/api/internal/board/vehicles/'.$v->id.'/remitter', ['salesman_email' => 'me@a.com', 'remitter_name' => 'JOHN', 'remitter_id' => 'AB1'])->assertOk();
+        $before = AuditLog::where('auditable_id', $v->id)->count();
+
+        $this->signedPost('/api/internal/board/vehicles/'.$v->id.'/remitter', ['salesman_email' => 'me@a.com', 'remitter_name' => 'JOHN', 'remitter_id' => 'AB1'])
+            ->assertOk()->assertJsonPath('updated', [])->assertJsonPath('had_previous', true);
+        $this->assertSame($before, AuditLog::where('auditable_id', $v->id)->count());
+    }
+
+    /** IDOR — 남의 차·없는 차·지운 차 = 403(§2, 선적요청과 같은 코드). 이름 없음·길이 초과 = 422. */
+    public function test_remitter_endpoint_scope_and_validation(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $theirs = $this->exportVehicle($other->id, '51가5103');
+        $mine = $this->exportVehicle($me->id, '51가5104');
+        $gone = $this->exportVehicle($me->id, '51가5105');
+        $gone->delete();
+
+        $this->signedPost('/api/internal/board/vehicles/'.$theirs->id.'/remitter', ['salesman_email' => 'me@a.com', 'remitter_name' => 'X'])->assertForbidden();
+        $this->signedPost('/api/internal/board/vehicles/999999/remitter', ['salesman_email' => 'me@a.com', 'remitter_name' => 'X'])->assertForbidden();
+        $this->signedPost('/api/internal/board/vehicles/'.$gone->id.'/remitter', ['salesman_email' => 'me@a.com', 'remitter_name' => 'X'])->assertForbidden();
+        $this->assertNull($theirs->fresh()->remitter_name);
+
+        $this->signedPost('/api/internal/board/vehicles/'.$mine->id.'/remitter', ['salesman_email' => 'me@a.com', 'remitter_name' => ''])->assertStatus(422);
+        $this->signedPost('/api/internal/board/vehicles/'.$mine->id.'/remitter', ['salesman_email' => 'me@a.com', 'remitter_name' => str_repeat('A', 101)])->assertStatus(422);
+        $this->signedPost('/api/internal/board/vehicles/'.$mine->id.'/remitter', ['salesman_email' => 'me@a.com', 'remitter_name' => 'OK', 'remitter_id' => str_repeat('1', 65)])->assertStatus(422);
+    }
+
+    // ── 2026-11 ②-주소·전화 GET /buyers/{id} (§3 서류 생성용 예외) ──
+
+    /** 본인 바이어 = 주소·전화 그대로(자유서식) · 비면 null · contact_name/email/memo 는 안 나감 · 비활성도 읽음 · 접근 기록 1행. */
+    public function test_buyer_show_opens_address_and_phone_with_an_access_log(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $b = Buyer::create(['name' => 'ATLAS', 'is_active' => false, 'salesman_id' => $me->id,
+            'address' => 'Rr. Durresi 12, Tirana', 'contact_phone' => '+355 69 123 4567', 'contact_name' => 'SECRET CONTACT', 'contact_email' => 'secret@x.com', 'memo' => 'SECRET MEMO']);
+        $empty = Buyer::create(['name' => 'EMPTY', 'is_active' => true, 'salesman_id' => $me->id, 'address' => '  ', 'contact_phone' => null]);
+
+        $res = $this->signedGet('/api/internal/board/buyers/'.$b->id, ['salesman_email' => 'me@a.com'])->assertOk();
+        $res->assertExactJson(['id' => $b->id, 'name' => 'ATLAS', 'country' => null, 'address' => 'Rr. Durresi 12, Tirana', 'phone' => '+355 69 123 4567']);
+        $this->assertStringNotContainsString('SECRET', $res->getContent());
+
+        $this->signedGet('/api/internal/board/buyers/'.$empty->id, ['salesman_email' => 'me@a.com'])->assertOk()
+            ->assertJsonPath('address', null)->assertJsonPath('phone', null);
+
+        $log = AuditLog::where('auditable_type', Buyer::class)->where('auditable_id', $b->id)->where('action', 'board_buyer_contact_read')->get();
+        $this->assertCount(1, $log);
+        $this->assertSame('me@a.com', $log->first()->old_value);
+    }
+
+    /** 남의 바이어·없는 id·지운 바이어 = 404(기록 0) · super scope=all 이면 전체. */
+    public function test_buyer_show_scope(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $theirs = Buyer::create(['name' => 'THEIRS', 'is_active' => true, 'salesman_id' => $other->id, 'contact_phone' => '010']);
+        $gone = Buyer::create(['name' => 'GONE', 'is_active' => true, 'salesman_id' => $me->id]);
+        $gone->delete();
+        User::factory()->create(['email' => 'super@a.com', 'permission' => 'super']);
+
+        $this->signedGet('/api/internal/board/buyers/'.$theirs->id, ['salesman_email' => 'me@a.com'])->assertNotFound();
+        $this->signedGet('/api/internal/board/buyers/999999', ['salesman_email' => 'me@a.com'])->assertNotFound();
+        $this->signedGet('/api/internal/board/buyers/'.$gone->id, ['salesman_email' => 'me@a.com'])->assertNotFound();
+        $this->assertSame(0, AuditLog::where('action', 'board_buyer_contact_read')->count());
+
+        $this->signedGet('/api/internal/board/buyers/'.$theirs->id, ['salesman_email' => 'super@a.com', 'scope' => 'all'])->assertOk()->assertJsonPath('phone', '010');
+        $this->assertSame('scope=all', AuditLog::where('action', 'board_buyer_contact_read')->latest('id')->value('new_value'));
     }
 }

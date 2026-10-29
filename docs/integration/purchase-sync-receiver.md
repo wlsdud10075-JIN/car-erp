@@ -223,7 +223,7 @@
 테스트 = `PurchaseSyncReceiverTest` 의 `test_stock_purchase_*` (null payload 수용 · `sale_price` null≡0 ·
 지급대기→일반재고 이동 · v5 플래그 저장 · 미지원버전 방어 · 바이어 지정 시 자동 해제).
 
-## 연동 B — 송금인 Name·ID 동봉 (2026-11 주말 기획, jin 10-28 결정 · ⏳ 미구현)
+## 연동 B — 송금인 Name·ID 동봉 (2026-11 주말 기획, jin 10-28 결정 · ✅ 2026-10-29 구현, dev — 가드 `PurchaseSyncReceiverTest::test_remitter_*` 4건)
 
 > 정본 기획 = board `meetings/plan-2026-11-weekend-freight-passport.md` ②. 저장·화면·검색·전용 엔드포인트는 `board-portal-api.md` **§14** 가 권위 — 여기는 **동봉 경로만**.
 

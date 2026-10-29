@@ -34,7 +34,7 @@
 ## 3. PII·응답 화이트리스트 (절대 노출 금지)
 - ⛔ `nice_reg_owner_rrn`(RRN)·`nice_reg_owner_name/addr`·`purchase_seller_account`(계좌)·`purchase_seller_holder` — **어떤 응답에도 미포함**.
 - ⛔ **마진 raw**(`sales_margin`·`vat_margin`·`total_margin`) — **기본 미포함**. (기능설정 `board_show_margin` 토글 = v2, default off.)
-- 📄 **서류 생성용 예외(2026-10-28 jin «ERP 개방», ⏳ 미구현)** — 바이어 `address`·`contact_phone` 은 **`GET /buyers/{id}` 한 건 조회에서만** 나간다(목록 ❌). 근거 = 07-31 `sales_contract`·`invoice` 개방과 같다(문서 안에 이미 실리는 값). 조건 = board 는 **저장하지 않고** 생성 시점에만 읽어 xlsx 에 쓴다(DB·로그 보관 0) · ERP 는 접근 기록 1행. `contact_name`·`contact_email`·`memo` 는 계속 ❌.
+- 📄 **서류 생성용 예외(2026-10-28 jin «ERP 개방», ✅ 2026-10-29 구현 — `InternalPortalController::buyer`, 접근 기록 = 감사 `board_buyer_contact_read`)** — 바이어 `address`·`contact_phone` 은 **`GET /buyers/{id}` 한 건 조회에서만** 나간다(목록 ❌). 근거 = 07-31 `sales_contract`·`invoice` 개방과 같다(문서 안에 이미 실리는 값). 조건 = board 는 **저장하지 않고** 생성 시점에만 읽어 xlsx 에 쓴다(DB·로그 보관 0) · ERP 는 접근 기록 1행. `contact_name`·`contact_email`·`memo` 는 계속 ❌.
 - ✅ 허용: `vehicle_number`·금액류(원화/외화)·`currency`·`exchange_rate`·바이어명·진행상태·일자·정산 status·`actual_payout`(실지급액)
   ·**`vin`(`nice_reg_vin`)·`brand`·`model_type`** (2026-08-10 판단 — §4-2).
 - 에러 응답 = 표준 JSON `{ "error": "...", "message": "..." }`. 스택·DB구조·Laravel 내부 노출 금지.
@@ -59,7 +59,7 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:board
 | `GET /by-buyer` | **바이어별 묶음** — `vehicle_count`·`sales_by_currency`(통화별 판매금액)·`payout_total_krw`(정산 실지급액 합="나에게 준 이득")·`payout_paid_krw`(paid 확정만)·**`savings_balances[]`({currency, balance, balance_krw} — 적립금 통화별 잔액, 2026-11 ③ ✅ 2026-10-29 구현. 행 없는 바이어 = `[]`. `balance_krw` = 적립 시점 환율 FIFO 합, 환율 없는 적립분이 섞이면 **null**)** | 바이어=**판매측**(`buyer_id`). **매입은 구입처 기준이라 바이어 무관 → 미포함**. payout=`actual_payout` accessor 합(환차·이월). 마진 raw 제외 |
 | `GET /buyers` | **드로어 드롭다운** — `{id, name, country, salesman_id, salesman_name, purchase_locked, purchase_lock{…}}` | **영업 본인 바이어만**(`buyers.salesman_id`=해소 영업) + `is_active`. 연락처·주소·메모 등 PII 금지. 매입 락 = **§4-0**. 🔓 **`scope=all`(2026-10-28 jin, e2e 시험용)** — `salesman_email` 이 **이 회사 ERP super 계정의 로그인 이메일**이면 전 활성 바이어(판정은 ERP `users.permission='super'`, board 의 role 주장만으로는 안 열림 → 그 외 전부 403). board 는 로그인 사용자가 super 일 때만 붙인다. `salesman_id`·`salesman_name` 은 본인 스코프에서도 늘 나간다(PII 아님) |
 | `GET /consignees?buyer_id=` | **드로어 드롭다운** — `{id, name}` | 해당 buyer 하위 `is_active` 컨사이니. **IDOR — buyer_id 가 본인 소유일 때만**(아니면 빈 목록). `scope=all`(super, 위와 같은 판정) 이면 소유 검사만 건너뛴다 |
-| `GET /buyers/{id}` | **바이어 한 건(서류 생성용, 2026-10-28 jin ⏳ 미구현)** — `{id, name, country, address, phone}` | board 전용 COMMERCIAL INVOICE(E7 Address·E8 Phone)용. 스코프 = `buyers.salesman_id` 본인(super `scope=all` 동일), 비활성도 읽음, 남의 바이어 404. `address` = `buyers.address`(text 자유서식), `phone` = `buyers.contact_phone`(자유서식·정규화 없음, 하이픈/국가코드 제각각). 비면 **null** — board 는 그대로 찍고 없으면 칸 비움(「-」 ❌). **§3 예외** — board 저장 ❌, ERP 접근 기록 1행 |
+| `GET /buyers/{id}` | **바이어 한 건(서류 생성용, 2026-10-28 jin · ✅ 2026-10-29 구현, 가드 `BoardPortalApiTest::test_buyer_show_*`)** — `{id, name, country, address, phone}` | board 전용 COMMERCIAL INVOICE(E7 Address·E8 Phone)용. 스코프 = `buyers.salesman_id` 본인(super `scope=all` 동일), 비활성도 읽음, 남의 바이어 404. `address` = `buyers.address`(text 자유서식), `phone` = `buyers.contact_phone`(자유서식·정규화 없음, 하이픈/국가코드 제각각). 비면 **null** — board 는 그대로 찍고 없으면 칸 비움(「-」 ❌). **§3 예외** — board 저장 ❌, ERP 접근 기록 1행 |
 | `GET /buyers/{id}/savings?limit=N` | **적립금 이력**(2026-11 ③ ✅ 2026-10-29 구현 — `InternalPortalController::buyerSavings`, 가드 `BoardPortalApiTest::test_buyer_savings_*`·`test_by_buyer_carries_savings_balances_per_currency`) — `{buyer_id, balances:[{currency, balance, balance_krw}], history:[{id, type, amount, currency, date, vehicle_number}]}` | 적립금만(현금 디파짓 ❌). **`note` 없음**(자유 입력 내부 메모가 섞인다). `type` 라벨 = EARNED/USED/REFUND 그대로, **ADJUSTMENT·CANCELLED 는 라벨만**(사유 ❌). 잔액 = 통화별 최신 `balance` 스냅샷(`SavingsLedger` 로 단일 출처화 — 화면 `loadSavings()` 도 그걸 부르게). **IDOR — `buyers.salesman_id` 본인 아니면 404**. `limit` 기본 20·최대 100, 최신순. jin 10-28 결정 = board 새 탭 「적립금」 |
 
 - **연동 B v3 드롭다운**(2026-06-23): board 경매/구매 드로어가 바이어·컨사이니를 car-erp 목록에서 선택(→ purchase-sync v3 `buyer_id`/`consignee_id` 송신). ⚠️ **Jin 결정 = 영업 본인 스코프**(인계문서의 "전체 활성 허용" 권장과 다름). `buyers` 가 비스코프였다면 IDOR 불변식 깨는 첫 사례라 거부 — 본인 바이어만. board 는 신차에 본인 바이어만 지정 가능(타 영업 바이어 필요 시 car-erp 에서 수동). 미구현 시 board graceful degrade(수동 입력).
@@ -765,7 +765,7 @@ board 는 조정의 존재조차 모르므로 배치를 미러해야 숫자가 �
 - 가드 = `tests/Feature/BoardPayoutBatchApiTest` — **응답 본문 문자열**로 전체 스냅샷 누출을 검사한다
   (매핑 배열만 보는 테스트는 새어도 통과한다). 조정이 운영에 1건뿐이라 **fixture 를 직접** 만든다.
 
-## 14. 송금인(바이어 고객) Name·ID — `vehicles.remitter_*` (2026-11 주말 기획, jin 10-28 결정 · ⏳ 미구현)
+## 14. 송금인(바이어 고객) Name·ID — `vehicles.remitter_*` (2026-11 주말 기획, jin 10-28 결정 · ✅ 2026-10-29 구현, dev — 마이그 `2026_10_29_000001_add_remitter_to_vehicles`, `InternalPortalController::remitter`, 가드 `BoardPortalApiTest::test_remitter_endpoint_*` 3 · `VehicleRemitterSearchTest` 2 · `PurchaseSyncReceiverTest::test_remitter_*` 4)
 
 > 정본 기획 = board `meetings/plan-2026-11-weekend-freight-passport.md` ② 「✅ 결정값」·「분담」. board 는 **이 절의 키 이름을 그대로** 쓴다.
 > 배경: 바이어 밑의 실제 손님(송금증에 찍히는 사람)이 차마다 달라 **차량 단위**로 기록한다(바이어 `passport_id`·컨사이니 `id_value` 와 다른 사람). ERP 에서는 **차량관리 검색 「송금증이름」** 으로 찾는 용도뿐이다.
@@ -796,7 +796,7 @@ prefix `/api/internal/board`, 미들웨어·서명·replay = §1 그대로(POST 
 
 - **덮어쓰기 + 감사**(jin) — purchase-sync 동봉과 규칙이 **다르다**(14-3). 값이 같으면 no-op(감사 0, `AuditLog::isRealChange`).
 - 응답 `200 { "vehicle_id": 12, "updated": ["remitter_name","remitter_id"], "had_previous": true }` — `updated` 는 실제로 바뀐 칸만. `had_previous` = 덮어쓰기 전에 값이 있었나(board 가 「덮어썼다」를 표시할 때).
-- 422 = 이름 없음·길이 초과. 차량 soft delete 는 §2 코드.
+- 422 = 이름 없음·길이 초과. 차량 soft delete 는 §2 코드. **구현 메모(10-29)**: 남의 차·없는 차·지운 차 = **403**(선적요청 묶음과 같은 코드, 존재 여부 비노출) · `salesman_email` 은 body(query 폴백) · 같은 값은 대입 자체를 안 해서 encrypted 재암호화로 생기는 가짜 dirty 를 막는다.
 - 감사 `AuditLog` = `AUDITED_COLUMNS` 훅 그대로(행위자 = 세션 없는 경로라 `user_id` NULL + `note` 에 board·`salesman_email`, §8 #56 과 같은 처리).
 
 ### 14-3. purchase-sync 동봉 (won 전에 적은 경우) — `purchase-sync-receiver.md` 「송금인 Name·ID 동봉」

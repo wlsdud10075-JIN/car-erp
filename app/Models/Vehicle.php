@@ -194,6 +194,8 @@ class Vehicle extends Model
         'has_mortgage',        // 저당 설정 표시 (jin 2026-08-21) — 딜러 입금완료 알림톡의 저당 해지 요청 문구를 가른다
         // 큐 20-A — 매입처 계좌 4컬럼 (purchase_seller_account encrypted)
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
+        // 2026-11 ② (jin 10-28) — 송금인 Name·ID. 차량 단위(바이어 passport_id 와 다른 사람). remitter_id 는 encrypted cast.
+        'remitter_name', 'remitter_id',
         // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
         'purchase_fee_bank', 'purchase_fee_account', 'purchase_fee_holder',
         'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
@@ -267,6 +269,8 @@ class Vehicle extends Model
         // 큐 20-A — 매입처 계좌번호 자동 암호화 (Laravel Crypt — AES-256-CBC)
         'purchase_seller_account' => 'encrypted',
         'purchase_fee_account' => 'encrypted',
+        // 2026-11 ② — 송금인 여권/ID 번호. 🚨 암호문이라 LIKE 검색 불가 — 검색은 remitter_name 만.
+        'remitter_id' => 'encrypted',
     ];
 
     /**
@@ -798,6 +802,8 @@ class Vehicle extends Model
         // 2026-11 ④ (jin 10-28) — 국내 딜러 알림톡 번호. board 가 OCR 동봉으로 **쓰기 시작하는 첫 칸**이라
         //   누가 넣었는지(board 동봉 vs 사람) 남겨야 한다. 평문 — 딜러 전화는 화면·알림톡 로그에 이미 평문.
         'deregistration_notice_phone',
+        // 2026-11 ② (jin 10-28) — 송금인 Name·ID. board 전용 엔드포인트가 **덮어쓰는** 칸이라 누가 언제 바꿨는지 남긴다(ID 는 MASKED).
+        'remitter_name', 'remitter_id',
         // 2026-09-17 (jin) — B/L 번호. 차량관리 「번호 일괄 기입」으로 **수십 대를 한 번에** 바꾸는
         //   입구가 생겼다. 07-28 에 shipping_date·eta_date 를 같은 이유로 등재한 것과 같다
         //   (컨테이너번호·수출신고번호는 이미 대상이었다).
@@ -3190,7 +3196,8 @@ class Vehicle extends Model
                     ->orWhere('vessel_name', 'like', SearchTerm::like($search))       // 선박명(VSL)
                     ->orWhere('container_number', 'like', SearchTerm::like($search))  // 컨테이너번호
                     ->orWhere('bl_number', 'like', SearchTerm::like($search))         // B/L 번호
-                    ->orWhere('purchase_from', 'like', SearchTerm::like($search));    // 구입처(매입처)
+                    ->orWhere('purchase_from', 'like', SearchTerm::like($search))     // 구입처(매입처)
+                    ->orWhere('remitter_name', 'like', SearchTerm::like($search));    // 송금인 이름(2026-11 ②) — ID 는 암호화라 검색 불가
 
                 if ($shipNo = VehicleShipment::normalizeTrackingNo($search)) {
                     $q->orWhere('ems_tracking_no_cache', 'like', "%{$shipNo}%")

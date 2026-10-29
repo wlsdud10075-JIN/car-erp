@@ -24,6 +24,8 @@ class AuditLog extends Model
         'purchase_seller_account' => '[ENCRYPTED ACCOUNT — value not logged]',
         // 2026-07-03 — 매도비 계좌번호 (개인정보)
         'purchase_fee_account' => '[ENCRYPTED ACCOUNT — value not logged]',
+        // 2026-11 ② — 송금인 여권/ID 번호 (개인정보)
+        'remitter_id' => '[ENCRYPTED REMITTER ID — value not logged]',
     ];
 
     public function user(): BelongsTo

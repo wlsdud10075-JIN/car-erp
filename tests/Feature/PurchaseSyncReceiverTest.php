@@ -935,4 +935,67 @@ class PurchaseSyncReceiverTest extends TestCase
             ->assertJsonPath('fields_skipped.deregistration_notice_phone', 'already_set');
         $this->assertSame('010-1234-5678', Vehicle::find($id)->deregistration_notice_phone);
     }
+
+    // ── 2026-11 ② 송금인 Name·ID 동봉 (jin 10-28) — 빈 칸만 · remitter_id 암호화 · 감사 가림 ──
+
+    /** 신규 생성에 동봉되면 그대로 저장. remitter_id 는 DB 에 평문으로 남지 않는다(encrypted cast). */
+    public function test_remitter_is_stored_on_create_and_id_is_encrypted(): void
+    {
+        $res = $this->postSigned($this->validPayload(['vehicle_number' => '42오4201', 'remitter_name' => ' JOHN DOE ', 'remitter_id' => 'AB1234567']));
+        $res->assertStatus(201);
+
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertSame('JOHN DOE', $v->remitter_name);
+        $this->assertSame('AB1234567', $v->remitter_id);
+        $raw = DB::table('vehicles')->where('id', $v->id)->value('remitter_id');
+        $this->assertNotSame('AB1234567', $raw);
+        $this->assertStringNotContainsString('AB1234567', (string) $raw);
+    }
+
+    /** 재전송 = 빈 칸만. 이름이 이미 있으면 already_set, 비어 있던 ID 는 채운다 — 감사 행은 가려진 표식으로 남는다. */
+    public function test_remitter_on_resend_fills_only_empty_and_masks_the_id_in_audit(): void
+    {
+        Salesman::create(['name' => '김영업', 'email' => 'sales@car-erp.test', 'type' => 'freelance', 'is_active' => true]);
+        $id = $this->postSigned($this->validPayload(['vehicle_number' => '42오4202', 'remitter_name' => 'FIRST NAME']))->json('vehicle_id');
+
+        $again = $this->postSigned($this->validPayload(['vehicle_number' => '42오4202', 'remitter_name' => 'SECOND NAME', 'remitter_id' => 'ZZ9999999']));
+        $again->assertStatus(200)
+            ->assertJsonPath('fields_skipped.remitter_name', 'already_set')
+            ->assertJsonFragment(['fields_filled' => ['remitter_id']]);
+
+        $v = Vehicle::find($id);
+        $this->assertSame('FIRST NAME', $v->remitter_name, '동봉은 덮어쓰지 않는다(덮어쓰기는 전용 엔드포인트 §14-2)');
+        $this->assertSame('ZZ9999999', $v->remitter_id);
+
+        $row = AuditLog::where('auditable_id', $id)->where('column_name', 'remitter_id')->latest('id')->first();
+        $this->assertNotNull($row);
+        $this->assertSame(AuditLog::MASKED_COLUMNS['remitter_id'], $row->new_value);
+        $this->assertStringNotContainsString('ZZ9999999', (string) $row->new_value);
+
+        // 둘 다 있으면 둘 다 already_set
+        $this->postSigned($this->validPayload(['vehicle_number' => '42오4202', 'remitter_name' => 'X', 'remitter_id' => 'Y']))
+            ->assertJsonPath('fields_skipped.remitter_name', 'already_set')
+            ->assertJsonPath('fields_skipped.remitter_id', 'already_set');
+    }
+
+    /** 빈 문자열은 「안 보낸 것」 — 채우지도, skipped 로 세지도 않는다. */
+    public function test_remitter_empty_strings_are_ignored(): void
+    {
+        $res = $this->postSigned($this->validPayload(['vehicle_number' => '42오4203', 'remitter_name' => '', 'remitter_id' => '  ']));
+        $v = Vehicle::find($res->json('vehicle_id'));
+        $this->assertNull($v->remitter_name);
+        $this->assertNull($v->remitter_id);
+
+        $again = $this->postSigned($this->validPayload(['vehicle_number' => '42오4203', 'remitter_name' => '', 'remitter_id' => '']));
+        $again->assertStatus(200);
+        $this->assertArrayNotHasKey('remitter_name', (array) $again->json('fields_skipped'));
+    }
+
+    /** 응답·감사 어디에도 ID 평문이 없고, 읽기 API 화이트리스트(§3)에도 없다. */
+    public function test_remitter_id_never_leaves_in_plaintext(): void
+    {
+        $res = $this->postSigned($this->validPayload(['vehicle_number' => '42오4204', 'remitter_id' => 'SECRET-ID-77']));
+        $this->assertStringNotContainsString('SECRET-ID-77', $res->getContent());
+        $this->assertSame(0, AuditLog::where('new_value', 'like', '%SECRET-ID-77%')->count());
+    }
 }

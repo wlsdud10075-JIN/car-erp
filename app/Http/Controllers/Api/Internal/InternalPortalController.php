@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Internal;
 
 use App\Http\Controllers\Controller;
+use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\SavingsStatus;
@@ -463,6 +464,78 @@ class InternalPortalController extends Controller
             'payout_paid_krw' => 0,
             'savings_balances' => [],   // 2026-11 ③ — [{currency, balance, balance_krw}]
         ];
+    }
+
+    /**
+     * 2026-11 ② (jin 10-28) — 송금인 Name·ID 전용 전송 (won 뒤, ERP 차량이 있을 때). 권위 = §14-2.
+     *
+     * - **덮어쓰기 + 감사**(purchase-sync 동봉은 빈 칸만 — 경로마다 규칙이 다르다, §14-3).
+     * - 값이 같으면 no-op(감사 0 — `AuditLog::isRealChange` 가 모델 훅에서 거른다). `remitter_id` 빈 문자열 = 무시(지우기는 ERP 화면에서).
+     * - 스코프 = §2 본인 차만. 남의 차·없는 차·지운 차 = **403**(선적요청 묶음과 같은 코드 — 존재 여부를 404 로 노출하지 않는다).
+     * - 행위자 = 세션 없는 경로라 `salesman_email` 의 User 로 귀속(§8 #56, purchase-sync 와 같은 방식). 🚫 응답에 `remitter_id` 를 싣지 않는다.
+     */
+    public function remitter(Request $request, int $id): JsonResponse
+    {
+        // POST 는 body 에 salesman_email 이 온다(선적요청·요청 신호와 같은 방식) — query 는 폴백.
+        $email = (string) ($request->input('salesman_email') ?? $request->query('salesman_email', ''));
+        $sid = SalesmanResolver::resolveActiveOrFail($email)->id;
+        $vehicle = $this->ownVehicles($sid)->whereKey($id)->first();
+        abort_if($vehicle === null, 403);
+
+        $data = $request->validate([
+            'remitter_name' => ['required', 'string', 'max:100'],
+            'remitter_id' => ['nullable', 'string', 'max:64'],
+        ]);
+        $name = trim($data['remitter_name']);
+        abort_if($name === '', 422);
+        $idValue = trim((string) ($data['remitter_id'] ?? ''));
+
+        $hadPrevious = trim((string) $vehicle->remitter_name) !== '' || trim((string) $vehicle->remitter_id) !== '';
+        // 같은 값이면 대입하지 않는다 — encrypted cast 는 같은 평문도 새 암호문이라 dirty 로 잡혀 감사 행이 생긴다.
+        if ((string) $vehicle->remitter_name !== $name) {
+            $vehicle->remitter_name = $name;
+        }
+        if ($idValue !== '' && (string) $vehicle->remitter_id !== $idValue) {
+            $vehicle->remitter_id = $idValue;
+        }
+
+        $userId = User::where('email', $email)->value('id');
+        AuditLog::actingAs($userId, fn () => $vehicle->save());
+        $updated = array_values(array_filter(['remitter_name', 'remitter_id'], fn (string $c) => $vehicle->wasChanged($c)));
+
+        return response()->json(['vehicle_id' => $vehicle->id, 'updated' => $updated, 'had_previous' => $hadPrevious]);
+    }
+
+    /**
+     * 2026-11 ②-주소·전화 (jin 10-28 «ERP 개방») — 바이어 한 건, board COMMERCIAL INVOICE 생성용. 권위 = §3 「서류 생성용 예외」·§4 행.
+     *
+     * - 스코프 = `buyers.salesman_id` 본인(super `scope=all` 이면 전체). **비활성도 읽는다**(옛 바이어 서류 재발급). 남의 바이어·없는 id·지운 바이어 = 404.
+     * - `address`=`buyers.address` · `phone`=`buyers.contact_phone` **그대로**(자유서식, 정규화 없음). 비면 null.
+     * - 🚫 `contact_name`·`contact_email`·`memo` 는 계속 안 나간다. board 는 저장하지 않고 생성 시점에만 읽는다 — ERP 는 접근 기록 1행(감사 `board_buyer_contact_read`).
+     */
+    public function buyer(Request $request, int $id): JsonResponse
+    {
+        $all = $this->superScopeAll($request);
+        $sid = $all ? null : $this->salesmanId($request);
+        $b = Buyer::query()->whereKey($id)->when(! $all, fn ($q) => $q->where('salesman_id', $sid))->with('country')->first();
+        abort_if($b === null, 404);
+
+        // 접근 기록 — 연락처가 나간 사실을 남긴다(문서 다운로드 로그와 같은 결). 행위자는 세션이 없어 old_value 에 요청자 이메일.
+        AuditLog::create([
+            'user_id' => null,
+            'auditable_type' => Buyer::class, 'auditable_id' => $b->id,
+            'action' => 'board_buyer_contact_read', 'column_name' => 'contact_phone',
+            'old_value' => (string) $request->query('salesman_email', ''), 'new_value' => $all ? 'scope=all' : 'own',
+            'ip_address' => $request->ip(),
+        ]);
+
+        return response()->json([
+            'id' => $b->id,
+            'name' => $b->name,
+            'country' => $b->country?->name,
+            'address' => trim((string) $b->address) !== '' ? $b->address : null,
+            'phone' => trim((string) $b->contact_phone) !== '' ? $b->contact_phone : null,
+        ]);
     }
 
     /**
