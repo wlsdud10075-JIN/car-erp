@@ -435,8 +435,8 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 > `grep -rn "키워드" ~/.claude/projects/C--xampp-htdocs-car-erp/memory --include=*.md`
 > 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
 
-**현재 상태 (2026-10-28)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
-앱코드 master(`2349598f` — 10-28 오후: 입금완료 📨 딜러 번호 없으면 담당영업만 · board `/buyers` `scope=all` super 한정 / 10-27 저녁 `123ffd55`: board 재전송·일괄 모달 반입지·도착후미수요약 본문), **미배포 기능코드 0**. 테스트 **3,537 pass(로컬 병렬) · 로컬 기대 실패 0**(2026-10-12 — 옛 「로컬 7 fail = GD 差」는 `.env COMPANY_TEMPLATE_SET=heyman` 오진, `phpunit.xml` 에 system 고정. 메모리 `reference_local_test_failures_gd`).
+**현재 상태 (2026-10-29)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
+앱코드 master(`d1dc4cc0` — 10-29 오전: 편집 패널 헤더 차량번호 · 차대번호 굵게 / 10-28 오후 `2349598f`: 입금완료 📨 딜러 번호 없으면 담당영업만 · board `/buyers` `scope=all` super 한정), **미배포 기능코드 0**. 테스트 **3,539 pass(로컬 병렬) · 로컬 기대 실패 0**(2026-10-12 — 옛 「로컬 7 fail = GD 差」는 `.env COMPANY_TEMPLATE_SET=heyman` 오진, `phpunit.xml` 에 system 고정. 메모리 `reference_local_test_failures_gd`).
 ⚠️ **이 줄은 금방 낡는다** — 최신 배포·잔여 안건은 메모리 `MEMORY.md` 를 볼 것(여기 숫자를 근거로 판단하지 말 것).
 🚀 **배포 직후 수동 캐시 정리는 하지 않는다**(2026-10-23 — deploy.yml 이 `sudo -u www-data php artisan view:cache` 로 만든다, 첫 배포 권한 오류 0건. SKILLS §8 #122).
 dev-only = `scripts/notion-*`·`docs/*.html`·`.md`·Notion 테스트 2.

@@ -935,6 +935,12 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-10-29 (오전) — master `d1dc4cc0` · 마이그 0 (jin «이거 지금 배포해줘» → 즉시, 코드 커밋 1개 cherry-pick)
+
+dev `80ef6c73` → master `d1dc4cc0`.
+1. 차량 편집 패널 헤더 — 「차량 수정」 아래 **차량번호 · 차대번호**(NICE 등록 칸 `nice_reg_vin`, 대문자) 한 줄, 없으면 「차대번호 없음」. 연한 회색 작은 글자 → 굵고 진한 글자(gray-900 / 신규 직후 emerald-800). 보증금·바이어 미정 배지는 그대로 뒤에. lang `vehicle.panel.vin_none`, 가드 `VehiclePanelHeaderVinTest`
+- 확인: 로컬 병렬 3,539 pass(실패 0·skip 1) · deploy 런 40798726509 잡 5 success · 3사 SHA `d1dc4cc0` · `/login` 200 ×3
+- 가이드·카드: 헤더 설명 없음 → 수정 없음
 ## 2026-10-28 (오후) — master `2349598f` · 마이그 0 (jin «지금 1,2 배포할 수 있나?» → 즉시, 코드 커밋 2개 cherry-pick)
 
 dev `4cfbc6aa`(scripts/notion-* 2개는 modify/delete → 삭제 유지)·`76f6d618` → master `82151b99`·`2349598f`.
