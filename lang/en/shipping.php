@@ -127,6 +127,7 @@ return [
     'fin' => [
         'fully_paid' => 'Paid',
         'unpaid' => 'Unpaid',
+        'unpaid_krw_tip' => 'KRW total :krw (cars without a rate excluded)',
         'fx_missing' => ':n missing FX',
         'surrender_warning' => '⚠ Surrender + unpaid — title leverage released',
         'forwarding' => 'Forwarder',

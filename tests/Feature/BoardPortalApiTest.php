@@ -975,4 +975,30 @@ class BoardPortalApiTest extends TestCase
         $this->signedGet('/api/internal/board/buyers/'.$theirs->id, ['salesman_email' => 'super@a.com', 'scope' => 'all'])->assertOk()->assertJsonPath('phone', '010');
         $this->assertSame('scope=all', AuditLog::where('action', 'board_buyer_contact_read')->latest('id')->value('new_value'));
     }
+
+    // ── 💱 2026-10-29 (jin «왜 한화로 보이지») — 묶음 미수는 판매 통화 그대로 합산 ──
+
+    /** unpaid_by_currency = 통화별 Σ 미수(판매 통화). 환율 없는 차도 통화 금액은 들어간다(원화 합계·게이지는 종전대로 그 차를 뺀다). 차량 행엔 `unpaid`. */
+    public function test_bundle_unpaid_is_summed_per_sale_currency(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $usd = $this->docVehicle($me->id, '71가7101');                       // USD 5000 · 환율 1300 · 입금 0
+        $eur = Vehicle::create(['vehicle_number' => '72나7202', 'sales_channel' => 'export', 'salesman_id' => $me->id,
+            'buyer_id' => $usd->buyer_id, 'currency' => 'EUR', 'exchange_rate' => 0, 'sale_date' => '2026-06-01', 'sale_price' => 3000]);   // 환율 미입력
+
+        $this->signedPost('/api/internal/board/shipping-requests/sync', [
+            'salesman_email' => 'me@a.com',
+            'bundles' => [['shipping_method' => 'RORO', 'buyer_id' => $usd->buyer_id, 'vehicle_ids' => [$usd->id, $eur->id]]],
+        ])->assertOk();
+
+        $res = $this->signedGet('/api/internal/board/bundles', ['salesman_email' => 'me@a.com'])->assertOk();
+        $res->assertJsonPath('data.0.unpaid_by_currency.USD', 5000)
+            ->assertJsonPath('data.0.unpaid_by_currency.EUR', 3000)
+            ->assertJsonPath('data.0.unpaid_total_krw', 6500000)
+            ->assertJsonPath('data.0.fx_missing_count', 1);
+        $rows = collect($res->json('data.0.vehicles'))->keyBy('vehicle_id');
+        $this->assertSame(5000.0, (float) $rows[$usd->id]['unpaid']);
+        $this->assertSame(3000.0, (float) $rows[$eur->id]['unpaid']);
+        $this->assertNull($rows[$eur->id]['unpaid_krw'], '환율 미입력은 원화 null 그대로');
+    }
 }

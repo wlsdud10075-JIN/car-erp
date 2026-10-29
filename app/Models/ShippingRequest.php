@@ -112,6 +112,7 @@ class ShippingRequest extends Model
     public static function financeForVehicles($vehicles): array
     {
         $salesByCurrency = [];
+        $unpaidByCurrency = [];   // 💱 2026-10-29 (jin) — 판매 통화 그대로 합산(원화 환산 말고). 환율 없는 차도 통화 금액은 있다.
         $unpaidTotal = 0;
         $fxMissing = 0;
         $denomKrw = 0;
@@ -122,6 +123,7 @@ class ShippingRequest extends Model
             }
             $cur = $v->currency ?: 'KRW';
             $salesByCurrency[$cur] = ($salesByCurrency[$cur] ?? 0) + (float) $v->sale_price;
+            $unpaidByCurrency[$cur] = round(($unpaidByCurrency[$cur] ?? 0) + max(0.0, (float) $v->sale_unpaid_amount), 2);
 
             $cache = $v->sale_unpaid_amount_krw_cache;
             if ($cache === null) {
@@ -135,6 +137,8 @@ class ShippingRequest extends Model
 
         return [
             'sales_by_currency' => $salesByCurrency ?: (object) [],
+            // 판매 통화별 미수(과입금은 0) — 화면·board 묶음 카드가 이걸 보여준다. 원화 합계는 게이지·완납 판정용으로 남긴다.
+            'unpaid_by_currency' => $unpaidByCurrency ?: (object) [],
             'unpaid_total_krw' => $unpaidTotal,
             'fx_missing_count' => $fxMissing,
             'fully_paid' => $unpaidTotal <= 0 && $fxMissing === 0,
