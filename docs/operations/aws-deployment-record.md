@@ -935,6 +935,11 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-10-29 (저녁) — master `16a308c9` · 마이그 0 (jin «지금 배포해줘», 코드 커밋 1개 cherry-pick)
+
+dev `d29c905f` → master `16a308c9`. board 는 먼저 배포됨(master `8035131` — 재전송에 `amounts_overwrite: true` 동봉·구매확정 USD 환율 필수·선적요청 `freight_skipped` 표시).
+1. purchase-sync 재전송 **금액 덮어쓰기** `amounts_overwrite`(jin, board 세션에서 결정 → 이 세션에서 확인) — 판매측 6칸만(판매가·통화·환율·운임비·USD 운임비·USD 환율), 안 보낸 칸 안 지움, 같은 값 제외, 응답 `fields_overwritten[]`, 감사 출처 행 `purchase_sync_amounts_overwritten`. 🔒 2차 마감 = `ledger_closed` · 정산 confirmed/paid = `settlement_locked` → 6칸 건너뜀(`fields_skipped.amounts`). 판매가만 오면 기존 환율 유지
+- 확인: 로컬 병렬 3,568 pass(실패 0·skip 1) · deploy 런 40821903955 잡 5 success · 3사 SHA `16a308c9` · `/login` 200 ×3
 ## 2026-10-29 (오후) — master `8347b1e5` · **마이그 1** (jin «좋아 이제 배포해줘», 코드 커밋 9개 cherry-pick — 주말 개발 4갈래 + 당일 추가 3건)
 
 dev `4c88f02b`·`7412e92d`·`ec19b348`·`664cf7ca`·`2127f222`·`ffed97aa`·`6fddf0ee`·`757aafc9`·`a8e5e3fa` → master `88676557`…`8347b1e5`. `docs/integration/*.md` 는 modify/delete → 삭제 유지. board 는 먼저 배포됨(master `be8de72`, 13시경) — ERP 가 오르면 재배포 없이 활성.
