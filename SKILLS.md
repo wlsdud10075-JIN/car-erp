@@ -1805,3 +1805,14 @@ jin: *「말소처리필요 내용에서 가장오래, 최근 #변수명 이거 
 - 🔎 「변수명이 그대로 찍힌다」 제보 = ①어느 발송인가(정기 vs 내가 보낸 것 — 시각으로 가른다) ②**실제 요청 JSON 캡처**가 코드 읽기보다 빠르다. 요청 페이로드는 로그에 안 남는다(`alimtalk_logs` 는 본문뿐).
 - ⚠️ 그 전에 「원래는 잘 됐다」를 의심 근거로 삼아 정기 발송 쪽을 몇 시간 팠다 — **내가 오늘 손댄 것부터** 목록을 적고 지우는 게 먼저였다.
 
+### 129. 🤝 **피어 세션의 「엔드포인트 하나만」 질문을 jin 결정으로 올리기 전에 — 기존 응답을 먼저 뒤진다** (2026-10-29 brand/model)
+
+board: *「인보이스 Brand/Model 칸용으로 `GET /vehicles/{id}` 신설할까?」* → 나는 그대로 jin 에게 「결정 1건」으로 올렸다. jin: *「이거 뭐지? 원래 있지 않았나?」* — **있었다.** 2026-08-10 부터 차량 행을 내보내는 읽기 API 전부가 `vin·brand·model_type` 를 싣고(`Vehicle::portalMeta`, 가드 `BoardPortalVehicleMetaTest`), 판매 차는 `/sales` 한 번이면 됐다. board 가 「id 로 한 대 읽는 길이 없다」고 한 말을 **검증 없이** 결정 사항으로 바꿨다.
+- 🔑 피어의 「없다」는 관찰이지 사실이 아니다(§8 #64 「두 세션이 동의해도 둘 다 틀릴 수 있다」의 질문판). **grep 한 번**(`portalMeta`·기존 응답 키)으로 답할 수 있으면 jin 에게 가져가지 않는다 — jin 에게 가는 것은 **코드로 답이 안 나오는 것**뿐이다.
+- 🔎 그 가드가 같은 날 두 번째로 일했다 — ③ 적립금 이력 메서드(`buyerSavings`)가 `'vehicle_number' =>` 를 내보내자 「메타를 실을지 선언하라」며 전체 스위트에서 1건 빨개졌다. 차량 행을 내보내는 **새 메서드는 `test_every_vehicle_row_emitter_is_declared` 목록에 선언**해야 한다(안 실으면 `false` 로).
+
+### 130. 🔐 **`isRealChange` 는 저장 「뒤」에만 참이고, encrypted cast 는 같은 평문도 dirty 다** (2026-10-29 송금인 엔드포인트)
+
+덮어쓰기 엔드포인트의 `updated[]`(실제로 바뀐 칸)를 저장 **전**에 `AuditLog::isRealChange($model, $col)` 로 구하려 했다 — 그 함수는 `wasChanged()` 기반이라 저장 전엔 늘 false 다. ⇒ `save()` 뒤 `wasChanged($col)` 로 센다.
+그리고 `'remitter_id' => 'encrypted'` 는 **같은 평문을 다시 대입해도 새 IV 로 다른 암호문**이 되어 dirty 로 잡힌다 — 「같은 값이면 no-op」이 저절로 안 된다. ⇒ **대입 전에 복호화된 현재값과 비교**해 같으면 대입 자체를 건너뛴다(`PurchaseSyncController::fillEmptyFields`·`InternalPortalController::remitter`). 감사 가림(`MASKED_COLUMNS`)은 별개로 넣어야 한다 — 가드 = `BoardPortalApiTest::test_remitter_endpoint_same_values_are_a_noop`.
+
