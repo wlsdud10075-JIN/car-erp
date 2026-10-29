@@ -436,7 +436,7 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 > 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
 
 **현재 상태 (2026-10-29)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
-앱코드 master(`d1dc4cc0` — 10-29 오전: 편집 패널 헤더 차량번호 · 차대번호 굵게 / 10-28 오후 `2349598f`: 입금완료 📨 딜러 번호 없으면 담당영업만 · board `/buyers` `scope=all` super 한정), **미배포 기능코드 0**. 테스트 **3,539 pass(로컬 병렬) · 로컬 기대 실패 0**(2026-10-12 — 옛 「로컬 7 fail = GD 差」는 `.env COMPANY_TEMPLATE_SET=heyman` 오진, `phpunit.xml` 에 system 고정. 메모리 `reference_local_test_failures_gd`).
+앱코드 master(`8347b1e5` — 10-29 오후: 주말 개발 4갈래(①운임비 환산 ②송금인 ③포털 적립금 ④딜러 OCR 수신) + 묶음 미수 통화별 + 재고 (가) 선적일 경계, 마이그 1 / 10-29 오전 `d1dc4cc0`: 패널 헤더 차대번호), **미배포 기능코드 0**. 테스트 **3,564 pass(로컬 병렬) · 로컬 기대 실패 0**(2026-10-12 — 옛 「로컬 7 fail = GD 差」는 `.env COMPANY_TEMPLATE_SET=heyman` 오진, `phpunit.xml` 에 system 고정. 메모리 `reference_local_test_failures_gd`).
 ⚠️ **이 줄은 금방 낡는다** — 최신 배포·잔여 안건은 메모리 `MEMORY.md` 를 볼 것(여기 숫자를 근거로 판단하지 말 것).
 🚀 **배포 직후 수동 캐시 정리는 하지 않는다**(2026-10-23 — deploy.yml 이 `sudo -u www-data php artisan view:cache` 로 만든다, 첫 배포 권한 오류 0건. SKILLS §8 #122).
 dev-only = `scripts/notion-*`·`docs/*.html`·`.md`·Notion 테스트 2.
@@ -451,7 +451,7 @@ dev-only = `scripts/notion-*`·`docs/*.html`·`.md`·Notion 테스트 2.
 > 🚨 **알림톡은 BizM 승인 대기라 실발송 0건** — 승인 전까지 게이트에서 skipped. 등록 파일·문안 = jin 몫.
 > ⚠️ **board 는 아직 master 미머지**(ERP 선배포 완료 상태) — board 세션에서 올려야 새 버튼이 산다.
 
-**남은 작업**: 🗓️ **주말(11-01~02) 개발 5갈래** — board 기획 ①컨테이너 운임비 USD→판매통화 ②송금인 Name·ID ②-바이어 주소·전화 조회 ③포털 적립금 ④딜러 서류 OCR 수신. jin 결정·스펙 문서(`docs/integration/board-portal-api.md` §5·§14·§4·§3, `purchase-sync-receiver.md`) 전부 끝, 코드 0 — 착수 체크리스트 = 메모리 `project_weekend_plan_freight_passport_2026_11`. 그 외는 jin 운영 몫·board 세션 몫(`MEMORY.md` 「jin 운영 몫」·「외부·타 세션 병목」).
+**남은 작업**: ✅ 주말 개발 4갈래는 10-29 에 앞당겨 배포됨(`8347b1e5`, board `be8de72`). 코드 착수 대기 **0건** — 운영 첫 사례 확인(컨테이너 묶음 운임비 환산·정산 블로커 해제, 송금인 전송, 적립금 탭)은 jin·board 몫. 그 외는 `MEMORY.md` 「jin 운영 몫」·「외부·타 세션 병목」.
 
 ## 대시보드 명칭 및 설계 원칙 (확정)
 

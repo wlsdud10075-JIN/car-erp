@@ -935,6 +935,17 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-10-29 (오후) — master `8347b1e5` · **마이그 1** (jin «좋아 이제 배포해줘», 코드 커밋 9개 cherry-pick — 주말 개발 4갈래 + 당일 추가 3건)
+
+dev `4c88f02b`·`7412e92d`·`ec19b348`·`664cf7ca`·`2127f222`·`ffed97aa`·`6fddf0ee`·`757aafc9`·`a8e5e3fa` → master `88676557`…`8347b1e5`. `docs/integration/*.md` 는 modify/delete → 삭제 유지. board 는 먼저 배포됨(master `be8de72`, 13시경) — ERP 가 오르면 재배포 없이 활성.
+1. ④ purchase-sync 딜러 서류 OCR 동봉(`seller_company/ceo/phone` → 구입처 「법인명/대표자」·국내 딜러 알림톡 번호 하이픈, 빈 칸만, `deregistration_notice_phone` AUDITED)
+2. ③ 포털 적립금 — `/by-buyer savings_balances[]` + `GET /buyers/{id}/savings`(note 없음, 본인만 404). `SavingsLedger::balances()` 단일 출처(바이어탭 2곳도)
+3. ② 송금인 Name·ID — `vehicles.remitter_name`·`remitter_id`(encrypted) 마이그, 기본정보 탭 영업담당자 아랫줄 2칸(차량번호 칸 너비), 검색 이름만, `POST /vehicles/{id}/remitter` 덮어쓰기(본인 차 403), 동봉 빈 칸만, `GET /buyers/{id}` 주소·전화 + 감사 `board_buyer_contact_read`
+4. ① 컨테이너 운임비 USD 1/N × (USD 환율 ÷ 판매 환율) → `transport_fee` 빈 칸만, `freight_skipped {id: no_rate|ledger_closed}`
+5. 묶음 미수 판매 통화별(`unpaid_by_currency`·차량 행 `unpaid`), ERP 선적요청 카드 통화별 표시(원화 툴팁)
+6. 재고 (가) — 선적일 ≤ 오늘이면 출고일 없이도 재고 제외·출고완료 탭(`scopeLeftStock`/`scopeStillInYard`, board `/inventory shipped_out` 동일). 배포 즉시 3사 902대 이동(ssancarerp 857 · heymanerp 38 · karabaerp 7), 데이터 무변경
+- 확인: 로컬 병렬 3,564 pass(실패 0·skip 1) · deploy 런 40816008297 잡 5 success · 3사 SHA `8347b1e5` · `/login` 200 ×3
+- 후속: board 에 SHA 통지 · 실무자 안내(재고 902대 → 출고완료 탭, 출고일 빈칸) · 운영 첫 사례 = 컨테이너 묶음 sync 때 `transport_fee` 환산·정산 블로커 해제 확인
 ## 2026-10-29 (오전) — master `d1dc4cc0` · 마이그 0 (jin «이거 지금 배포해줘» → 즉시, 코드 커밋 1개 cherry-pick)
 
 dev `80ef6c73` → master `d1dc4cc0`.
