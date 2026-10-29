@@ -1573,7 +1573,7 @@ ADJUSTMENT / CANCELLED → balance += savings  (양/음수 모두 가능)
 > 상세·실측 = §8 #100·#101 · 아카이브 2026-09-14(2차).
 
 ### 재고 2분류 (jin 2026-07-18)
-- `erp/inventory` = `Vehicle::scopeInStock`(매입완납 + 출고일 없음) 기반. 카테고리 필터:
+- `erp/inventory` = `Vehicle::scopeInStock`(매입완납 + **아직 안 나감** — 🔀 2026-10-29 jin (가): 출고일 없음 AND 선적일 없거나 미래. 단일 출처 `scopeStillInYard`/`scopeLeftStock`, 출고완료 탭·board `/inventory shipped_out` 도 같은 경계. 배경 = 출고일 자동 채움이 거래완료 때만 돌아 B/L 안 올리는 차가 떠나도 재고에 남았다 — 10-29 실측 3사 902대) 기반. 카테고리 필터:
   - **일반재고**(`scopeGeneralStock`) = 재고 중 미판매(`sale_price ≤ 0`) — 바이어 미정 투기매입. 등록=바이어 없이 매입만(A안, chk_sale_required는 sale_price>0일 때만 buyer 강제라 자연 통과). `?create=1`로 신규 매입 등록 패널 진입.
   - **선적전 재고**(`scopePreShippingStock`) = 재고 중 판매됨(`sale_price > 0`) — 항구 대기, 출고 전.
   - 판매 시 sale_price>0 되면 일반→선적전 자동 편입. 출고일 찍히면 재고 이탈.
