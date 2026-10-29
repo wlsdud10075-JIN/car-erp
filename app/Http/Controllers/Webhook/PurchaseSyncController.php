@@ -15,6 +15,7 @@ use App\Models\VehiclePhoto;
 use App\Services\BizmAlimtalkService;
 use App\Services\NiceApiService;
 use App\Support\AlimtalkRecipients;
+use App\Support\PhoneFormat;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -103,6 +104,11 @@ class PurchaseSyncController extends Controller
             'sale_exchange_rate' => ['nullable', 'numeric', 'min:0'],   // pre-fill, 관리가 지정시점 환율로 덮어씀
             'buyer_id' => ['nullable', 'integer'],
             'consignee_id' => ['nullable', 'integer'],
+            // 2026-11 ④ — 딜러 서류 OCR 동봉(법인명·대표자·휴대폰). 버전 상향 없음. ERP 는 OCR 하지 않는다 —
+            //   영업이 board 드로어에서 [적용]한 값만 온다. 저장 규칙 = purchase-sync-receiver.md 「딜러 서류 OCR 동봉」.
+            'seller_company' => ['nullable', 'string', 'max:100'],
+            'seller_ceo' => ['nullable', 'string', 'max:50'],
+            'seller_phone' => ['nullable', 'string', 'max:20'],   // 숫자만 오는 게 계약이지만 하이픈이 섞여도 PhoneFormat 이 걸러낸다(세트 통째 422 는 과하다)
             // 연동 B v5 — 재고매입(바이어 미정). board 가 「바이어를 일부러 안 정하고 사 두는 매입」임을
             //   명시한다. 🚫 `buyer_id` 가 비었다는 사실만으로는 대신할 수 없다 — 그러면 **실수로 빠뜨린
             //   차**와 구분이 안 되고, 그 구분이 이 플래그의 존재 이유다(vehicles/index.blade.php:4629).
@@ -241,6 +247,14 @@ class PurchaseSyncController extends Controller
         $vehicle->purchase_fee_holder = $data['selling_fee_payee_name'] ?? null;
         $vehicle->purchase_fee_bank = $data['selling_fee_payee_bank'] ?? null;
         $vehicle->purchase_fee_account = $data['selling_fee_payee_account'] ?? null;
+
+        // 2026-11 ④ — 딜러 서류 OCR 동봉: 구입처 「법인명/대표자」 합성 · 말소 알림 번호(하이픈). 신규라 빈 칸 = 그대로 넣는다.
+        if (($from = self::composePurchaseFrom($data)) !== null) {
+            $vehicle->purchase_from = $from;
+        }
+        if (($phone = PhoneFormat::format($data['seller_phone'] ?? null)) !== null) {
+            $vehicle->deregistration_notice_phone = $phone;
+        }
 
         // ── NICE 차량조회로 VIN·차량정보 채우기 ─────────────────────────
         // owner_name 없으면 NICE 불가 → vehicle_number 로만 생성(VIN 수동/후속, graceful).
@@ -590,6 +604,24 @@ class PurchaseSyncController extends Controller
             }
         }
 
+        // 2026-11 ④ — 딜러 서류 OCR 동봉도 빈 칸만(사람이 친 구입처·번호 보호). 이미 있으면 **ERP 컬럼명**으로 already_set.
+        if (($from = self::composePurchaseFrom($data)) !== null) {
+            if (trim((string) $vehicle->purchase_from) !== '') {
+                $skipped['purchase_from'] = 'already_set';
+            } else {
+                $vehicle->purchase_from = $from;
+                $filled[] = 'purchase_from';
+            }
+        }
+        if (($phone = PhoneFormat::format($data['seller_phone'] ?? null)) !== null) {
+            if (trim((string) $vehicle->deregistration_notice_phone) !== '') {
+                $skipped['deregistration_notice_phone'] = 'already_set';
+            } else {
+                $vehicle->deregistration_notice_phone = $phone;
+                $filled[] = 'deregistration_notice_phone';
+            }
+        }
+
         if ($filled === []) {
             return [$filled, $skipped];
         }
@@ -603,6 +635,21 @@ class PurchaseSyncController extends Controller
         });
 
         return [$filled, $skipped];
+    }
+
+    /**
+     * 2026-11 ④ — 딜러 서류 OCR 동봉의 구입처 합성 = `{법인명}/{대표자}`. 하나만 오면 그것만(「/」 없음),
+     * 출처 접두사 없음(출처는 `purchase_source`). 둘 다 비면 null = 「안 보낸 것」.
+     * 🚫 `purchase_from` 을 구조화하지 않는다(자유서식 유지) — 합성만 하고 되돌려 주지 않는다.
+     */
+    private static function composePurchaseFrom(array $data): ?string
+    {
+        $parts = array_values(array_filter([
+            trim((string) ($data['seller_company'] ?? '')),
+            trim((string) ($data['seller_ceo'] ?? '')),
+        ], fn (string $s) => $s !== ''));
+
+        return $parts === [] ? null : implode('/', $parts);
     }
 
     private function resolveBuyerConsignee(?int $buyerId, ?int $consigneeId): array

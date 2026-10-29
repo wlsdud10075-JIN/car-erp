@@ -163,6 +163,7 @@ return [
         'unpaid_override_stage' => '미수 우회 단계',
         'unlock_reason' => '잠금해제 사유',
         'purchase_from' => '구입처',
+        'deregistration_notice_phone' => '국내 딜러 알림톡 번호',   // 2026-11 ④ — board OCR 동봉이 쓰는 첫 칸, AUDITED 등재
         'cancel_status' => '매입취소 상태',
         'stock_location' => '보관위치',
         'memo' => '메모',

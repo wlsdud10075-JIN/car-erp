@@ -795,6 +795,9 @@ class Vehicle extends Model
         //   바꾸는 입구가 생기면서 추적이 없으면 안 된다(07-28 에 shipping_date·eta_date 를 등재한 것과 같은 이유).
         //   특히 bl_document 는 올리는 순간 거래완료 → 출고일 자동생성까지 연쇄한다.
         'export_declaration_document', 'checkbill_document', 'bl_document',
+        // 2026-11 ④ (jin 10-28) — 국내 딜러 알림톡 번호. board 가 OCR 동봉으로 **쓰기 시작하는 첫 칸**이라
+        //   누가 넣었는지(board 동봉 vs 사람) 남겨야 한다. 평문 — 딜러 전화는 화면·알림톡 로그에 이미 평문.
+        'deregistration_notice_phone',
         // 2026-09-17 (jin) — B/L 번호. 차량관리 「번호 일괄 기입」으로 **수십 대를 한 번에** 바꾸는
         //   입구가 생겼다. 07-28 에 shipping_date·eta_date 를 같은 이유로 등재한 것과 같다
         //   (컨테이너번호·수출신고번호는 이미 대상이었다).
