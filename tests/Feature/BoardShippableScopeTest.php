@@ -7,6 +7,7 @@ use App\Models\Buyer;
 use App\Models\ForwardingCompany;
 use App\Models\Port;
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\ShippingRequest;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -449,5 +450,88 @@ class BoardShippableScopeTest extends TestCase
                 "술어와 스코프가 갈렸다 — case #{$i}: ".json_encode($attrs)
             );
         }
+    }
+
+    // ── 💱 2026-11 ① 컨테이너 운임비 USD 1/N → 판매통화 transport_fee (jin 10-28) ──
+
+    /** 환산값 1건 — USD 몫 × (USD 환율 ÷ 판매 환율), 소수 2자리. 면장이 비어 있으면 저장 훅이 기준액을 따라온다. */
+    public function test_container_freight_is_converted_into_the_sale_currency(): void
+    {
+        $s = $this->salesman();
+        $eur = $this->vehicle($s, ['sale_price' => 5000, 'currency' => 'EUR', 'exchange_rate' => 1500, 'usd_exchange_rate' => 1350, 'sale_date' => '2026-10-01']);
+        $usd = $this->vehicle($s, ['sale_price' => 7000, 'currency' => 'USD', 'exchange_rate' => 1350, 'usd_exchange_rate' => 1350, 'sale_date' => '2026-10-01']);
+
+        $res = $this->signedPost('/api/internal/board/shipping-requests/sync', [
+            'salesman_email' => $s->email,
+            'bundles' => [['shipping_method' => 'CONTAINER', 'vehicle_ids' => [$eur->id, $usd->id], 'transport_fee_usd_total' => 1000]],
+        ])->assertOk();
+        $res->assertJsonPath('freight_skipped', []);
+
+        $eur->refresh();
+        $usd->refresh();
+        $this->assertSame(500, $eur->transport_fee_usd);
+        $this->assertSame(450.0, (float) $eur->transport_fee, '500 USD × 1350 ÷ 1500 = 450 EUR');
+        $this->assertSame(500.0, (float) $usd->transport_fee, 'USD 차는 그대로');
+        $this->assertSame(5450.0, (float) $eur->export_declaration_amount, '면장(자동복사분)이 기준액 5000+450 을 따라온다');
+        $this->assertSame(1, AuditLog::where('auditable_id', $eur->id)->where('column_name', 'transport_fee')->count());
+    }
+
+    /** 빈 칸만 — 관리가 친 운임비는 보호. 환율 없는 차는 기록하지 않고 no_rate 로만 알린다(당일 환율 대입 ❌). */
+    public function test_container_freight_conversion_keeps_manual_values_and_skips_without_rates(): void
+    {
+        $s = $this->salesman();
+        $manual = $this->vehicle($s, ['sale_price' => 5000, 'currency' => 'EUR', 'exchange_rate' => 1500, 'usd_exchange_rate' => 1350, 'transport_fee' => 777, 'sale_date' => '2026-10-01']);
+        $noUsd = $this->vehicle($s, ['sale_price' => 5000, 'currency' => 'EUR', 'exchange_rate' => 1500, 'usd_exchange_rate' => null, 'sale_date' => '2026-10-01']);
+        $noSale = $this->vehicle($s, ['usd_exchange_rate' => 1350]);   // 판매 전(환율 0) — 헬퍼 기본 exchange_rate=1 을 지운다
+        $noSale->forceFill(['exchange_rate' => 0])->saveQuietly();
+
+        $res = $this->signedPost('/api/internal/board/shipping-requests/sync', [
+            'salesman_email' => $s->email,
+            'bundles' => [['shipping_method' => 'CONTAINER', 'vehicle_ids' => [$manual->id, $noUsd->id, $noSale->id], 'transport_fee_usd_total' => 900]],
+        ])->assertOk();
+
+        $res->assertJsonPath('freight_skipped.'.$noUsd->id, 'no_rate')->assertJsonPath('freight_skipped.'.$noSale->id, 'no_rate');
+        $this->assertArrayNotHasKey((string) $manual->id, (array) $res->json('freight_skipped'), '수기값은 건너뛴 게 아니라 보호된 것');
+        $this->assertSame(777.0, (float) $manual->fresh()->transport_fee);
+        $this->assertSame(300, $manual->fresh()->transport_fee_usd, 'USD 메모 칸은 종전대로 채운다');
+        $this->assertSame(0.0, (float) $noUsd->fresh()->transport_fee, '기록하지 않는다(DB 기본 0)');
+        $this->assertSame(0.0, (float) $noSale->fresh()->transport_fee);
+    }
+
+    /** 재sync 무변경 — 같은 묶음을 다시 보내도(또는 환율을 바꿔도) 한 번 들어간 운임비는 다시 계산하지 않는다. */
+    public function test_container_freight_conversion_does_not_recompute_on_resync(): void
+    {
+        $s = $this->salesman();
+        $v = $this->vehicle($s, ['sale_price' => 5000, 'currency' => 'EUR', 'exchange_rate' => 1500, 'usd_exchange_rate' => 1350, 'sale_date' => '2026-10-01']);
+        $bundle = ['salesman_email' => $s->email, 'bundles' => [['shipping_method' => 'CONTAINER', 'vehicle_ids' => [$v->id], 'transport_fee_usd_total' => 1000]]];
+
+        $this->signedPost('/api/internal/board/shipping-requests/sync', $bundle)->assertOk();
+        $this->assertSame(900.0, (float) $v->fresh()->transport_fee);
+
+        $v->forceFill(['exchange_rate' => 1000])->saveQuietly();   // 관리가 판매 환율을 고쳤다
+        $bundle['bundles'][0]['transport_fee_usd_total'] = 2000;      // 총액도 바뀌어 갱신 경로를 탄다
+        $this->signedPost('/api/internal/board/shipping-requests/sync', $bundle)->assertOk();
+        $this->assertSame(900.0, (float) $v->fresh()->transport_fee, '소급·재계산 없음');
+        $this->assertSame(1000, $v->fresh()->transport_fee_usd, 'USD 메모도 빈 칸만');
+    }
+
+    /** 2차 마감 차 — transport_fee 는 원장 락. 예외로 죽지 않고 ledger_closed 로 건너뛴다(나머지 차는 정상). */
+    public function test_container_freight_conversion_skips_ledger_closed_vehicles_without_throwing(): void
+    {
+        $s = $this->salesman();
+        $closed = $this->vehicle($s, ['sale_price' => 5000, 'currency' => 'EUR', 'exchange_rate' => 1500, 'usd_exchange_rate' => 1350, 'sale_date' => '2026-10-01']);
+        $open = $this->vehicle($s, ['sale_price' => 5000, 'currency' => 'EUR', 'exchange_rate' => 1500, 'usd_exchange_rate' => 1350, 'sale_date' => '2026-10-01']);
+        Settlement::create(['vehicle_id' => $closed->id, 'salesman_id' => $s->id, 'settlement_type' => 'per_unit', 'per_unit_amount' => 100000,
+            'settlement_status' => 'paid', 'secondary_status' => 'closed']);
+        $this->assertTrue($closed->fresh()->hasClosedSecondarySettlement());
+
+        $res = $this->signedPost('/api/internal/board/shipping-requests/sync', [
+            'salesman_email' => $s->email,
+            'bundles' => [['shipping_method' => 'CONTAINER', 'vehicle_ids' => [$closed->id, $open->id], 'transport_fee_usd_total' => 1000]],
+        ])->assertOk();
+
+        $res->assertJsonPath('freight_skipped.'.$closed->id, 'ledger_closed');
+        $this->assertSame(0.0, (float) $closed->fresh()->transport_fee);
+        $this->assertSame(450.0, (float) $open->fresh()->transport_fee);
     }
 }
