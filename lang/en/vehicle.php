@@ -334,6 +334,7 @@ return [
         'created_badge' => 'Created',
         'edit_next' => 'Edit mode — continue next step',
         'edit_title' => 'Edit Vehicle',
+        'vin_none' => 'No VIN',
         'create_title' => 'Add Vehicle',
         'readonly_note' => '(edit mode — locked)',
         'lookup' => 'Look up',

@@ -9133,8 +9133,14 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     @endif
                 </h2>
                 @if($vehicle_number)
-                <p class="text-xs {{ $justCreated ? 'text-emerald-600' : 'text-gray-400' }} font-mono mt-0.5">
-                    {{ $vehicle_number }}
+                {{-- 차량번호 · 차대번호 나란히 (jin 2026-10-29 — 연한 회색이라 안 보여서 굵고 진하게). 차대번호 없으면 「차대번호 없음」 --}}
+                <p class="mt-0.5 flex flex-wrap items-center gap-x-2 font-mono text-sm font-bold {{ $justCreated ? 'text-emerald-800' : 'text-gray-900' }}">
+                    <span>{{ $vehicle_number }}</span>
+                    @if(trim($nice_reg_vin) !== '')
+                        <span class="tracking-wide">{{ strtoupper(trim($nice_reg_vin)) }}</span>
+                    @else
+                        <span class="font-sans text-xs font-semibold text-gray-500">{{ __('vehicle.panel.vin_none') }}</span>
+                    @endif
                     {{-- 보증금 매입 마커 (2026-07-23) — 판매완료=초록 / 미완납=주황. 신규 등록(editingId=null)엔 비노출 --}}
                     @if($editingId !== null && $deposit_purchase_state !== null)
                         <span class="ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ $deposit_purchase_state === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700' }}"
