@@ -346,6 +346,7 @@ return [
         'created_badge' => '등록 완료',
         'edit_next' => '편집 모드 — 다음 단계 진행',
         'edit_title' => '차량 수정',
+        'vin_none' => '차대번호 없음',
         'create_title' => '차량 등록',
         'readonly_note' => '(편집 모드 — 변경 불가)',
         'lookup' => '조회',
