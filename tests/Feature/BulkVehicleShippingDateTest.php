@@ -395,4 +395,78 @@ class BulkVehicleShippingDateTest extends TestCase
         $this->assertNotSame([], $c->get('bulkLoadingConflict'), '섞여 있는데 경고 없이 덮였다');
         $this->assertSame('평택항', $a->fresh()->bl_loading_location);
     }
+
+    // ── 선택 범위 (jin 2026-10-30) — 선택 배너의 버튼은 「체크한 차」에만, 상단 버튼은 종전대로 「필터 전체」 ──
+
+    public function test_selected_scope_applies_only_to_checked_vehicles_even_if_filter_matches_more(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $checked = $this->vehicle('11가1001', 'GMT');
+        $unchecked = $this->vehicle('22나2002', 'GMT');   // 같은 필터에 걸리지만 체크하지 않았다
+
+        $c = Volt::test('erp.vehicles.index')
+            ->set('search', 'GMT')
+            ->set('shipDocIds', [(string) $checked->id])
+            ->call('openBulkDate', 'selected')
+            ->assertSet('bulkDateScope', 'selected')
+            ->assertSet('bulkDateOpen', true);
+        $this->assertSame(1, $c->get('bulkDateTargetCount'), '모달이 말하는 대수 = 체크한 차만');
+
+        $c->set('bulkShipDate', '2026-11-01')->set('bulkEtaDate', '2026-11-20')
+            ->call('applyBulkDate')
+            ->assertSet('bulkDateOpen', false);
+
+        $this->assertSame('2026-11-01', $checked->fresh()->shipping_date->format('Y-m-d'));
+        $this->assertNull($unchecked->fresh()->shipping_date, '체크 안 한 차가 필터에 걸린다고 바뀌면 안 된다');
+        $this->assertSame([(string) $checked->id], $c->get('shipDocIds'), '성공해도 선택은 남는다(이어서 선적요청 묶기)');
+    }
+
+    public function test_filter_scope_ignores_checked_selection(): void
+    {
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $a = $this->vehicle('11가1001', 'GMT');
+        $b = $this->vehicle('22나2002', 'GMT');
+        $other = $this->vehicle('33다3003', 'OTHER');
+
+        $c = Volt::test('erp.vehicles.index')
+            ->set('search', 'GMT')
+            ->set('shipDocIds', [(string) $a->id])
+            ->call('openBulkDate')             // 인자 없음 = 필터 전체(종전)
+            ->assertSet('bulkDateScope', 'filter');
+        $this->assertSame(2, $c->get('bulkDateTargetCount'));
+
+        $c->set('bulkShipDate', '2026-11-01')->call('applyBulkDate');
+
+        $this->assertNotNull($a->fresh()->shipping_date);
+        $this->assertNotNull($b->fresh()->shipping_date);
+        $this->assertNull($other->fresh()->shipping_date);
+    }
+
+    public function test_selected_scope_excludes_vehicles_outside_user_scope_from_count_and_apply(): void
+    {
+        // [관리] 은 담당 영업 범위만 — 부하 없는 관리는 어느 차도 스코프 밖이다(canScopeVehicle). 번호 일괄 기입과 같은 규칙.
+        $user = User::factory()->create(['permission' => 'user', 'role' => '관리', 'email_verified_at' => now()]);
+        $this->actingAs($user);
+        $v = $this->vehicle('11가1001', 'GMT');
+
+        $c = Volt::test('erp.vehicles.index')
+            ->set('shipDocIds', [(string) $v->id])
+            ->call('openBulkDate', 'selected');
+        $this->assertSame(0, $c->get('bulkDateTargetCount'), '스코프 밖 차는 「N대」에서도 빠진다(§8 #67)');
+
+        $c->set('bulkShipDate', '2026-11-01')->call('applyBulkDate');
+        $this->assertNull($v->fresh()->shipping_date);
+    }
+
+    public function test_selected_scope_with_nothing_checked_does_not_open(): void
+    {
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.vehicles.index')
+            ->set('shipDocIds', [])
+            ->call('openBulkDate', 'selected')
+            ->assertSet('bulkDateOpen', false);
+    }
 }

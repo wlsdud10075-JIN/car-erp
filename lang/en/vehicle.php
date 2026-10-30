@@ -72,8 +72,10 @@ return [
     ],
     'bulk_date' => [
         'btn' => 'Bulk shipping/ETA/VSL',
+        'btn_selected' => 'Bulk shipping/ETA/VSL/loading (selected)',
         'title' => 'Bulk set shipping date / ETA / vessel',
         'target' => 'Applies to :count vehicle(s) matching the current filter.',
+        'target_selected' => 'Applies to the :count selected vehicle(s) only (checked rows, regardless of the list filter).',
         'ship' => 'Shipping date',
         'eta' => 'ETA',
         'vsl' => 'Vessel (VSL)',
