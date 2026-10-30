@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\Buyer;
+use App\Models\Consignee;
 use App\Models\Country;
 use App\Models\Salesman;
 use App\Models\Vehicle;
@@ -247,5 +248,85 @@ class PortalBuyerApiTest extends TestCase
         $this->assertSame('freelance', $rows[$b2->id]['salesman_type']);
         $this->assertNull($rows[$b3->id]['salesman_type'], '담당자 없으면 null — 빈 문자열 금지');
         $this->assertArrayNotHasKey('salesman_id', $rows[$b1->id]);
+    }
+
+    // ── 📞 연락처·컨사이니 (2026-10-30 jin 개방 — ssancar 바이어 지도 1단계) ──────────
+
+    private function consignee(Buyer $b, array $attrs = []): Consignee
+    {
+        return Consignee::create(array_merge(['buyer_id' => $b->id, 'name' => 'CONSIGNEE LTD', 'is_active' => true], $attrs));
+    }
+
+    public function test_contact_phone_and_consignee_cards_ship(): void
+    {
+        $xk = Country::create(['name' => '코소보', 'code' => 'XK']);
+        $b = $this->buyer(['name' => 'Map Buyer', 'contact_phone' => '+383 44 123 456']);
+        $c = $this->consignee($b, [
+            'name' => 'ARTA SH.P.K', 'contact_name' => 'Arben', 'contact_phone' => '+383 49 000 111',
+            'contact_email' => 'arta@example.com', 'address' => 'Prishtina', 'country_id' => $xk->id,
+            'memo' => '컨사이니메모-절대노출금지', 'id_value' => 'ID-PLAINTEXT-9999',
+        ]);
+
+        $res = $this->signed()->assertOk();
+        $row = collect($res->json('data'))->firstWhere('id', $b->id);
+
+        $this->assertSame('+383 44 123 456', $row['contact_phone'], '원문 그대로 — 포맷은 사이트가');
+        $this->assertArrayHasKey('whatsapp_phone', $row);
+        $this->assertNull($row['whatsapp_phone'], '1단계는 칸이 없어 늘 null');
+        $this->assertSame([[
+            'id' => $c->id, 'name' => 'ARTA SH.P.K', 'contact_name' => 'Arben', 'contact_phone' => '+383 49 000 111',
+            'contact_email' => 'arta@example.com', 'address' => 'Prishtina', 'country_code' => 'XK',
+            'is_bl' => false, 'last_used_at' => null,
+        ]], $row['consignees'], '합의한 9칸 그대로 — 키가 늘거나 줄면 상대 카드가 깨진다');
+
+        $body = $res->getContent();
+        foreach (['컨사이니메모-절대노출금지', 'ID-PLAINTEXT-9999', 'id_value', 'tax_number', 'eori_number'] as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $body, "컨사이니 `{$forbidden}` 는 연락처가 아니다 — 새면 안 된다");
+        }
+    }
+
+    public function test_only_active_undeleted_consignees_ship_and_empty_is_an_array(): void
+    {
+        $b = $this->buyer(['name' => 'Few']);
+        $this->consignee($b, ['name' => 'INACTIVE', 'is_active' => false]);
+        $gone = $this->consignee($b, ['name' => 'DELETED']);
+        $gone->delete();
+        $none = $this->buyer(['name' => 'None']);
+
+        $rows = collect($this->signed()->assertOk()->json('data'))->keyBy('id');
+
+        $this->assertSame([], $rows[$b->id]['consignees'], '비활성·삭제는 빠진다');
+        $this->assertSame([], $rows[$none->id]['consignees'], '없으면 빈 배열(null 아님)');
+    }
+
+    public function test_is_bl_reads_the_bl_tab_consignee_and_last_used_prefers_bl_issue_date(): void
+    {
+        $b = $this->buyer(['name' => 'BL Buyer']);
+        $used = $this->consignee($b, ['name' => 'USED']);
+        $fresh = $this->consignee($b, ['name' => 'FRESH']);
+        $base = ['sales_channel' => 'export', 'currency' => 'USD', 'exchange_rate' => 1350, 'dhl_request' => false, 'buyer_id' => $b->id];
+        // B/L 발행일이 있는 차와 없는 차 — 있는 쪽 최댓값이 이긴다. 발행일 없는 차만 있으면 updated_at.
+        Vehicle::create($base + ['vehicle_number' => '11가1001', 'bl_consignee_id' => $used->id, 'bl_issue_date' => '2026-09-01']);
+        Vehicle::create($base + ['vehicle_number' => '22나2002', 'bl_consignee_id' => $used->id, 'bl_issue_date' => '2026-10-15']);
+        Vehicle::create($base + ['vehicle_number' => '33다3003', 'bl_consignee_id' => $used->id]);   // 발행일 없음 — 무시
+        // 삭제된 차의 B/L 컨사이니는 안 센다
+        $gone = Vehicle::create($base + ['vehicle_number' => '44라4004', 'bl_consignee_id' => $fresh->id, 'bl_issue_date' => '2026-10-20']);
+        $gone->delete();
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $b->id);
+        $cards = collect($row['consignees'])->keyBy('id');
+
+        $this->assertTrue($cards[$used->id]['is_bl']);
+        $this->assertSame('2026-10-15', $cards[$used->id]['last_used_at']);
+        $this->assertFalse($cards[$fresh->id]['is_bl'], '삭제된 차만 가리키면 쓰인 적 없음');
+        $this->assertNull($cards[$fresh->id]['last_used_at']);
+
+        // 발행일이 하나도 없으면 updated_at(날짜만)
+        $only = $this->consignee($b, ['name' => 'NO-DATE']);
+        Vehicle::create($base + ['vehicle_number' => '55마5005', 'bl_consignee_id' => $only->id]);
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $b->id);
+        $card = collect($row['consignees'])->keyBy('id')[$only->id];
+        $this->assertTrue($card['is_bl']);
+        $this->assertSame(now()->format('Y-m-d'), $card['last_used_at']);
     }
 }
