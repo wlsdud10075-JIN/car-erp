@@ -935,6 +935,15 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-10-30 (오후) — master `f25492a4` · 마이그 0 (jin «배포해줘», 코드 커밋 3개 cherry-pick)
+
+dev `ae7e80ba`·`96e4b2fc`·`4f3a7611` → master `e328a4b8`·`67e7cda6`·`f25492a4`. 양식 xlsx 3개 포함(양도증명서 3사 재생성).
+1. 차량관리 **선적일·ETA·VSL·반입지 일괄 = 체크한 차량만**(선택 배너 버튼 `openBulkDate('selected')`, 상단 버튼은 종전대로 필터 전체). 단일 출처 `bulkDateTargetQuery()` — 선박명·반입지 충돌 경고·컨테이너 접두어·apply 전부. 모달 「N대」= `bulkDateTargetCount`(스코프 밖 제외, §8 #67 — 종전엔 필터 페이지네이터 total). 성공해도 선택 유지
+2. 알림톡 **매입대금 입금완료(구·v2·v3)도 대체문자(LMS)** — heymanerp 딜러 K101(카카오톡 미사용·7일 미접속) 실사례. 문자엔 버튼이 없어 본문 끝에 「이체확인증 보기: URL」 줄(`smsButtonLines`). 발신번호 비어 있는 회사는 안 얹음(ssancarerp·karabaerp 는 기능설정 「대체문자 발신번호」 확인 필요)
+3. **양도증명서** — 잔금(AE16)은 매입가 − 확정 계약금에서 자름(heymanerp 46가8211: 매도비 590,800 을 잔금 행으로 지급해 16,030,800 으로 찍히던 것 → 15,440,000·10-12), 서명줄 양도인 G45 🟡 갑 성명 · 양수인 AC45 회사명(빌더가 양식에 박음). 단일 출처 `TransferCertificateMapping::balancePaid()`
+- 확인: 로컬 병렬 3,577 pass(실패 0·skip 1) · deploy 런 41007799435 잡 5 success · 3사 SHA `f25492a4` · `/login` 200 ×3
+- 가이드·카드 소스 같은 날 dev 반영(`d549285a`·`698c29ed`·`9088c41b`) — Notion 발행은 Codex `--verify`
+
 ## 2026-10-29 (저녁) — master `16a308c9` · 마이그 0 (jin «지금 배포해줘», 코드 커밋 1개 cherry-pick)
 
 dev `d29c905f` → master `16a308c9`. board 는 먼저 배포됨(master `8035131` — 재전송에 `amounts_overwrite: true` 동봉·구매확정 USD 환율 필수·선적요청 `freight_skipped` 표시).
