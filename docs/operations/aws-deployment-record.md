@@ -941,6 +941,7 @@ dev `a9aa572d` → master `a2442c83`. ssancar.com 은 이 SHA 를 받은 뒤 자
 1. **ssancar 바이어 지도 1단계** — `GET /api/internal/portal/buyers` 각 행에 `contact_phone`(원문) · `whatsapp_phone`(1단계 늘 null) · `consignees[]`(활성만·삭제 제외·9칸: id·name·contact_name·contact_phone·contact_email·address·country_code·is_bl·last_used_at). jin 이 08-28 「연락처 비노출」 정책을 열었다(ssancar 는 관리자·담당 영업 화면만, 공개 지도 ✗). `is_bl` = `vehicles.bl_consignee_id` 사용 이력(삭제 차 제외), `last_used_at` = bl_issue_date 최댓값(없으면 updated_at) `Y-m-d`. 🚫 컨사이니 memo·id_value·tax_number·eori_number 는 계속 닫힘. 정본 = ERP_연동_통합정리 v1.20 · 기록 = `docs/integration/ssancar-portal-collab.md` 2026-10-30
 - 확인: 로컬 병렬 3,580 pass(실패 0·skip 1) · ssancar 로컬 e2e(8001) 21 buyers/13 consignees 통과 · deploy 런 41018985685 잡 5 success · 3사 SHA `a2442c83` · `/login` 200 ×3
 - 2단계(사진·홈페이지·WhatsApp 칸 신설)는 B2B 파트너스와 묶어 주말 착수
+- ssancar.com 운영 배포 완료(같은 날 저녁, prod-mirror `038048f` · RDS 009 · 코드 6파일). 운영 첫 pull(봉투 게이트 통과): heymanerp 34 · ssancarerp 430 바이어 → contact_phone 369행 · whatsapp_phone 0 · consignees 446행 → ssancar 저장 profiles 464 · consignees 627 · 전화 있는 바이어 366. 공개 API 에 연락처 키 없음 확인(ssancar 세션). 이후 6시간 크론
 
 ## 2026-10-30 (오후) — master `f25492a4` · 마이그 0 (jin «배포해줘», 코드 커밋 3개 cherry-pick)
 
