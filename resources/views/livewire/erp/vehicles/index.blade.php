@@ -99,6 +99,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 선적일·ETA 일괄 지정 (jin 2026-07-28) — 현재 필터에 걸린 차량 전체가 대상.
     public bool $bulkDateOpen = false;
 
+    /**
+     * 대상 범위 (jin 2026-10-30) — `filter` = 현재 필터 전체(상단 버튼, 종전) / `selected` = 체크한 누적 선택
+     *   `shipDocIds`(선택 배너 버튼, 번호 일괄 기입과 같은 대상). 모달·충돌 경고·적용이 전부 `bulkDateTargetQuery()` 를 본다.
+     */
+    public string $bulkDateScope = 'filter';
+
     public string $bulkShipDate = '';
 
     public string $bulkEtaDate = '';
@@ -3093,9 +3099,15 @@ new #[Layout('components.layouts.app')] class extends Component {
         ]));
     }
 
-    public function openBulkDate(): void
+    public function openBulkDate(string $scope = 'filter'): void
     {
         abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
+        $this->bulkDateScope = $scope === 'selected' ? 'selected' : 'filter';
+        if ($this->bulkDateScope === 'selected' && empty($this->shipDocIds)) {
+            $this->dispatch('notify', type: 'error', message: __('vehicle.bulk_num.no_target'));
+
+            return;
+        }
         $this->bulkShipDate = '';
         $this->bulkEtaDate = '';
         $this->bulkVessel = '';
@@ -3106,7 +3118,42 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkContainerTo = '';
         $this->bulkDateReason = '';
         $this->bulkDateOpen = true;
-        unset($this->bulkContainerPrefixes);
+        unset($this->bulkContainerPrefixes, $this->bulkDateTargetCount);
+    }
+
+    /**
+     * 일괄 기입 대상 — 범위에 따라 「현재 필터 전체」 또는 「체크한 선택」. 🚫 선택을 필터와 교집합하지 않는다
+     *   (jin «클릭한 것만» — 번호 일괄 기입과 같다). 스코프 밖 차량은 서비스가 차량별 canScopeVehicle 로 skip 한다(§8 #26).
+     */
+    private function bulkDateTargetQuery(): \Illuminate\Database\Eloquent\Builder
+    {
+        if ($this->bulkDateScope === 'selected') {
+            $ids = array_values(array_unique(array_filter(array_map('intval', $this->shipDocIds))));
+
+            return Vehicle::whereIn('id', $ids === [] ? [0] : $ids);
+        }
+
+        return $this->filteredVehicleQuery();
+    }
+
+    /**
+     * 모달이 말하는 「N대」 — 실행과 같은 판정(§8 #67). 선택 범위는 스코프 밖 차를 미리 뺀다(번호 일괄 기입 미리보기와 같은 규칙).
+     * ⚠️ 모달이 닫혀 있으면 계산하지 않는다.
+     */
+    #[Computed]
+    public function bulkDateTargetCount(): int
+    {
+        if (! $this->bulkDateOpen) {
+            return 0;
+        }
+        if ($this->bulkDateScope !== 'selected') {
+            return $this->bulkDateTargetQuery()->count();
+        }
+        $user = auth()->user();
+
+        return $this->bulkDateTargetQuery()->get()
+            ->filter(fn ($v) => (bool) $user?->canScopeVehicle($v))
+            ->count();
     }
 
     /**
@@ -3125,20 +3172,27 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return array_filter(
             app(\App\Services\BulkVehicleShippingDateService::class)
-                ->containerPrefixBreakdown($this->filteredVehicleQuery()),
+                ->containerPrefixBreakdown($this->bulkDateTargetQuery()),
             fn ($cnt, $prefix) => $prefix !== '' && $cnt > 0,
             ARRAY_FILTER_USE_BOTH
         );
     }
 
     /**
-     * 현재 필터에 걸린 차량 전체에 선적일·ETA 적용.
-     * ⚠️ 대상은 화면이 넘긴 ID 가 아니라 filteredVehicleQuery() 로 서버에서 다시 도출한다(SKILLS §8 #26).
+     * 대상(`bulkDateTargetQuery()`)에 선적일·ETA·선박명·반입지 적용 — 「필터 전체」 또는 「체크한 선택」(jin 2026-10-30).
+     * ⚠️ 필터 범위는 화면이 넘긴 ID 가 아니라 filteredVehicleQuery() 로 서버에서 다시 도출한다(SKILLS §8 #26).
+     *    선택 범위의 ID 는 사람의 선택이라 그대로 쓰되 차량별 canScopeVehicle 재인가는 서비스가 한다(번호 일괄 기입과 같다).
      */
     public function applyBulkDate(): void
     {
         $user = auth()->user();
         abort_unless((bool) $user?->canAccessClearance(), 403);
+
+        if ($this->bulkDateScope === 'selected' && empty($this->shipDocIds)) {
+            $this->dispatch('notify', type: 'error', message: __('vehicle.bulk_num.no_target'));
+
+            return;
+        }
 
         $service = app(\App\Services\BulkVehicleShippingDateService::class);
 
@@ -3147,7 +3201,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         //   섞여 있으면 분포를 보여주고, 사람이 「그래도 덮기」를 눌러야 진행한다(= 이 배열이 비면 진행).
         //   ⚠️ 빈 값은 "다름" 으로 안 센다 — 처음 채우는 게 주 용도라 매번 뜨면 아무도 안 읽는다.
         if ($this->bulkVessel !== '' && $this->bulkVesselConflict === []) {
-            $breakdown = $service->vesselBreakdown($this->filteredVehicleQuery());
+            $breakdown = $service->vesselBreakdown($this->bulkDateTargetQuery());
             if (\App\Services\BulkVehicleShippingDateService::distinctCount($breakdown) > 1) {
                 $this->bulkVesselConflict = $breakdown;
 
@@ -3156,7 +3210,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         // 🏗️ 반입지도 같은 장치 (jin 2026-10-27) — 다른 항구에 세워 둔 차의 반입지를 모르고 덮지 않게.
         if ($this->bulkLoadingLocation !== '' && $this->bulkLoadingConflict === []) {
-            $breakdown = $service->valueBreakdown($this->filteredVehicleQuery(), 'bl_loading_location');
+            $breakdown = $service->valueBreakdown($this->bulkDateTargetQuery(), 'bl_loading_location');
             if (\App\Services\BulkVehicleShippingDateService::distinctCount($breakdown) > 1) {
                 $this->bulkLoadingConflict = $breakdown;
 
@@ -3166,7 +3220,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         try {
             $result = $service->apply(
-                $this->filteredVehicleQuery(),
+                $this->bulkDateTargetQuery(),
                 [
                     'shipping_date' => $this->bulkShipDate,
                     'eta_date' => $this->bulkEtaDate,
@@ -3189,7 +3243,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkDateOpen = false;
         $this->bulkVesselConflict = [];
         $this->bulkLoadingConflict = [];
-        unset($this->vehicles, $this->bulkContainerPrefixes);
+        unset($this->vehicles, $this->bulkContainerPrefixes, $this->bulkDateTargetCount);
         $this->dispatch('notify', type: 'success', message: __('vehicle.bulk_date.done', [
             'applied' => $result['applied'],
             'unchanged' => $result['unchanged'],
@@ -8373,6 +8427,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     class="rounded border border-green-300 bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700">
                 # {{ __('vehicle.bulk_num.btn') }}
             </button>
+            {{-- ①-C 선적일·ETA·VSL·반입지 일괄 (jin 2026-10-30) — 상단 버튼은 「필터 전체」, 여기는 「체크한 선택」만.
+                 같은 모달·같은 충돌 경고(선박명·반입지)를 쓰고 대상만 다르다. 성공해도 선택은 비우지 않는다(이어서 묶기). --}}
+            <button type="button" wire:click="openBulkDate('selected')"
+                    class="rounded border border-blue-300 bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-700">
+                📅 {{ __('vehicle.bulk_date.btn_selected') }}
+            </button>
         @endif
         {{-- ② 면허비 n/1 딥링크 — 선택 차량이 한 묶음일 때만(완전묶음). 선적 묶음 화면 2차 비용 탭 자동 오픈. --}}
         @if(auth()->user()?->canApprove() && $this->selectedBundle)
@@ -12403,7 +12463,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
     <div class="card w-full max-w-md mx-4 shadow-2xl max-h-[90vh] overflow-y-auto">
         <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.bulk_date.title') }}</h3>
         <p class="mt-1 text-xs font-medium text-primary-text">
-            {{ __('vehicle.bulk_date.target', ['count' => number_format($this->vehicles->total())]) }}
+            {{ __($bulkDateScope === 'selected' ? 'vehicle.bulk_date.target_selected' : 'vehicle.bulk_date.target', ['count' => number_format($this->bulkDateTargetCount)]) }}
         </p>
 
         @if($bulkVesselConflict !== [])
@@ -12531,7 +12591,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 {{ __('common.cancel') }}
             </button>
             <button type="button" wire:click="applyBulkDate" wire:loading.attr="disabled" class="btn-primary">
-                {{ __('vehicle.bulk_date.apply', ['count' => number_format($this->vehicles->total())]) }}
+                {{ __('vehicle.bulk_date.apply', ['count' => number_format($this->bulkDateTargetCount)]) }}
             </button>
         </div>
         @endif

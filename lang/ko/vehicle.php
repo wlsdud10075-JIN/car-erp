@@ -74,8 +74,10 @@ return [
     ],
     'bulk_date' => [
         'btn' => '선적일·ETA·VSL 일괄',
+        'btn_selected' => '선적일·ETA·VSL·반입지 일괄',
         'title' => '선적일·ETA·선박명 일괄 지정',
         'target' => '현재 조건에 걸린 :count대에 적용됩니다.',
+        'target_selected' => '선택한 :count대에 적용됩니다. (체크한 차량만 — 목록 필터와 무관)',
         'ship' => '선적일',
         'eta' => 'ETA(도착일)',
         'vsl' => '선박명(VSL)',
