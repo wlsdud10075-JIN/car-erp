@@ -161,4 +161,50 @@ class AlimtalkSmsFallbackTest extends TestCase
         $this->assertNotNull($log);
         $this->assertSame('sent', $log->status);
     }
+
+    /** 📨 매입대금 입금완료(v3 이체확인증) — 문자에는 버튼이 없으므로 링크가 본문 끝에 실려야 한다(jin 2026-10-30, heymanerp K101 실사례). */
+    public function test_purchase_paid_v3_fallback_appends_the_proof_link(): void
+    {
+        $this->configure();
+        $set = Setting::companyTemplateSet();
+        Setting::updateOrCreate(['key' => 'alimtalk_tmpl_erp_purchase_paid_v3_'.$set], ['value' => 'tmpl_paid3', 'type' => 'string']);
+        $this->fakeOk();
+
+        BizmAlimtalkService::active()->send('erp_purchase_paid_v3', '01012345678', [
+            '차량번호' => '12가3456', '구분' => '잔금', '금액' => '1,000,000원', '계좌' => '국민 123', '입금자명' => '싼카', '특이사항' => '저당 없음',
+        ], [], [['name' => '이체확인증 보기', 'url' => 'https://example.test/a/proof/abc?sig=1']]);
+
+        Http::assertSent(function ($req) {
+            $item = $req->data()[0];
+            $this->assertSame('L', $item['smsKind'] ?? null);
+            $this->assertSame('매입대금 입금 안내', $item['smsLmsTit'] ?? null);
+            $this->assertStringStartsWith($item['msg'], $item['msgSms'], '문자 본문은 알림톡 본문으로 시작한다');
+            $this->assertStringContainsString('이체확인증 보기: https://example.test/a/proof/abc?sig=1', $item['msgSms'], '버튼 링크가 문자에 없으면 딜러가 사진을 못 본다');
+            $this->assertStringNotContainsString('example.test', $item['msg'], '알림톡 본문은 승인본 그대로(링크는 버튼에만)');
+            $this->assertSame('https://example.test/a/proof/abc?sig=1', $item['button1']['url_mobile'] ?? null);
+
+            return true;
+        });
+    }
+
+    /** v2(사진 없음)도 같은 딜러에게 가므로 대체문자 대상이다 — 버튼이 없으니 본문 그대로. */
+    public function test_purchase_paid_v2_fallback_without_buttons_is_the_plain_body(): void
+    {
+        $this->configure();
+        $set = Setting::companyTemplateSet();
+        Setting::updateOrCreate(['key' => 'alimtalk_tmpl_erp_purchase_paid_v2_'.$set], ['value' => 'tmpl_paid2', 'type' => 'string']);
+        $this->fakeOk();
+
+        BizmAlimtalkService::active()->send('erp_purchase_paid_v2', '01012345678', [
+            '차량번호' => '12가3456', '구분' => '잔금', '금액' => '1,000,000원', '계좌' => '국민 123', '입금자명' => '싼카', '특이사항' => '저당 없음',
+        ]);
+
+        Http::assertSent(function ($req) {
+            $item = $req->data()[0];
+            $this->assertSame($item['msg'], $item['msgSms'] ?? null);
+            $this->assertSame('매입대금 입금 안내', $item['smsLmsTit'] ?? null);
+
+            return true;
+        });
+    }
 }

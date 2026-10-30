@@ -35,11 +35,20 @@ class AlimtalkTemplates
      */
     public const SMS_FALLBACK = [
         'erp_deregistration_notice',
+        // 📨 매입대금 입금완료 3대(구·v2·v3 이체확인증) — jin 2026-10-30 «상대측이 카톡을 안 쓰는 사람도 있어서 SMS 로 대체».
+        //    heymanerp 실사례: v3 가 K101(카카오톡 미사용·7일 미접속 번호)로 거부. 딜러는 어느 버전이 활성이든 같은 사람이라 셋 다.
+        //    v3 의 「이체확인증 보기」 버튼은 문자에 없으므로 서비스가 본문 끝에 링크 줄을 덧붙인다(BizmAlimtalkService::send).
+        'erp_purchase_paid',
+        'erp_purchase_paid_v2',
+        'erp_purchase_paid_v3',
     ];
 
     /** LMS 제목(30자) — 본문 첫 줄의 대괄호 부분을 쓴다. 비면 대체발송에서 제목이 빠진다. */
     public const SMS_TITLE = [
         'erp_deregistration_notice' => '말소등록증 발급 안내',
+        'erp_purchase_paid' => '매입대금 입금 안내',
+        'erp_purchase_paid_v2' => '매입대금 입금 안내',
+        'erp_purchase_paid_v3' => '매입대금 입금 안내',
     ];
 
     /**

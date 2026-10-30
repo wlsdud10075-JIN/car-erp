@@ -127,7 +127,10 @@ class BizmAlimtalkService
             //    ⚠️ SMS(90byte)로는 링크가 든 본문이 안 들어가므로 항상 LMS('L', 2000byte)로 보낸다.
             if ($this->config->smsSender !== '' && in_array($code, AlimtalkTemplates::SMS_FALLBACK, true)) {
                 $item['smsKind'] = 'L';
-                $item['msgSms'] = $message;   // 알림톡과 같은 본문 — 문자는 승인 대상이 아니라 자유롭다.
+                // 알림톡과 같은 본문 — 문자는 승인 대상이 아니라 자유롭다.
+                // 🔗 버튼(이체확인증 보기 등)은 문자에 없다 — 링크를 본문 끝에 「버튼명: URL」 줄로 덧붙인다(jin 2026-10-30).
+                //    안 붙이면 본문이 「아래 버튼으로 …」 라고 말하는데 버튼이 없어 딜러가 사진을 못 본다.
+                $item['msgSms'] = $message.self::smsButtonLines($buttons);
                 $item['smsSender'] = $this->config->smsSender;
                 if ($title = AlimtalkTemplates::SMS_TITLE[$code] ?? '') {
                     $item['smsLmsTit'] = mb_substr($title, 0, 30);
@@ -195,6 +198,22 @@ class BizmAlimtalkService
      * ⚠️ 정규식으로 "계좌처럼 생긴 숫자"를 추정하지 않는다 — 금액·차량번호·날짜를 오탐해
      * 로그가 읽을 수 없게 된다. 가릴 값을 아는 건 호출측뿐이다.
      */
+    /** 대체문자(LMS) 본문 끝에 붙일 버튼 링크 줄 — 버튼이 없으면 빈 문자열(말소등록증처럼 본문에 링크가 있는 템플릿은 그대로). */
+    public static function smsButtonLines(array $buttons): string
+    {
+        $lines = [];
+        foreach ($buttons as $b) {
+            $url = trim((string) ($b['url'] ?? $b['url_mobile'] ?? ''));
+            if ($url === '') {
+                continue;
+            }
+            $name = trim((string) ($b['name'] ?? ''));
+            $lines[] = ($name !== '' ? $name.': ' : '').$url;
+        }
+
+        return $lines === [] ? '' : "\n\n".implode("\n", $lines);
+    }
+
     private static function maskForLog(string $message, array $secrets): string
     {
         foreach ($secrets as $secret) {
