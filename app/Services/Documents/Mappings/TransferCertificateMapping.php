@@ -51,6 +51,7 @@ class TransferCertificateMapping
         'balance_date' => 'Y16',   // 잔금 지급일
         'balance_amount' => 'AE16', // 잔금
         'price' => 'F17',          // 매매금액
+        'seller_sign' => 'G45',    // 서명줄 양도인 성명 (jin 2026-10-30 heymanerp 46가8211 노란칸) — 갑 성명과 같은 값
     ];
 
     public static function config(): array
@@ -77,11 +78,17 @@ class TransferCertificateMapping
                 // 날짜는 그 종류의 마지막 지급일 — 2~3회 분할 지급이 실재한다(SKILLS §54-B ①).
                 $c['down_date'] => fn (Vehicle $v) => self::paidDate($v, 'down'),
                 $c['down_amount'] => fn (Vehicle $v) => self::paidSum($v, 'down'),
-                $c['balance_date'] => fn (Vehicle $v) => self::paidDate($v, 'balance'),
-                $c['balance_amount'] => fn (Vehicle $v) => self::paidSum($v, 'balance'),
+                // 🚨 잔금은 **매매금액 − 계약금** 을 넘지 않는다 (jin 2026-10-30, heymanerp 46가8211 실사고).
+                //    매도비(590,800)를 「매입 잔금」 행으로 지급한 차가 있어 Σ잔금 행이 매입가를 넘겼다 — 양도증명서의
+                //    잔금은 차값이지 매도비가 아니다. 날짜도 「차값이 다 들어온 행」의 날짜다(매도비 행 날짜가 아니라).
+                $c['balance_date'] => fn (Vehicle $v) => self::balancePaid($v)['date'],
+                $c['balance_amount'] => fn (Vehicle $v) => self::balancePaid($v)['amount'],
 
                 // 매매금액 = 매입가. 0 이면 빈칸이 맞다 — 매입가 없는 차에 「일금 0원정」을 찍지 않는다.
                 $c['price'] => fn (Vehicle $v) => ($v->purchase_price ?? 0) > 0 ? (int) $v->purchase_price : null,
+
+                // 서명줄 양도인 = 갑 성명. 양수인(회사명)은 빌더가 양식 셀에 박는다(AC45, 매핑 아님).
+                $c['seller_sign'] => fn (Vehicle $v) => $v->nice_reg_owner_name,
             ],
         ];
     }
@@ -126,6 +133,36 @@ class TransferCertificateMapping
         $sum = (int) self::confirmed($v, $type)->sum('amount');
 
         return $sum > 0 ? $sum : null;
+    }
+
+    /**
+     * 잔금 = 확정 잔금 행 누계를 **「매입가 − 확정 계약금」** 에서 자른 값. 날짜 = 그 한도에 닿은 행(분할이면 마지막 차값 행)의 지급일.
+     *  - 한도까지 못 미치면(일부 지급) 누계 그대로 + 마지막 행 날짜 — 종전 동작.
+     *  - 매입가가 없으면 한도가 없다 — 종전처럼 누계 전부.
+     *  - 매도비를 잔금 행으로 지급한 차(heymanerp 46가8211: 15,440,000 + 590,800)는 15,440,000 · 10-12 가 나온다.
+     *
+     * @return array{amount: ?int, date: ?\DateTimeInterface}
+     */
+    public static function balancePaid(Vehicle $v): array
+    {
+        $rows = self::confirmed($v, 'balance')
+            ->sortBy(fn (PurchaseBalancePayment $p) => [$p->payment_date?->format('Y-m-d') ?? '9999-99-99', $p->id])
+            ->values();
+        $price = (int) ($v->purchase_price ?? 0);
+        $cap = $price > 0 ? max(0, $price - (int) self::confirmed($v, 'down')->sum('amount')) : PHP_INT_MAX;
+
+        $sum = 0;
+        $date = null;
+        foreach ($rows as $p) {
+            if ($sum >= $cap) {
+                break;   // 이미 차값이 다 들어왔다 — 그 뒤 행(매도비 등)은 잔금이 아니다
+            }
+            $sum += (int) $p->amount;
+            $date = $p->payment_date ?? $date;
+        }
+        $amount = min($sum, $cap);
+
+        return ['amount' => $amount > 0 ? $amount : null, 'date' => $amount > 0 ? $date : null];
     }
 
     /** 그 종류의 마지막 지급일. 분할 지급이면 마지막 건이 「그 돈이 다 들어온 날」이다. */
