@@ -436,7 +436,7 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 > 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
 
 **현재 상태 (2026-10-30)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
-앱코드 master(`f25492a4` — 10-30 오후: 일괄 기입 「체크한 차량만」 · 입금완료 알림톡 문자 대체(K101) · 양도증명서 잔금 한도·서명줄 / 10-29 저녁 `16a308c9`: purchase-sync `amounts_overwrite` / 10-29 오후 `8347b1e5`: 주말 개발 4갈래 + 재고 (가), 마이그 1), **미배포 기능코드 0**. 테스트 **3,577 pass(로컬 병렬) · 로컬 기대 실패 0**(2026-10-12 — 옛 「로컬 7 fail = GD 差」는 `.env COMPANY_TEMPLATE_SET=heyman` 오진, `phpunit.xml` 에 system 고정. 메모리 `reference_local_test_failures_gd`).
+앱코드 master(`a2442c83` — 10-30 저녁: ssancar 포털 바이어 연락처·컨사이니 배열 1단계 / 10-30 오후 `f25492a4`: 일괄 기입 「체크한 차량만」 · 입금완료 알림톡 문자 대체(K101) · 양도증명서 잔금 한도·서명줄 / 10-29 저녁 `16a308c9`: purchase-sync `amounts_overwrite` / 10-29 오후 `8347b1e5`: 주말 개발 4갈래 + 재고 (가), 마이그 1), **미배포 기능코드 0**. 테스트 **3,580 pass(로컬 병렬) · 로컬 기대 실패 0**(2026-10-12 — 옛 「로컬 7 fail = GD 差」는 `.env COMPANY_TEMPLATE_SET=heyman` 오진, `phpunit.xml` 에 system 고정. 메모리 `reference_local_test_failures_gd`).
 ⚠️ **이 줄은 금방 낡는다** — 최신 배포·잔여 안건은 메모리 `MEMORY.md` 를 볼 것(여기 숫자를 근거로 판단하지 말 것).
 🚀 **배포 직후 수동 캐시 정리는 하지 않는다**(2026-10-23 — deploy.yml 이 `sudo -u www-data php artisan view:cache` 로 만든다, 첫 배포 권한 오류 0건. SKILLS §8 #122).
 dev-only = `scripts/notion-*`·`docs/*.html`·`.md`·Notion 테스트 2.

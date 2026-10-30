@@ -935,6 +935,13 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-10-30 (저녁) — master `a2442c83` · 마이그 0 (jin «배포해줘», 코드 커밋 1개 cherry-pick)
+
+dev `a9aa572d` → master `a2442c83`. ssancar.com 은 이 SHA 를 받은 뒤 자기 쪽(009 SQL → 코드)을 올린다.
+1. **ssancar 바이어 지도 1단계** — `GET /api/internal/portal/buyers` 각 행에 `contact_phone`(원문) · `whatsapp_phone`(1단계 늘 null) · `consignees[]`(활성만·삭제 제외·9칸: id·name·contact_name·contact_phone·contact_email·address·country_code·is_bl·last_used_at). jin 이 08-28 「연락처 비노출」 정책을 열었다(ssancar 는 관리자·담당 영업 화면만, 공개 지도 ✗). `is_bl` = `vehicles.bl_consignee_id` 사용 이력(삭제 차 제외), `last_used_at` = bl_issue_date 최댓값(없으면 updated_at) `Y-m-d`. 🚫 컨사이니 memo·id_value·tax_number·eori_number 는 계속 닫힘. 정본 = ERP_연동_통합정리 v1.20 · 기록 = `docs/integration/ssancar-portal-collab.md` 2026-10-30
+- 확인: 로컬 병렬 3,580 pass(실패 0·skip 1) · ssancar 로컬 e2e(8001) 21 buyers/13 consignees 통과 · deploy 런 41018985685 잡 5 success · 3사 SHA `a2442c83` · `/login` 200 ×3
+- 2단계(사진·홈페이지·WhatsApp 칸 신설)는 B2B 파트너스와 묶어 주말 착수
+
 ## 2026-10-30 (오후) — master `f25492a4` · 마이그 0 (jin «배포해줘», 코드 커밋 3개 cherry-pick)
 
 dev `ae7e80ba`·`96e4b2fc`·`4f3a7611` → master `e328a4b8`·`67e7cda6`·`f25492a4`. 양식 xlsx 3개 포함(양도증명서 3사 재생성).
