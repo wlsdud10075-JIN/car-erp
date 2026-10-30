@@ -74,6 +74,17 @@ ssancar 가 그걸 질문(Q18 — *"화면에 뭐라고 쓸까"*)으로 받았�
 **매입 게이트를 조이면 매입 여력 비율이 같이 움직인다.** 어딘가에서 이 값을 쓸 일이 생기면 기억할 것.
 
 
+### 📞 2026-10-30 — **바이어 지도 연락처 1단계 발행 (dev `PortalBuyerController`)** — jin 확정(ssancar 세션 10/30 + 이 세션 직접)
+
+- 배경 = 대표 «지도에서 바이어별 연락처(B/L 컨사이니 전부)를 보고 WhatsApp 으로 바로». ssancar 운영 지도 419행 전화 빈칸 · ERP 포털엔 전화가 없었다(08-28 «연락처는 보내지 않는다» 정책 → **jin 이 열었다**). 정본 = ERP_연동_통합정리 **v1.20**(ssancar 가 씀).
+- `/api/internal/portal/buyers` 각 행에 추가: `contact_phone`(원문) · `whatsapp_phone`(1단계 늘 null — 칸 없음) · `consignees[]`(활성만·삭제 제외·빈 배열 가능: `id·name·contact_name·contact_phone·contact_email·address·country_code·is_bl·last_used_at`).
+  - `is_bl` = `vehicles.bl_consignee_id` 로 쓰인 적 있나(B/L 발급 여부와 무관 — 실측 ssancarerp 1,447 vs B/L 파일 250 · heymanerp 256 vs 216). `last_used_at` = 그 차들 `bl_issue_date` 최댓값, 없으면 `updated_at` 최댓값, `Y-m-d`. 삭제 차 제외.
+  - 🚫 계속 닫힘: 컨사이니 `memo`·`id_value`·`tax_number`·`eori_number`, 바이어 신용·`passport_id`·`salesman_id`.
+  - ssancar 는 **관리자·담당 영업 화면만**, 공개 지도 ✗. 컨사이니 `contact_name` 은 두 ERP 다 거의 비어 있다(ssancar 1 · heyman 0) — 카드는 회사명+전화+이메일 기본.
+- 2단계(별건) = `photo_url·photo_updated_at·website·office_address·city·api_linked·map_name_public·whatsapp_phone` 칸 신설 — **B2B 파트너스(바이어 계약서 업로드) 첨부 인프라와 묶는다**(`docs/design/b2b-partners-2026-10-30.md`). `salesman_email` 은 제외(ssancar 가 이름으로 잇는다). `map_name_public` = 바이어가 공개 지도 회사명·로고 노출 동의(영업이 확인 뒤 켬, 기본 false) · `api_linked` = API 연동 바이어 표시용.
+- 실측(10-30): 바이어 전화 채움 ssancarerp 344/415 · heymanerp 21/28 / 컨사이니 전화 461/594 · 25/31 / 바이어당 활성 컨사이니 0·1·2+ = 10·297·108 / 2·23·3.
+- 가드 = `PortalBuyerApiTest` +3(9칸 모양·금지 칸 누설·활성/삭제/빈 배열·is_bl·last_used_at). 배포 = jin 승인 대기.
+
 ### 📮 2026-09-01 — **서류 발송 조회번호 3칸 추가 발행** (배포 완료 `ab3f296`)
 
 > 요청받은 게 아니라 **ERP 에 새 기능이 생겨서** 먼저 알린 건이다.
