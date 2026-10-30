@@ -15,6 +15,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Shared\Date;
 use PhpOffice\PhpSpreadsheet\Style\Fill;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use Tests\TestCase;
@@ -162,6 +163,51 @@ class TransferCertificateDocumentTest extends TestCase
         $this->assertSame(2000000, $sh->getCell('AE15')->getValue());
         $this->assertSame(4450000, $sh->getCell('AE16')->getValue());
         $this->assertSame(6450000, $sh->getCell('F17')->getValue());
+        $this->assertSame('박영록', $sh->getCell('G45')->getValue(), '서명줄 양도인 = 갑 성명');
+    }
+
+    /** jin 2026-10-30 — 서명줄 양수인은 회사명(양식 셀), 3사 전부. heymanerp 46가8211 생성물에서 비어 있었다. */
+    public function test_signature_row_carries_the_company_name_per_company(): void
+    {
+        foreach (self::SETS as $set) {
+            $sh = $this->sheetFor($set, $this->vehicle());
+            $this->assertSame(self::COMPANY[$set]['name'], $sh->getCell('AC45')->getValue(), "{$set} 서명줄 양수인");
+        }
+    }
+
+    /**
+     * jin 2026-10-30 heymanerp 46가8211 실사고 — 매도비 590,800 을 「매입 잔금」 행으로 지급해 Σ잔금 행이 매입가를 넘겼다.
+     * 양도증명서의 잔금은 차값이다 — 매입가 − 계약금에서 자르고, 날짜는 차값이 다 들어온 행의 것이다.
+     */
+    public function test_balance_is_capped_at_price_minus_down_so_a_selling_fee_row_is_not_counted(): void
+    {
+        $v = $this->vehicle(['purchase_price' => 15440000, 'selling_fee' => 590800]);
+        PurchaseBalancePayment::create(['vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 15440000, 'payment_date' => '2026-10-12', 'confirmed_at' => now()]);
+        PurchaseBalancePayment::create(['vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 590800, 'payment_date' => '2026-10-13', 'confirmed_at' => now()]);
+
+        $sh = $this->sheetFor('heyman', $v->fresh());
+
+        $this->assertSame(15440000, $sh->getCell('AE16')->getValue(), '매도비 행이 잔금에 합산됐다');
+        $this->assertSame('2026-10-12', Date::excelToDateTimeObject($sh->getCell('Y16')->getValue())->format('Y-m-d'), '잔금 날짜는 차값이 다 들어온 행의 날짜');
+        $this->assertSame(15440000, $sh->getCell('F17')->getValue());
+    }
+
+    /** 일부만 지급했으면 누계 그대로(종전) — 한도는 넘칠 때만 자른다. 계약금이 있으면 한도 = 매입가 − 계약금. */
+    public function test_partial_balance_keeps_the_running_sum_and_the_cap_subtracts_the_down_payment(): void
+    {
+        $v = $this->vehicle(['purchase_price' => 6450000]);
+        PurchaseBalancePayment::create(['vehicle_id' => $v->id, 'type' => 'down', 'amount' => 2000000, 'payment_date' => '2026-09-07', 'confirmed_at' => now()]);
+        PurchaseBalancePayment::create(['vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 1000000, 'payment_date' => '2026-09-15', 'confirmed_at' => now()]);
+        PurchaseBalancePayment::create(['vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 2000000, 'payment_date' => '2026-09-20', 'confirmed_at' => now()]);
+
+        $sh = $this->sheetFor('system', $v->fresh());
+        $this->assertSame(3000000, $sh->getCell('AE16')->getValue(), '일부 지급은 누계');
+
+        // 한도(4,450,000)를 넘기는 세 번째 행이 들어오면 한도에서 잘리고 날짜는 그 행
+        PurchaseBalancePayment::create(['vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 2000000, 'payment_date' => '2026-09-25', 'confirmed_at' => now()]);
+        $sh = $this->sheetFor('system', $v->fresh());
+        $this->assertSame(4450000, $sh->getCell('AE16')->getValue(), '매입가 − 계약금에서 잘린다');
+        $this->assertSame('2026-09-25', Date::excelToDateTimeObject($sh->getCell('Y16')->getValue())->format('Y-m-d'));
     }
 
     public function test_the_vehicle_form_cell_carries_both_the_kind_and_the_year(): void

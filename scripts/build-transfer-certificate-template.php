@@ -259,7 +259,7 @@ function build(array $co): Spreadsheet
     buildContract($sh);
     buildClauses($sh);
     buildSpecial($sh);
-    buildFooter($sh);
+    buildFooter($sh, $co);
     container($sh);
 
     paintYellow($sh);
@@ -549,14 +549,15 @@ function buildSpecial(Worksheet $sh): void
     put($sh, 'X40:AN41', '        년                 월                 일       ', ['size' => 9, 'align' => 'right']);
 }
 
-function buildFooter(Worksheet $sh): void
+function buildFooter(Worksheet $sh, array $co): void
 {
     // 서명줄 — 양도인(갑) / 양수인(을). 도장은 을 쪽에만 찍힌다(StampSlots).
+    // jin 2026-10-30 (heymanerp 46가8211 노란칸) — 양도인 칸은 🟡 seller_sign(갑 성명), 양수인 칸은 회사명을 양식에 박는다.
     put($sh, 'A45:F45', '  양도인', ['size' => 10]);
-    put($sh, 'G45:P45', '', []);
+    put($sh, 'G45:P45', '', ['size' => 10, 'indent' => 1]);                                 // 🟡 seller_sign
     put($sh, 'Q45:V45', '(서명 또는 인) ', ['size' => 8, 'align' => 'right']);
     put($sh, 'W45:AB45', '  양수인', ['size' => 10]);
-    put($sh, 'AC45:AH45', '', []);
+    put($sh, 'AC45:AH45', $co['name'], ['size' => 10, 'indent' => 1]);
     put($sh, 'AI45:AN45', '(서명 또는 인) ', ['size' => 8, 'align' => 'right']);
     $sh->getRowDimension(45)->setRowHeight(20);
 
