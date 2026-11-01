@@ -67,6 +67,10 @@ return [
         'breakdown' => ':fee fee + :wo write-off',
     ],
 
+    'col_b2b' => 'B2B',
+    'b2b_badge' => 'B2B',
+    'b2b_filter_all' => 'All (B2B)',
+    'b2b_filter_only' => 'B2B partners only',
     'field' => [
         'settlement_ratio' => 'Settlement split',
         'settlement_ratio_default' => 'Default (by salesman type)',

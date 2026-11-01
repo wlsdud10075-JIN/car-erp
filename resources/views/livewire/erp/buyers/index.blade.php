@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\BuyerCashReceipt;
+use App\Models\BuyerDocument;
 use App\Models\Consignee;
 use App\Models\Country;
 use App\Models\FinalPayment;
@@ -15,11 +17,13 @@ use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
 use Livewire\Volt\Component;
+use Livewire\WithFileUploads;
 use Livewire\WithPagination;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 new #[Layout('components.layouts.app')] class extends Component {
-    use WithPagination;
+    use WithPagination, WithFileUploads;
 
     public string $search = '';
     #[Url] public int $perPage = 10;
@@ -57,6 +61,29 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool   $is_inherited  = false;
     // 2026-09-08 jin — 내수(국내 판매) 바이어. 이 바이어로 판 차량은 내수정산으로 빠진다.
     public bool   $is_domestic   = false;
+
+    // ── B2B 파트너스 1차 + 포털 2단계 (jin 2026-11-01) — 기획 docs/design/b2b-partners-2026-10-30.md ──
+    //   관리대상·계약서·공개지도 동의·API 연동 = 관리 이상(canApprove, 저장 시 재인가 §8 #26). 홈페이지·주소·도시·WhatsApp·사진은 편집 권한자 누구나.
+    /** 목록 필터 `?b2b=1` = 관리대상만 — 사이드바 「B2B 파트너스」 메뉴가 이 링크다. */
+    #[Url(as: 'b2b')] public string $b2bFilter = '';
+
+    public bool   $is_b2b_partner = false;
+    public string $website = '';
+    public string $office_address = '';
+    public string $city = '';
+    public string $whatsapp_phone = '';
+    public bool   $map_name_public = false;
+    public bool   $api_linked = false;
+    public $photoUpload = null;
+    public bool   $removePhoto = false;
+    public ?string $photoUrl = null;
+
+    public $contractUpload = null;
+    public string $contract_kind = 'base';
+    public string $contract_note = '';
+    public ?int   $contractReplaceId = null;
+    /** 패널 표시용 계약서 목록(현행 + 이전 버전) — 모델이 아니라 배열(§8 #96-C). */
+    public array  $contractList = [];
     // 2026-10-21 jin — 바이어 정산 방식: '' = 기본(담당자 유형) · '50' = 5:5 · '30' = 7:3. 정산액을 바꾸므로 [관리] 이상.
     public string $settlement_ratio_pct_str = '';
     public string $inherited_from_salesman_id_str = '';
@@ -329,6 +356,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return Buyer::query()
             ->with(['country', 'salesman'])
+            // 🏷️ DP/FD 는 차량(거래)에 있다 — 바이어 목록은 **센 개수**만(요청서 02 ↔ 03 모순을 이렇게 닫음, 출처 하나).
+            ->withCount([
+                'vehicles as dp_count' => fn ($q) => $q->where('deal_type', 'DP'),
+                'vehicles as fd_count' => fn ($q) => $q->where('deal_type', 'FD'),
+            ])
+            ->when($this->b2bFilter === '1', fn ($q) => $q->where('is_b2b_partner', true))
             ->when($restrictToOwnSalesman, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('salesman_id', $user->salesman->id)
                 ->orWhereHas('vehicles', fn ($q3) => $q3->where('salesman_id', $user->salesman->id))
@@ -403,6 +436,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_active     = $buyer->is_active;
         $this->is_inherited  = (bool) $buyer->is_inherited;
         $this->is_domestic   = (bool) $buyer->is_domestic;
+        $this->is_b2b_partner = (bool) $buyer->is_b2b_partner;
+        $this->website = $buyer->website ?? '';
+        $this->office_address = $buyer->office_address ?? '';
+        $this->city = $buyer->city ?? '';
+        $this->whatsapp_phone = $buyer->whatsapp_phone ?? '';
+        $this->map_name_public = (bool) $buyer->map_name_public;
+        $this->api_linked = (bool) $buyer->api_linked;
+        $this->photoUpload = null;
+        $this->removePhoto = false;
+        $this->photoUrl = $buyer->photo_path ? \App\Support\VehicleDocUrl::for($buyer->photo_path) : null;
+        $this->contractUpload = null;
+        $this->contract_kind = 'base';
+        $this->contract_note = '';
+        $this->contractReplaceId = null;
         $this->settlement_ratio_pct_str = $buyer->settlement_ratio_pct === null ? '' : (string) $buyer->settlement_ratio_pct;
         $this->inherited_from_salesman_id_str = $buyer->inherited_from_salesman_id ? (string) $buyer->inherited_from_salesman_id : '';
         $this->inherited_at  = $buyer->inherited_at?->format('Y-m-d') ?? '';
@@ -415,6 +462,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ? (string) $buyer->lock_purchase_registration_pct : '';
 
         $this->loadConsignees($id);
+        $this->loadContracts($id);
         $this->loadSavings($id);
         $this->loadCash($id);
         $this->showPanel = true;
@@ -437,6 +485,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             'salesman_id_str' => 'nullable|integer|exists:salesmen,id',
             'inherited_from_salesman_id_str' => 'nullable|integer|exists:salesmen,id',
             'inherited_at' => 'nullable|date',
+            // 포털 2단계 칸 (jin 2026-11-01)
+            'website' => 'nullable|string|max:200',
+            'office_address' => 'nullable|string|max:200',
+            'city' => 'nullable|string|max:100',
+            'whatsapp_phone' => 'nullable|string|max:30',
+            'photoUpload' => 'nullable|image|max:4096',
         ]);
 
         // 영업 role 신규 등록 시 본인 salesman 자동 채움 (vehicles/index L1240~1241 패턴 대칭).
@@ -457,6 +511,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             'address'       => $this->address       ?: null,
             'memo'          => $this->memo           ?: null,
             'is_active'     => $this->is_active,
+            // 포털 2단계 — 지도·카드 재료. 빈칸은 null(포털이 「없음」으로 읽는다).
+            'website'       => trim($this->website) ?: null,
+            'office_address' => trim($this->office_address) ?: null,
+            'city'          => trim($this->city) ?: null,
+            'whatsapp_phone' => trim($this->whatsapp_phone) ?: null,
         ];
 
         // 승계 표시는 정산액(건당 5만)을 바꾸므로 화면 노출과 별개로 저장 시점 재인가 (SKILLS §8 #26).
@@ -474,6 +533,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             //      정산이 나면 일반(수출) 공식으로 떨어지지, 외화를 원화로 오인하지 않는다.
             //      🚫 여기에 다시 막지 말 것. 대신 아래 화면이 몇 대가 남았는지 말한다.
             $data['is_domestic'] = $this->is_domestic;
+            // 🤝 B2B 파트너스 관리대상·공개지도 동의·API 연동 표시 — 관리 이상(요청서 05 「지정 담당자」, jin 11-01 «관리 이상»).
+            $data['is_b2b_partner'] = $this->is_b2b_partner;
+            $data['map_name_public'] = $this->map_name_public;
+            $data['api_linked'] = $this->api_linked;
             // 🤝 바이어 정산 방식 — 선택지 밖 값은 기본으로(§8 #26 프로퍼티 주입 방어). karaba 는 화면도 저장도 없다.
             if (! \App\Models\Setting::isKaraba()) {
                 $pct = (int) $this->settlement_ratio_pct_str;
@@ -508,6 +571,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             $buyer = Buyer::findOrFail($this->editingId);
             $wasInherited = (bool) $buyer->is_inherited;
             $wasDomestic = (bool) $buyer->is_domestic;
+            $wasB2b = (bool) $buyer->is_b2b_partner;
+            $wasMapPublic = (bool) $buyer->map_name_public;
             $wasRatio = $buyer->settlement_ratio_pct;
             $wasLimit = (int) ($buyer->unsecured_limit_krw ?? 0);
             $wasLocks = [
@@ -522,6 +587,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 내수 지정은 그 바이어로 파는 모든 차의 정산 공식을 바꾼다 — 누가 언제 켰는지 남긴다.
             if (array_key_exists('is_domestic', $data) && $wasDomestic !== $this->is_domestic) {
                 \App\Models\AuditLog::recordChange($buyer, 'is_domestic', $wasDomestic, $this->is_domestic);
+            }
+            // B2B 관리대상·공개지도 동의 — 누가 언제 켰는지(요청서 05 「변경자·변경일 기록」). Buyer 엔 감사 훅이 없어 여기서 직접.
+            if (array_key_exists('is_b2b_partner', $data) && $wasB2b !== $this->is_b2b_partner) {
+                \App\Models\AuditLog::recordChange($buyer, 'is_b2b_partner', $wasB2b, $this->is_b2b_partner, 'b2b_partner_toggled');
+            }
+            if (array_key_exists('map_name_public', $data) && $wasMapPublic !== $this->map_name_public) {
+                \App\Models\AuditLog::recordChange($buyer, 'map_name_public', $wasMapPublic, $this->map_name_public);
             }
             // 바이어 정산 방식은 그 바이어로 생길 정산의 비율을 바꾼다 — 누가 언제 골랐는지 남긴다.
             if (array_key_exists('settlement_ratio_pct', $data) && $wasRatio !== $data['settlement_ratio_pct']) {
@@ -543,6 +615,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $buyer = Buyer::create($data);
             $this->editingId = $buyer->id;
         }
+        $this->applyPhoto($buyer);
 
         unset($this->buyers);
         // 2026-07-09 jin — 등록/저장 시 시각 피드백 + 패널 자동 닫기 (사용자등록 패턴 대칭, session flash 불안정 제거).
@@ -1347,12 +1420,139 @@ new #[Layout('components.layouts.app')] class extends Component {
             : __('buyer.cash.deleted'), type: 'success');
     }
 
+    // ── B2B 계약서 (jin 2026-11-01) — 1바이어 N건, 교체는 보관. 업로드·교체 = 관리 이상, 열람 = 패널을 열 수 있는 사람(감사 기록) ──
+
+    private function loadContracts(int $buyerId): void
+    {
+        $this->contractList = BuyerDocument::where('buyer_id', $buyerId)->with('uploader:id,name')->orderByDesc('id')->get()
+            ->map(fn (BuyerDocument $d) => [
+                'id' => $d->id, 'kind' => $d->kind, 'note' => $d->note, 'filename' => $d->filename,
+                'superseded' => $d->superseded_at !== null, 'by' => $d->uploader?->name,
+                'date' => $d->created_at?->format('Y-m-d'),
+            ])->all();
+    }
+
+    /** 교체 모드 — 그 행을 「이전 버전」으로 돌리고 새 파일을 현행으로. 🚫 삭제 아님. */
+    public function startReplaceContract(int $docId): void
+    {
+        $doc = BuyerDocument::whereKey($docId)->where('buyer_id', (int) $this->editingId)->first();
+        if (! $doc) {
+            return;
+        }
+        $this->contractReplaceId = $docId;
+        $this->contract_kind = $doc->kind;
+        $this->contract_note = $doc->note ?? '';
+    }
+
+    public function cancelReplaceContract(): void
+    {
+        $this->contractReplaceId = null;
+        $this->contract_note = '';
+    }
+
+    public function addContract(): void
+    {
+        $user = auth()->user();
+        abort_unless((bool) $user?->canApprove(), 403);
+        if (! $this->editingId) {
+            return;
+        }
+        $this->validate([
+            'contractUpload' => 'required|file|max:10240|mimes:pdf,jpg,jpeg,png,webp,doc,docx,xls,xlsx,hwp,hwpx',
+            'contract_kind' => 'required|in:'.implode(',', BuyerDocument::KINDS),
+            'contract_note' => 'nullable|string|max:200',
+        ]);
+        $buyer = Buyer::findOrFail($this->editingId);
+
+        $current = BuyerDocument::where('buyer_id', $buyer->id)->whereNull('superseded_at')->count();
+        if ($this->contractReplaceId === null && $current >= BuyerDocument::MAX_PER_BUYER) {
+            $this->dispatch('notify', message: __('buyer.field.contract_max', ['max' => BuyerDocument::MAX_PER_BUYER]), type: 'error');
+
+            return;
+        }
+
+        $disk = config('filesystems.vehicle_docs_disk');
+        $safe = preg_replace('/[^\p{L}\p{N}._-]+/u', '_', $this->contractUpload->getClientOriginalName());
+        $path = $this->contractUpload->storeAs("buyers/{$buyer->id}/contracts", time().'_'.$safe, $disk);
+        // ⚠️ 파일 쓰기는 예외를 안 던진다 — 반환값과 exists() 를 본다(§8 #47). 안 보면 DB 행만 남는다.
+        if (! $path || ! Storage::disk($disk)->exists($path)) {
+            $this->dispatch('notify', message: __('common.upload_failed'), type: 'error');
+
+            return;
+        }
+
+        $doc = BuyerDocument::create([
+            'buyer_id' => $buyer->id, 'path' => $path, 'kind' => $this->contract_kind,
+            'note' => trim($this->contract_note) ?: null, 'uploaded_by' => $user->id,
+        ]);
+        AuditLog::recordChange($buyer, 'b2b_contract', null, $doc->filename, 'b2b_contract_uploaded');
+
+        if ($this->contractReplaceId !== null) {
+            $old = BuyerDocument::whereKey($this->contractReplaceId)->where('buyer_id', $buyer->id)->whereNull('superseded_at')->first();
+            if ($old) {
+                $old->update(['superseded_at' => now()]);
+                AuditLog::recordChange($buyer, 'b2b_contract', $old->filename, $doc->filename, 'b2b_contract_superseded');
+            }
+        }
+
+        $this->contractUpload = null;
+        $this->contract_note = '';
+        $this->contractReplaceId = null;
+        $this->loadContracts($buyer->id);
+        $this->dispatch('notify', message: __('buyer.field.contract_uploaded'), type: 'success');
+    }
+
+    /** 열람 — 서명 URL(S3 3분)을 새 탭으로. 패널을 열 수 있으면 볼 수 있고, 누가 봤는지 남긴다(요청서 05). */
+    public function openContract(int $docId): void
+    {
+        $doc = BuyerDocument::whereKey($docId)->where('buyer_id', (int) $this->editingId)->first();
+        if (! $doc || ! $this->editingId) {
+            return;
+        }
+        AuditLog::recordChange($doc->buyer, 'b2b_contract', null, $doc->filename, 'b2b_contract_read');
+        $url = $doc->url;
+        if ($url !== '') {
+            $this->js("window.open(".json_encode($url).", '_blank')");
+        }
+    }
+
+    /** 사진/로고 — 교체하면 이전 파일은 지운다(계약서와 달리 보관 가치가 없다). 삭제 체크면 파일·칸 둘 다 비운다. */
+    private function applyPhoto(Buyer $buyer): void
+    {
+        $disk = config('filesystems.vehicle_docs_disk');
+        if ($this->removePhoto && $buyer->photo_path) {
+            Storage::disk($disk)->delete($buyer->photo_path);
+            $buyer->update(['photo_path' => null, 'photo_updated_at' => now()]);
+            $this->removePhoto = false;
+        }
+        if ($this->photoUpload) {
+            $ext = strtolower($this->photoUpload->getClientOriginalExtension() ?: 'jpg');
+            $path = $this->photoUpload->storeAs("buyers/{$buyer->id}", 'photo_'.time().'.'.$ext, $disk);
+            if ($path && Storage::disk($disk)->exists($path)) {
+                if ($buyer->photo_path && $buyer->photo_path !== $path) {
+                    Storage::disk($disk)->delete($buyer->photo_path);
+                }
+                $buyer->update(['photo_path' => $path, 'photo_updated_at' => now()]);
+            } else {
+                $this->dispatch('notify', message: __('common.upload_failed'), type: 'error');
+            }
+            $this->photoUpload = null;
+        }
+    }
+
     private function resetForm(): void
     {
         $this->name = $this->country_id_str = $this->salesman_id_str = $this->contact_name
             = $this->contact_email = $this->contact_phone = $this->passport_id
             = $this->address = $this->memo = '';
         $this->is_active = true;
+        $this->is_b2b_partner = $this->map_name_public = $this->api_linked = $this->removePhoto = false;
+        $this->website = $this->office_address = $this->city = $this->whatsapp_phone = $this->contract_note = '';
+        $this->contract_kind = 'base';
+        $this->photoUpload = $this->contractUpload = null;
+        $this->photoUrl = null;
+        $this->contractReplaceId = null;
+        $this->contractList = [];
         $this->consigneeList = $this->balances = $this->txnList = [];
         $this->txn_amount = $this->txn_note = '';
         $this->txn_currency = 'USD';
@@ -1399,6 +1599,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="{{ $sm->id }}">{{ $sm->name }}</option>
         @endforeach
     </select>
+    {{-- 🤝 B2B 파트너스 필터 (jin 2026-11-01) — 사이드바 「B2B 파트너스」 = ?b2b=1 --}}
+    <select wire:model.live="b2bFilter" class="input-filter">
+        <option value="">{{ __('buyer.b2b_filter_all') }}</option>
+        <option value="1">{{ __('buyer.b2b_filter_only') }}</option>
+    </select>
     <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
 </div>
 
@@ -1413,6 +1618,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ __('buyer.col_b2b') }}</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -1445,6 +1651,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                         {{ $b->is_active ? __('common.active') : __('common.inactive') }}
                     </span>
                 </td>
+                {{-- 🤝 B2B 관리대상 + 거래별 DP/FD 개수(차량에서 센다 — 바이어에 플래그 없음) --}}
+                <td class="py-3 pr-4 text-xs text-gray-600">
+                    @if($b->is_b2b_partner)<span class="badge badge-amber">{{ __('buyer.b2b_badge') }}</span>@endif
+                    @if(($b->dp_count ?? 0) > 0)<span class="ml-1 whitespace-nowrap rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-700" title="{{ \App\Models\Vehicle::DEAL_TYPES['DP']['title'] }}">DP {{ $b->dp_count }}</span>@endif
+                    @if(($b->fd_count ?? 0) > 0)<span class="ml-1 whitespace-nowrap rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700" title="{{ \App\Models\Vehicle::DEAL_TYPES['FD']['title'] }}">FD {{ $b->fd_count }}</span>@endif
+                </td>
                 <td class="py-3 text-right">
                     @if(auth()->user()?->canApprove())
                     <button wire:click.stop="delete({{ $b->id }})"
@@ -1454,7 +1666,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">{{ __('buyer.empty') }}</td></tr>
+            <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">{{ __('buyer.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -1467,6 +1679,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>
             <div class="font-medium text-gray-800">{{ $b->name }}@if($b->isNewBuyer())<span class="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-buyer-new title="{{ __('buyer.new_badge_hint', ['date' => $b->created_at->format('Y-m-d')]) }}">{{ __('buyer.new_badge') }}</span>@endif</div>
             <div class="text-xs text-gray-500">{{ $b->country?->name ?? '' }} {{ $b->contact_email ? '· '.$b->contact_email : '' }}</div>
+            @if($b->is_b2b_partner || ($b->dp_count ?? 0) > 0 || ($b->fd_count ?? 0) > 0)
+            <div class="mt-0.5 text-[10px]">
+                @if($b->is_b2b_partner)<span class="badge badge-amber">{{ __('buyer.b2b_badge') }}</span>@endif
+                @if(($b->dp_count ?? 0) > 0)<span class="ml-1 rounded-full bg-purple-100 px-1.5 py-0.5 font-bold text-purple-700">DP {{ $b->dp_count }}</span>@endif
+                @if(($b->fd_count ?? 0) > 0)<span class="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 font-bold text-blue-700">FD {{ $b->fd_count }}</span>@endif
+            </div>
+            @endif
         </div>
         <span class="badge {{ $b->is_active ? 'badge-green' : 'badge-gray' }}">{{ $b->is_active ? __('common.active') : __('common.inactive') }}</span>
     </div>
@@ -1687,6 +1906,70 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 @endif
 
+                {{-- 🤝 B2B 파트너스 (jin 2026-11-01) — 관리대상 체크 + 계약서. 관리 이상만 바꾼다(저장 시 재인가). --}}
+                @php $canB2b = (bool) auth()->user()?->canApprove(); @endphp
+                <div class="rounded-lg border border-amber-200 bg-amber-50 p-3" data-buyer-b2b>
+                    <label class="flex items-start gap-2 {{ $canB2b ? 'cursor-pointer' : '' }}">
+                        <input wire:model.live="is_b2b_partner" type="checkbox" class="mt-0.5 rounded" @disabled(! $canB2b) />
+                        <span class="text-sm text-gray-800">
+                            {{ __('buyer.field.b2b_partner') }}
+                            <span class="mt-1 block text-[11px] leading-relaxed text-gray-600">{{ __('buyer.field.b2b_partner_hint') }}</span>
+                        </span>
+                    </label>
+                    @if(! $canB2b)<p class="mt-1 text-[11px] text-gray-500">{{ __('buyer.field.b2b_readonly') }}</p>@endif
+
+                    @if($editingId)
+                    <div class="mt-3 border-t border-amber-200 pt-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-semibold text-gray-700">{{ __('buyer.field.contracts') }}</span>
+                            <span class="text-[10px] text-gray-400">{{ count(array_filter($contractList, fn ($d) => ! $d['superseded'])) }}/{{ \App\Models\BuyerDocument::MAX_PER_BUYER }}</span>
+                        </div>
+                        <p class="mt-0.5 text-[11px] text-gray-500">{{ __('buyer.field.contracts_hint', ['max' => \App\Models\BuyerDocument::MAX_PER_BUYER]) }}</p>
+                        @if($contractList === [])
+                            <p class="mt-2 text-xs text-gray-400">{{ __('buyer.field.contract_none') }}</p>
+                        @else
+                        <ul class="mt-2 space-y-1">
+                            @foreach($contractList as $d)
+                            <li class="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs {{ $d['superseded'] ? 'text-gray-400' : 'text-gray-700' }}" wire:key="bdoc-{{ $d['id'] }}">
+                                <span class="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold {{ $d['superseded'] ? 'text-gray-400' : 'text-amber-700' }}">{{ __('buyer.field.contract_kind_'.$d['kind']) }}</span>
+                                <button type="button" wire:click="openContract({{ $d['id'] }})" class="font-medium hover:underline {{ $d['superseded'] ? 'line-through' : '' }}">{{ $d['filename'] }}</button>
+                                @if($d['note'])<span class="text-gray-500">— {{ $d['note'] }}</span>@endif
+                                <span class="text-[10px] text-gray-400">{{ $d['date'] }}{{ $d['by'] ? ' · '.$d['by'] : '' }}</span>
+                                @if($d['superseded'])<span class="text-[10px]">({{ __('buyer.field.contract_superseded') }})</span>
+                                @elseif($canB2b)<button type="button" wire:click="startReplaceContract({{ $d['id'] }})" class="text-[10px] text-primary-text hover:underline">{{ __('buyer.field.contract_replace') }}</button>@endif
+                            </li>
+                            @endforeach
+                        </ul>
+                        @endif
+                        @if($canB2b)
+                        <div class="mt-2 grid grid-cols-1 gap-2 rounded border border-amber-200 bg-white p-2 sm:grid-cols-[auto_1fr_auto] sm:items-end">
+                            <div>
+                                <label class="label-base">{{ __('buyer.field.contract_kind') }}</label>
+                                <select wire:model="contract_kind" class="input-base">
+                                    <option value="base">{{ __('buyer.field.contract_kind_base') }}</option>
+                                    <option value="extra">{{ __('buyer.field.contract_kind_extra') }}</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="label-base">{{ __('buyer.field.contract_file') }}</label>
+                                <input wire:model="contractUpload" type="file" class="input-base text-xs" accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx,.hwp,.hwpx" />
+                                @error('contractUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                            </div>
+                            <div class="flex gap-1">
+                                <button type="button" wire:click="addContract" wire:loading.attr="disabled" wire:target="contractUpload,addContract" class="btn-primary text-xs py-1.5 px-3">
+                                    {{ $contractReplaceId ? __('buyer.field.contract_replace') : __('buyer.field.contract_add') }}
+                                </button>
+                                @if($contractReplaceId)<button type="button" wire:click="cancelReplaceContract" class="rounded border border-gray-300 px-2 py-1.5 text-xs text-gray-600">{{ __('common.cancel') }}</button>@endif
+                            </div>
+                            <div class="sm:col-span-3">
+                                <input wire:model="contract_note" type="text" class="input-base" maxlength="200" placeholder="{{ __('buyer.field.contract_note_ph') }}" />
+                            </div>
+                        </div>
+                        @endif
+                    </div>
+                    @endif
+                </div>
+
                 {{-- 퇴사자 승계 바이어 (jin 2026-08-04) — 사내직원 정산 건당 5만원 고정. [관리] 이상만 --}}
                 @if(auth()->user()?->canApprove())
                 <div class="rounded-lg border border-amber-200 bg-amber-50 p-3">
@@ -1883,6 +2166,56 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div>
                     <label class="label-base">{{ __('common.memo') }}</label>
                     <textarea wire:model="memo" class="input-base" rows="2"></textarea>
+                </div>
+                {{-- 🗺️ 포털·지도 정보 (ssancar 2단계, jin 2026-11-01) — 사진/로고·홈페이지·주소·도시·WhatsApp 은 실무자 기입. 공개지도 동의·API 연동은 관리 이상. --}}
+                <div class="rounded-lg border border-sky-200 bg-sky-50 p-3 space-y-2" data-buyer-portal>
+                    <div class="text-xs font-semibold text-gray-700">{{ __('buyer.field.portal_section') }}</div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="label-base">{{ __('buyer.field.website') }}</label>
+                            <input wire:model="website" type="text" class="input-base" maxlength="200" placeholder="https://" />
+                            @error('website')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                        </div>
+                        <div>
+                            <label class="label-base">{{ __('buyer.field.city') }}</label>
+                            <input wire:model="city" type="text" class="input-base" maxlength="100" />
+                        </div>
+                    </div>
+                    <div>
+                        <label class="label-base">{{ __('buyer.field.office_address') }}</label>
+                        <input wire:model="office_address" type="text" class="input-base" maxlength="200" />
+                    </div>
+                    <div>
+                        <label class="label-base">{{ __('buyer.field.whatsapp_phone') }}</label>
+                        <input wire:model="whatsapp_phone" type="text" class="input-base" maxlength="30" placeholder="+383 …" />
+                        <p class="mt-1 text-[11px] text-gray-500">{{ __('buyer.field.whatsapp_hint') }}</p>
+                    </div>
+                    <div>
+                        <label class="label-base">{{ __('buyer.field.photo') }}</label>
+                        <div class="flex items-start gap-3">
+                            @if($photoUrl && ! $removePhoto)
+                                <img src="{{ $photoUrl }}" alt="" class="h-14 w-14 rounded border border-gray-200 object-cover bg-white" />
+                            @endif
+                            <div class="flex-1">
+                                <input wire:model="photoUpload" type="file" accept="image/*" class="input-base text-xs" />
+                                @error('photoUpload')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                                <p class="mt-1 text-[11px] text-gray-500">{{ __('buyer.field.photo_hint') }}</p>
+                                @if($photoUrl)
+                                <label class="mt-1 flex items-center gap-1 text-[11px] text-red-600 cursor-pointer"><input wire:model.live="removePhoto" type="checkbox" class="rounded" /> {{ __('buyer.field.photo_remove') }}</label>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+                    @if(auth()->user()?->canApprove())
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input wire:model="map_name_public" type="checkbox" class="mt-0.5 rounded" />
+                        <span class="text-sm text-gray-800">{{ __('buyer.field.map_name_public') }}
+                            <span class="mt-0.5 block text-[11px] leading-relaxed text-gray-600">{{ __('buyer.field.map_name_public_hint') }}</span></span>
+                    </label>
+                    <label class="flex items-center gap-2 cursor-pointer text-sm text-gray-800">
+                        <input wire:model="api_linked" type="checkbox" class="rounded" /> {{ __('buyer.field.api_linked') }}
+                    </label>
+                    @endif
                 </div>
                 <div>
                     <label class="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">

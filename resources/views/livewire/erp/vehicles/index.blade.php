@@ -70,6 +70,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url(as: 'brq')] public array $boardFilters = [];
     // 매입취소 필터 (jin 2026-07-18) — '' 전체 / active 매입취소(미수) / done 취소완료 / closed 미수마감 / normal 정상만
     #[Url] public string $cancelFilter = '';
+
+    /** 🏷️ 거래 유형 필터 DP/FD/none (B2B 파트너스, jin 2026-11-01) — 내보내기(`deal`)와 같은 축. */
+    #[Url(as: 'deal')] public string $dealFilter = '';
     /**
      * 🗑️ 「말소 필요」 토글 (jin 2026-09-14) — 매입 완납 + 말소 미처리 + 완납 후 N일 경과.
      * 🚫 진행상태에 「말소중」을 만들지 않기로 한 대신 목록에서 찾게 하는 것이다(Vehicle::scopeAction 주석).
@@ -1385,6 +1388,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 바이어 미정 매입(투기) — 켜야만 바이어 없이 신규 등록이 통과한다 (jin 2026-08-09). */
     public bool $buyer_undecided = false;
 
+    /** 🏷️ 거래 유형 DP/FD — 빈 문자열 = 없음. 저장은 관리 이상만(그 외는 키를 안 보낸다 — 값 보존). */
+    public string $deal_type = '';
+
     /**
      * 저당 설정 표시 (jin 2026-08-21) — 딜러 입금완료 알림톡에 「저당 해지를 부탁드립니다」 를 실을지 가른다.
      * ⚠️ 해제가 수동이다. 딜러가 저당을 풀어도 안 꺼지므로 발송 확인창에서 매번 포함 여부를 보여준다.
@@ -1948,7 +1954,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->reset([
             'search', 'dateType', 'progressFilter', 'excludeStatuses', 'cancelFilter', 'action',
-            'salesmanId', 'ids', 'buyerId', 'shipDocIds', 'accumSearchTerm', 'accumSearchOpen',
+            'salesmanId', 'ids', 'buyerId', 'shipDocIds', 'accumSearchTerm', 'accumSearchOpen', 'dealFilter',
             'sortColumn', 'sortDirection', 'sortExtra', 'freightExact', 'vinSearch', 'sailingFilter',
             'shipmentFilter', 'shipmentMonth', 'taskFilter',
         ]);
@@ -3321,6 +3327,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->where(fn ($q2) => $q2->where('sale_unpaid_amount_krw_cache', '<=', 0)->orWhereNull('sale_unpaid_amount_krw_cache')))
             ->when($this->cancelFilter === 'closed', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_CLOSED))
             ->when($this->cancelFilter === 'normal', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_NONE))
+            // 🏷️ 거래 유형 DP/FD/none — scopeDealType 단일 출처(내보내기도 같은 scope)
+            ->when($this->dealFilter !== '', fn ($q) => $q->dealType($this->dealFilter))
             // 🗑️ 말소 필요 — 조건을 옮겨 적지 말 것. scopeAction 단일 출처(§8 #44).
             ->when($this->taskFilter === 'deregistration', fn ($q) => $q->action('deregistration_due'))
             // 🚦 선적·통관·B/L 필요 — 단계 완료 조건이 빈 차. 조건은 Vehicle::scopeStageGap 단일 출처.
@@ -4721,6 +4729,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_deposit_purchase = (bool) $v->is_deposit_purchase;
         $this->is_unsecured_down = (bool) $v->is_unsecured_down;
         $this->buyer_undecided = (bool) $v->buyer_undecided;
+        $this->deal_type = (string) ($v->deal_type ?? '');
         $this->has_mortgage = (bool) $v->has_mortgage;
         // 큐 20-A/C — 매입처 계좌 4컬럼 (account는 모델 decrypt accessor에서 평문)
         $this->purchase_seller_bank    = $v->purchase_seller_bank    ?? '';
@@ -5832,6 +5841,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             'salesman_id_str'           => [Rule::when($this->salesman_id_str !== '', ['exists:salesmen,id'])],
             'remitter_name'             => ['nullable', 'string', 'max:100'],
+            'deal_type'                 => ['nullable', 'in:'.implode(',', array_keys(\App\Models\Vehicle::DEAL_TYPES))],   // B2B 파트너스 DP/FD
             'remitter_id'               => ['nullable', 'string', 'max:64'],
             'buyer_id_str'              => [Rule::when($this->buyer_id_str !== '', ['exists:buyers,id'])],
             'consignee_id_str'          => [Rule::when($this->consignee_id_str !== '', ['exists:consignees,id'])],
@@ -6472,6 +6482,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'exchange_rate' => $toFloat($this->exchange_rate_str),
             'buyer_id'     => $toId($this->buyer_id_str),
             'buyer_undecided' => $this->buyer_undecided,
+            // 🏷️ DP/FD — 관리 이상만 바꾼다(jin 11-01). 권한 밖이면 키 자체를 안 실어 기존 값이 지워지지 않는다.
+            ...(auth()->user()?->canApprove() ? ['deal_type' => array_key_exists($this->deal_type, \App\Models\Vehicle::DEAL_TYPES) ? $this->deal_type : null] : []),
             'consignee_id' => $toId($this->consignee_id_str),
             'sale_price'       => $toFloat($this->sale_price_str),
             'tax_dc'           => $toFloat($this->tax_dc_str),
@@ -7898,7 +7910,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'nice_spec_length_str','nice_spec_width_str',
             'nice_spec_height_str','nice_spec_curb_weight_str','nice_spec_fuel_efficiency',
             'nice_spec_control_no','nice_spec_form_name','nice_spec_max_power','nice_spec_cylinders_str','nice_inspection_start','nice_inspection_end',
-            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase','is_unsecured_down','buyer_undecided','has_mortgage',
+            'purchase_date','salesman_id_str','purchase_from','purchase_registration_type','purchase_evidence_subtype','is_dealer_purchase','is_deposit_purchase','is_unsecured_down','buyer_undecided','deal_type','has_mortgage',
             'purchase_seller_bank','purchase_seller_account','purchase_seller_holder','purchase_bank_memo',
             'purchase_fee_bank','purchase_fee_account','purchase_fee_holder',
             'purchase_price_str','selling_fee_str',
@@ -8174,6 +8186,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="done">{{ __('vehicle.cancel_filter.done') }}</option>
             <option value="closed">{{ __('vehicle.cancel_filter.closed') }}</option>
             <option value="normal">{{ __('vehicle.cancel_filter.normal') }}</option>
+        </select>
+        {{-- 🏷️ 거래 유형 DP/FD 필터 (B2B 파트너스, jin 2026-11-01) — 채권관리와 같은 축 --}}
+        <select wire:model.live="dealFilter" class="input-filter">
+            <option value="">{{ __('vehicle.deal_type.filter_all') }}</option>
+            @foreach(\App\Models\Vehicle::DEAL_TYPES as $dk => $dm)<option value="{{ $dk }}">{{ __('vehicle.deal_type.'.$dk) }}</option>@endforeach
+            <option value="none">{{ __('vehicle.deal_type.filter_none') }}</option>
         </select>
         {{-- 운임비 정확검색 (item 6, jin 2026-07-18) — 메인 검색과 분리(차번호 숫자 충돌 방지) --}}
         <input wire:model="freightExact" wire:keydown.enter="applyFilters" type="text" data-money
@@ -8692,6 +8710,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @php if ($this->colOn('brand_model')): @endphp<td class="py-3 pr-4 text-gray-700" x-show="visible['brand_model']">
                     {{ $v->brand }} {{ $v->model_type }}
                     @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
+                    {{-- 🏷️ DP/FD (jin 2026-11-01 — 차종 옆. ⚠️ 이 컬럼을 끄면 뱃지도 같이 안 보인다) --}}
+                    <x-erp.deal-badge :type="$v->deal_type" />
                 </td>@php endif; @endphp
                 @php if ($this->colOn('vin')): @endphp<td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['vin']">{{ $v->nice_reg_vin ?: '-' }}</td>@php endif; @endphp
                 <td class="py-3 pr-4">
@@ -8976,7 +8996,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     </span>
                 @endif
             </div>
-            <div class="text-xs text-gray-500">{{ $v->brand }} {{ $v->model_type }}</div>
+            <div class="text-xs text-gray-500">{{ $v->brand }} {{ $v->model_type }}<x-erp.deal-badge :type="$v->deal_type" /></div>
             <div class="flex items-center gap-1.5">
                 <span class="badge {{ $badgeClass }}" title="{{ __('domain.progress_hint.'.$status) }}">{{ __('domain.progress.'.$status) }}</span>
                 @if($v->sailing_status === \App\Models\Vehicle::SAILING_IN_TRANSIT)
@@ -9052,6 +9072,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         if ($wire.progressFilter) p.set('progress', $wire.progressFilter);
                         if ($wire.excludeStatuses && $wire.excludeStatuses.length) p.set('exclude', $wire.excludeStatuses.join(','));
                         if ($wire.sailingFilter) p.set('sailing', $wire.sailingFilter);
+                        if ($wire.dealFilter) p.set('deal', $wire.dealFilter);
                         if ($wire.shipmentFilter) p.set('ship', $wire.shipmentFilter);
                         if ($wire.shipmentMonth) p.set('shipmonth', $wire.shipmentMonth);
                         {{-- board 요청 뱃지 필터 — 안 넘기면 화면은 6대인데 엑셀은 전체가 나온다. --}}
@@ -10268,6 +10289,21 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         </span>
                     </label>
                     @endif
+                </div>
+                {{-- 🏷️ 거래 유형 DP/FD (B2B 파트너스, jin 2026-11-01) — 거래(차량)별 지정. 관리 이상만 바꾸고 그 외는 읽기. 바이어가 바뀌면 자동 해제. --}}
+                <div data-deal-type>
+                    <label class="label-base">{{ __('vehicle.field.deal_type') }}</label>
+                    @if(auth()->user()?->canApprove())
+                    <select wire:model="deal_type" class="input-base">
+                        <option value="">{{ __('vehicle.deal_type.none') }}</option>
+                        @foreach(\App\Models\Vehicle::DEAL_TYPES as $dk => $dm)<option value="{{ $dk }}">{{ __('vehicle.deal_type.'.$dk) }}</option>@endforeach
+                    </select>
+                    <p class="mt-1 text-[10.5px] leading-snug text-gray-400">{{ __('vehicle.deal_type.hint') }}</p>
+                    @else
+                    <div class="input-base bg-gray-50 text-gray-600">{{ $deal_type !== '' ? __('vehicle.deal_type.'.$deal_type) : __('vehicle.deal_type.none') }}</div>
+                    <p class="mt-1 text-[10.5px] text-gray-400">{{ __('vehicle.deal_type.readonly') }}</p>
+                    @endif
+                    @error('deal_type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
                 {{-- 당사자 축소 (jin 2026-07-09) — 판매=바이어만. 컨사이니는 선적 탭에서 입력. --}}
                 <div><label class="label-base">{{ __('vehicle.field.sale_price') }} </label><input wire:model="sale_price_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>

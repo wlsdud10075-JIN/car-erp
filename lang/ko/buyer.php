@@ -67,6 +67,10 @@ return [
         'breakdown' => '수수료 :fee건 + 손실 :wo건',
     ],
 
+    'col_b2b' => 'B2B',
+    'b2b_badge' => 'B2B',
+    'b2b_filter_all' => 'B2B 전체',
+    'b2b_filter_only' => 'B2B 관리대상만',
     'field' => [
         'settlement_ratio' => '정산 방식',
         'settlement_ratio_default' => '기본 (담당자 유형)',
