@@ -533,6 +533,7 @@ return [
         'salesman' => '영업담당자',
         'remitter_name' => '송금인 이름',
         'remitter_id' => '송금인 ID (board 기록)',
+        'deal_type' => '거래 유형 (DP/FD)',
         'vin' => '차대번호',
         'engine_no' => '원동기형식',
         'fuel_type' => '연료종류',
@@ -756,6 +757,16 @@ return [
     ],
 
     // 차량목록 매입취소 필터 드롭박스 (jin 2026-07-18)
+    // B2B 파트너스 거래 유형 뱃지 (jin 2026-11-01) — 차종명 옆. 전체 명칭은 Vehicle::DEAL_TYPES title
+    'deal_type' => [
+        'none' => '없음',
+        'DP' => 'DP — 지연 결제 (Delay Payment)',
+        'FD' => 'FD — 선수금 거래 (First Deal)',
+        'hint' => '이 거래(차량)에만 붙습니다. 바이어가 바뀌면 자동으로 지워집니다. 승인·보험과 무관한 표시입니다.',
+        'readonly' => '관리 이상만 바꿀 수 있습니다.',
+        'filter_all' => '거래 유형 전체',
+        'filter_none' => '뱃지 없음',
+    ],
     'cancel_filter' => [
         'all' => '전체',
         'active' => '매입취소(미수)',

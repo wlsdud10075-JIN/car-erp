@@ -520,6 +520,7 @@ return [
         'salesman' => 'Salesman',
         'remitter_name' => 'Remitter name',
         'remitter_id' => 'Remitter ID (from board)',
+        'deal_type' => 'Deal type (DP/FD)',
         'vin' => 'VIN',
         'engine_no' => 'Engine Type',
         'fuel_type' => 'Fuel Type',
@@ -740,6 +741,15 @@ return [
         'reopened' => 'Unpaid close undone. Confirmed loss of :amount cleared (cancel complete).',
     ],
 
+    'deal_type' => [
+        'none' => 'None',
+        'DP' => 'DP — Delay Payment',
+        'FD' => 'FD — First Deal (advance)',
+        'hint' => 'Applies to this deal (vehicle) only. Cleared automatically when the buyer changes. Display only — not approval or insurance.',
+        'readonly' => 'Managers and above only.',
+        'filter_all' => 'All deal types',
+        'filter_none' => 'No badge',
+    ],
     'cancel_filter' => [
         'all' => 'All',
         'active' => 'Cancelled (unpaid)',
