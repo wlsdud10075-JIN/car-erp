@@ -549,6 +549,33 @@ class DomesticSettlementTest extends TestCase
     }
 
     /**
+     * 사내직원 건당 — 드로어가 승계·tier 규칙을 **모델에 묻는지**(jin 2026-10-30 heymanerp 59오5691: 목록 5만 ↔ 드로어 10만).
+     * 종전 드로어는 「칸이 비면 10만」을 자기 코드로 그렸다 — 승계 5만·1억↑ 25%·100만↑ 20만이 전부 10만으로 보였다.
+     */
+    public function test_drawer_per_unit_preview_follows_inherited_and_tier_rules_like_the_model(): void
+    {
+        $this->actingAs($this->finance());
+        $emp = $this->salesman('employee', tier: true);
+
+        $inherited = $this->buyer($emp, domestic: false);
+        $inherited->update(['is_inherited' => true, 'inherited_from_salesman_id' => null]);
+        $cases = [
+            '승계 5만' => $this->settlementOf($this->soldVehicle($emp, $inherited, salePrice: 13_000_000)),
+            'tier 수출' => $this->settlementOf($this->soldVehicle($emp, $this->buyer($emp, domestic: false), salePrice: 13_000_000)),
+            '1억↑ 25%' => $this->settlementOf($this->soldVehicle($emp, $this->buyer($emp, domestic: false), salePrice: 130_000_000, extra: ['purchase_price' => 100_000_000])),
+        ];
+
+        foreach ($cases as $label => $s) {
+            $this->assertNull($s->per_unit_amount, "{$label}: 자동 건이어야 의미가 있다");
+            $m = Volt::test('erp.settlements.index')->call('openEdit', $s->id)->instance()->marginData;
+            $this->assertSame($s->settlement_amount, $m['settlementAmount'], "{$label} 정산액이 목록과 드로어에서 갈렸다");
+            $this->assertSame($s->actual_payout, $m['actualPayout'], "{$label} 실지급액 불일치");
+        }
+        $this->assertSame(Settlement::EMPLOYEE_INHERITED_AMOUNT, $cases['승계 5만']->settlement_amount, '승계 건은 5만이어야 이 테스트가 뜻이 있다');
+        $this->assertNotSame($cases['승계 5만']->settlement_amount, $cases['tier 수출']->settlement_amount);
+    }
+
+    /**
      * 내수 드로어는 「적용 비용 내역」을 안 보여준다 (jin 2026-09-08).
      * 그 표는 수출 마진에서만 빠지는 값이라, 내수에 두면 합계만 덩그러니 남아
      * 「이 574,000 이 뭐랑 더해지나」가 된다. 말소비·탁송비는 위 기준액 블록에 이미 있다.

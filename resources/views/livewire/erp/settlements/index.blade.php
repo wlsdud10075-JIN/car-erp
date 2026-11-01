@@ -589,6 +589,22 @@ new #[Layout('components.layouts.app')] class extends Component
 
     // ── 패널 마진 실시간 계산 ────────────────────────────────────
 
+    /**
+     * 드로어 미리보기용 건당 정산 — 모델과 **같은 규칙**(`Settlement::effective_per_unit_amount`)으로.
+     * 재무가 건당액을 넣었으면 그 값, 비면 자동(승계 5만 · tier · tier OFF). 승계 판정은 담당자를 봐야 하므로 `salesman_id` 를 싣는다.
+     */
+    private function perUnitPreview(Vehicle $v): Settlement
+    {
+        $preview = new Settlement(['settlement_type' => 'per_unit']);
+        $preview->salesman_id = (int) ($this->salesman_id ?: $v->salesman_id);
+        $preview->per_unit_amount = ($this->per_unit_amount ?? null) !== null && (int) $this->per_unit_amount > 0
+            ? (int) $this->per_unit_amount : null;
+        $preview->setRelation('vehicle', $v);
+        $preview->setRelation('salesman', $v->salesman);
+
+        return $preview;
+    }
+
     #[Computed]
     public function marginData(): array
     {
@@ -640,9 +656,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     $settlementAmount = $pct > 0 ? (int) (floor($operatingProfit * $pct / 100 / 10) * 10) : 0;
                 }
             } else {
-                $settlementAmount = ($this->per_unit_amount ?? null) !== null && (int) $this->per_unit_amount > 0
-                    ? (int) $this->per_unit_amount
-                    : Settlement::EMPLOYEE_PER_UNIT_DEFAULT;
+                $settlementAmount = (int) $this->perUnitPreview($v)->settlement_amount;
             }
         } elseif ($this->settlement_type === 'ratio') {
             $ratio = ($this->settlement_ratio ?? null) !== null && (float) $this->settlement_ratio > 0
@@ -650,9 +664,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 : \App\Models\Settlement::FREELANCE_RATIO_DEFAULT;
             $settlementAmount = (int) ($totalMargin * ($ratio / 100));
         } elseif ($this->settlement_type === 'per_unit') {
-            $settlementAmount = ($this->per_unit_amount ?? null) !== null && (int) $this->per_unit_amount > 0
-                ? (int) $this->per_unit_amount
-                : \App\Models\Settlement::EMPLOYEE_PER_UNIT_DEFAULT;
+            // 🔑 건당액은 **모델에 묻는다** — 승계 5만 · tier(매입 1억↑ 25%, 총마진 100만↑ 20만) · tier OFF 10만을 여기 옮겨 적지 말 것(§8 #45).
+            //    종전엔 「칸이 비면 10만」으로 그려서 승계 건이 목록 5만 ↔ 드로어 10만으로 갈렸다(jin 2026-10-30 heymanerp 59오5691).
+            //    내수 블록(아래)이 이미 같은 방식이다.
+            $settlementAmount = (int) $this->perUnitPreview($v)->settlement_amount;
         }
 
         // 🏠 내수(국내 판매) — 수출 마진 체인을 **통째로 갈아탄다** (jin 2026-09-08).
@@ -2841,7 +2856,8 @@ new #[Layout('components.layouts.app')] class extends Component
                     @if($s->settlement_type === 'ratio')
                         {{ __('settlement.ratio_unit', ['ratio' => number_format($s->settlement_ratio, 1)]) }}
                     @else
-                        {{ __('settlement.per_unit_unit', ['amount' => number_format($s->per_unit_amount)]) }}
+                        {{-- 자동 건이면 per_unit_amount 가 NULL 이라 ₩0 으로 찍혔다 — 실제 적용 건당액(승계·tier 반영)을 보인다 (jin 2026-10-30) --}}
+                        {{ __('settlement.per_unit_unit', ['amount' => number_format($s->effective_per_unit_amount)]) }}
                     @endif
                 </td>
                 {{-- 매입가 — tier 기준값(₩1억 이상이면 총마진×25%). 1억↑은 강조. --}}
