@@ -85,6 +85,8 @@ ssancar 가 그걸 질문(Q18 — *"화면에 뭐라고 쓸까"*)으로 받았�
 - ✅ **2단계 dev 완료(2026-11-01, dev `289309a8`·`b6dfe1e6`)** — `/buyers` 행에 `website·office_address·city·whatsapp_phone·photo_url·photo_updated_at·map_name_public·api_linked`. ERP 입력 = 바이어 편집 창 「포털·지도 정보」(사진/로고·홈페이지·주소·도시·WhatsApp 은 실무자, 공개지도 동의·API 연동은 관리 이상). WhatsApp 은 ssancar 에 데이터 없음(2,341명 전부 빈칸) → ERP 기입. `salesman_email` 제외.
   - 🖼️ **photo_url = ERP 도메인 서명 링크**(`/api/internal/portal/buyers/{id}/photo?expires&signature`, 60분, `signed` 미들웨어, HMAC 그룹 밖, throttle `portal-docs`) — 🚫 S3 temporaryUrl 아님: ssancar fetcher(`bn_ep_get`)가 **ERP base 호스트만** 받고 리다이렉트 금지. 바이트로 MIME 판정(image/* 만). 사이트는 받자마자 WebP 사본 저장, `photo_updated_at` 바뀔 때만 재요청.
   - 로컬 e2e(8001, ssancar 11-01): 8키 수신 · 사진 2/2 사본 · 지도 행 반영. 지오코딩은 로컬 IP 제한 키라 운영에서만.
+  - ✅ 운영 배포 master `cb3d8ba4`(11-01 저녁) → ssancar 수동 pull: heymanerp 34 · ssancarerp 431 바이어, 8키 전부 수신, profiles 465 · consignees 630 · photo 0(실무자 기입 전).
+  - 🅿️ **낮은 우선순위(ssancar 제안, jin 미결)**: `map_name_public` 이 「안 물음」도 `false` 로 나가 사이트 쪽 동의 스위치를 덮을 수 있다(10/22 규칙 = ERP 값 우선, 지금은 사이트 동의 0건이라 영향 0). 「안 물은 바이어 = null」 3상태로 바꾸려면 `buyers.map_name_public` nullable 마이그 + 화면 3택. jin 결정 뒤 다음 손볼 때.
 - 실측(10-30): 바이어 전화 채움 ssancarerp 344/415 · heymanerp 21/28 / 컨사이니 전화 461/594 · 25/31 / 바이어당 활성 컨사이니 0·1·2+ = 10·297·108 / 2·23·3.
 - 가드 = `PortalBuyerApiTest` +3(9칸 모양·금지 칸 누설·활성/삭제/빈 배열·is_bl·last_used_at). 배포 = jin 승인 대기.
 
