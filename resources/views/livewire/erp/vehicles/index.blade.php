@@ -2529,7 +2529,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         return [
             'DP' => (clone $base)->dealType('DP')->count(),
             'FD' => (clone $base)->dealType('FD')->count(),
-            'none' => (clone $base)->dealType('none')->count(),
         ];
     }
 
@@ -8285,7 +8284,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             @foreach([
                 ['val' => 'DP', 'label' => 'DP', 'title' => \App\Models\Vehicle::DEAL_TYPES['DP']['title'], 'on' => 'bg-purple-600 text-white shadow-sm', 'off' => 'bg-purple-100 text-purple-700 hover:bg-purple-200'],
                 ['val' => 'FD', 'label' => 'FD', 'title' => \App\Models\Vehicle::DEAL_TYPES['FD']['title'], 'on' => 'bg-blue-600 text-white shadow-sm', 'off' => 'bg-blue-100 text-blue-700 hover:bg-blue-200'],
-                ['val' => 'none', 'label' => __('vehicle.deal_type.filter_none'), 'title' => __('vehicle.deal_type.filter_none_hint'), 'on' => 'bg-gray-600 text-white shadow-sm', 'off' => 'bg-gray-100 text-gray-600 hover:bg-gray-200'],
             ] as $d)
             @php $isOn = $dealFilter === $d['val']; @endphp
             <button type="button" wire:click="toggleDeal('{{ $d['val'] }}')" title="{{ $d['title'] }}{{ $isOn ? __('domain.sailing_hint_on') : '' }}"
@@ -8747,14 +8745,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endforeach
                         </span>
                     @endif
-                    {{-- 🏷️ DP/FD — 차종 컬럼이 꺼져 있을 때만 여기(차량번호 옆)에 그린다(jin 11-01 «차량관리에 안 보이네» — 그 컬럼은 끌 수 있다). 켜져 있으면 차종 옆 하나만. --}}
-                    <span x-show="!visible['brand_model']" x-cloak><x-erp.deal-badge :type="$v->deal_type" /></span>
+                    {{-- 🏷️ DP/FD — 바이어 컬럼이 꺼져 있을 때만 여기(차량번호 옆)에 그린다(그 컬럼은 끌 수 있다). 켜져 있으면 바이어 옆 하나만(jin 11-01). --}}
+                    <span x-show="!visible['buyer']" x-cloak><x-erp.deal-badge :type="$v->deal_type" /></span>
                 </td>
                 @php if ($this->colOn('brand_model')): @endphp<td class="py-3 pr-4 text-gray-700" x-show="visible['brand_model']">
                     {{ $v->brand }} {{ $v->model_type }}
                     @if($v->year)<span class="text-xs text-gray-400">({{ $v->year }})</span>@endif
-                    {{-- 🏷️ DP/FD (jin 2026-11-01 — 차종 옆. ⚠️ 이 컬럼을 끄면 뱃지도 같이 안 보인다) --}}
-                    <x-erp.deal-badge :type="$v->deal_type" />
                 </td>@php endif; @endphp
                 @php if ($this->colOn('vin')): @endphp<td class="py-3 pr-4 font-mono text-xs text-gray-600" x-show="visible['vin']">{{ $v->nice_reg_vin ?: '-' }}</td>@php endif; @endphp
                 <td class="py-3 pr-4">
@@ -8799,7 +8795,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @php if ($this->colOn('shipping_fee')): @endphp<td class="py-3 pr-4 text-right text-gray-600" x-show="visible['shipping_fee']">{{ $v->shipping_fee_total_cache ? number_format($v->shipping_fee_total_cache) : '-' }}</td>@php endif; @endphp
                 <td class="py-3 pr-4 text-gray-500">{{ $v->salesman?->name ?? '-' }}</td>
                 @php if ($this->colOn('purchase_from')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['purchase_from']">{{ $v->purchase_from ?: '-' }}</td>@php endif; @endphp
-                @php if ($this->colOn('buyer')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}</td>@php endif; @endphp
+                @php if ($this->colOn('buyer')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['buyer']">{{ $v->buyer?->name ?? '-' }}{{-- 🏷️ DP/FD = 그 바이어와의 거래 표시라 바이어 옆(jin 11-01) --}}<x-erp.deal-badge :type="$v->deal_type" /></td>@php endif; @endphp
                 @php if ($this->colOn('consignee')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['consignee']">{{ $v->effective_consignee?->name ?? '-' }}</td>@php endif; @endphp
                 @php if ($this->colOn('sales_channel')): @endphp<td class="py-3 pr-4 text-gray-500" x-show="visible['sales_channel']">{{ $v->sales_channel ? __('domain.channel.'.$v->sales_channel) : '-' }}</td>@php endif; @endphp
                 @php if ($this->colOn('currency_rate')): @endphp<td class="py-3 pr-4 text-right text-gray-500 text-xs" x-show="visible['currency_rate']">
