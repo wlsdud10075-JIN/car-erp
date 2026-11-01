@@ -549,6 +549,7 @@ return [
         'b2b_contract_uploaded' => 'B2B 계약서 업로드',
         'b2b_contract_superseded' => 'B2B 계약서 교체(원본 보관)',
         'b2b_contract_read' => 'B2B 계약서 열람',
+        'buyers_portal_backfill' => '바이어 포털 칸 일괄 채움 (주소→사무실주소·도시, 전화→WhatsApp)',   // 2026-11-01 buyers:backfill-portal-info
         'buyer_rebound' => '바이어 재연결(삭제된 바이어 정리)',
         'payout_incentive_added_via_link' => '인센티브 추가(승인 링크)',
         'contract_signed' => '전자서명 완료',
