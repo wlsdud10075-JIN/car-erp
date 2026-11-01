@@ -267,6 +267,37 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    /** 🏷️ 거래 유형 토글 DP/FD/none — 차량관리와 같은 버튼. ⚠️ 메서드명 ≠ 프로퍼티명(§8 #32). */
+    public function toggleDeal(string $val): void
+    {
+        if ($val !== 'none' && ! array_key_exists($val, Vehicle::DEAL_TYPES)) {
+            return;
+        }
+        $this->dealFilter = ($this->dealFilter === $val) ? '' : $val;
+        unset($this->vehicles, $this->dealCounts);
+        $this->resetPage();
+    }
+
+    /** 토글 옆 숫자 = 그 유형에서 미수가 남은 차 대수·미수 합계 — 운항 토글과 같은 규칙(이 토글 제외 현재 필터). */
+    #[Computed]
+    public function dealCounts(): array
+    {
+        $saved = $this->dealFilter;
+        $this->dealFilter = '';
+        try {
+            $base = $this->buildQuery(false)->where('sale_unpaid_amount_krw_cache', '>', 0);
+        } finally {
+            $this->dealFilter = $saved;
+        }
+        $out = [];
+        foreach (['DP', 'FD', 'none'] as $val) {
+            $q = (clone $base)->dealType($val);
+            $out[$val] = ['count' => (clone $q)->count(), 'unpaid_krw' => (int) (clone $q)->sum('sale_unpaid_amount_krw_cache')];
+        }
+
+        return $out;
+    }
+
     /**
      * 운항 토글 옆 숫자 = 그 단계에서 **미수가 남은 차** 대수·미수 합계(원화) — 토글을 제외한 현재 필터 기준.
      *   「전체 몇 대」가 아니라 미수 대수를 보여 주는 이유 = 채권관리에서 묻는 건 「배 위/도착한 차 중 받을 돈」이라서.
@@ -1429,12 +1460,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="{{ $s }}">{{ __('domain.progress.'.$s) }}</option>
             @endforeach
         </select>
-        {{-- 🏷️ 거래 유형 DP/FD 필터 (B2B 파트너스, jin 2026-11-01) --}}
-        <select wire:model.live="dealFilter" class="input-filter">
-            <option value="">{{ __('receivable.deal_type_all') }}</option>
-            @foreach(\App\Models\Vehicle::DEAL_TYPES as $dk => $dm)<option value="{{ $dk }}">{{ $dm['label'] }} — {{ $dm['title'] }}</option>@endforeach
-            <option value="none">{{ __('receivable.deal_type_none') }}</option>
-        </select>
         <select wire:model.live="riskFilter" class="input-filter">
             <option value="">{{ __('receivable.all_risk') }}</option>
             <option value="grace">{{ __('receivable.risk.grace') }}</option>
@@ -1473,6 +1498,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                     title="{{ __('receivable.sailing_hint') }}{{ $isOn ? __('domain.sailing_hint_on') : '' }}"
                     class="rounded-full px-2.5 py-0.5 text-xs transition {{ $isOn ? $s['on'].' font-semibold' : $s['off'].' font-medium' }}">
                 {{ $isOn ? '✓ ' : '' }}{{ $s['icon'] }} {{ $s['label'] }} ({{ number_format($sc['count']) }}{{ $sc['unpaid_krw'] > 0 ? ' · '.\App\Support\Money::krwShort($sc['unpaid_krw']) : '' }})
+            </button>
+            @endforeach
+        </div>
+        {{-- 🏷️ 거래 유형 DP/FD 토글 (B2B 파트너스, jin 2026-11-01 «드롭박스보단 뱃지 필터») — 운항 토글과 같은 모양·직교 축.
+             색은 뱃지와 같은 보라/파랑(빌드 CSS 에 있음, §8 #50). 숫자 = 현재 필터(이 토글 제외) 기준 대수. --}}
+        <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3" data-deal-pills>
+            @foreach([
+                ['val' => 'DP', 'label' => 'DP', 'title' => \App\Models\Vehicle::DEAL_TYPES['DP']['title'], 'on' => 'bg-purple-600 text-white shadow-sm', 'off' => 'bg-purple-100 text-purple-700 hover:bg-purple-200'],
+                ['val' => 'FD', 'label' => 'FD', 'title' => \App\Models\Vehicle::DEAL_TYPES['FD']['title'], 'on' => 'bg-blue-600 text-white shadow-sm', 'off' => 'bg-blue-100 text-blue-700 hover:bg-blue-200'],
+                ['val' => 'none', 'label' => __('vehicle.deal_type.filter_none'), 'title' => __('vehicle.deal_type.filter_none_hint'), 'on' => 'bg-gray-600 text-white shadow-sm', 'off' => 'bg-gray-100 text-gray-600 hover:bg-gray-200'],
+            ] as $d)
+            @php $isOn = $dealFilter === $d['val']; @endphp
+            <button type="button" wire:click="toggleDeal('{{ $d['val'] }}')" title="{{ $d['title'] }}{{ $isOn ? __('domain.sailing_hint_on') : '' }}"
+                    class="rounded-full px-2.5 py-0.5 text-xs transition {{ $isOn ? $d['on'].' font-semibold' : $d['off'].' font-medium' }}">
+                {{ $isOn ? '✓ ' : '' }}{{ $d['label'] }} ({{ number_format($this->dealCounts[$d['val']]['count'] ?? 0) }}{{ ($this->dealCounts[$d['val']]['unpaid_krw'] ?? 0) > 0 ? ' · '.\App\Support\Money::krwShort($this->dealCounts[$d['val']]['unpaid_krw']) : '' }})
             </button>
             @endforeach
         </div>

@@ -80,8 +80,8 @@ class B2bPartnersTest extends TestCase
 
         $html = Volt::test('erp.vehicles.index')->set('dateType', 'all')->html();
 
-        // 차량관리는 같은 행을 두 번 그린다(데스크탑 표 + 모바일 카드) — 지정한 차 1대 × 2곳. 지정 안 한 차는 0.
-        $this->assertSame(2, substr_count($html, 'data-deal-badge="DP"'), '지정한 차 하나 × 렌더 2곳(표·모바일 카드)');
+        // 차량관리는 같은 행을 세 자리에 그린다 — 데스크탑 차종 셀 + 차량번호 셀(차종 컬럼을 껐을 때만 x-show) + 모바일 카드. 지정 안 한 차는 0.
+        $this->assertSame(3, substr_count($html, 'data-deal-badge="DP"'), '지정한 차 하나 × 렌더 3곳(차종 셀·차량번호 셀 폴백·모바일 카드)');
         $this->assertStringContainsString(Vehicle::DEAL_TYPES['DP']['title'], $html, '호버 전체 명칭');
         $this->assertStringContainsString('bg-purple-100 text-purple-700', $html);
         $this->assertStringNotContainsString('data-deal-badge="FD"', $html);
@@ -96,13 +96,17 @@ class B2bPartnersTest extends TestCase
         $fd = $this->vehicle('22나2002', $sm, $b, ['deal_type' => 'FD', 'sale_price' => 10_000, 'sale_date' => now()->toDateString()]);
         $plain = $this->vehicle('33다3003', $sm, $b, ['sale_price' => 10_000, 'sale_date' => now()->toDateString()]);
 
-        Volt::test('erp.vehicles.index')->set('dateType', 'all')->set('dealFilter', 'DP')
+        // 토글 뱃지(운항 토글과 같은 모양) — 같은 걸 다시 누르면 해제
+        $c = Volt::test('erp.vehicles.index')->set('dateType', 'all')->call('toggleDeal', 'DP')
+            ->assertSet('dealFilter', 'DP')
             ->assertSee('11가1001')->assertDontSee('22나2002')->assertDontSee('33다3003');
+        $this->assertSame(['DP' => 1, 'FD' => 1, 'none' => 1], $c->instance()->dealCounts, '토글 옆 숫자 = 이 토글 제외 현재 필터 기준');
+        $c->call('toggleDeal', 'DP')->assertSet('dealFilter', '')->assertSee('22나2002');
         Volt::test('erp.vehicles.index')->set('dateType', 'all')->set('dealFilter', 'none')
             ->assertSee('33다3003')->assertDontSee('11가1001')->assertDontSee('22나2002');
 
         // 채권관리 — 같은 축. 미수 > 0 인 차만 목록에 있으므로 판매가를 넣었다.
-        $r = Volt::test('erp.receivables.index')->set('dealFilter', 'FD');
+        $r = Volt::test('erp.receivables.index')->call('toggleDeal', 'FD');
         $r->assertSee('22나2002')->assertDontSee('11가1001')->assertDontSee('33다3003');
         $this->assertStringContainsString('data-deal-badge="FD"', $r->html(), '채권관리에도 같은 뱃지');
     }
