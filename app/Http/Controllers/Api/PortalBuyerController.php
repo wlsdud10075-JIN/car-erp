@@ -8,6 +8,7 @@ use App\Models\Consignee;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * ssancar.com 바이어 포털 — 바이어 명부 읽기 (2026-08-28, 요청서 `전달패킷_ssancar→ERP_2026-08-28`).
@@ -54,6 +55,8 @@ class PortalBuyerController extends Controller
      */
     private const COLUMNS = [
         'id', 'name', 'country_id', 'contact_email', 'contact_phone', 'is_active', 'deleted_at',
+        // 🗺️ 2단계 (jin 2026-11-01, v1.20 §25) — 지도·카드 재료. 🚫 is_b2b_partner·deal_type·계약서는 **안 나간다**(요청서 05).
+        'website', 'office_address', 'city', 'whatsapp_phone', 'photo_path', 'photo_updated_at', 'map_name_public', 'api_linked',
         // 🚨 `salesman_id` 는 **관계 매칭용이지 발행 대상이 아니다**(`country_id` 와 같은 취급).
         //    `select()` 가 목록을 통째로 갈아치우므로 부모 FK 를 안 실으면 `belongsTo` 가
         //    **전 행 조용히 null** 이 된다 — 예외도 경고도 없다. `row()` 는 이 값을 안 내보낸다.
@@ -153,9 +156,35 @@ class PortalBuyerController extends Controller
             'erp_deleted' => $b->trashed(),
             // 📞 연락처 (2026-10-30 jin 개방 — 클래스 docblock). 원문 그대로 — 포맷·wa.me 링크는 사이트가 만든다.
             'contact_phone' => $b->contact_phone,
-            'whatsapp_phone' => null,   // 1단계: 칸 없음. 비면 사이트가 contact_phone 을 쓴다(합의).
+            // 🗺️ 2단계 (2026-11-01) — WhatsApp 은 전화와 다를 때만 값이 있고, 비면 사이트가 contact_phone 을 쓴다(합의).
+            'whatsapp_phone' => $b->whatsapp_phone ?: null,
+            'website' => $b->website ?: null,
+            'office_address' => $b->office_address ?: null,
+            'city' => $b->city ?: null,
+            // 사진/로고 — 15분 서명 URL(`/files` 와 같은 방식). 사이트는 받자마자 사본을 저장하고 photo_updated_at 이 바뀔 때만 다시 받는다.
+            'photo_url' => $this->photoUrl($b),
+            'photo_updated_at' => $b->photo_updated_at?->toIso8601String(),
+            // 공개 지도 회사명·로고 노출 동의(영업이 바이어 확인 뒤 켬, 기본 false) · API 연동 바이어 표시용
+            'map_name_public' => (bool) $b->map_name_public,
+            'api_linked' => (bool) $b->api_linked,
             'consignees' => $b->consignees->map(fn (Consignee $c) => self::consigneeRow($c, $blUse))->values()->all(),
         ];
+    }
+
+    /** 사진/로고 서명 URL — 파일이 없으면 null(깨진 링크보다 빈 값). 로컬 public 디스크는 영구 URL. */
+    private function photoUrl(Buyer $b): ?string
+    {
+        if (! $b->photo_path) {
+            return null;
+        }
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        if (! $disk->exists($b->photo_path)) {
+            return null;
+        }
+
+        return $disk->providesTemporaryUrls()
+            ? $disk->temporaryUrl($b->photo_path, now()->addMinutes(15))
+            : $disk->url($b->photo_path);
     }
 
     /** 컨사이니 한 명 → 포털 카드 재료. 🚫 memo·id_value·tax_number·eori_number 는 넣지 않는다. */
