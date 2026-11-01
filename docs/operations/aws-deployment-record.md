@@ -935,6 +935,15 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-01 (저녁) — master `cb3d8ba4` · **마이그 1** (jin «배포해줘», 코드 커밋 8개 cherry-pick — B2B 파트너스 1차 + ssancar 포털 2단계)
+
+dev `4e4d2496`·`6b5ed17c`·`289309a8`·`9da40b92`·`b6dfe1e6`·`a3d59ad0`·`d4737015`·`32ab5285` → master `33ef0be0`…`cb3d8ba4`. ⚠️ 7번째 커밋에 dev 전용 `docs/design/b2b-partners-2026-10-30.md` 가 섞여 modify/delete 로 멈췄는데 `&&` 사슬의 파이프가 exit 를 지워 **6/8 상태(`1d3664f0`)로 1차 push·배포**가 먼저 나갔다(full10 통과본이라 동작 정상) → 충돌 해소(삭제 유지) 후 2개 이어 올려 `cb3d8ba4` 로 닫음. SKILLS §8 #132.
+1. **B2B 파트너스 1차**(강지나 부장 요청서 10-29, jin 11-01 확정 — `docs/design/b2b-partners-2026-10-30.md`): 바이어 패널 「특수계약 관리대상」(관리 이상, 감사) · 계약서 N건 업로드/교체(보관 `superseded_at`)/열람(감사) · 사이드바 「B2B 파트너스」 = 바이어 관리 `?b2b=1` · 목록 B2B 뱃지 + DP/FD 개수(차량에서 센다). 차량 판매 탭 「거래 유형」 DP/FD(관리 이상, 영업은 읽기 — 키를 안 실어 값 보존) · 바이어 변경 시 자동 해제(감사 `deal_type_cleared_on_buyer_change`) · 뱃지 = 차량관리 **바이어 옆**(바이어 컬럼 꺼지면 차량번호 옆) · 채권관리 차종 옆 · 운항 토글식 DP/FD 버튼(대수, 채권은 미수 합계) · 내보내기 `deal` 미러. 「뱃지 없음」 버튼 없음(기존 바이어 = 기본)
+2. **ssancar 포털 2단계**: `/buyers` 행에 website·office_address·city·whatsapp_phone·photo_url·photo_updated_at·map_name_public·api_linked. 바이어 패널 「포털·지도 정보」(실무자 기입, 공개지도 동의·API 연동은 관리 이상). **photo_url = ERP 도메인 서명 링크**(60분, `signed`, HMAC 그룹 밖, 바이트 MIME 판정) — ssancar fetcher 가 ERP 호스트만 받음. 🚫 관리대상·DP/FD·계약서는 포털 비노출(테스트)
+3. 마이그 `2026_11_01_000001`: buyers 9칸(bool default/nullable) · vehicles.deal_type string(2) index · buyer_documents 신규 — 3사 안전
+- 확인: 로컬 병렬 3,596 pass(실패 0) · 새 테스트 13(B2B 11 + 포털 2) · ssancar 로컬 e2e 2회 통과 · deploy 런 41295598613 잡 5 success · 3사 SHA `cb3d8ba4` · `/login` 200 ×3
+- jin 몫: 강지나 부장께 완료 안내(요청서 07 기준 6개 충족) · 실무자에게 바이어 포털 정보(사진·홈페이지·WhatsApp) 기입 안내 · 채권관리 뱃지 위치(차종 옆 유지 여부) · B2B 2차(보험 가입 특수계약 별도 관리) 범위는 추후
+
 ## 2026-11-01 (점심) — master `ece49295` · 마이그 0 (jin «배포해주고», 코드 커밋 2개 cherry-pick)
 
 dev `5cfb0172`·`45620a9d` → master `d1c2eb60`·`ece49295`.
