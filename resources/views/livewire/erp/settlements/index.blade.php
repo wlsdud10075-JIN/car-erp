@@ -700,10 +700,10 @@ new #[Layout('components.layouts.app')] class extends Component
             ? \App\Models\Settlement::FREELANCE_DOCUMENT_FEE
             : 0;
 
-        // 서류 발송비(우체국 EMS + DHL) — 타입 무관 전액 차감 (jin 2026-08-31).
-        //   ⚠️ 여기 안 빼면 **미리보기와 실제 지급액이 갈린다** — 화면엔 X 인데 지급은 X−발송비.
-        //   단일 출처는 Settlement::getActualPayoutAttribute 이고 이 블록은 그 미리보기다.
-        $shippingFee = (int) ($v->shipping_fee_total ?? 0);
+        // 서류 발송비(우체국 EMS + DHL) — 🔀 2026-11-01 (jin) **비율(프리랜서)만 실지급에서 뺀다.** 건당(사내직원)은 발송비를
+        //   건당 판정 마진에서 보고(perUnitPreview → 모델) 실지급에선 안 뺀다 → 미리보기 「− 발송비」 줄도 비율일 때만.
+        //   ⚠️ 여기 안 맞추면 **미리보기와 실제 지급액이 갈린다**. 단일 출처 = Settlement::shippingFeeDeducted().
+        $shippingFee = $this->settlement_type === 'ratio' ? (int) ($v->shipping_fee_total ?? 0) : 0;
 
         $actualPayout = $settlementAmount - $documentFee - $shippingFee - (int) ($this->other_deduction ?? 0);
 

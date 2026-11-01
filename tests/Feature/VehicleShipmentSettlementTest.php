@@ -155,21 +155,58 @@ class VehicleShipmentSettlementTest extends TestCase
     }
 
     /**
-     * 사내직원은 정산액이 총마진과 무관해 「총마진 차감」으로는 **아무 일도 안 일어난다**.
-     * ssancarerp 실측 1,662 건이 그 상태가 될 뻔했다 — 그래서 정산액 옆에서 뺀다.
+     * 🔀 2026-11-01 (jin) — 사내직원(건당)은 **건당액을 안 건드린다.** 발송비는 건당 판정 마진(총마진 − 발송비)에서만 보고
+     * 실지급에서 빼지 않는다 — 회사가 진다. 구(08-31) 「두 유형 전액 차감」은 손해차량에 발송비만 빠져 마이너스 지급을 만들었다
+     * (heymanerp 실측 미지급 17건 전부, −9,579 등 4건 마이너스).
      */
-    public function test_employee_payout_drops_by_the_full_shipping_fee_too(): void
+    public function test_employee_payout_is_not_reduced_by_the_shipping_fee(): void
     {
         $v = $this->vehicle();
         $s = $this->settlement($v, 'per_unit');
 
         $before = $s->actual_payout;
         $this->assertGreaterThan(0, $before);
+        $companyBefore = $s->company_net;
 
         $v->shipments()->create(['carrier' => 'dhl', 'tracking_no' => '74028', 'fee' => 30_000]);
         $s = $s->fresh()->load('vehicle');
 
-        $this->assertSame($before - 30_000, $s->actual_payout);
+        $this->assertSame($before, $s->actual_payout, '건당은 발송비로 안 깎인다');
+        $this->assertSame(30_000, $s->shipping_fee, '발송비 자체는 기록된다(회사이익에서 뺀다)');
+        $this->assertSame($companyBefore - 30_000, $s->company_net, '회사가 진다 — 회사이익이 그만큼 준다');
+        $this->assertSame($s->total_margin - $s->actual_payout - 30_000, $s->company_net);
+    }
+
+    /** 손해차량(총마진 − 발송비 < 0): 건당 0 이고 실지급도 0 — 발송비만 빠진 마이너스(−30,000)가 나가면 안 된다. */
+    public function test_employee_with_negative_margin_gets_zero_not_minus_shipping(): void
+    {
+        $v = $this->vehicle(['sale_price' => 9_000_000]);   // 총마진 −90,000
+        $s = $this->settlement($v, 'per_unit');
+        $this->assertLessThan(0, $s->total_margin);
+        $this->assertSame(0, $s->actual_payout);
+
+        $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'ED2KR', 'fee' => 30_000]);
+        $s = $s->fresh()->load('vehicle');
+
+        $this->assertSame(0, $s->settlement_amount);
+        $this->assertSame(0, $s->actual_payout, '손해차량에 발송비만 빠져 −30,000 이 나가던 것(구 규칙)');
+    }
+
+    /** 건당 차등은 「총마진 − 발송비」로 판정한다 — 발송비가 100만 경계를 넘기면 20만 → 10만. 승계 5만은 양수면 그대로. */
+    public function test_employee_tier_is_judged_on_margin_minus_shipping(): void
+    {
+        $tierOn = Salesman::create(['name' => 'TIER', 'is_active' => true, 'type' => 'employee', 'per_unit_tier_enabled' => true]);
+        $v = $this->vehicle(['sale_price' => 10_222_222]);   // 총마진 1,009,999 — 경계 바로 위
+        $s = $this->settlement($v, 'per_unit', $tierOn);
+        $this->assertGreaterThanOrEqual(1_000_000, $s->total_margin);
+        $this->assertSame(200_000, $s->settlement_amount);
+
+        $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'ED3KR', 'fee' => 30_000]);
+        $s = $s->fresh()->load('vehicle');
+
+        $this->assertSame(100_000, $s->settlement_amount, '1,009,999 − 30,000 < 100만 → 10만');
+        $this->assertSame(100_000, $s->actual_payout, '건당 그대로 — 발송비는 안 뺀다');
+        $this->assertGreaterThanOrEqual(1_000_000, $s->total_margin, '총마진 자체는 안 움직인다(회사이익·카드가 쓴다)');
     }
 
     public function test_company_borne_shipment_keeps_the_number_but_costs_nobody(): void
