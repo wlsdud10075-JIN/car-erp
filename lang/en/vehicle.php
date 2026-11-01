@@ -748,8 +748,6 @@ return [
         'hint' => 'Applies to this deal (vehicle) only. Cleared automatically when the buyer changes. Display only — not approval or insurance.',
         'readonly' => 'Managers and above only.',
         'filter_all' => 'All deal types',
-        'filter_none' => 'No badge',
-        'filter_none_hint' => 'Only vehicles without a deal-type badge',
     ],
     'cancel_filter' => [
         'all' => 'All',

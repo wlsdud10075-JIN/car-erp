@@ -290,7 +290,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->dealFilter = $saved;
         }
         $out = [];
-        foreach (['DP', 'FD', 'none'] as $val) {
+        foreach (['DP', 'FD'] as $val) {
             $q = (clone $base)->dealType($val);
             $out[$val] = ['count' => (clone $q)->count(), 'unpaid_krw' => (int) (clone $q)->sum('sale_unpaid_amount_krw_cache')];
         }
@@ -1507,7 +1507,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             @foreach([
                 ['val' => 'DP', 'label' => 'DP', 'title' => \App\Models\Vehicle::DEAL_TYPES['DP']['title'], 'on' => 'bg-purple-600 text-white shadow-sm', 'off' => 'bg-purple-100 text-purple-700 hover:bg-purple-200'],
                 ['val' => 'FD', 'label' => 'FD', 'title' => \App\Models\Vehicle::DEAL_TYPES['FD']['title'], 'on' => 'bg-blue-600 text-white shadow-sm', 'off' => 'bg-blue-100 text-blue-700 hover:bg-blue-200'],
-                ['val' => 'none', 'label' => __('vehicle.deal_type.filter_none'), 'title' => __('vehicle.deal_type.filter_none_hint'), 'on' => 'bg-gray-600 text-white shadow-sm', 'off' => 'bg-gray-100 text-gray-600 hover:bg-gray-200'],
             ] as $d)
             @php $isOn = $dealFilter === $d['val']; @endphp
             <button type="button" wire:click="toggleDeal('{{ $d['val'] }}')" title="{{ $d['title'] }}{{ $isOn ? __('domain.sailing_hint_on') : '' }}"
