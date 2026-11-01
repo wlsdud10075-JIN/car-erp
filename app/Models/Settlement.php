@@ -1108,6 +1108,11 @@ class Settlement extends Model
      */
     public function autoPerUnitAmountAt(int $totalMargin): int
     {
+        // 📮 2026-11-01 (jin) — 건당 판정은 **총마진 − 발송비** 로. 발송비를 실지급에서 빼지 않는 대신 여기서 본다:
+        //    음수면 건당 0(손해차량 + 발송비는 회사 부담), 양수면 그 금액으로 차등(100만·1억 경계). 승계 5만도 음수면 0.
+        //    `total_margin` 자체는 안 바꾼다 — 회사이익·월정산 카드·대시보드가 그 값을 쓴다(발송비는 거기서 따로 뺀다).
+        $totalMargin -= $this->shipping_fee;
+
         // NULL = 자동 차등 tier (2026-06-22 jin 확정). 매입합계(구입금액+매도비)·총마진 기준 (엑셀 BX=R열).
         $tier = self::employeePerUnitTier(
             $totalMargin,
@@ -1301,6 +1306,12 @@ class Settlement extends Model
         return (int) ($this->vehicle?->shipping_fee_total ?? 0);
     }
 
+    /** 실지급에서 실제로 빠지는 발송비 — 비율(프리랜서·바이어 비율)만. 건당은 0(회사 부담, 판정 마진에서만 본다). jin 2026-11-01. */
+    public function shippingFeeDeducted(): int
+    {
+        return $this->settlement_type === 'ratio' ? $this->shipping_fee : 0;
+    }
+
     /**
      * 이 정산 1건의 **회사 몫** — 회사이익 공식의 단일 출처 (2026-08-31).
      *
@@ -1449,7 +1460,11 @@ class Settlement extends Model
      */
     public function getActualPayoutAttribute(): int
     {
-        $base = $this->settlement_amount - $this->document_fee - $this->shipping_fee - (int) ($this->other_deduction ?? 0);
+        // 📮 발송비(EMS·DHL) — 🔀 2026-11-01 (jin) **프리랜서(비율)만 실지급에서 뺀다.** 사내직원(건당)은 건당액을 안 건드리고
+        //    발송비를 「건당 판정 마진」(총마진 − 발송비, autoPerUnitAmountAt)에서 본다 — 음수면 건당 0, 발송비는 회사가 진다.
+        //    구(08-31): 두 유형 전액 차감 → 손해차량에 발송비만 빠져 −9,579 같은 마이너스 지급이 났다(heymanerp 실측 4건).
+        //    🚫 바이어 비율(5:5·7:3)로 받는 사내직원은 타입이 ratio 라 프리랜서와 같이 뺀다(jin 11-01 «그대로»).
+        $base = $this->settlement_amount - $this->document_fee - $this->shippingFeeDeducted() - (int) ($this->other_deduction ?? 0);
 
         // 캐리오버 — 전월 이월액 가산 (양수면 추가 지급 / 음수면 차감)
         if ($this->carryover_in_krw !== null) {
