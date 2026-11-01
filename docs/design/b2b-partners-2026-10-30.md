@@ -2,7 +2,7 @@
 
 > 📄 원본 요청서 = `C:\Users\User\Desktop\ssancarerpDB\SSANCAR_ERP_B2B_Partners_Plan.html`(강지나 부장, 2026-10-29, 2.1MB — 참고 이미지 1장 내장).
 > 🧭 이 문서 = 2026-10-30 Claude 검토 결과 + 착수 설계. **주말(2026-11-01~02) 작업 진입점.** jin 결정 3건(§4)은 착수 때 묻는다.
-> 상태: ⏳ 착수 대기(코드 0줄). 메모리 = `project_b2b_partners_badges`.
+> 상태: ✅ **2026-11-01 구현 완료(dev)** — jin 확정: 뱃지 차종 옆 · 바이어 변경 시 자동 해제 · 메뉴 = 바이어 관리 `?b2b=1` · 권한 관리 이상. 포털 2단계(사진·홈페이지·WhatsApp·도시·사무실주소·공개지도 동의·API 연동)도 같은 커밋 묶음. 마이그 `2026_11_01_000001`. 가드 = `B2bPartnersTest`(10) · `PortalBuyerApiTest` +2. 배포 = jin 승인 대기. 메모리 = `project_b2b_partners_badges`.
 
 ## 1. 요청서 요약 (08번 「개발팀 전달 문구」 기준)
 
