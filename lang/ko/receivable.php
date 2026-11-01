@@ -57,6 +57,8 @@ return [
     'all_salesman' => '담당자 전체',
     'all_buyer' => '바이어 전체',
     'all_progress' => '진행상태 전체',
+    'deal_type_all' => '거래 유형 전체',
+    'deal_type_none' => '뱃지 없음',
     'all_risk' => '위험도 전체',
     'cancel' => [
         'all' => '전체',

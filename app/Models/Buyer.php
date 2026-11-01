@@ -30,6 +30,10 @@ class Buyer extends Model
         // 2026-09-08 jin — 내수(국내 판매) 바이어. 이 바이어로 판 차량은 내수정산으로 빠진다.
         //   🚨 원화 전용 — 외화 차량에는 붙일 수 없다(Vehicle/Buyer 양쪽 저장에서 막는다).
         'is_domestic',
+        // 2026-11-01 jin — B2B 파트너스(특수계약 관리대상) + ssancar 포털 2단계 칸. 기획 = docs/design/b2b-partners-2026-10-30.md
+        //   🚫 DP/FD 는 바이어에 저장하지 않는다 — 거래(차량) 단위 `vehicles.deal_type`. 바이어 목록은 차량에서 센 개수만 보인다.
+        'is_b2b_partner', 'website', 'office_address', 'city', 'whatsapp_phone',
+        'photo_path', 'photo_updated_at', 'map_name_public', 'api_linked',
     ];
 
     protected $casts = [
@@ -37,6 +41,10 @@ class Buyer extends Model
         'is_inherited' => 'boolean',
         'is_domestic' => 'boolean',
         'inherited_at' => 'date',
+        'is_b2b_partner' => 'boolean',
+        'map_name_public' => 'boolean',
+        'api_linked' => 'boolean',
+        'photo_updated_at' => 'datetime',
     ];
 
     /**
@@ -136,6 +144,12 @@ class Buyer extends Model
     public function inheritedFromSalesman(): BelongsTo
     {
         return $this->belongsTo(Salesman::class, 'inherited_from_salesman_id');
+    }
+
+    /** 계약서 첨부(B2B 파트너스) — 현행만 보려면 `->whereNull('superseded_at')`. */
+    public function documents(): HasMany
+    {
+        return $this->hasMany(BuyerDocument::class)->orderByDesc('id');
     }
 
     public function consignees(): HasMany

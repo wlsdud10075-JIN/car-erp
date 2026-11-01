@@ -196,6 +196,7 @@ class Vehicle extends Model
         'purchase_seller_bank', 'purchase_seller_account', 'purchase_seller_holder', 'purchase_bank_memo',
         // 2026-11 ② (jin 10-28) — 송금인 Name·ID. 차량 단위(바이어 passport_id 와 다른 사람). remitter_id 는 encrypted cast.
         'remitter_name', 'remitter_id',
+        'deal_type',   // 2026-11-01 B2B 파트너스 — DP/FD (거래별, Vehicle::DEAL_TYPES)
         // 2026-07-03 — 매도비 계좌 3컬럼 (purchase_fee_account encrypted). 매입가 계좌와 별도 주체.
         'purchase_fee_bank', 'purchase_fee_account', 'purchase_fee_holder',
         'cost_deregistration', 'cost_license', 'cost_towing', 'cost_carry',
@@ -770,6 +771,26 @@ class Vehicle extends Model
 
     public const DOCUMENT_MAX_KB = 10240;
 
+    /**
+     * 거래 유형 뱃지 (B2B 파트너스 1차, jin 2026-11-01) — 차량(거래) 단위. 바이어 지정만으로 자동 표시 ❌.
+     * DP = Delay Payment(지연 결제) · FD = First Deal(선수금 거래). 표시·필터·검증이 전부 이 상수를 본다(§8 #45).
+     * 🚫 컬럼은 string(2) — enum 으로 바꾸지 말 것(§8 #36). 🚫 포털/board 응답에 싣지 말 것(요청서 05).
+     */
+    public const DEAL_TYPES = [
+        'DP' => ['label' => 'DP', 'title' => 'Delay Payment (지연 결제)', 'class' => 'bg-purple-100 text-purple-700'],
+        'FD' => ['label' => 'FD', 'title' => 'First Deal (선수금 거래)', 'class' => 'bg-blue-100 text-blue-700'],
+    ];
+
+    /** 필터: 'DP' | 'FD' | 'none'(뱃지 없음). 그 외 값은 무시(순수 확대 안전). */
+    public function scopeDealType($q, string $val)
+    {
+        if ($val === 'none') {
+            return $q->whereNull('deal_type');
+        }
+
+        return array_key_exists($val, self::DEAL_TYPES) ? $q->where('deal_type', $val) : $q;
+    }
+
     public const AUDITED_COLUMNS = [
         // 기존
         'sale_price',
@@ -804,6 +825,7 @@ class Vehicle extends Model
         'deregistration_notice_phone',
         // 2026-11 ② (jin 10-28) — 송금인 Name·ID. board 전용 엔드포인트가 **덮어쓰는** 칸이라 누가 언제 바꿨는지 남긴다(ID 는 MASKED).
         'remitter_name', 'remitter_id',
+        'deal_type',   // 2026-11-01 — DP/FD 지정·해제는 돈 표시 규칙이라 흔적을 남긴다
         // 2026-09-17 (jin) — B/L 번호. 차량관리 「번호 일괄 기입」으로 **수십 대를 한 번에** 바꾸는
         //   입구가 생겼다. 07-28 에 shipping_date·eta_date 를 같은 이유로 등재한 것과 같다
         //   (컨테이너번호·수출신고번호는 이미 대상이었다).
@@ -970,6 +992,14 @@ class Vehicle extends Model
             //   진입점 통합(UI·import·API 전부) — 사람이 체크를 해제하는 걸 잊어도 안전하다.
             if ($vehicle->buyer_id && $vehicle->buyer_undecided) {
                 $vehicle->buyer_undecided = false;
+            }
+
+            // 🏷️ 거래 유형(DP/FD)은 「그 바이어와의 그 거래」 표시다 — 바이어가 바뀌면(재판매) 물려주지 않는다(요청서 03, jin 2026-11-01 (가)).
+            //   같은 저장에서 사람이 deal_type 을 직접 고쳤으면 그 값을 따른다. 감사 1줄로 해제를 보이게 한다.
+            if ($vehicle->exists && $vehicle->isDirty('buyer_id') && $vehicle->getOriginal('buyer_id') !== null
+                && $vehicle->deal_type !== null && ! $vehicle->isDirty('deal_type')) {
+                AuditLog::recordChange($vehicle, 'deal_type', $vehicle->deal_type, null, 'deal_type_cleared_on_buyer_change');
+                $vehicle->deal_type = null;
             }
 
             // 🚚 출고일 자동 채움 (jin 2026-08-20) — B/L 이 나왔는데 출고일이 비어 있으면 **선적일**로 채운다.

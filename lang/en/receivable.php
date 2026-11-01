@@ -53,6 +53,8 @@ return [
     'all_salesman' => 'All salesmen',
     'all_buyer' => 'All buyers',
     'all_progress' => 'All statuses',
+    'deal_type_all' => 'All deal types',
+    'deal_type_none' => 'No badge',
     'all_risk' => 'All risk levels',
     'cancel' => [
         'all' => 'All',
