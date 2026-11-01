@@ -78,7 +78,8 @@ class BuyerPortalBackfill
      */
     public static function cityFromAddress(?string $address): ?string
     {
-        $address = trim((string) $address);
+        // 보이지 않는 공백(NBSP·전각 공백·제로폭)·줄바꿈을 보통 공백으로 — 실데이터에 섞여 있으면 국가 토막 판정이 조용히 빗나간다
+        $address = trim((string) preg_replace('/[\x{00A0}\x{2000}-\x{200B}\x{202F}\x{3000}\r\n\t]+/u', ' ', (string) $address));
         if ($address === '') {
             return null;
         }

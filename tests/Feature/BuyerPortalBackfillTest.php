@@ -31,6 +31,8 @@ class BuyerPortalBackfillTest extends TestCase
             'Durrës, Albania' => 'Durrës',
             '2-1-1 Shibaura, Minato-ku, Tokyo 105-0023, Japan' => 'Tokyo',
             'ABI QARSHIA,PRIZREN,KOSOVO' => 'PRIZREN',
+            'Prishtine, Kosovo.' => 'Prishtine',
+            'Prishtine, Kosovo. ' => 'Prishtine',                 // NBSP 섞인 실데이터(heymanerp AUTO DIOR)
             // 모르는 것 — 틀린 도시보다 빈 도시
             'Prishtina' => null,                                         // 한 토막(국가 없음)
             'KOSOVO' => null,                                            // 국가뿐
