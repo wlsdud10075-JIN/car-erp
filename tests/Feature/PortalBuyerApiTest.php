@@ -343,7 +343,12 @@ class PortalBuyerApiTest extends TestCase
             'whatsapp_phone' => '+383 49 111 222', 'map_name_public' => true, 'api_linked' => true,
             'photo_path' => 'buyers/9/photo_1.png', 'photo_updated_at' => '2026-11-01 10:00:00',
         ]);
-        Storage::disk('public')->put('buyers/9/photo_1.png', 'png');
+        $im = imagecreatetruecolor(2, 2);
+        ob_start();
+        imagepng($im);
+        $png = ob_get_clean();
+        imagedestroy($im);
+        Storage::disk('public')->put('buyers/9/photo_1.png', $png);
 
         $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $b->id);
 
@@ -353,8 +358,17 @@ class PortalBuyerApiTest extends TestCase
         $this->assertSame('+383 49 111 222', $row['whatsapp_phone']);
         $this->assertTrue($row['map_name_public']);
         $this->assertTrue($row['api_linked']);
-        $this->assertNotEmpty($row['photo_url']);
+        // 🗺️ photo_url = ERP 도메인 서명 링크(합의 ①) — S3 호스트 ❌(ssancar fetcher 가 ERP base 호스트만 받는다).
+        $this->assertStringStartsWith(config('app.url').'/api/internal/portal/buyers/'.$b->id.'/photo?', $row['photo_url']);
+        $this->assertStringContainsString('signature=', $row['photo_url']);
         $this->assertStringStartsWith('2026-11-01T10:00:00', $row['photo_updated_at']);
+        // 실물 — plain GET(HMAC 헤더 없음), 리다이렉트 없이 바이트, 이미지 MIME
+        $this->get($row['photo_url'])->assertOk()->assertHeader('Content-Type', 'image/png');
+        // 변조 서명 403
+        $this->get(str_replace('signature=', 'signature=0', $row['photo_url']))->assertStatus(403);
+        // 이미지가 아닌 파일은 404(깨진 바이트를 사이트가 사본으로 저장하지 않게)
+        Storage::disk('public')->put('buyers/9/photo_1.png', 'not an image');
+        $this->get($row['photo_url'])->assertStatus(404);
 
         // 비어 있으면 null — 사이트가 「없음」으로 읽는다. 파일이 사라진 사진도 null(깨진 링크 금지).
         $empty = $this->buyer(['name' => 'Plain', 'photo_path' => 'buyers/9/missing.png']);

@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\URL;
 
 /**
  * ssancar.com 바이어 포털 — 바이어 명부 읽기 (2026-08-28, 요청서 `전달패킷_ssancar→ERP_2026-08-28`).
@@ -171,7 +172,14 @@ class PortalBuyerController extends Controller
         ];
     }
 
-    /** 사진/로고 서명 URL — 파일이 없으면 null(깨진 링크보다 빈 값). 로컬 public 디스크는 영구 URL. */
+    /** photo_url 유효시간 — ssancar sync 가 받자마자 사본을 저장한다(1시간이면 충분, 합의). */
+    public const PHOTO_URL_TTL_MINUTES = 60;
+
+    /**
+     * 사진/로고 URL — **ERP 도메인의 서명 링크**(`…/portal/buyers/{id}/photo?expires&signature`). 파일이 없으면 null(깨진 링크보다 빈 값).
+     * 🚫 S3 temporaryUrl 을 주지 말 것 — ssancar fetcher 는 ERP base 호스트만 받는다(리다이렉트도 금지). 회사별 버킷 호스트를 알릴 필요도 없어진다.
+     * 🚨 APP_URL 로 만든다(§8 #76) — 요청 호스트로 만들면 서명이 다른 호스트에 묶여 그쪽에서 403.
+     */
     private function photoUrl(Buyer $b): ?string
     {
         if (! $b->photo_path) {
@@ -181,10 +189,38 @@ class PortalBuyerController extends Controller
         if (! $disk->exists($b->photo_path)) {
             return null;
         }
+        URL::forceRootUrl(config('app.url'));
+        URL::forceScheme(parse_url((string) config('app.url'), PHP_URL_SCHEME) ?: 'https');
+        try {
+            return URL::temporarySignedRoute(
+                'api.internal.portal.buyers.photo', now()->addMinutes(self::PHOTO_URL_TTL_MINUTES), ['id' => $b->id],
+            );
+        } finally {
+            URL::forceRootUrl(null);
+            URL::forceScheme(null);
+        }
+    }
 
-        return $disk->providesTemporaryUrls()
-            ? $disk->temporaryUrl($b->photo_path, now()->addMinutes(15))
-            : $disk->url($b->photo_path);
+    /**
+     * 사진 실물 — `signed` 미들웨어가 인가(HMAC 헤더는 와도 무시, ssancar 합의 ①). 소프트삭제 바이어도 행이 나가므로 사진도 낸다.
+     * 이미지 MIME 만(ssancar 는 image/jpeg·png·webp 만 받는다) · 리다이렉트 없이 바이트 그대로 · inline.
+     */
+    public function photo(int $id)
+    {
+        $b = Buyer::withTrashed()->find($id);
+        abort_if(! $b || blank($b->photo_path), 404);
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        abort_unless($disk->exists($b->photo_path), 404);
+        $bytes = (string) $disk->get($b->photo_path);
+        // 확장자가 아니라 **바이트**로 판정한다 — 디스크 mimeType() 은 확장자 폴백이라 `.png` 이름의 텍스트도 image/png 로 답한다.
+        $mime = (string) (new \finfo(FILEINFO_MIME_TYPE))->buffer($bytes);
+        abort_unless(str_starts_with($mime, 'image/'), 404);
+
+        return response($bytes, 200, [
+            'Content-Type' => $mime,
+            'Content-Disposition' => 'inline; filename="'.rawurlencode(basename($b->photo_path)).'"',
+            'Cache-Control' => 'private, max-age=0, no-store',
+        ]);
     }
 
     /** 컨사이니 한 명 → 포털 카드 재료. 🚫 memo·id_value·tax_number·eori_number 는 넣지 않는다. */

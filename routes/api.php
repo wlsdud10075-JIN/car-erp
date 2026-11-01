@@ -93,6 +93,17 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
 | 🚫 증분·툼스톤·페이지네이션을 만들지 말 것 — 전량 pull + 차집합이 합의다(v1.2 Q7).
 |    툼스톤 없는 증분은 삭제를 영원히 못 잡는다.
 */
+/*
+| 🗺️ 바이어 사진/로고 실물 (2026-11-01, ssancar 2단계) — `/buyers` 응답의 `photo_url` 이 가리키는 곳.
+| 🚫 HMAC 그룹 밖이다 — ssancar fetcher 는 「ERP base 호스트 · 리다이렉트 없이 바로 바이트」만 받는다(S3 서명 URL 호스트 거부).
+|    인가 = Laravel 서명 쿼리(발급측 1시간 만료, APP_URL 로 생성 §8 #76). HMAC 헤더가 와도 무시(plain GET 취급 — ssancar 합의 ①).
+|    throttle 은 서류와 같은 `portal-docs`. 이미지 MIME 만 서빙(그 외 404).
+*/
+Route::get('internal/portal/buyers/{id}/photo', [PortalBuyerController::class, 'photo'])
+    ->whereNumber('id')
+    ->middleware(['signed', 'throttle:portal-docs'])
+    ->name('api.internal.portal.buyers.photo');
+
 Route::middleware([VerifyPortalReadHmac::class])
     ->prefix('internal/portal')
     ->name('api.internal.portal.')
