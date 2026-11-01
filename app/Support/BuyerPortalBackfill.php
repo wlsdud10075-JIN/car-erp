@@ -3,36 +3,117 @@
 namespace App\Support;
 
 use App\Models\Buyer;
+use App\Models\Country;
 
 /**
  * 🗺️ 바이어 「포털·지도 정보」 일괄 채움 규칙 (jin 2026-11-01 «미리보기 먼저») — 단일 출처.
  *
  * 기존 바이어 칸(주소·전화)에서 포털 칸(사무실 주소·도시·WhatsApp)을 **비어 있을 때만** 채운다.
  *  - office_address ← address 그대로.
- *  - city ← 주소에서 추출: 쉼표로 나눠 **마지막 토막(국가)을 뺀 바로 앞 토막**에서 우편번호(숫자·하이픈)를 뺀 것.
- *    토막이 2개면 앞 토막, 1개면 **모른다(null)** — 지어내지 않는다. 지도 좌표가 이 칸으로 찍히므로 결과는 사람이 본다.
+ *  - city ← 주소에서 **확신이 있을 때만** 추출(아래 `cityFromAddress`). 못 가리면 null — 지어내지 않는다. 지도 좌표가 이 칸으로 찍히므로
+ *    틀린 도시보다 빈 도시가 낫다(실무자가 채운다). 실측(2026-11-01) ssancarerp 주소 355건은 형식이 제각각이라 보수적으로 간다.
  *  - whatsapp_phone ← contact_phone (옵션 `--whatsapp`). 비워 두면 ssancar 가 전화로 WhatsApp 링크를 만들므로 기본은 안 채운다.
  * 명령 = `buyers:backfill-portal-info`(dry-run 기본 · `--apply`). 운영 미리보기 프로브도 이 클래스를 쓴다.
  */
 class BuyerPortalBackfill
 {
-    /** 주소 → 도시 추출. 못 가리면 null. */
+    /** 국가명 별칭(영문 정식명은 Country::CODE_TO_EN 에서, 한글명은 DB 에서) — 주소 토막에서 국가를 떼어내는 데 쓴다. */
+    private const COUNTRY_ALIASES = ['kosovë', 'kosova', 'kosovo', 'shqipëri', 'shqiperia', 'shqiptare', 'albania', 'deutschland', 'germany', 'nederland',
+        'netherlands', 'italia', 'italy', 'españa', 'spain', 'türkiye', 'turkey', 'uae', 'u.a.e', 'usa', 'u.s.a', 'korea', 'south korea', 'lithuania',
+        'georgia', 'moldova', 'kazakhstan', 'kyrgyzstan', 'azerbaijan', 'russia', 'france', 'norway', 'sweden', 'japan', 'mongolia', 'myanmar',
+        'cote d\'ivoire', 'ivory coast', 'belgium', 'poland', 'ukraine', 'uzbekistan', 'tajikistan', 'armenia', 'greece', 'bulgaria', 'romania', 'serbia',
+        'north macedonia', 'macedonia', 'montenegro', 'bosnia', 'croatia', 'slovenia', 'austria', 'switzerland', 'denmark', 'finland', 'estonia', 'latvia'];
+
+    /** 거리·건물·층 같은 「도시가 아닌 것」 표식 — 후보에 섞이면 모른다고 답한다. */
+    private const STREET_WORDS = ['rr.', 'rruga', 'rr ', 'str.', 'str ', 'strasse', 'straße', 'street', 'st.', 'plein', 'ulica', 'ul.', 'road', 'rd.', 'ave',
+        'avenue', 'lagja', 'lagjja', 'lgj', 'tower', 'floor', 'building', 'bulevardi', 'blvd', 'house', 'ap.', 'apt', 'kv ', 'objekt', 'pasurie', 'nd.', 'h.',
+        'poselok', 'r-n', 'district', 'township', 'tax', 'pas:', 'bp ', 'lot ', 'ilot', 'llot', 'g ', 'gatve', 'rue ', 'via ', 'nr.', 'nr ', 'no :', 'km'];
+
+    /** @var array<int,string>|null */
+    private static ?array $countries = null;
+
+    /** @return array<int,string> 소문자 국가명 집합 */
+    private static function countries(): array
+    {
+        if (self::$countries === null) {
+            $names = array_merge(array_values(Country::CODE_TO_EN), self::COUNTRY_ALIASES);
+            try {
+                $names = array_merge($names, Country::query()->pluck('name')->all());
+            } catch (\Throwable) {
+                // DB 없이(단위 테스트·프로브) 불러도 동작
+            }
+            self::$countries = array_values(array_unique(array_map(fn ($n) => mb_strtolower(trim((string) $n)), $names)));
+        }
+
+        return self::$countries;
+    }
+
+    private static function isCountry(string $segment): bool
+    {
+        $s = mb_strtolower(trim($segment, " \t.,"));
+
+        return $s !== '' && in_array($s, self::countries(), true);
+    }
+
+    /** 토막 끝(또는 앞)에 붙은 국가 단어를 떼어낸다 — 「Tauragė Lithuania」·「GEORGIA  POTI」. */
+    private static function stripCountryWord(string $segment): string
+    {
+        $words = preg_split('/\s+/u', trim($segment)) ?: [];
+        if (count($words) >= 2) {
+            if (self::isCountry(end($words))) {
+                array_pop($words);
+            } elseif (self::isCountry($words[0])) {
+                array_shift($words);
+            }
+        }
+
+        return implode(' ', $words);
+    }
+
+    /**
+     * 주소 → 도시. 확신 없으면 null.
+     *  1) 쉼표·슬래시로 토막 → 국가 토막 제거 → 남은 **마지막** 토막(유럽식 「거리, 우편번호 도시」 순서)
+     *  2) 우편번호(숫자·네덜란드식 `3088 GN`)·「p.n./nn/n.n.」(번지 없음) 제거
+     *  3) 거리 표식·숫자·4단어 초과가 남으면 모른다(null)
+     */
     public static function cityFromAddress(?string $address): ?string
     {
         $address = trim((string) $address);
         if ($address === '') {
             return null;
         }
-        $parts = array_values(array_filter(array_map('trim', explode(',', $address)), fn ($p) => $p !== ''));
-        if (count($parts) < 2) {
-            return null;   // 「Prishtina」 한 토막은 도시인지 거리인지 모른다
+        $parts = array_values(array_filter(array_map('trim', preg_split('/[,\/]/u', $address) ?: []), fn ($p) => $p !== ''));
+        $parts = array_values(array_filter($parts, fn ($p) => ! self::isCountry($p)));
+        if ($parts === []) {
+            return null;   // 「KOSOVO」 한 토막 = 국가뿐
         }
-        $cand = count($parts) >= 3 ? $parts[count($parts) - 2] : $parts[0];
-        // 우편번호·번지 제거: 숫자 덩어리(하이픈 포함)와 남는 쉼표/공백
-        $cand = preg_replace('/\b[0-9][0-9\-]*\b/u', '', $cand);
-        $cand = trim(preg_replace('/\s{2,}/u', ' ', (string) $cand), " \t,.-");
+        $hadCountry = count($parts) < count(array_filter(array_map('trim', preg_split('/[,\/]/u', $address) ?: [])));
+        $cand = self::stripCountryWord((string) end($parts));
+        // 번지 없음 표식(「nn - 15000 Obiliq」·「p.n. Rahovec」) — 우편번호보다 먼저 떼야 앞 우편번호 규칙이 닿는다
+        $cand = trim((string) preg_replace('/\b(p\.?\s?n\.?|n\.?\s?n\.?)\b/iu', '', $cand), " \t,.-–");
+        // 우편번호 — 앞(「27580 Bremerhaven」·「3088 GN Rotterdam」) 또는 뒤(「Podujevë 11000」·「Tokyo 105-0023」)
+        $cand = preg_replace('/^\s*[0-9][0-9\-]{2,}(\s?[A-Z]{2})?\s+/u', '', $cand);
+        $cand = preg_replace('/\s+[0-9][0-9\-]{2,}\s*$/u', '', (string) $cand);
+        $cand = trim(preg_replace('/\s*[-–]\s*/u', ' ', (string) $cand), " \t,.-");
+        $cand = trim(preg_replace('/\s{2,}/u', ' ', $cand));
+        if ($cand === '' || mb_strlen($cand) > 100) {
+            return null;
+        }
+        $lower = mb_strtolower($cand);
+        foreach (self::STREET_WORDS as $w) {
+            if (str_contains(' '.$lower.' ', ' '.$w) || str_contains($lower, $w.' ') || str_ends_with($lower, trim($w))) {
+                return null;
+            }
+        }
+        if (preg_match('/[0-9]/u', $cand) || count(preg_split('/\s+/u', $cand) ?: []) > 4) {
+            return null;
+        }
+        // 토막이 하나뿐이고 국가도 없었으면 거리인지 도시인지 모른다(「Prishtina Rruga B」는 위에서 걸렸고, 「cerrik elbasan」은 여기서 걸린다)
+        if (! $hadCountry && count($parts) === 1) {
+            return null;
+        }
 
-        return $cand !== '' && mb_strlen($cand) <= 100 ? $cand : null;
+        return $cand;
     }
 
     /**
