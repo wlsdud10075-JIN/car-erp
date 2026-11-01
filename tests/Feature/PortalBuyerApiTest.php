@@ -3,12 +3,14 @@
 namespace Tests\Feature;
 
 use App\Models\Buyer;
+use App\Models\BuyerDocument;
 use App\Models\Consignee;
 use App\Models\Country;
 use App\Models\Salesman;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
@@ -328,5 +330,52 @@ class PortalBuyerApiTest extends TestCase
         $card = collect($row['consignees'])->keyBy('id')[$only->id];
         $this->assertTrue($card['is_bl']);
         $this->assertSame(now()->format('Y-m-d'), $card['last_used_at']);
+    }
+
+    // ── 🗺️ 2단계 (2026-11-01, v1.20 §25) — 사진·홈페이지·주소·도시·WhatsApp·공개지도 동의·API 연동 ──
+
+    public function test_stage_two_fields_ship_and_photo_url_is_signed_or_null(): void
+    {
+        Storage::fake('public');
+        config(['filesystems.vehicle_docs_disk' => 'public']);
+        $b = $this->buyer([
+            'name' => 'Map Buyer', 'website' => 'https://example.com', 'office_address' => 'Rr. 1', 'city' => 'Prishtina',
+            'whatsapp_phone' => '+383 49 111 222', 'map_name_public' => true, 'api_linked' => true,
+            'photo_path' => 'buyers/9/photo_1.png', 'photo_updated_at' => '2026-11-01 10:00:00',
+        ]);
+        Storage::disk('public')->put('buyers/9/photo_1.png', 'png');
+
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $b->id);
+
+        $this->assertSame('https://example.com', $row['website']);
+        $this->assertSame('Rr. 1', $row['office_address']);
+        $this->assertSame('Prishtina', $row['city']);
+        $this->assertSame('+383 49 111 222', $row['whatsapp_phone']);
+        $this->assertTrue($row['map_name_public']);
+        $this->assertTrue($row['api_linked']);
+        $this->assertNotEmpty($row['photo_url']);
+        $this->assertStringStartsWith('2026-11-01T10:00:00', $row['photo_updated_at']);
+
+        // 비어 있으면 null — 사이트가 「없음」으로 읽는다. 파일이 사라진 사진도 null(깨진 링크 금지).
+        $empty = $this->buyer(['name' => 'Plain', 'photo_path' => 'buyers/9/missing.png']);
+        $row = collect($this->signed()->assertOk()->json('data'))->firstWhere('id', $empty->id);
+        foreach (['website', 'office_address', 'city', 'whatsapp_phone', 'photo_url', 'photo_updated_at'] as $k) {
+            $this->assertNull($row[$k], "{$k} 는 비면 null");
+        }
+        $this->assertFalse($row['map_name_public']);
+        $this->assertFalse($row['api_linked']);
+    }
+
+    /** 🚫 B2B 파트너스 내부 표시(관리대상·DP/FD·계약서)는 포털에 안 나간다(요청서 05). */
+    public function test_b2b_internal_markers_never_leave(): void
+    {
+        $b = $this->buyer(['name' => 'B2B Holder', 'is_b2b_partner' => true]);
+        BuyerDocument::create(['buyer_id' => $b->id, 'path' => 'buyers/1/contracts/secret_agreement.pdf', 'kind' => 'base']);
+        Vehicle::create(['vehicle_number' => '77사7007', 'sales_channel' => 'export', 'buyer_id' => $b->id, 'deal_type' => 'DP']);
+
+        $body = $this->signed()->assertOk()->getContent();
+        foreach (['is_b2b_partner', 'deal_type', 'secret_agreement', 'buyer_documents', 'contracts'] as $forbidden) {
+            $this->assertStringNotContainsString($forbidden, $body, "`{$forbidden}` 가 포털에 새면 안 된다");
+        }
     }
 }
