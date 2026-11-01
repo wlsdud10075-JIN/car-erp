@@ -160,6 +160,21 @@ class B2bPartnersTest extends TestCase
         $this->assertSame('FD', $v->fresh()->deal_type, '영업은 바꿀 수 없다 — 키를 안 실어 값이 보존된다');
     }
 
+    /** role=관리 일반사용자(실제 관리 직원)도 담당 영업 범위 안의 차에 DP/FD 를 지정한다 — 「관리 이상」의 아래 끝. */
+    public function test_role_manager_user_with_subordinates_can_set_deal_type(): void
+    {
+        $manager = User::factory()->create(['permission' => 'user', 'role' => '관리', 'email_verified_at' => now()]);
+        $this->assertTrue($manager->canApprove(), 'role=관리 는 관리 이상이다 — 좁히면 실제 관리 직원이 못 쓴다');
+        $sm = $this->salesman();
+        $salesUser = User::factory()->create(['permission' => 'user', 'role' => '영업', 'manager_user_id' => $manager->id]);
+        $sm->update(['user_id' => $salesUser->id]);
+        $v = $this->vehicle('11가1001', $sm, $this->buyer($sm), ['sale_price' => 1000, 'sale_date' => now()->toDateString()]);
+
+        $this->actingAs($manager->fresh());
+        Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->set('deal_type', 'DP')->call('save')->assertHasNoErrors();
+        $this->assertSame('DP', $v->fresh()->deal_type);
+    }
+
     public function test_partner_flag_is_saved_by_manager_and_ignored_for_sales(): void
     {
         $sm = $this->salesman();
