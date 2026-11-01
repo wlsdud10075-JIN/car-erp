@@ -175,12 +175,13 @@ public function getSettlementAmountAttribute(): int
     return $this->per_unit_amount ?? self::EMPLOYEE_PER_UNIT_DEFAULT;
 }
 
-// 실지급액 = 정산액 - 서류비 - 발송비 - 기타공제. 서류비는 프리랜서만 5만원 (엑셀 CJ = CH/2 - 50000)
-//   발송비(2026-08-31) = 우체국 EMS + DHL 실비. **프리랜서·사내직원 전액 차감** (§8 #72)
+// 실지급액 = 정산액 - 서류비 - 발송비(비율만) - 기타공제. 서류비는 프리랜서만 5만원 (엑셀 CJ = CH/2 - 50000)
+//   발송비(2026-08-31) = 우체국 EMS + DHL 실비. 🔀 2026-11-01 (jin) **비율(프리랜서)만 실지급 차감** —
+//   사내직원(건당)은 건당액 그대로, 발송비는 autoPerUnitAmountAt 의 판정 마진(총마진 − 발송비)에서만(음수 → 0). §8 #72 · #131
 public function getActualPayoutAttribute(): int
 {
     $documentFee = $this->settlement_type === 'ratio' ? self::FREELANCE_DOCUMENT_FEE : 0;
-    return $this->settlement_amount - $documentFee - $this->shipping_fee - ($this->other_deduction ?? 0);
+    return $this->settlement_amount - $documentFee - $this->shippingFeeDeducted() - ($this->other_deduction ?? 0);
 }
 ```
 
@@ -1495,7 +1496,8 @@ unpaid_ratio       = sale_unpaid_amount / sale_total_amount  (0~1)
 서류비:
   - 프리랜서 = 50,000  (Settlement::FREELANCE_DOCUMENT_FEE)
   - 사내직원 = 0
-발송비            = Vehicle::shipping_fee_total (우체국 EMS + DHL, 타입 무관 전액)
+발송비            = Vehicle::shipping_fee_total (우체국 EMS + DHL) — 🔀 2026-11-01 비율(프리랜서)만 실지급 차감,
+                   건당(사내직원)은 판정 마진(총마진 − 발송비)에서만 본다(음수 → 건당 0, 회사 부담)
 ```
 
 ### cost_total
@@ -1816,3 +1818,12 @@ board: *「인보이스 Brand/Model 칸용으로 `GET /vehicles/{id}` 신설할�
 덮어쓰기 엔드포인트의 `updated[]`(실제로 바뀐 칸)를 저장 **전**에 `AuditLog::isRealChange($model, $col)` 로 구하려 했다 — 그 함수는 `wasChanged()` 기반이라 저장 전엔 늘 false 다. ⇒ `save()` 뒤 `wasChanged($col)` 로 센다.
 그리고 `'remitter_id' => 'encrypted'` 는 **같은 평문을 다시 대입해도 새 IV 로 다른 암호문**이 되어 dirty 로 잡힌다 — 「같은 값이면 no-op」이 저절로 안 된다. ⇒ **대입 전에 복호화된 현재값과 비교**해 같으면 대입 자체를 건너뛴다(`PurchaseSyncController::fillEmptyFields`·`InternalPortalController::remitter`). 감사 가림(`MASKED_COLUMNS`)은 별개로 넣어야 한다 — 가드 = `BoardPortalApiTest::test_remitter_endpoint_same_values_are_a_noop`.
 
+### 131. 📮 **「전액 차감」이 손해차량에선 마이너스 지급이 된다 — 빼는 자리를 유형별로 가른다** (2026-11-01 사내직원 발송비)
+
+jin: *「사내직원은 건당 10만을 받는데 여기서 발송비가 차감되는 건 아니거든? 총마진에서 빼서 음수냐 양수냐를 따져 건당·차등을 정해야 하고, 프리랜서는 지금처럼.」*
+08-31 결정(§8 #72 「정산액에서 전액, 두 유형 동일」)은 **손해차량(건당 0)에 발송비만 빠져 −9,579 같은 지급**을 만들었다 — heymanerp 미지급 사내직원 17건 전부, 그중 4건 마이너스(59오5691 = 승계 5만 − 84,055 = −34,055 로 드러남).
+- ✅ 새 규칙: 비율(프리랜서·바이어 비율) = 종전대로 실지급에서 전액 / 건당(사내직원) = 건당액 그대로, **판정 마진 = 총마진 − 발송비**(음수 → 0, 양수 → 그 금액으로 차등). 발송비는 회사가 진다(`company_net` 공식 무변경 — 지급에서 안 빼니 그 식이 곧 회사 부담이다).
+- 🔑 #72 가 거절했던 「총마진 차감」의 두 부작용(사내직원 대부분 무영향 · tier 경계 갈림)은 **jin 이 받아들인 동작**이 됐다 — 「건당은 안 건드리고 판정만」이 그 뜻이다. 다만 `total_margin` 자체는 안 바꾼다(회사이익·월정산 카드가 쓴다). 판정은 `autoPerUnitAmountAt` 한 곳.
+- 🔎 실측이 결정을 가볍게 했다 — heymanerp 17건 중 **건당액이 바뀌는 건 0**(경계를 넘는 차가 없다), 실지급 합 +361,335, 마이너스 4건 → 0. 「경계 갈림」은 이론이지 그 달의 현실이 아니었다(§8 #100 분포부터).
+- ⚠️ 함정 = 드로어 미리보기(`marginData`)가 발송비를 자기 코드로 빼고 있었다 — 같은 날 건당 미리보기를 모델에 묻게 고친 자리(`perUnitPreview`) 옆. 「− 발송비」 줄도 비율일 때만.
+- 가드 = `VehicleShipmentSettlementTest`(건당 불변·회사이익 차감·손해차량 0·경계 판정) · `DomesticSettlementTest` 드로어 대조.
