@@ -749,6 +749,7 @@ return [
         'readonly' => 'Managers and above only.',
         'filter_all' => 'All deal types',
         'filter_none' => 'No badge',
+        'filter_none_hint' => 'Only vehicles without a deal-type badge',
     ],
     'cancel_filter' => [
         'all' => 'All',

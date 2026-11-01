@@ -766,6 +766,7 @@ return [
         'readonly' => '관리 이상만 바꿀 수 있습니다.',
         'filter_all' => '거래 유형 전체',
         'filter_none' => '뱃지 없음',
+        'filter_none_hint' => '거래 유형 뱃지가 없는 차만',
     ],
     'cancel_filter' => [
         'all' => '전체',
