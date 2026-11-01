@@ -33,6 +33,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $buyerFilter = '';
     #[Url] public string $progressFilter = '';
     #[Url] public string $riskFilter = '';        // safe/caution/danger/critical
+
+    /** 🏷️ 거래 유형 DP/FD/none (B2B 파트너스, jin 2026-11-01) — 차량관리와 같은 축. */
+    #[Url(as: 'deal')] public string $dealFilter = '';
     #[Url] public string $unpaidRatioMin = '';    // 30 / 50 / 70
 
     /**
@@ -1148,6 +1151,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->riskFilter, fn ($q) => $q->where('receivable_risk', $this->riskFilter))
+            ->when($this->dealFilter !== '', fn ($q) => $q->dealType($this->dealFilter))
             // 🚢 운항 토글 — 차량관리와 같은 판정(선적일+ETA, 오늘 기준). 단일 출처 Vehicle::scopeSailing.
             ->when(in_array($this->sailingFilter, Vehicle::SAILING_PHASES, true), fn ($q) => $q->sailing($this->sailingFilter))
             // 매입취소 필터 — 취소차도 위약금(sale_price)이 채권으로 잡히므로 기본은 함께 노출, 필터로 분리.
@@ -1425,6 +1429,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="{{ $s }}">{{ __('domain.progress.'.$s) }}</option>
             @endforeach
         </select>
+        {{-- 🏷️ 거래 유형 DP/FD 필터 (B2B 파트너스, jin 2026-11-01) --}}
+        <select wire:model.live="dealFilter" class="input-filter">
+            <option value="">{{ __('receivable.deal_type_all') }}</option>
+            @foreach(\App\Models\Vehicle::DEAL_TYPES as $dk => $dm)<option value="{{ $dk }}">{{ $dm['label'] }} — {{ $dm['title'] }}</option>@endforeach
+            <option value="none">{{ __('receivable.deal_type_none') }}</option>
+        </select>
         <select wire:model.live="riskFilter" class="input-filter">
             <option value="">{{ __('receivable.all_risk') }}</option>
             <option value="grace">{{ __('receivable.risk.grace') }}</option>
@@ -1538,7 +1548,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif>
                     <td class="py-2 pr-3 text-gray-500">{{ $v->id }}</td>
                     <td class="py-2 pr-3 font-medium text-gray-800">{{ $v->vehicle_number }}</td>
-                    <td class="py-2 pr-3 text-gray-600">{{ trim(($v->brand ?? '').' '.($v->model_type ?? '')) ?: '-' }}</td>
+                    <td class="py-2 pr-3 text-gray-600">{{ trim(($v->brand ?? '').' '.($v->model_type ?? '')) ?: '-' }}<x-erp.deal-badge :type="$v->deal_type" /></td>
                     <td class="py-2 pr-3 font-mono text-xs text-gray-500">{{ $v->nice_reg_vin ?: '-' }}</td>
                     <td class="py-2 pr-3 text-gray-600">{{ $v->salesman?->name ?? '-' }}</td>
                     <td class="py-2 pr-3 text-gray-600">{{ $primaryBuyer?->name ?? '-' }}</td>
@@ -1608,7 +1618,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div class="min-w-0">
                     <div class="flex items-center gap-2">
                         <span class="text-xs text-gray-400">#{{ $v->id }}</span>
-                        <span class="text-sm font-medium text-gray-800">{{ $v->vehicle_number }}</span>
+                        <span class="text-sm font-medium text-gray-800">{{ $v->vehicle_number }}</span><x-erp.deal-badge :type="$v->deal_type" />
                     </div>
                     @if($v->nice_reg_vin)
                     <span class="block truncate font-mono text-[11px] text-gray-400" title="{{ $v->nice_reg_vin }}">{{ $v->nice_reg_vin }}</span>
@@ -1660,7 +1670,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <div class="text-xs uppercase tracking-wide text-gray-400">{{ __('receivable.history') }}</div>
                     <div class="mt-0.5 text-lg font-bold text-gray-800">{{ $sv->vehicle_number }}</div>
                     <div class="mt-0.5 text-xs text-gray-500">
-                        {{ $sv->brand }} {{ $sv->model_type }} · {{ __('receivable.col.salesman') }} {{ $sv->salesman?->name ?? '-' }}
+                        {{ $sv->brand }} {{ $sv->model_type }}<x-erp.deal-badge :type="$sv->deal_type" /> · {{ __('receivable.col.salesman') }} {{ $sv->salesman?->name ?? '-' }}
                     </div>
                 </div>
                 <button type="button" wire:click="closePanel" class="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600">

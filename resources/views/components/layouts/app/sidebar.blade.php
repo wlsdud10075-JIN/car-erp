@@ -215,7 +215,15 @@
                     'label' => __('nav.menu.buyers'),
                     'href' => route('erp.buyers.index'),
                     'icon' => 'users',
-                    'active' => request()->routeIs('erp.buyers.*'),
+                    'active' => request()->routeIs('erp.buyers.*') && request()->query('b2b') !== '1',
+                    'show' => true,
+                ],
+                [
+                    // 🤝 B2B 파트너스 (jin 2026-11-01) — 별도 화면이 아니라 바이어 관리를 「관리대상만」 필터로 연다(요청서 06 범위).
+                    'label' => __('nav.menu.b2b_partners'),
+                    'href' => route('erp.buyers.index', ['b2b' => 1]),
+                    'icon' => 'users',
+                    'active' => request()->routeIs('erp.buyers.*') && request()->query('b2b') === '1',
                     'show' => true,
                 ],
                 [

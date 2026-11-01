@@ -2,6 +2,7 @@
 
 // i18n — shared UI primitives (buttons, status, pagination, close-confirm, etc). Reused across all screens.
 return [
+    'upload_failed' => 'File could not be saved. Please try again.',
     // 엑셀·표에서 쓰는 예/아니오 (2026-09-09 회계실사 시트).
     'yes' => 'Yes',
     'no' => 'No',

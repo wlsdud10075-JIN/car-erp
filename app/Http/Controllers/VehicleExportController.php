@@ -51,6 +51,9 @@ class VehicleExportController extends Controller
         $sailing = in_array($sailing, Vehicle::SAILING_PHASES, true) ? $sailing : '';
         // 발송 축(EMS·DHL) — 화면 필터와 같은 조건이어야 한다(SKILLS §9 「화면 필터 ↔ export 일치」).
         //   안 맞추면 「화면엔 3대인데 엑셀엔 300대」가 된다 — 에러 없이 조용히.
+        // 🏷️ 거래 유형 DP/FD/none (B2B 파트너스, jin 2026-11-01) — 화면 필터와 같은 scope(Vehicle::scopeDealType).
+        $deal = $mirror ? (string) $request->query('deal', '') : '';
+        $deal = ($deal === 'none' || array_key_exists($deal, Vehicle::DEAL_TYPES)) ? $deal : '';
         $shipFilter = $mirror ? (string) $request->query('ship', '') : '';
         $shipFilter = in_array($shipFilter, ['ems', 'dhl', 'none'], true) ? $shipFilter : '';
         $shipMonth = $mirror ? (string) $request->query('shipmonth', '') : '';
@@ -118,6 +121,7 @@ class VehicleExportController extends Controller
             // 화면 pill 과 같은 집합을 내보낸다 — 「거래완료 + 2차 마감」 제외 (jin 2026-09-10).
             //   화면은 580 인데 엑셀만 3,883 이 나오면 아무도 그 차이를 눈으로 못 잡는다.
             ->when($sailing !== '', fn ($q) => $q->sailing($sailing)->excludeClosedDeals())
+            ->when($deal !== '', fn ($q) => $q->dealType($deal))
             ->when($shipFilter === 'ems', fn ($q) => $q->whereNotNull('ems_tracking_no_cache'))
             ->when($shipFilter === 'dhl', fn ($q) => $q->whereNotNull('dhl_tracking_no_cache'))
             ->when($shipFilter === 'none', fn ($q) => $q->whereNull('ems_tracking_no_cache')->whereNull('dhl_tracking_no_cache'))
@@ -162,7 +166,7 @@ class VehicleExportController extends Controller
             'filters' => array_filter([
                 'range' => $mirror ? 'current' : 'all',
                 'progress' => $progress, 'exclude' => implode(',', $exclude), 'q' => $search, 'salesmanId' => $salesmanId,
-                'sailing' => $sailing,
+                'sailing' => $sailing, 'deal' => $deal,
                 'ship' => $shipFilter, 'shipmonth' => $shipMonth,
                 'brq' => implode(',', $brq),
                 'dateFrom' => $dateFrom, 'dateTo' => $dateTo,
