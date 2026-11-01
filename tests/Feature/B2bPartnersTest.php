@@ -82,7 +82,7 @@ class B2bPartnersTest extends TestCase
 
         // 차량관리는 같은 행을 세 자리에 그린다 — 데스크탑 바이어 셀 + 차량번호 셀(바이어 컬럼을 껐을 때만 x-show) + 모바일 카드. 지정 안 한 차는 0.
         $this->assertSame(3, substr_count($html, 'data-deal-badge="DP"'), '지정한 차 하나 × 렌더 3곳(바이어 셀·차량번호 셀 폴백·모바일 카드)');
-        $this->assertMatchesRegularExpression('/'.preg_quote($b->name, '/').'<span[^>]*data-deal-badge="DP"/', $html, '뱃지는 바이어 이름 바로 옆(jin 11-01)');
+        $this->assertMatchesRegularExpression('/'.preg_quote($b->name, '/').'(?:<!--.*?-->|\\s)*<span[^>]*data-deal-badge="DP"/s', $html, '뱃지는 바이어 이름 바로 옆(jin 11-01)');
         $this->assertStringContainsString(Vehicle::DEAL_TYPES['DP']['title'], $html, '호버 전체 명칭');
         $this->assertStringContainsString('bg-purple-100 text-purple-700', $html);
         $this->assertStringNotContainsString('data-deal-badge="FD"', $html);
