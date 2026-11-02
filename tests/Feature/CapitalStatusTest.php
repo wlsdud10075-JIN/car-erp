@@ -551,6 +551,13 @@ class CapitalStatusTest extends TestCase
         $this->assertSame('총자산 -0.55억', $vars['총자산']);
     }
 
+    /** 스냅샷이 없으면 변수 빈 배열 → 크론 skip(사유 로그). 형식과 무관한 「조용히 멈춤」 가드(§8 #38) — 카드 교체 때 지우지 말 것. */
+    public function test_alimtalk_capital_weekly_empty_and_inert_without_snapshot(): void
+    {
+        $this->assertEmpty(AlimtalkCapitalWeekly::buildVars());
+        $this->artisan('alimtalk:capital-weekly')->assertExitCode(0);
+    }
+
     /**
      * 🚫 **매입취소 차는 자금 계산에서 통째로 빠진다** (jin 2026-09-09).
      *
