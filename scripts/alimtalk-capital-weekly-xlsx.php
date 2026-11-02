@@ -1,7 +1,7 @@
 <?php
 
 /**
- * 자금보고(erp_capital_weekly) 재등록 xlsx — 손익을 요약정보 → 아이템 줄로 옮긴 등록본을 **코드에서** 만든다 (jin 2026-10-13).
+ * 자금보고(erp_capital_weekly) 재등록 xlsx — 코드의 TEMPLATES·ITEMLIST 그대로 등록본을 만든다 (jin 2026-10-13 손익아이템 · 2026-11-02 총자산=자본+부채).
  *
  * 배경: 카카오 요약정보 description 은 숫자·통화기호·통화단위·쉼표·마침표만 허용 — 손실(음수)을 표기할 길이 없다
  *   (2026-10-13 ssancarerp 실측 7종 전부 K140: '-'·'−'·'△'·'▲'·'( )'·'₩-'·'ㅡ'). 아이템 줄은 '-5.99억' 이 통과한다.
@@ -116,7 +116,8 @@ $xmlEscape = fn (string $s): string => str_replace(['&', '<', '>'], ['&amp;', '&
 $bad = 0;
 
 foreach ($companies as $label => $co) {
-    $out = "{$root}/{$co['dir']}/upload_erp_{$label}_자금보고_손익아이템_재등록.xlsx";
+    // 🧾 2026-11-02 — 「총자산 = 자본 + 부채」 세 줄 수정 재등록(같은 코드·같은 템플릿명). 10-13 손익아이템 재등록본은 그대로 둔다(이력).
+    $out = "{$root}/{$co['dir']}/upload_erp_{$label}_자금보고_총자산_재등록.xlsx";
     $values = $rowValues($co);
     $filled = array_filter($values, fn ($x) => $x !== null);
     echo "── {$label} ({$co['profile']} · {$co['domain']} · 템플릿명 {$co['name']})\n";
@@ -150,7 +151,7 @@ foreach ($companies as $label => $co) {
             $bad++;
             echo "   ❌ 7행에 잔재\n";
         }
-        echo $bad === 0 ? "   ✅ 코드와 일치 (아이템 5줄 · 요약정보 없음 · 버튼 1 · H 샘플값 유지)\n" : '';
+        echo $bad === 0 ? '   ✅ 코드와 일치 (아이템 '.count(AlimtalkTemplates::ITEMLIST[$code]['items'])."줄 · 요약정보 없음 · 버튼 1 · H 샘플값 유지)\n" : '';
 
         continue;
     }

@@ -101,7 +101,16 @@ class AlimtalkCapitalWeekly extends Command
     /** 직전 buildVars() 가 빈 배열을 돌려준 이유(사람이 읽는 한글) — handle() 이 로그 화면에 남긴다. */
     public static ?string $lastSkipReason = null;
 
-    /** 최신 스냅샷 → 템플릿 변수(억 단위 포맷). 보낼 수 없으면 빈 배열 + $lastSkipReason. 테스트 재사용. */
+    /**
+     * 최신 스냅샷 → 템플릿 변수. 보낼 수 없으면 빈 배열 + $lastSkipReason. 테스트 재사용.
+     *
+     * 🧾 2026-11-02 (대표 «자산 = 자본 + 부채») — 「총자산 = 자본 + 부채」 세 값 + 변동. 구 6값(굴리는자금·통장현금·재고·미수·미지급·손익)은
+     *   같은 코드의 수정 재등록으로 대체됐다(jin «v2 를 따로 두지 말자»). 원금 미설정이어도 보낸다 — 자본은 원금과 무관.
+     *   - 총자산 = total_assets_krw(현금+미판매재고+미수+보증금) → 강조 제목 '총자산 80.0억'
+     *   - 자본 = working_capital_krw(순자산 = 총자산 − 부채) · 부채 = liabilities_krw(미지급 + 가수금)
+     *   - 변동 = 7일 이상 앞선 스냅샷 대비(compare()) — 값 뒤 ' (+0.30억)'. 비교 대상 없으면(첫 주) 값만.
+     *     등록본의 고정 문구·항목은 그대로이고 값만 길어지므로 변동 표기 자체는 재등록 사유가 아니다(괄호·부호 11-02 로컬 실측 sent).
+     */
     public static function buildVars(): array
     {
         self::$lastSkipReason = null;
@@ -115,15 +124,6 @@ class AlimtalkCapitalWeekly extends Command
 
         $eok = fn ($n) => $n === null ? '—'
             : (abs($n / 1e8) >= 10 ? number_format($n / 1e8, 1) : number_format($n / 1e8, 2)).'억';
-        // 「원금 대비 손익」은 **정상 회수 기준**으로 보낸다 (jin 2026-07-31).
-        //   청산 기준(profit_krw)은 "바이어가 한 명도 안 갚는다"는 파산 가정이라, 카톡에 그 값만 찍히면
-        //   매주 큰 마이너스가 와서 실제 상태를 오해하게 된다. 구 스냅샷은 청산 기준으로 폴백.
-        $profit = $d['net_profit_krw'] ?? $d['profit_krw'];
-
-        // 🧾 지난 보고(7일 이상 전) 대비 변동을 값 뒤에 붙인다 (대표 2026-11-02 «미수가 줄어드는 만큼 총자산이 어디로 가나»).
-        //   등록본의 고정 문구·항목은 그대로이고 **변수 값만** 길어지므로 BizM 재등록이 필요 없다. 괄호·부호·한글은
-        //   아이템 줄에서 통과한 선례가 있다(채권현황 '(45%)' · 손익 '-5.99억'). 20자 컷(ITEM_DESC_MAX) 안 — '-12.3억 (+1.2억)' 16자.
-        //   비교 대상이 없으면(첫 주) 종전과 같은 값만 나간다.
         $cmp = $svc->compare($svc->latest());
         $withDelta = function (string $value, string $key) use ($cmp, $eok): string {
             $v = $cmp['delta'][$key] ?? null;
@@ -134,24 +134,11 @@ class AlimtalkCapitalWeekly extends Command
             return $value.' ('.($v < 0 ? '-' : '+').$eok(abs((int) $v)).')';
         };
 
-        // 🔀 2026-10-13 (jin) — 손익이 요약정보 칸에서 **아이템 줄**로 옮겨졌다(AlimtalkTemplates::ITEMLIST 주석).
-        //    요약정보는 숫자·통화단위·쉼표·마침표만 허용이라 손실(음수)과 '원금 미설정'을 표기할 수 없어
-        //    2026-09-14~10-12 ssancarerp 6주 연속 보류였다. 아이템 줄은 부호·한글이 통과하므로(실측 '-5.99억' sent)
-        //    이제 다른 항목과 같은 억 단위로, 손실은 '-' 를 붙여 보낸다. 보류 분기는 제거.
-        //    ⚠️ 3사 BizM 등록본이 아이템 5줄로 재승인된 뒤에야 나간다 — 구 등록본(요약정보 있음)엔 K108/K140.
-
         return [
             '기준일' => Carbon::parse($d['date'])->format('Y-m-d'),
-            '통장현금' => $withDelta($eok($d['cash_krw']), 'cash_krw'),
-            // ⚠️ 굴리는자금(순자산)의 구성요소인 **미판매 재고**를 쓴다 (jin 2026-07-31).
-            //   선적 전 재고(inventory_krw)를 찍으면 "통장+재고+미수−미지급"이 굴리는자금과 안 맞아
-            //   대표가 카톡에서 항목을 더해봤을 때 계산이 틀린 것처럼 보인다. 구 스냅샷은 폴백.
-            '재고' => $withDelta($eok($d['unsold_inventory_krw'] ?? $d['inventory_krw']), 'unsold_inventory_krw'),
-            '미수' => $withDelta($eok($d['receivable_krw']), 'receivable_krw'),
-            '미지급' => $withDelta($eok($d['payable_krw']), 'payable_krw'),
-            '굴리는자금' => $eok($d['working_capital_krw']),
-            // 아이템 description 은 20자 컷(AlimtalkTemplates::ITEM_DESC_MAX) — '-12.3억' 은 넉넉하다.
-            '손익' => $profit === null ? '원금 미설정' : $withDelta(($profit < 0 ? '-' : '').$eok(abs((int) $profit)), 'net_profit_krw'),
+            '총자산' => '총자산 '.$eok($d['total_assets_krw']),
+            '자본' => $withDelta($eok($d['working_capital_krw']), 'working_capital_krw'),
+            '부채' => $withDelta($eok($d['liabilities_krw']), 'liabilities_krw'),
         ];
     }
 }
