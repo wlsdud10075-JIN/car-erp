@@ -935,6 +935,14 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-02 — master `6a4e4884` · 마이그 0 (jin «배포해줘. 기본은 전부 off로», 코드 커밋 5개 cherry-pick — 체리픽·push 분리, §8 #132 적용)
+
+dev `729daeda`·`46605c37`·`14247b53`·`682b7ec1`·`1c1ad960` → master `e8f3018a`…`6a4e4884`.
+1. **B2B 파트너스 회사별 토글** — 기능설정(시스템관리자) 「B2B 파트너스 사용」, `Setting::b2bPartnersEnabled()` = `b2b_partners_enabled_{회사}`, **기본 꺼짐** → 배포 즉시 3사 전부 숨음(메뉴·뱃지·토글 버튼·필터·판매탭 거래 유형·바이어 목록 B2B 열·패널 블록·계약서 업로드). 저장된 값은 보존. 감사 `b2b_partners_toggle_changed`. 포털 2단계 칸은 토글 밖.
+2. **바이어 포털 칸 일괄 채움 명령** `buyers:backfill-portal-info`(dry-run 기본 · `--apply` · `--whatsapp`) — 주소→사무실 주소 복사, 도시는 보수적 추출(국가 토막·우편번호·번지 표식 제거, 거리/숫자면 모름). 운영 미리보기(읽기 전용 프로브) = heymanerp 주소 19 → 도시 13 · ssancarerp 355 → 116. **실행은 jin 결정 뒤.**
+- 확인: 로컬 병렬 3,601 pass(실패 0·skip 1) · deploy 런 41372850296 잡 5 success · 3사 SHA `6a4e4884` · `/login` 200 ×3
+- jin 몫: 기능설정에서 쓸 회사만 B2B 켜기 · 강지나 부장 안내 · 실무자 포털 정보 기입 · 일괄 채움 적용 여부(미리보기 https://claude.ai/artifact/TRELKQ7MtAPUS8Jx2NxsKJ)
+
 ## 2026-11-01 (저녁) — master `cb3d8ba4` · **마이그 1** (jin «배포해줘», 코드 커밋 8개 cherry-pick — B2B 파트너스 1차 + ssancar 포털 2단계)
 
 dev `4e4d2496`·`6b5ed17c`·`289309a8`·`9da40b92`·`b6dfe1e6`·`a3d59ad0`·`d4737015`·`32ab5285` → master `33ef0be0`…`cb3d8ba4`. ⚠️ 7번째 커밋에 dev 전용 `docs/design/b2b-partners-2026-10-30.md` 가 섞여 modify/delete 로 멈췄는데 `&&` 사슬의 파이프가 exit 를 지워 **6/8 상태(`1d3664f0`)로 1차 push·배포**가 먼저 나갔다(full10 통과본이라 동작 정상) → 충돌 해소(삭제 유지) 후 2개 이어 올려 `cb3d8ba4` 로 닫음. SKILLS §8 #132.

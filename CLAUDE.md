@@ -441,8 +441,8 @@ gemini -p "프롬프트" --approval-mode yolo 2>&1
 > `grep -rn "키워드" ~/.claude/projects/C--xampp-htdocs-car-erp/memory --include=*.md`
 > 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
 
-**현재 상태 (2026-11-01)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
-앱코드 master(`cb3d8ba4` — 11-01 저녁: B2B 파트너스 1차(관리대상·계약서·DP/FD 뱃지·필터·메뉴) + ssancar 포털 2단계(사진 ERP 서명 링크 등 8키), 마이그 1 / 11-01 점심 `ece49295`: 발송비 규칙 · 드로어 건당 미리보기 / 10-30 저녁 `a2442c83`: ssancar 포털 바이어 연락처·컨사이니 배열 1단계 / 10-30 오후 `f25492a4`: 일괄 기입 「체크한 차량만」 · 입금완료 알림톡 문자 대체(K101) · 양도증명서 잔금 한도·서명줄 / 10-29 저녁 `16a308c9`: purchase-sync `amounts_overwrite` / 10-29 오후 `8347b1e5`: 주말 개발 4갈래 + 재고 (가), 마이그 1), **미배포 기능코드 0**. 테스트 **3,596 pass(로컬 병렬) · 로컬 기대 실패 0**(2026-10-12 — 옛 「로컬 7 fail = GD 差」는 `.env COMPANY_TEMPLATE_SET=heyman` 오진, `phpunit.xml` 에 system 고정. 메모리 `reference_local_test_failures_gd`).
+**현재 상태 (2026-11-02)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
+앱코드 master(`6a4e4884` — 11-02: B2B 파트너스 회사별 토글(기본 OFF, 기능설정) + 바이어 포털 칸 일괄 채움 명령(미실행) / 11-01 저녁 `cb3d8ba4`: B2B 파트너스 1차 + ssancar 포털 2단계, 마이그 1 / 11-01 점심 `ece49295`: 발송비 규칙 · 드로어 건당 미리보기 / 10-30 저녁 `a2442c83`: ssancar 포털 바이어 연락처·컨사이니 배열 1단계 / 10-30 오후 `f25492a4`: 일괄 기입 「체크한 차량만」 · 입금완료 알림톡 문자 대체(K101) · 양도증명서 잔금 한도·서명줄 / 10-29 저녁 `16a308c9`: purchase-sync `amounts_overwrite` / 10-29 오후 `8347b1e5`: 주말 개발 4갈래 + 재고 (가), 마이그 1), **미배포 기능코드 0**. 테스트 **3,601 pass(로컬 병렬) · 로컬 기대 실패 0**(2026-10-12 — 옛 「로컬 7 fail = GD 差」는 `.env COMPANY_TEMPLATE_SET=heyman` 오진, `phpunit.xml` 에 system 고정. 메모리 `reference_local_test_failures_gd`).
 ⚠️ **이 줄은 금방 낡는다** — 최신 배포·잔여 안건은 메모리 `MEMORY.md` 를 볼 것(여기 숫자를 근거로 판단하지 말 것).
 🚀 **배포 직후 수동 캐시 정리는 하지 않는다**(2026-10-23 — deploy.yml 이 `sudo -u www-data php artisan view:cache` 로 만든다, 첫 배포 권한 오류 0건. SKILLS §8 #122).
 dev-only = `scripts/notion-*`·`docs/*.html`·`.md`·Notion 테스트 2.
