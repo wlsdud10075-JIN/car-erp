@@ -70,7 +70,7 @@ class PayoutStepsScreensTest extends TestCase
 
         $batch = SettlementPayoutBatch::where('month', '2026-10')->firstOrFail();
         $this->assertTrue($batch->isStepsMode());
-        $this->assertSame(['부장', '대표'], $batch->steps->pluck('title')->all(), '전무는 사람이 없어 건너뜀');
+        $this->assertSame(['부장', '대표'], $batch->steps->pluck('title')->all(), '상무는 사람이 없어 건너뜀');
         $this->assertSame('incentive', $batch->adjustments()->value('kind'));
         $this->assertSame([$bu->id], $batch->currentApprovers()->pluck('id')->all());
     }

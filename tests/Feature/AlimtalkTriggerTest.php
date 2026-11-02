@@ -536,7 +536,7 @@ class AlimtalkTriggerTest extends TestCase
             'settlement_type' => 'per_unit', 'per_unit_amount' => 100_000,
             'settlement_status' => 'confirmed', 'confirmed_at' => '2026-06-15 10:00:00',
         ]);
-        $line = ['부장' => (string) User::where('approval_title', '부장')->value('id'), '전무' => '', '대표' => (string) User::where('approval_title', '대표')->value('id')];
+        $line = ['부장' => (string) User::where('approval_title', '부장')->value('id'), '상무' => '', '대표' => (string) User::where('approval_title', '대표')->value('id')];
 
         return SettlementPayoutBatch::submitForMonth($submitter, '2026-06', [], $line);
     }
