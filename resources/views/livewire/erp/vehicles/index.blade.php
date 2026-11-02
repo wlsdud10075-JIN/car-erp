@@ -614,6 +614,33 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ['matched' => [['id','number','model','current','amount'], ...], 'unmatched' => [['number','amount'], ...]]
     public array $costImportParsed = [];
 
+    /** 같은 파일을 두 번 올린 것을 알고도 적용(더하기 모드 전용 — 기본 차단). */
+    public bool $costImportForce = false;
+
+    /** 더하기 모드 — 보험료만. 달마다 갱신분이 쌓이므로 기존 금액에 더한다(jin 2026-11-02 «덮어쓰기 아니고 + 더해야»). */
+    public function costImportAccumulates(): bool
+    {
+        return $this->costImportColumn === 'cost_insurance';
+    }
+
+    /** 올린 파일의 지문 — 컬럼 + (차량 id:금액) 정렬 목록. 같은 파일을 다시 올리면 같은 값이 나온다. */
+    private function costImportFingerprint(array $amounts): string
+    {
+        ksort($amounts);
+        $pairs = [];
+        foreach ($amounts as $id => $amt) {
+            $pairs[] = $id.':'.$amt;
+        }
+
+        return sha1($this->costImportColumn.'|'.implode(',', $pairs));
+    }
+
+    /** 최근 적용한 파일 지문 목록(회사별 설정, 최근 50개) — 더하기 모드 재업로드 차단용. */
+    private function costImportFingerprintKey(): string
+    {
+        return 'cost_import_fingerprints_'.\App\Models\Setting::companyTemplateSet();
+    }
+
     // ── EMS / DHL 발송 내역 일괄 기입 (jin 2026-08-31) ────────────
     //   실무 관리표가 「한 발송 = 차대번호 여러 개」 형태라, 그 칸을 그대로 붙여넣으면 되게 만든다.
     //   금액은 총액을 넣고 N/1 로 쪼갠다(나머지 원은 첫 차량).
@@ -740,7 +767,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function openCostImport(): void
     {
         abort_unless((bool) auth()->user()?->canApprove(), 403);
-        $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed']);
+        $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed', 'costImportForce']);
         $this->costImportColumn = 'cost_towing';
         $this->costImportCompany = 'wika';
         $this->showCostImport = true;
@@ -749,7 +776,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function closeCostImport(): void
     {
         $this->showCostImport = false;
-        $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed']);
+        $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed', 'costImportForce']);
     }
 
     /** 대상 비용 전환 시 미리보기 초기화 + 거래처를 해당 비용의 기본값으로 리셋(현대A1 선택 후 면허 전환 시 stale 방지). */
@@ -1098,15 +1125,36 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $label = __('vehicle.field.'.$this->costImportColumn);
-        $reason = $label.' 명세서 일괄 기입 ('.now()->format('Y-m-d').', '.count($amounts).'대)';
+        $accumulate = $this->costImportAccumulates();
+        $reason = $label.' 명세서 일괄 기입 ('.now()->format('Y-m-d').', '.count($amounts).'대'.($accumulate ? ', 기존 금액에 더함' : '').')';
+
+        // 🔁 더하기 모드 재업로드 차단 — 같은 파일을 두 번 올리면 두 배가 된다(덮어쓰기엔 없던 위험).
+        //   지문 = 컬럼 + 매칭 차량 id:금액 목록. 알고도 올리는 경우(같은 금액이 실제로 두 달 연속일 때)는 체크박스로 통과.
+        $fp = $this->costImportFingerprint($amounts);
+        $seen = json_decode((string) \App\Models\Setting::get($this->costImportFingerprintKey(), '[]'), true) ?: [];
+        if ($accumulate && ! $this->costImportForce) {
+            foreach ($seen as $row) {
+                if (($row['fp'] ?? '') === $fp) {
+                    $this->dispatch('notify', message: __('vehicle.cost_import.dup_blocked', ['at' => $row['at'] ?? '?', 'count' => $row['count'] ?? '?']), type: 'error');
+
+                    return;
+                }
+            }
+        }
         try {
             $res = app(\App\Services\BulkVehicleCostService::class)
-                ->apply($this->costImportColumn, $amounts, auth()->user(), $reason, true);
+                ->apply($this->costImportColumn, $amounts, auth()->user(), $reason, true, $accumulate);
         } catch (\Throwable $e) {
             // 한 대라도 저장 가드/제약에 걸리면 전체 롤백 — 사유를 토스트로 노출(무반응 방지).
             $this->dispatch('notify', message: __('vehicle.cost_import.apply_failed', ['msg' => $e->getMessage()]), type: 'error');
 
             return;
+        }
+
+        if ($accumulate && ($res['applied'] ?? 0) > 0) {
+            $seen[] = ['fp' => $fp, 'at' => now()->format('Y-m-d H:i'), 'count' => count($amounts), 'user' => auth()->id()];
+            \App\Models\Setting::updateOrCreate(['key' => $this->costImportFingerprintKey()],
+                ['value' => json_encode(array_slice($seen, -50), JSON_UNESCAPED_UNICODE), 'type' => 'string']);
         }
 
         $this->closeCostImport();
@@ -13061,6 +13109,12 @@ function vehicleColumnsToggle(columns, serverKnows) {
             @php $matched = $costImportParsed['matched'] ?? []; $unmatched = $costImportParsed['unmatched'] ?? []; @endphp
             @if(count($matched) > 0 || count($unmatched) > 0)
             @php $finalizedCnt = collect($matched)->where('finalized', true)->count(); @endphp
+            @if($this->costImportAccumulates())
+            <div class="mb-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] text-sky-800" data-cost-accumulate-hint>
+                {{ __('vehicle.cost_import.accumulate_hint', ['count' => collect($matched)->where('finalized', false)->filter(fn ($r) => (int) $r['current'] > 0)->count()]) }}
+                <label class="mt-1 flex items-center gap-1.5 text-gray-600"><input type="checkbox" wire:model="costImportForce" class="h-3.5 w-3.5 rounded border-gray-300"> {{ __('vehicle.cost_import.dup_force') }}</label>
+            </div>
+            @endif
             <hr class="my-3 border-gray-100">
             <div class="mb-2 flex flex-wrap items-center gap-3 text-xs">
                 <span class="font-semibold text-emerald-700">{{ __('vehicle.cost_import.matched', ['count' => count($matched) - $finalizedCnt]) }}</span>
@@ -13115,13 +13169,16 @@ function vehicleColumnsToggle(columns, serverKnows) {
                             <th class="px-3 py-2 text-left font-medium">{{ __('vehicle.col.number') }}</th>
                             <th class="px-3 py-2 text-left font-medium">{{ __('vehicle.col.brand_model') }}</th>
                             <th class="px-3 py-2 text-right font-medium">{{ __('vehicle.cost_import.current') }}</th>
-                            <th class="px-3 py-2 text-right font-medium">{{ __('vehicle.cost_import.new_amount') }}</th>
+                            <th class="px-3 py-2 text-right font-medium">{{ $this->costImportAccumulates() ? __('vehicle.cost_import.add_amount') : __('vehicle.cost_import.new_amount') }}</th>
+                            @if($this->costImportAccumulates())
+                            <th class="px-3 py-2 text-right font-medium">{{ __('vehicle.cost_import.result') }}</th>
+                            @endif
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
                         @foreach($matched as $i => $row)
-                        @php $isFinal = ! empty($row['finalized']); @endphp
-                        <tr @class(['bg-gray-50 text-gray-400' => $isFinal, 'bg-amber-50/50' => ! $isFinal && (int) $row['current'] !== (int) $row['amount']])>
+                        @php $isFinal = ! empty($row['finalized']); $rowAmt = (int) round((float) str_replace(',', '', (string) ($row['amount'] ?? 0))); @endphp
+                        <tr @class(['bg-gray-50 text-gray-400' => $isFinal, 'bg-amber-50/50' => ! $isFinal && ($this->costImportAccumulates() ? (int) $row['current'] > 0 : (int) $row['current'] !== $rowAmt)])>
                             <td class="px-3 py-1.5 font-mono font-medium {{ $isFinal ? 'text-gray-400' : 'text-gray-800' }}">
                                 {{ $row['number'] }}
                                 @if($isFinal)<span class="ml-1 rounded bg-gray-200 px-1 py-0.5 text-[9px] text-gray-500">{{ __('vehicle.cost_import.finalized_badge') }}</span>@endif
@@ -13137,6 +13194,9 @@ function vehicleColumnsToggle(columns, serverKnows) {
                                            class="w-24 rounded border border-gray-300 px-2 py-0.5 text-right text-xs focus:border-primary focus:outline-none" />
                                 @endif
                             </td>
+                            @if($this->costImportAccumulates())
+                            <td class="px-3 py-1.5 text-right font-medium {{ $isFinal ? 'text-gray-400' : 'text-primary-text' }}" data-cost-result>{{ $isFinal ? number_format($row['current']) : number_format((int) $row['current'] + $rowAmt) }}</td>
+                            @endif
                         </tr>
                         @endforeach
                     </tbody>

@@ -88,6 +88,31 @@ class BulkVehicleCostTest extends TestCase
         ]);
     }
 
+    /**
+     * 🔀 더하기 모드(jin 2026-11-02 «덮어쓰기 아니고 + 더해야») — 보험료처럼 달마다 쌓이는 비용은 기존 금액에 더한다.
+     * 기본(false)은 종전 덮어쓰기라 탁송비·면허비 동작이 안 바뀐다.
+     */
+    public function test_accumulate_adds_to_the_existing_amount(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin']);
+        $this->actingAs($admin);
+        $v = $this->makeVehicle(['cost_insurance' => 7650]);
+
+        $res = $this->service()->apply('cost_insurance', [$v->id => 7650], $admin, '보험료 명세서 일괄 기입 (더함)', true, true);
+        $this->assertSame(1, $res['applied']);
+        $this->assertSame(15300, (int) $v->fresh()->cost_insurance, '기존 7,650 + 7,650');
+
+        // 더할 금액 0 = 변화 없음(감사 중복 없음)
+        $res = $this->service()->apply('cost_insurance', [$v->id => 0], $admin, '보험료 0', true, true);
+        $this->assertSame(0, $res['applied']);
+        $this->assertSame(1, $res['unchanged']);
+        $this->assertSame(15300, (int) $v->fresh()->cost_insurance);
+
+        // 덮어쓰기(기본)는 종전대로 교체
+        $this->service()->apply('cost_insurance', [$v->id => 7650], $admin, '덮어쓰기', true);
+        $this->assertSame(7650, (int) $v->fresh()->cost_insurance);
+    }
+
     public function test_reapply_same_value_is_unchanged_no_new_audit(): void
     {
         // 같은 파일 재업로드 시 값 동일 차량은 잠금해제·감사로그 중복 없이 넘어감.

@@ -30,9 +30,12 @@ class BulkVehicleCostService
      * @param  string  $column  Vehicle::BULK_COST_FIELDS 중 하나 (예: cost_towing / cost_license)
      * @param  array<int, int|float>  $amounts  [vehicleId => 금액] (원, 음수 불가)
      * @param  bool  $fleetWide  true=탁송비(canApprove 전체) / false=면허비(canUnlockLedger 팀)
+     * @param  bool  $accumulate  true=**기존 금액에 더한다**(보험료 — 달마다 갱신분이 쌓이는 비용, jin 2026-11-02 «덮어쓰기 아니고 + 더해야»)
+     *                            / false=덮어쓴다(탁송비·면허비 — 건당 1회 비용). 더하기는 같은 파일을 두 번 올리면 두 배가 되므로
+     *                            호출측(명세서 기입)이 파일 지문으로 재업로드를 막는다.
      * @return array{applied:int, unchanged:int, skipped:list<array{id:int,number:?string,reason:string}>}
      */
-    public function apply(string $column, array $amounts, User $by, string $reason, bool $fleetWide): array
+    public function apply(string $column, array $amounts, User $by, string $reason, bool $fleetWide, bool $accumulate = false): array
     {
         if (! in_array($column, Vehicle::BULK_COST_FIELDS, true)) {
             throw new InvalidArgumentException("일괄 기입 불가 컬럼: {$column} (비용 컬럼만 허용)");
@@ -47,7 +50,7 @@ class BulkVehicleCostService
         $unchanged = 0;
         $skipped = [];
 
-        DB::transaction(function () use ($column, $amounts, $by, $reason, $fleetWide, &$applied, &$unchanged, &$skipped) {
+        DB::transaction(function () use ($column, $amounts, $by, $reason, $fleetWide, $accumulate, &$applied, &$unchanged, &$skipped) {
             foreach ($amounts as $vehicleId => $amount) {
                 $vehicle = Vehicle::find($vehicleId);
                 if (! $vehicle) {
@@ -72,7 +75,9 @@ class BulkVehicleCostService
                 }
 
                 // 이미 같은 값이면 건드리지 않음 — 재업로드 시 잠금해제 토큰·감사로그 중복 방지.
-                $newValue = (int) round((float) $amount);
+                //   더하기 모드는 「더할 금액 0」이 변화 없음이다.
+                $delta = (int) round((float) $amount);
+                $newValue = $accumulate ? (int) $vehicle->{$column} + $delta : $delta;
                 if ((int) $vehicle->{$column} === $newValue) {
                     $unchanged++;
 
