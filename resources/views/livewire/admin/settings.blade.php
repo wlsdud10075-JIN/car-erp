@@ -28,6 +28,9 @@ new #[Layout('components.layouts.app')] class extends Component
     //   기본 false — 신규 기능이라 켠 회사에서만 동작한다.
     public bool $buyerCashEnabled = false;
 
+    /** 🤝 B2B 파트너스 on/off (jin 2026-11-02) — 회사별. */
+    public bool $b2bPartnersEnabled = false;
+
     public bool $assistantEnabled = false;
 
     // 🔒 락 관제 — 돈 흐름 락 토글. lock 키 => bool. 기본값·단일출처 = Setting::LOCK_DEFAULTS.
@@ -156,6 +159,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->alarmEnabled = (bool) Setting::get('alarm_enabled', false);
         $this->unsecuredLimitEnabled = Setting::unsecuredLimitEnabled();
         $this->buyerCashEnabled = Setting::buyerCashEnabled();
+        $this->b2bPartnersEnabled = Setting::b2bPartnersEnabled();
         $this->assistantEnabled = (bool) Setting::get('assistant_enabled', false);
         foreach (Setting::LOCK_DEFAULTS as $lock => $default) {
             $this->lockToggles[$lock] = Setting::lockEnabled($lock);
@@ -979,6 +983,33 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
+    /** 🤝 B2B 파트너스 on/off (jin 2026-11-02) — 회사별 키, 시스템관리자만, 감사로그. 끄면 화면만 숨고 데이터는 남는다. */
+    public function updatedB2bPartnersEnabled(bool $value): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $key = 'b2b_partners_enabled_'.Setting::companyTemplateSet();
+        $setting = Setting::updateOrCreate(
+            ['key' => $key],
+            ['value' => $value ? '1' : '0', 'type' => 'boolean', 'description' => 'B2B 파트너스 활성화'],
+        );
+        Setting::flushRiskParamMemo();
+
+        \App\Models\AuditLog::create([
+            'user_id' => auth()->id(),
+            'auditable_type' => Setting::class,
+            'auditable_id' => $setting->id,
+            'action' => 'b2b_partners_toggle_changed',
+            'column_name' => 'b2b_partners_enabled',
+            'old_value' => $value ? '0' : '1',
+            'new_value' => $value ? '1' : '0',
+            'ip_address' => request()?->ip(),
+        ]);
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
     // 사내 업무 도우미(로컬 LLM 챗봇) on/off (jin 2026-07-24). 배포 ≠ 노출 —
     //   위젯은 .env ASSISTANT_ENABLED(인프라: LLM 연결 준비) AND 이 토글 둘 다 켜져야 뜸.
     public function updatedAssistantEnabled(bool $value): void
@@ -1766,6 +1797,19 @@ new #[Layout('components.layouts.app')] class extends Component
                         <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.buyer_cash_sub') }}</span>
                     </span>
                     <input type="checkbox" wire:model.live="buyerCashEnabled" class="peer sr-only">
+                    <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
+                                 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+                </label>
+            </div>
+
+            {{-- 🤝 B2B 파트너스 on/off (jin 2026-11-02) — 회사별. 기획 docs/design/b2b-partners-2026-10-30.md
+                 끄면 메뉴·뱃지·필터·바이어 패널 B2B 칸이 숨는다(데이터는 남음). 색은 위 토글과 동일(§8 #50). --}}
+            <div class="rounded-md border border-gray-100 px-3 py-2">
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                    <span class="text-sm text-gray-700">{{ __('feature_settings.b2b_label') }}
+                        <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.b2b_sub') }}</span>
+                    </span>
+                    <input type="checkbox" wire:model.live="b2bPartnersEnabled" class="peer sr-only">
                     <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
                                  after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
                 </label>

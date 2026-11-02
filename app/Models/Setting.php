@@ -41,9 +41,13 @@ class Setting extends Model
      */
     private static array $riskParamMemo = [];
 
+    /** B2B 파트너스 토글 메모(요청 단위) — 같은 flush 를 탄다. */
+    private static ?bool $b2bMemo = null;
+
     public static function flushRiskParamMemo(): void
     {
         self::$riskParamMemo = [];
+        self::$b2bMemo = null;
     }
 
     private static function riskParam(string $key, callable $resolve): int|float
@@ -176,6 +180,17 @@ class Setting extends Model
     public static function buyerCashEnabled(): bool
     {
         return (bool) self::get('buyer_cash_enabled_'.self::companyTemplateSet(), false);
+    }
+
+    /**
+     * 🤝 B2B 파트너스(관리대상·계약서·DP/FD 뱃지·필터·메뉴) on/off — **회사별**(jin 2026-11-02 «각 회사별로 켜고 끄게»).
+     *   키 = `b2b_partners_enabled_{회사}` — 서버(회사)마다 자기 DB 라 자연히 회사별이다. 기본 **꺼짐**(새 기능 관례, 무담보 한도 주석 참조).
+     *   끄면 화면·필터·메뉴만 숨는다 — 저장된 값(관리대상·deal_type·계약서)은 남고 다시 켜면 그대로 보인다. 포털 2단계 칸은 별개(항상).
+     *   시스템관리자만 바꾼다(기능설정). 요청 단위 메모 — 목록 행마다(뱃지 5곳) 부르므로. 저장 훅·flushRiskParamMemo() 가 비운다.
+     */
+    public static function b2bPartnersEnabled(): bool
+    {
+        return self::$b2bMemo ??= (bool) self::get('b2b_partners_enabled_'.self::companyTemplateSet(), false);
     }
 
     /**

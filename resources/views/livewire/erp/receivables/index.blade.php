@@ -1182,7 +1182,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             }))
             ->when($this->progressFilter, fn ($q) => $q->where('progress_status_cache', $this->progressFilter))
             ->when($this->riskFilter, fn ($q) => $q->where('receivable_risk', $this->riskFilter))
-            ->when($this->dealFilter !== '', fn ($q) => $q->dealType($this->dealFilter))
+            ->when($this->dealFilter !== '' && Setting::b2bPartnersEnabled(), fn ($q) => $q->dealType($this->dealFilter))
             // 🚢 운항 토글 — 차량관리와 같은 판정(선적일+ETA, 오늘 기준). 단일 출처 Vehicle::scopeSailing.
             ->when(in_array($this->sailingFilter, Vehicle::SAILING_PHASES, true), fn ($q) => $q->sailing($this->sailingFilter))
             // 매입취소 필터 — 취소차도 위약금(sale_price)이 채권으로 잡히므로 기본은 함께 노출, 필터로 분리.
@@ -1503,6 +1503,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         {{-- 🏷️ 거래 유형 DP/FD 토글 (B2B 파트너스, jin 2026-11-01 «드롭박스보단 뱃지 필터») — 운항 토글과 같은 모양·직교 축.
              색은 뱃지와 같은 보라/파랑(빌드 CSS 에 있음, §8 #50). 숫자 = 현재 필터(이 토글 제외) 기준 대수. --}}
+        @if(Setting::b2bPartnersEnabled())
         <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3" data-deal-pills>
             @foreach([
                 ['val' => 'DP', 'label' => 'DP', 'title' => \App\Models\Vehicle::DEAL_TYPES['DP']['title'], 'on' => 'bg-purple-600 text-white shadow-sm', 'off' => 'bg-purple-100 text-purple-700 hover:bg-purple-200'],
@@ -1515,6 +1516,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </button>
             @endforeach
         </div>
+        @endif
     </div>
 
     {{-- 테이블 (데스크탑) --}}

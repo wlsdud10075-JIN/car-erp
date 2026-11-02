@@ -9,6 +9,8 @@ return [
     'unsecured_limit_sub' => 'Lets long-standing buyers place deposits without collateral. When off, per-buyer unsecured credit is ignored and only the unpaid-ratio gate applies.',
     'buyer_cash_label' => 'Buyer cash ledger',
     'buyer_cash_sub' => 'Record incoming foreign-currency payments per buyer and allow sale balances only within that cash. Make sure no unallocated cash is outstanding before turning it on.',
+    'b2b_label' => 'B2B Partners',
+    'b2b_sub' => 'Turns on special-contract partner marking, contract storage, DP/FD badges and filters on vehicles and receivables, and the "B2B Partners" menu. Off hides the screens only; saved values remain. Per company.',
     'stamp_upload_failed' => 'Stamp upload failed. The existing stamp is unchanged — please try again.',
     'locale_enabled_flash' => 'English has been enabled. Use the 한국어 / English buttons in the top bar to switch your own screen.',
     'locale_disabled_flash' => 'English has been disabled.',

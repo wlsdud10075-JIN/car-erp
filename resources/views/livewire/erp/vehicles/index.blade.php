@@ -3358,7 +3358,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->cancelFilter === 'closed', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_CLOSED))
             ->when($this->cancelFilter === 'normal', fn ($q) => $q->where('cancel_status', \App\Models\Vehicle::CANCEL_NONE))
             // 🏷️ 거래 유형 DP/FD/none — scopeDealType 단일 출처(내보내기도 같은 scope)
-            ->when($this->dealFilter !== '', fn ($q) => $q->dealType($this->dealFilter))
+            ->when($this->dealFilter !== '' && \App\Models\Setting::b2bPartnersEnabled(), fn ($q) => $q->dealType($this->dealFilter))
             // 🗑️ 말소 필요 — 조건을 옮겨 적지 말 것. scopeAction 단일 출처(§8 #44).
             ->when($this->taskFilter === 'deregistration', fn ($q) => $q->action('deregistration_due'))
             // 🚦 선적·통관·B/L 필요 — 단계 완료 조건이 빈 차. 조건은 Vehicle::scopeStageGap 단일 출처.
@@ -6513,7 +6513,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'buyer_id'     => $toId($this->buyer_id_str),
             'buyer_undecided' => $this->buyer_undecided,
             // 🏷️ DP/FD — 관리 이상만 바꾼다(jin 11-01). 권한 밖이면 키 자체를 안 실어 기존 값이 지워지지 않는다.
-            ...(auth()->user()?->canApprove() ? ['deal_type' => array_key_exists($this->deal_type, \App\Models\Vehicle::DEAL_TYPES) ? $this->deal_type : null] : []),
+            ...((auth()->user()?->canApprove() && \App\Models\Setting::b2bPartnersEnabled()) ? ['deal_type' => array_key_exists($this->deal_type, \App\Models\Vehicle::DEAL_TYPES) ? $this->deal_type : null] : []),
             'consignee_id' => $toId($this->consignee_id_str),
             'sale_price'       => $toFloat($this->sale_price_str),
             'tax_dc'           => $toFloat($this->tax_dc_str),
@@ -8280,6 +8280,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         {{-- 🏷️ 거래 유형 DP/FD 토글 (B2B 파트너스, jin 2026-11-01 «드롭박스보단 뱃지 필터») — 운항 토글과 같은 모양·직교 축.
              색은 뱃지와 같은 보라/파랑(빌드 CSS 에 있음, §8 #50). 숫자 = 현재 필터(이 토글 제외) 기준 대수. --}}
+        @if(\App\Models\Setting::b2bPartnersEnabled())
         <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3" data-deal-pills>
             @foreach([
                 ['val' => 'DP', 'label' => 'DP', 'title' => \App\Models\Vehicle::DEAL_TYPES['DP']['title'], 'on' => 'bg-purple-600 text-white shadow-sm', 'off' => 'bg-purple-100 text-purple-700 hover:bg-purple-200'],
@@ -8292,6 +8293,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </button>
             @endforeach
         </div>
+        @endif
 
         {{-- 🗑️ 말소 필요 (jin 2026-09-14) — 매입 완납 + 말소 미처리 + 완납 후 N일 경과.
              진행상태와 **다른 축**이다: 판매중·선적중이어도 말소가 안 됐으면 여기 뜬다.
@@ -10330,6 +10332,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     @endif
                 </div>
                 {{-- 🏷️ 거래 유형 DP/FD (B2B 파트너스, jin 2026-11-01) — 거래(차량)별 지정. 관리 이상만 바꾸고 그 외는 읽기. 바이어가 바뀌면 자동 해제. --}}
+                @if(\App\Models\Setting::b2bPartnersEnabled())
                 <div data-deal-type>
                     <label class="label-base">{{ __('vehicle.field.deal_type') }}</label>
                     @if(auth()->user()?->canApprove())
@@ -10344,6 +10347,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     @endif
                     @error('deal_type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>
+                @endif
                 {{-- 당사자 축소 (jin 2026-07-09) — 판매=바이어만. 컨사이니는 선적 탭에서 입력. --}}
                 <div><label class="label-base">{{ __('vehicle.field.sale_price') }} </label><input wire:model="sale_price_str" type="text" data-money class="input-base input-required" placeholder="0" /></div>
                 <div><label class="label-base">TAX D/C</label><input wire:model="tax_dc_str" type="text" data-money class="input-base" placeholder="0" /></div>

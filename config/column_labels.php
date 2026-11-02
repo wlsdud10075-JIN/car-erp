@@ -489,6 +489,7 @@ return [
         'lock_toggle_changed' => '락 켜기/끄기',
         'unsecured_limit_toggle_changed' => '무담보 한도 기능 켜기/끄기',
         'buyer_cash_toggle_changed' => '바이어 현금 원장 켜기/끄기',
+        'b2b_partners_toggle_changed' => 'B2B 파트너스 켜기/끄기',   // 2026-11-02 회사별 토글
         'buyer_cash_receipt_added' => '바이어 현금 입금 기재',
         'buyer_cash_fee_added' => '바이어 현금 수수료 처리',
         'buyer_cash_to_savings' => '바이어 남은 현금 → 적립금 전환',
