@@ -130,6 +130,33 @@ class ManagerUserManagementTest extends TestCase
             ->assertStatus(403);
     }
 
+    /**
+     * 🪪 관리(팀 관리자)에겐 권한·역할 드롭다운 자체가 없다 — 일반사용자·영업만 만들 수 있고 서버도 그렇게 강제한다
+     * (jin 2026-11-02 «관리가 업무관리자로 가입시키는 씬을 본 것 같다» → 확인 결과 관리는 불가. 업무관리자가 같은 등급(업무관리자)을
+     * 만드는 것은 jin 명세(06-30)대로 허용). 이 가드는 「본인보다 위 등급을 만들 수 없다」를 화면·서버 양쪽에서 못 박는다.
+     */
+    public function test_rank_cannot_create_above_itself(): void
+    {
+        // 관리 — 권한 select 가 아예 없다
+        $mgr = $this->user('관리F', 'user', '관리');
+        $html = Volt::actingAs($mgr)->test('admin.users.index')->call('openCreate')->html();
+        $this->assertStringNotContainsString('wire:model.live="permission"', $html, '관리에게 권한 드롭다운이 보인다');
+        $this->assertStringNotContainsString('value="manager"', $html);
+
+        // 업무관리자 — 업무관리자(같은 등급)까지, 최고관리자·시스템관리자는 없다
+        $ops = $this->user('업무F', 'manager', '관리');
+        $html = Volt::actingAs($ops)->test('admin.users.index')->call('openCreate')->html();
+        $this->assertStringContainsString('value="manager"', $html);
+        $this->assertStringNotContainsString('value="admin"', $html);
+        $this->assertStringNotContainsString('value="super"', $html);
+
+        // 서버: 업무관리자가 폼 변조로 admin 을 넣어도 거부
+        Volt::actingAs($ops)->test('admin.users.index')->call('openCreate')
+            ->set('name', '변조')->set('email', 'esc@test.local')->set('password', 'password123')
+            ->set('permission', 'admin')->call('save')->assertHasErrors('permission');
+        $this->assertDatabaseMissing('users', ['email' => 'esc@test.local']);
+    }
+
     public function test_manager_save_forces_user_permission_and_sales_role(): void
     {
         // 관리가 본인 팀 영업 편집하며 권한/role 변조 → 서버가 user·영업 강제.
