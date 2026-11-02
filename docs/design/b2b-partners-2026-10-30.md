@@ -78,4 +78,6 @@
 - 🔀 차량관리 뱃지 위치 = **바이어 옆**(jin 11-01 2차 «바이어 옆에 붙는 건 어때» — 그 바이어와의 거래 표시라 뜻이 맞고 UX 도 안 해친다). 바이어 컬럼이 꺼져 있으면 차량번호 옆 폴백. 채권관리는 차종 옆 그대로. 「뱃지 없음」 토글은 뺐다(기존 바이어 = 기본).
 - 🧭 **jin 의 예상 흐름(아직 확정 아님)**: 기존/신규 바이어 → 특수계약(DP/FD) → **B2B 파트너스 = 보험 가입 뒤 특수계약으로 진행하는 바이어**, 별도 관리 필요. 지금 B2B 메뉴는 바이어 탭 필터이고, 나중에 「관리대상 = DP/FD 로 거래하는 바이어」로 좁혀질 가능성이 높다. 보험 정보·별도 화면은 2차 범위(요청서 06 제외 항목) — jin 결정 후.
 - 로컬 확인용 시더 = `database/seeders/B2bPartnersDemoSeeder.php`(미커밋, local 가드) — 바이어 2·차량 90데0001~0004·계약서 3·사진 1.
+- 🔀 **2026-11-02 회사별 토글**(jin «시스템관리자에서 on/off, 각 회사별») — `Setting::b2bPartnersEnabled()` = `b2b_partners_enabled_{회사}`, 기능설정 「B2B 파트너스 사용」(super, 감사 `b2b_partners_toggle_changed`), **기본 꺼짐**. 끄면 메뉴·뱃지(컴포넌트 한 줄)·토글 버튼·필터(내보내기 포함)·판매탭 칸·바이어 목록 B2B 열·패널 블록·계약서 업로드(403) 숨김, 저장은 키를 안 실어 값 보존. 포털 2단계 칸은 토글 밖. dev `682b7ec1`.
+- 🗺️ **바이어 포털 칸 일괄 채움** `buyers:backfill-portal-info`(dry-run 기본·`--apply`·`--whatsapp`, 규칙 `App\Support\BuyerPortalBackfill`) — 운영 미리보기 https://claude.ai/artifact/TRELKQ7MtAPUS8Jx2NxsKJ (heymanerp 19→도시 13 · ssancarerp 355→116). jin 적용 결정 대기.
 
