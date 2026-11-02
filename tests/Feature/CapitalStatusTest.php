@@ -503,66 +503,52 @@ class CapitalStatusTest extends TestCase
             '재계산은 잔액을 안 바꾸므로 잔액 로그가 늘면 안 됩니다.');
     }
 
-    public function test_alimtalk_capital_weekly_vars(): void
-    {
-        $this->seedErp();
-        $svc = app(CapitalStatusService::class);
-        $svc->capture(['krw' => 1_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-23');
-        Setting::updateOrCreate(['key' => CapitalStatusService::PRINCIPAL_KEY], ['value' => '10000000', 'type' => 'integer']);
-
-        $vars = AlimtalkCapitalWeekly::buildVars();
-        $d = $svc->derive($svc->latest());
-        $this->assertEquals('2026-07-23', $vars['기준일']);
-        // 「손익」은 **정상 회수 기준**(순자산 − 원금)이다 — 청산 기준은 파산 가정이라
-        // 카톡에 그것만 찍히면 매주 큰 마이너스가 와서 실제 상태를 오해한다(jin 2026-07-31).
-        $this->assertGreaterThan(0, (int) $d['net_profit_krw'], '미수 2천만이 있으므로 정상 회수 기준은 양수');
-        $this->assertLessThan(0, (int) $d['profit_krw'], '청산 기준은 여전히 음수여야 한다(대비 확인)');
-        // 🔀 2026-10-13 — 손익은 요약정보가 아니라 **아이템 줄**로 간다(부호·한글 허용). 다른 항목과 같은 억 단위.
-        $this->assertMatchesRegularExpression('/^\d+(\.\d+)?억$/u', $vars['손익'], "이익은 부호 없이 억 단위. 받은 값: {$vars['손익']}");
-        $this->assertArrayHasKey('굴리는자금', $vars);
-        $this->assertArrayHasKey('미지급', $vars);
-    }
-
     /**
-     * 🔀 2026-10-13 (jin) — 손실 주에도 보낸다. 손익이 요약정보(음수 불가, 실측 7종 K140)에서 **아이템 줄**로
-     * 옮겨져 '-' 부호가 통과한다(실측 '-5.99억' sent). 옛 「보류」 분기는 ssancarerp 를 6주 침묵시켰다.
+     * 🧾 자금보고 = 「총자산 = 자본 + 부채」 (대표 2026-11-02). 강조 제목에 '총자산 ○○억', 줄은 자본·부채 둘(값 + 지난 보고 대비 변동).
+     * 두 줄 값을 더하면 총자산 — 카드만 보고 더해 읽어도 맞는다. 원금 미설정이어도 보낸다(자본은 원금과 무관).
      */
-    public function test_alimtalk_capital_weekly_sends_a_loss_with_a_minus_sign(): void
+    public function test_alimtalk_capital_weekly_vars_are_total_assets_equity_and_liabilities(): void
     {
         $this->seedErp();
         $svc = app(CapitalStatusService::class);
-        $svc->capture(['krw' => 1_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-23');
+        Setting::where('key', CapitalStatusService::PRINCIPAL_KEY)->delete();
+        $svc->capture(['krw' => 1_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-16');
+        $first = AlimtalkCapitalWeekly::buildVars();
+        $this->assertSame(['기준일', '총자산', '자본', '부채'], array_keys($first));
+        $this->assertSame(AlimtalkTemplates::TEMPLATES['erp_capital_weekly']['vars'], array_keys($first), '선언 변수와 빌더가 같아야 한다');
+        $this->assertSame('0.29억', $first['자본'], '첫 주(비교 대상 없음)는 변동 없이 값만');
 
-        // 원금을 순자산보다 크게 잡아 손익을 음수로 만든다.
-        Setting::updateOrCreate(['key' => CapitalStatusService::PRINCIPAL_KEY], ['value' => '99000000000', 'type' => 'integer']);
-        $this->assertLessThan(0, (int) $svc->derive($svc->latest())['net_profit_krw']);
-
+        $svc->capture(['krw' => 31_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-23');   // 현금 +3천만
         $vars = AlimtalkCapitalWeekly::buildVars();
-        $this->assertMatchesRegularExpression('/^-\d+(\.\d+)?억$/u', $vars['손익'] ?? '', '손실은 - 부호 + 억 단위');
+        // 총자산 = 현금 3,100만 + 미판매재고 1,500만 + 미수 2,000만 = 6,600만 / 부채 700만 / 자본 5,900만
+        $this->assertSame('2026-07-23', $vars['기준일']);
+        $this->assertSame('총자산 0.66억', $vars['총자산']);
+        $this->assertSame('0.59억 (+0.30억)', $vars['자본']);
+        $this->assertSame('0.07억 (+0.00억)', $vars['부채'], '변동 0 도 붙인다(「안 움직였다」가 정보다)');
+        foreach (['자본', '부채'] as $k) {
+            $this->assertLessThanOrEqual(20, mb_strlen($vars[$k]), "{$k} 가 아이템 20자 컷을 넘는다: {$vars[$k]}");
+        }
+        $this->assertLessThanOrEqual(30, mb_strlen($vars['총자산']), '강조 제목 30자 한도(이미지 없음)');
 
-        // 카드 규격: 손익은 아이템 5번째, 요약정보 없음(요약정보로 되돌리면 손실 주에 K140 으로 전량 반려).
-        $card = AlimtalkTemplates::ITEMLIST['erp_capital_weekly'];
-        $this->assertArrayNotHasKey('summary', $card);
-        $this->assertSame(['title' => '원금대비손익', 'description' => '#{손익}'], end($card['items']));
-        $this->assertLessThanOrEqual(6, mb_strlen('원금대비손익'));
+        // 카드 payload — 강조 제목에 총자산, 줄은 자본·부채 둘뿐(아이템리스트 하한 2줄), 요약정보 없음
+        $card = AlimtalkTemplates::itemListPayload('erp_capital_weekly', $vars);
+        $this->assertSame('총자산 0.66억', $card['items']['itemHighlight']['title']);
+        $this->assertSame('자본+부채·2026-07-23', $card['items']['itemHighlight']['description']);
+        $this->assertLessThanOrEqual(19, mb_strlen($card['items']['itemHighlight']['description']), '강조 설명 19자(07-31 K135)');
+        $this->assertSame([['title' => '자본', 'description' => '0.59억 (+0.30억)'], ['title' => '부채', 'description' => '0.07억 (+0.00억)']],
+            $card['items']['item']['list']);
+        $this->assertArrayNotHasKey('summary', $card['items']['item']);
     }
 
-    /** 원금 미설정이면 손익 줄에 '원금 미설정' 을 그대로 싣는다 — 아이템 줄은 한글이 된다. */
-    public function test_alimtalk_capital_weekly_says_principal_unset_instead_of_holding_back(): void
+    /** 손실(자본이 음수)도 '-' 부호로 그대로 나간다 — 아이템 줄은 부호·한글이 통과한다(10-13 실측). 보류 분기 없음. */
+    public function test_alimtalk_capital_weekly_sends_negative_equity_with_a_minus_sign(): void
     {
         $this->seedErp();
-        app(CapitalStatusService::class)->capture(['krw' => 1_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-23');
-        Setting::where('key', CapitalStatusService::PRINCIPAL_KEY)->delete();
+        app(CapitalStatusService::class)->capture(['krw' => -90_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-23');   // 마이너스 통장
 
         $vars = AlimtalkCapitalWeekly::buildVars();
-        $this->assertSame('원금 미설정', $vars['손익'] ?? null);
-    }
-
-    public function test_alimtalk_capital_weekly_empty_and_inert_without_snapshot(): void
-    {
-        // 스냅샷 없으면 변수 빈 배열 → 크론 skip (배포 inert)
-        $this->assertEmpty(AlimtalkCapitalWeekly::buildVars());
-        $this->artisan('alimtalk:capital-weekly')->assertExitCode(0);
+        $this->assertMatchesRegularExpression('/^-\d+(\.\d+)?억$/u', $vars['자본'], '자본 = -0.62억 (총자산 -0.55억 − 부채 0.07억)');
+        $this->assertSame('총자산 -0.55억', $vars['총자산']);
     }
 
     /**
@@ -755,26 +741,5 @@ class CapitalStatusTest extends TestCase
         // sendTest 가 그 버튼을 쓰는지는 정적으로 — 종전 주석(「서명 링크형은 버튼 없이 나간다」)이 거짓이 된 자리다.
         $src = file_get_contents(app_path('Services/BizmAlimtalkService.php'));
         $this->assertStringContainsString('AlimtalkCapitalWeekly::reportButtons()', $src, 'sendTest 가 자금보고 버튼을 실어야 한다');
-    }
-
-    /** 알림톡 값 뒤에 지난 보고 대비 변동이 붙는다 — 등록본 고정 문구는 그대로, 20자 컷 안. 첫 주(비교 대상 없음)는 종전 값. */
-    public function test_alimtalk_capital_weekly_appends_the_delta_since_last_report(): void
-    {
-        $this->seedErp();
-        $svc = app(CapitalStatusService::class);
-        Setting::updateOrCreate(['key' => CapitalStatusService::PRINCIPAL_KEY], ['value' => '10000000', 'type' => 'integer']);
-
-        $svc->capture(['krw' => 1_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-16');
-        $this->assertMatchesRegularExpression('/^\d+(\.\d+)?억$/u', AlimtalkCapitalWeekly::buildVars()['통장현금'], '첫 주는 변동 없이');
-
-        $svc->capture(['krw' => 31_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-23');   // 현금 +3천만
-        $vars = AlimtalkCapitalWeekly::buildVars();
-        $this->assertSame('0.31억 (+0.30억)', $vars['통장현금']);
-        $this->assertSame('0.20억 (+0.00억)', $vars['미수'], '변동 0 도 붙인다(「안 움직였다」가 정보다)');
-        $this->assertMatchesRegularExpression('/^-?\d+(\.\d+)?억 \([+-]\d+(\.\d+)?억\)$/u', $vars['손익']);
-        foreach (['통장현금', '재고', '미수', '미지급', '손익'] as $k) {
-            $this->assertLessThanOrEqual(20, mb_strlen($vars[$k]), "{$k} 가 아이템 20자 컷을 넘는다: {$vars[$k]}");
-        }
-        $this->assertMatchesRegularExpression('/^\d+(\.\d+)?억$/u', $vars['굴리는자금'], '강조칸은 그대로(19자 제한 칸과 짝)');
     }
 }
