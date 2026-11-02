@@ -7,6 +7,7 @@ use App\Models\Buyer;
 use App\Models\BuyerDocument;
 use App\Models\ExportLog;
 use App\Models\Salesman;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -28,6 +29,19 @@ use Tests\TestCase;
 class B2bPartnersTest extends TestCase
 {
     use RefreshDatabase;
+
+    /** 회사별 토글(기본 꺼짐) — 이 파일의 기능 테스트는 켠 상태에서 돈다. 꺼진 상태는 아래 ⑥ 에서 따로. */
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->setB2b(true);
+    }
+
+    private function setB2b(bool $on): void
+    {
+        Setting::updateOrCreate(['key' => 'b2b_partners_enabled_'.Setting::companyTemplateSet()], ['value' => $on ? '1' : '0', 'type' => 'boolean']);
+        Setting::flushRiskParamMemo();
+    }
 
     private function manager(): User
     {
@@ -277,5 +291,56 @@ class B2bPartnersTest extends TestCase
         $this->assertSame($unpaidBefore, $v->sale_unpaid_amount, '뱃지·계약서는 미수를 안 바꾼다(요청서 07)');
         $this->assertSame($cacheBefore, $v->sale_unpaid_amount_krw_cache);
         $this->assertSame('판매중', $v->progress_status);
+    }
+
+    // ── ⑥ 회사별 토글 (jin 2026-11-02) — 꺼지면 화면·필터·메뉴·저장이 전부 숨고, 데이터는 남는다 ──
+
+    public function test_when_the_company_toggle_is_off_nothing_shows_and_nothing_changes(): void
+    {
+        $this->actingAs($this->admin());
+        $sm = $this->salesman();
+        $b = $this->buyer($sm, ['name' => 'PARTNER CO', 'is_b2b_partner' => true]);
+        $v = $this->vehicle('11가1001', $sm, $b, ['deal_type' => 'DP', 'sale_price' => 1000, 'sale_date' => now()->toDateString()]);
+        $other = $this->vehicle('22나2002', $sm, $b, ['sale_price' => 1000, 'sale_date' => now()->toDateString()]);
+        $this->setB2b(false);
+
+        // 뱃지·토글 버튼·판매탭 칸이 안 그려지고, 필터는 무시된다(전부 보임)
+        $c = Volt::test('erp.vehicles.index')->set('dateType', 'all')->set('dealFilter', 'DP');
+        $html = $c->html();
+        $this->assertStringNotContainsString('data-deal-badge', $html);
+        $this->assertStringNotContainsString('data-deal-pills', $html);
+        $c->assertSee('22나2002');
+        $this->assertStringNotContainsString('data-deal-type', Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->html());
+        // 저장해도 deal_type 은 안 건드린다(키를 안 싣는다)
+        Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->set('deal_type', '')->call('save')->assertHasNoErrors();
+        $this->assertSame('DP', $v->fresh()->deal_type, '꺼진 상태의 저장이 값을 지우면 안 된다');
+
+        // 채권관리·바이어 목록·패널·계약서 업로드
+        $this->assertStringNotContainsString('data-deal-pills', Volt::test('erp.receivables.index')->html());
+        $bl = Volt::test('erp.buyers.index')->set('b2bFilter', '1');
+        $bl->assertSee('PARTNER CO');
+        $this->assertStringNotContainsString('data-buyer-b2b', $bl->call('openEdit', $b->id)->html());
+        Volt::test('erp.buyers.index')->call('openEdit', $b->id)->set('is_b2b_partner', false)->call('save')->assertHasNoErrors();
+        $this->assertTrue($b->fresh()->is_b2b_partner, '꺼진 상태의 저장이 관리대상을 지우면 안 된다');
+        Volt::test('erp.buyers.index')->call('openEdit', $b->id)
+            ->set('contractUpload', UploadedFile::fake()->create('x.pdf', 10, 'application/pdf'))->call('addContract')->assertStatus(403);
+        $this->assertStringNotContainsString('B2B 파트너스', $this->get(route('erp.buyers.index'))->getContent(), '사이드바 메뉴도 숨는다');
+
+        // 다시 켜면 그대로 보인다
+        $this->setB2b(true);
+        $this->assertStringContainsString('data-deal-badge="DP"', Volt::test('erp.vehicles.index')->set('dateType', 'all')->html());
+    }
+
+    public function test_only_super_admin_flips_the_company_toggle_and_it_is_audited(): void
+    {
+        $this->setB2b(false);
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+        Volt::test('admin.settings')->assertSet('b2bPartnersEnabled', false)->set('b2bPartnersEnabled', true);
+        Setting::flushRiskParamMemo();
+        $this->assertTrue(Setting::b2bPartnersEnabled());
+        $this->assertSame(1, AuditLog::where('action', 'b2b_partners_toggle_changed')->count());
+
+        $this->actingAs($this->admin());   // 최고관리자(admin)는 못 바꾼다
+        Volt::test('admin.settings')->assertStatus(403);   // 기능설정 자체가 super 전용(mount 에서 403)
     }
 }

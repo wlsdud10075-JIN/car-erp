@@ -361,7 +361,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'vehicles as dp_count' => fn ($q) => $q->where('deal_type', 'DP'),
                 'vehicles as fd_count' => fn ($q) => $q->where('deal_type', 'FD'),
             ])
-            ->when($this->b2bFilter === '1', fn ($q) => $q->where('is_b2b_partner', true))
+            ->when($this->b2bFilter === '1' && Setting::b2bPartnersEnabled(), fn ($q) => $q->where('is_b2b_partner', true))
             ->when($restrictToOwnSalesman, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('salesman_id', $user->salesman->id)
                 ->orWhereHas('vehicles', fn ($q3) => $q3->where('salesman_id', $user->salesman->id))
@@ -534,7 +534,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             //      🚫 여기에 다시 막지 말 것. 대신 아래 화면이 몇 대가 남았는지 말한다.
             $data['is_domestic'] = $this->is_domestic;
             // 🤝 B2B 파트너스 관리대상·공개지도 동의·API 연동 표시 — 관리 이상(요청서 05 「지정 담당자」, jin 11-01 «관리 이상»).
-            $data['is_b2b_partner'] = $this->is_b2b_partner;
+            if (Setting::b2bPartnersEnabled()) {   // 꺼진 회사에선 칸이 안 보이니 값도 안 건드린다
+                $data['is_b2b_partner'] = $this->is_b2b_partner;
+            }
             $data['map_name_public'] = $this->map_name_public;
             $data['api_linked'] = $this->api_linked;
             // 🤝 바이어 정산 방식 — 선택지 밖 값은 기본으로(§8 #26 프로퍼티 주입 방어). karaba 는 화면도 저장도 없다.
@@ -1453,7 +1455,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function addContract(): void
     {
         $user = auth()->user();
-        abort_unless((bool) $user?->canApprove(), 403);
+        abort_unless((bool) $user?->canApprove() && Setting::b2bPartnersEnabled(), 403);
         if (! $this->editingId) {
             return;
         }
@@ -1599,11 +1601,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="{{ $sm->id }}">{{ $sm->name }}</option>
         @endforeach
     </select>
+    @if(Setting::b2bPartnersEnabled())
     {{-- 🤝 B2B 파트너스 필터 (jin 2026-11-01) — 사이드바 「B2B 파트너스」 = ?b2b=1 --}}
     <select wire:model.live="b2bFilter" class="input-filter">
         <option value="">{{ __('buyer.b2b_filter_all') }}</option>
         <option value="1">{{ __('buyer.b2b_filter_only') }}</option>
     </select>
+    @endif
     <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
 </div>
 
@@ -1618,7 +1622,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('buyer.col_b2b') }}</th>
+                @if(Setting::b2bPartnersEnabled())<th class="pb-2 pr-4 font-medium">{{ __('buyer.col_b2b') }}</th>@endif
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -1651,12 +1655,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                         {{ $b->is_active ? __('common.active') : __('common.inactive') }}
                     </span>
                 </td>
+                @if(Setting::b2bPartnersEnabled())
                 {{-- 🤝 B2B 관리대상 + 거래별 DP/FD 개수(차량에서 센다 — 바이어에 플래그 없음) --}}
                 <td class="py-3 pr-4 text-xs text-gray-600">
                     @if($b->is_b2b_partner)<span class="badge badge-amber">{{ __('buyer.b2b_badge') }}</span>@endif
                     @if(($b->dp_count ?? 0) > 0)<span class="ml-1 whitespace-nowrap rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-700" title="{{ \App\Models\Vehicle::DEAL_TYPES['DP']['title'] }}">DP {{ $b->dp_count }}</span>@endif
                     @if(($b->fd_count ?? 0) > 0)<span class="ml-1 whitespace-nowrap rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700" title="{{ \App\Models\Vehicle::DEAL_TYPES['FD']['title'] }}">FD {{ $b->fd_count }}</span>@endif
                 </td>
+                @endif
                 <td class="py-3 text-right">
                     @if(auth()->user()?->canApprove())
                     <button wire:click.stop="delete({{ $b->id }})"
@@ -1666,7 +1672,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">{{ __('buyer.empty') }}</td></tr>
+            <tr><td colspan="{{ Setting::b2bPartnersEnabled() ? 8 : 7 }}" class="py-12 text-center text-sm text-gray-400">{{ __('buyer.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -1679,7 +1685,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>
             <div class="font-medium text-gray-800">{{ $b->name }}@if($b->isNewBuyer())<span class="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-buyer-new title="{{ __('buyer.new_badge_hint', ['date' => $b->created_at->format('Y-m-d')]) }}">{{ __('buyer.new_badge') }}</span>@endif</div>
             <div class="text-xs text-gray-500">{{ $b->country?->name ?? '' }} {{ $b->contact_email ? '· '.$b->contact_email : '' }}</div>
-            @if($b->is_b2b_partner || ($b->dp_count ?? 0) > 0 || ($b->fd_count ?? 0) > 0)
+            @if(Setting::b2bPartnersEnabled() && ($b->is_b2b_partner || ($b->dp_count ?? 0) > 0 || ($b->fd_count ?? 0) > 0))
             <div class="mt-0.5 text-[10px]">
                 @if($b->is_b2b_partner)<span class="badge badge-amber">{{ __('buyer.b2b_badge') }}</span>@endif
                 @if(($b->dp_count ?? 0) > 0)<span class="ml-1 rounded-full bg-purple-100 px-1.5 py-0.5 font-bold text-purple-700">DP {{ $b->dp_count }}</span>@endif
@@ -1906,6 +1912,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 @endif
 
+                @if(Setting::b2bPartnersEnabled())
                 {{-- 🤝 B2B 파트너스 (jin 2026-11-01) — 관리대상 체크 + 계약서. 관리 이상만 바꾼다(저장 시 재인가). --}}
                 @php $canB2b = (bool) auth()->user()?->canApprove(); @endphp
                 <div class="rounded-lg border border-amber-200 bg-amber-50 p-3" data-buyer-b2b>
@@ -1969,6 +1976,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </div>
                     @endif
                 </div>
+                @endif
 
                 {{-- 퇴사자 승계 바이어 (jin 2026-08-04) — 사내직원 정산 건당 5만원 고정. [관리] 이상만 --}}
                 @if(auth()->user()?->canApprove())

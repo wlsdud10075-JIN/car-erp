@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\BoardRequest;
 use App\Models\ExportLog;
+use App\Models\Setting;
 use App\Models\Vehicle;
 use App\Models\VehicleShipment;
 use App\Services\VehicleExportService;
@@ -53,7 +54,7 @@ class VehicleExportController extends Controller
         //   안 맞추면 「화면엔 3대인데 엑셀엔 300대」가 된다 — 에러 없이 조용히.
         // 🏷️ 거래 유형 DP/FD/none (B2B 파트너스, jin 2026-11-01) — 화면 필터와 같은 scope(Vehicle::scopeDealType).
         $deal = $mirror ? (string) $request->query('deal', '') : '';
-        $deal = ($deal === 'none' || array_key_exists($deal, Vehicle::DEAL_TYPES)) ? $deal : '';
+        $deal = (Setting::b2bPartnersEnabled() && ($deal === 'none' || array_key_exists($deal, Vehicle::DEAL_TYPES))) ? $deal : '';
         $shipFilter = $mirror ? (string) $request->query('ship', '') : '';
         $shipFilter = in_array($shipFilter, ['ems', 'dhl', 'none'], true) ? $shipFilter : '';
         $shipMonth = $mirror ? (string) $request->query('shipmonth', '') : '';

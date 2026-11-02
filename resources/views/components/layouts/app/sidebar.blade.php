@@ -224,7 +224,7 @@
                     'href' => route('erp.buyers.index', ['b2b' => 1]),
                     'icon' => 'users',
                     'active' => request()->routeIs('erp.buyers.*') && request()->query('b2b') === '1',
-                    'show' => true,
+                    'show' => \App\Models\Setting::b2bPartnersEnabled(),   // 회사별 토글(기능설정, jin 11-02)
                 ],
                 [
                     // 바이어 정산현황 (jin 2026-09-05) — 기획 docs/design/buyer-cash-ledger.md
