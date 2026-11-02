@@ -718,6 +718,27 @@ class CapitalStatusTest extends TestCase
         $this->assertNull($svc->compare(CashSnapshot::whereDate('snapshot_date', '2026-10-20')->first()));
     }
 
+    /**
+     * 테스트 발송도 실발송과 같은 「자금 보고 보기」 서명 버튼을 싣는다 — 등록본에 버튼이 있어 없이 보내면 K108
+     * (2026-11-02 로컬 실측: 버튼 없음 K108 → 버튼 붙임 sent). 스냅샷이 없으면 버튼 없음(그땐 발송 자체가 skip).
+     */
+    public function test_capital_weekly_report_button_is_shared_by_cron_and_test_send(): void
+    {
+        $this->assertSame([], AlimtalkCapitalWeekly::reportButtons(), '스냅샷 없음 → 버튼 없음');
+
+        $this->seedErp();
+        app(CapitalStatusService::class)->capture(['krw' => 1_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-23');
+        $b = AlimtalkCapitalWeekly::reportButtons();
+        $this->assertCount(1, $b);
+        $this->assertSame('자금 보고 보기', $b[0]['name']);
+        $this->assertStringContainsString('/a/capital/2026-07-23?', $b[0]['url']);
+        $this->assertStringContainsString('signature=', $b[0]['url']);
+
+        // sendTest 가 그 버튼을 쓰는지는 정적으로 — 종전 주석(「서명 링크형은 버튼 없이 나간다」)이 거짓이 된 자리다.
+        $src = file_get_contents(app_path('Services/BizmAlimtalkService.php'));
+        $this->assertStringContainsString('AlimtalkCapitalWeekly::reportButtons()', $src, 'sendTest 가 자금보고 버튼을 실어야 한다');
+    }
+
     /** 알림톡 값 뒤에 지난 보고 대비 변동이 붙는다 — 등록본 고정 문구는 그대로, 20자 컷 안. 첫 주(비교 대상 없음)는 종전 값. */
     public function test_alimtalk_capital_weekly_appends_the_delta_since_last_report(): void
     {
