@@ -398,6 +398,7 @@ return [
         'lock_threshold_purchase_payment' => '매입지급 필요입금률',
         'unsecured_limit_enabled' => '무담보 한도 사용',
         'buyer_cash_enabled' => '바이어 현금 원장 사용',
+        'b2b_partners_enabled' => 'B2B 파트너스 사용',   // 2026-11-02 회사별 토글
         'unsecured_limit_krw' => '무담보 한도',
         'credit_score_weights' => '신용도 가중치',
         'lock_threshold_bl_issue' => 'B/L 발행 필요입금률',
