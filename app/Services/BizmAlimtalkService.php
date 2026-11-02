@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Console\Commands\AlimtalkCapitalWeekly;
 use App\Models\AlimtalkLog;
 use App\Support\AlimtalkConfig;
 use App\Support\AlimtalkTemplates;
@@ -269,12 +270,17 @@ class BizmAlimtalkService
         );
 
         // 🔗 버튼이 등록된 템플릿(링크 후속본 v2)은 버튼 없이 보내면 승인본과 달라 통째로 K108 이다.
-        //    서명 링크형(`${URL}`, 자금보고·지급승인)은 linkButtons 가 [] 를 돌려주므로 종전대로 나간다.
+        //    서명 링크형(`${URL}`)은 linkButtons 가 [] 라 종전엔 버튼 없이 나갔는데, 자금보고 등록본은 버튼이 있어
+        //    **테스트도 K108** 이었다(2026-11-02 로컬 실측). 실발송과 같은 서명 버튼을 싣는다(지급승인은 배치 서명이라 제외).
+        $buttons = AlimtalkTemplates::baseCode($code) === 'erp_capital_weekly'
+            ? AlimtalkCapitalWeekly::reportButtons()
+            : AlimtalkTemplates::linkButtons($code);
+
         return (new self($testConfig))->send(
             $code, $phone,
             AlimtalkTestVars::for($code),
             ['user_id' => auth()->id()],
-            AlimtalkTemplates::linkButtons($code),
+            $buttons,
         );
     }
 

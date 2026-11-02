@@ -58,20 +58,7 @@ class AlimtalkCapitalWeekly extends Command
                 return self::SUCCESS;
             }
 
-            // 보고서 링크 버튼 (안건4 3단계) — 대표가 로그인 없이 눌러 항목을 펼쳐 본다.
-            //   스냅샷 기준일로 서명, 만료는 CapitalReportController::LINK_TTL_DAYS.
-            //   payout 승인 버튼과 동일 형식(button1 = name/type WL/url_mobile/url_pc).
-            $buttons = [];
-            if ($snap = app(CapitalStatusService::class)->latest()) {
-                $buttons[] = [
-                    'name' => '자금 보고 보기',
-                    'url' => URL::temporarySignedRoute(
-                        'capital.report',
-                        now()->addDays(CapitalReportController::LINK_TTL_DAYS),
-                        ['date' => $snap->snapshot_date->format('Y-m-d')],
-                    ),
-                ];
-            }
+            $buttons = self::reportButtons();
 
             $svc = BizmAlimtalkService::active();
             foreach ($recipients as $phone) {
@@ -86,6 +73,29 @@ class AlimtalkCapitalWeekly extends Command
 
             return self::FAILURE;
         }
+    }
+
+    /**
+     * 보고서 링크 버튼 (안건4 3단계) — 대표가 로그인 없이 눌러 항목을 펼쳐 본다.
+     *   스냅샷 기준일로 서명, 만료는 CapitalReportController::LINK_TTL_DAYS. payout 승인 버튼과 동일 형식.
+     * 🔗 **테스트 발송도 이걸 실어야 한다** — 등록본에 버튼이 있어 버튼 없이 보내면 K108(2026-11-02 로컬 실측).
+     *   스냅샷이 없으면 [] (그때는 buildVars 도 비어 발송 자체가 skip 이다).
+     */
+    public static function reportButtons(): array
+    {
+        $snap = app(CapitalStatusService::class)->latest();
+        if (! $snap) {
+            return [];
+        }
+
+        return [[
+            'name' => '자금 보고 보기',
+            'url' => URL::temporarySignedRoute(
+                'capital.report',
+                now()->addDays(CapitalReportController::LINK_TTL_DAYS),
+                ['date' => $snap->snapshot_date->format('Y-m-d')],
+            ),
+        ]];
     }
 
     /** 직전 buildVars() 가 빈 배열을 돌려준 이유(사람이 읽는 한글) — handle() 이 로그 화면에 남긴다. */
