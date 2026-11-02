@@ -92,6 +92,11 @@
             .bs summary .k small { font-weight:400; font-size:11.5px; color:#9ca3af; margin-left:4px; }
             .bs .drow .dv { white-space:nowrap; }
             .bs .drow .d { min-width:56px; font-size:11.5px; }
+            .bs .fx { color:#9ca3af; font-size:11px; margin-right:8px; font-weight:400; }
+            .bs .detail details.nest { border-top:0; }
+            .bs .detail details.nest summary { padding:5px 0; font-size:13.5px; }
+            .bs .detail details.nest summary .k { color:#6b7280; }
+            .bs .detail details.nest .detail { padding-left:12px; }
         </style>
         <div class="card bs">
             <div class="cap">자산 = 자본 + 부채</div>
@@ -111,7 +116,7 @@
                     <div class="drow"><span>안 팔린 차 (재고)</span><span class="dv">{{ $eok($d['unsold_inventory_krw'] ?? $d['inventory_krw']) }}{!! $dl('unsold_inventory_krw') !!}</span></div>
                     @if ($frozen !== null)
                         <div class="drow"><span>받을 돈 (미수)</span><span class="dv">{{ $eok($frozen) }}{!! $dl('receivable_frozen_krw') !!}</span></div>
-                        <div class="drow sub"><span>환율 재평가 (오늘 환율 − 판매환율)</span><span class="dv">{{ ($d['fx_revaluation_krw'] >= 0 ? '+' : '') }}{{ $eok($d['fx_revaluation_krw']) }}</span></div>
+                        <div class="drow sub"><span>환율 재평가 (오늘 환율 − 판매환율)</span><span class="dv"><span class="fx">오늘 $ {{ number_format((float) $d['fx_usd']) }} · € {{ number_format((float) $d['fx_eur']) }}</span>{{ ($d['fx_revaluation_krw'] >= 0 ? '+' : '') }}{{ $eok($d['fx_revaluation_krw']) }}</span></div>
                     @else
                         <div class="drow"><span>받을 돈 (미수)</span><span class="dv">{{ $eok($d['receivable_krw']) }}{!! $dl('receivable_krw') !!}</span></div>
                     @endif
@@ -127,7 +132,16 @@
                 <div class="detail">
                     <div class="drow"><span>거래처에 줄 돈 (매입·운임·정산)</span><span class="dv">{{ $eok($d['payable_krw']) }}{!! $dl('payable_krw') !!}</span></div>
                     @if ((int) $d['advance_krw'] > 0 || ($delta['advance_krw'] ?? 0))
-                        <div class="drow"><span>빌린 돈 (가수금)</span><span class="dv">{{ $eok($d['advance_krw']) }}{!! $dl('advance_krw') !!}</span></div>
+                        <details class="nest">
+                            <summary><span class="k">빌린 돈 (가수금)</span><span class="v">{{ $eok($d['advance_krw']) }}{!! $dl('advance_krw') !!}</span></summary>
+                            <div class="detail">
+                                @forelse ($advances as $a)
+                                    <div class="drow"><span>{{ $a->company_name }}</span><span class="dv">{{ $won($a->amount) }}</span></div>
+                                @empty
+                                    <div class="drow"><span>예치·가수금 화면에 등록된 「갚을 돈」이 여기에 한 줄씩 보입니다.</span><span></span></div>
+                                @endforelse
+                            </div>
+                        </details>
                     @endif
                 </div>
             </details>
