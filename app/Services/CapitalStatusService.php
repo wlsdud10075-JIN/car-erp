@@ -402,6 +402,7 @@ class CapitalStatusService
          *   공식이 새로 생긴 게 아니다 — 순자산을 양쪽으로 펼쳐 놓은 것이라 항등식이 구조적으로 맞는다.
          *   ⚠️ 구 스냅샷(미판매재고 null)은 순자산 폴백과 같은 재고(선적전)를 쓴다 — 그래야 자본 = 순자산이 유지된다.
          * 환율 재평가 = 미수(오늘 환율) − 미수(굳힌 판매환율). 굳힌 값이 없는 구 스냅샷은 null.
+         *   ⚠️ 환율 미입력 외화 차량(캐시 null → 굳힌 합엔 없고 오늘 환율 합엔 있음)도 이 줄에 섞인다 — 「오늘 환율 기준과의 차이」로 읽을 것.
          */
         $invForAssets = $unsold === null ? (int) $s->inventory_krw : (int) $unsold;
         $totalAssets = $cash + $invForAssets + (int) $s->receivable_krw + $auctionDeposit;
@@ -461,6 +462,8 @@ class CapitalStatusService
      * 변동 항등식: Δ총자산 = Δ부채 + Δ자본. 외부 투입(원금 변경)이 없으면 Δ자본 = 그 기간 번 돈.
      *   🚫 Δ총자산 = 0 을 기대하지 말 것 — 차를 팔면 재고(매입가)가 미수(판매가)로 바뀌어 마진만큼 늘고,
      *   미지급을 갚으면 현금·부채가 같이 줄어 총자산은 줄되 자본은 그대로다. 「똑같아야 할」 것은 자본 쪽이다.
+     *
+     * ⚠️ 두 스냅샷 모두 **현재** 원금으로 derive 하므로 Δ원금은 늘 0 — 그 사이 원금을 바꿨으면 그 몫이 Δ번돈에 실린다.
      *
      * @return array{prev_date:CarbonInterface, days:int, prev:array, delta:array<string,int|null>}|null
      */

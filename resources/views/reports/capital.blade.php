@@ -57,7 +57,7 @@
         @php
             $principal = $d['principal_krw'];
             $profit = $d['profit_krw'];
-            $debt = (int) $d['payable_krw'] + (int) $d['advance_krw'];
+            $debt = (int) $d['liabilities_krw'];   // 미지급 + 가수금 — 단일 출처 derive()
         @endphp
 
         <h1>자금 보고</h1>
@@ -90,48 +90,62 @@
             .bs .sum { border-top:1px solid #e5e7eb; margin-top:4px; padding-top:8px; font-weight:700; }
             .bs .grp { font-size:11px; color:#9ca3af; letter-spacing:.04em; margin:12px 0 2px; }
             .bs .eq { text-align:center; color:#9ca3af; font-size:13px; margin:10px 0 2px; }
+            .bs summary .k small { font-weight:400; font-size:11.5px; color:#9ca3af; margin-left:4px; }
+            .bs .drow .dv { white-space:nowrap; }
+            .bs .drow .d { min-width:56px; font-size:11.5px; }
         </style>
         <div class="card bs">
             <div class="cap">자산 = 자본 + 부채</div>
-            <div class="row" style="padding-top:0;">
-                <span class="k">총자산</span>
-                <span class="lead" style="font-size:24px;">{{ $eok($d['total_assets_krw']) }}{!! $dl('total_assets_krw') !!}</span>
-            </div>
             @if ($cmp)
-                <div style="color:#9ca3af;font-size:12px;margin-bottom:4px;">
-                    오른쪽 작은 숫자 = {{ $cmp['prev_date']->format('n월 j일') }} 보고 대비 변동 ({{ $cmp['days'] }}일)
+                <div style="color:#9ca3af;font-size:12px;margin-bottom:6px;">
+                    작은 숫자 = {{ $cmp['prev_date']->format('n월 j일') }} 보고 대비 변동 ({{ $cmp['days'] }}일) · 항목을 누르면 구성이 펼쳐집니다
                 </div>
-            @endif
-
-            <div class="grp">자산 — 돈이 어떤 형태로 있나</div>
-            <div class="row"><span class="k">통장 현금</span><span class="v">{{ $eok($d['cash_krw']) }}{!! $dl('cash_krw') !!}</span></div>
-            <div class="row"><span class="k">안 팔린 차 (재고)</span><span class="v">{{ $eok($d['unsold_inventory_krw'] ?? $d['inventory_krw']) }}{!! $dl('unsold_inventory_krw') !!}</span></div>
-            @if ($frozen !== null)
-                <div class="row"><span class="k">받을 돈 (미수)</span><span class="v">{{ $eok($frozen) }}{!! $dl('receivable_frozen_krw') !!}</span></div>
-                <div class="row sub"><span>환율 재평가 (오늘 환율 − 판매환율)</span><span class="v">{{ ($d['fx_revaluation_krw'] >= 0 ? '+' : '') }}{{ $eok($d['fx_revaluation_krw']) }}</span></div>
             @else
-                <div class="row"><span class="k">받을 돈 (미수)</span><span class="v">{{ $eok($d['receivable_krw']) }}{!! $dl('receivable_krw') !!}</span></div>
+                <div style="color:#9ca3af;font-size:12px;margin-bottom:6px;">항목을 누르면 구성이 펼쳐집니다</div>
             @endif
-            @if ((int) $d['auction_deposit_krw'] > 0 || ($delta['auction_deposit_krw'] ?? 0))
-                <div class="row"><span class="k">경매장에 맡긴 돈</span><span class="v">{{ $eok($d['auction_deposit_krw']) }}{!! $dl('auction_deposit_krw') !!}</span></div>
-            @endif
-            <div class="row sum"><span class="k">자산 합계</span><span class="v">{{ $eok($d['total_assets_krw']) }}{!! $dl('total_assets_krw') !!}</span></div>
 
-            <div class="eq">=</div>
+            {{-- jin 2026-11-02 «총자산/부채합계/자본합계 각 탭을 접힌 상태로, 펼칠 수 있게» — 세 묶음 전부 <details>, 기본 접힘 --}}
+            <details>
+                <summary><span class="k">총자산</span><span class="v">{{ $eok($d['total_assets_krw']) }}{!! $dl('total_assets_krw') !!}</span></summary>
+                <div class="detail">
+                    <div class="drow"><span>통장 현금</span><span class="dv">{{ $eok($d['cash_krw']) }}{!! $dl('cash_krw') !!}</span></div>
+                    <div class="drow"><span>안 팔린 차 (재고)</span><span class="dv">{{ $eok($d['unsold_inventory_krw'] ?? $d['inventory_krw']) }}{!! $dl('unsold_inventory_krw') !!}</span></div>
+                    @if ($frozen !== null)
+                        <div class="drow"><span>받을 돈 (미수)</span><span class="dv">{{ $eok($frozen) }}{!! $dl('receivable_frozen_krw') !!}</span></div>
+                        <div class="drow sub"><span>환율 재평가 (오늘 환율 − 판매환율)</span><span class="dv">{{ ($d['fx_revaluation_krw'] >= 0 ? '+' : '') }}{{ $eok($d['fx_revaluation_krw']) }}</span></div>
+                    @else
+                        <div class="drow"><span>받을 돈 (미수)</span><span class="dv">{{ $eok($d['receivable_krw']) }}{!! $dl('receivable_krw') !!}</span></div>
+                    @endif
+                    @if ((int) $d['auction_deposit_krw'] > 0 || ($delta['auction_deposit_krw'] ?? 0))
+                        <div class="drow"><span>경매장에 맡긴 돈</span><span class="dv">{{ $eok($d['auction_deposit_krw']) }}{!! $dl('auction_deposit_krw') !!}</span></div>
+                    @endif
+                    <div class="drow" style="color:#9ca3af;"><span>돈이 어떤 형태로 있는지의 합계입니다.</span><span></span></div>
+                </div>
+            </details>
 
-            <div class="grp">부채 — 남의 돈</div>
-            <div class="row"><span class="k">거래처에 줄 돈 (매입·운임·정산)</span><span class="v">{{ $eok($d['payable_krw']) }}{!! $dl('payable_krw') !!}</span></div>
-            @if ((int) $d['advance_krw'] > 0 || ($delta['advance_krw'] ?? 0))
-                <div class="row"><span class="k">빌린 돈 (가수금)</span><span class="v">{{ $eok($d['advance_krw']) }}{!! $dl('advance_krw') !!}</span></div>
-            @endif
-            <div class="row sum"><span class="k">부채 합계</span><span class="v">{{ $eok($d['liabilities_krw']) }}{!! $dl('liabilities_krw') !!}</span></div>
+            <div class="eq">= 부채 + 자본</div>
 
-            <div class="grp">자본 — 내 돈 (자산 − 부채)</div>
-            @if ($principal !== null)
-                <div class="row"><span class="k">넣은 돈 (투입원금)</span><span class="v">{{ $eok($principal) }}{!! $dl('principal_krw') !!}</span></div>
-                <div class="row"><span class="k">번 돈 (받을 돈 다 받았을 때)</span><span class="v">{{ $eok($d['net_profit_krw']) }}{!! $dl('net_profit_krw') !!}</span></div>
-            @endif
-            <div class="row sum"><span class="k">자본 합계</span><span class="v">{{ $eok($equity) }}{!! $dl('working_capital_krw') !!}</span></div>
+            <details>
+                <summary><span class="k">부채 합계 <small>남의 돈</small></span><span class="v">{{ $eok($d['liabilities_krw']) }}{!! $dl('liabilities_krw') !!}</span></summary>
+                <div class="detail">
+                    <div class="drow"><span>거래처에 줄 돈 (매입·운임·정산)</span><span class="dv">{{ $eok($d['payable_krw']) }}{!! $dl('payable_krw') !!}</span></div>
+                    @if ((int) $d['advance_krw'] > 0 || ($delta['advance_krw'] ?? 0))
+                        <div class="drow"><span>빌린 돈 (가수금)</span><span class="dv">{{ $eok($d['advance_krw']) }}{!! $dl('advance_krw') !!}</span></div>
+                    @endif
+                </div>
+            </details>
+
+            <details>
+                <summary><span class="k">자본 합계 <small>내 돈 = 자산 − 부채</small></span><span class="v">{{ $eok($equity) }}{!! $dl('working_capital_krw') !!}</span></summary>
+                <div class="detail">
+                    @if ($principal !== null)
+                        <div class="drow"><span>넣은 돈 (투입원금)</span><span class="dv">{{ $eok($principal) }}{!! $dl('principal_krw') !!}</span></div>
+                        <div class="drow"><span>번 돈 (받을 돈 다 받았을 때)</span><span class="dv">{{ $eok($d['net_profit_krw']) }}{!! $dl('net_profit_krw') !!}</span></div>
+                    @else
+                        <div class="drow"><span>원금이 설정되지 않아 넣은 돈과 번 돈을 못 나눕니다.</span><span></span></div>
+                    @endif
+                </div>
+            </details>
 
             @if ($cmp)
                 @php $da = (int) ($delta['total_assets_krw'] ?? 0); $dd = (int) ($delta['liabilities_krw'] ?? 0); $de = (int) ($delta['working_capital_krw'] ?? 0); @endphp
