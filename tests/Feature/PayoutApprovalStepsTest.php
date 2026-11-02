@@ -12,7 +12,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * 🪜 월정산 v3 결재선 (jin 2026-10-08) — 업무관리자 상신 → 부장 → 전무 → 대표. 6일차 (2026-10-09).
+ * 🪜 월정산 v3 결재선 (jin 2026-10-08) — 업무관리자 상신 → 부장 → 상무 → 대표. 6일차 (2026-10-09).
  *
  * - 모드는 **배치 단위**: steps 행이 있으면 결재선, 없으면 종전 사다리. 직급을 아무도 안 넣은 회사는 종전과 똑같다.
  * - 각 칸 차례가 될 때 그 사람에게 알림톡 1회(수신자 = currentApprovers). 대표는 중간 결재가 끝난 직후.
@@ -78,19 +78,19 @@ class PayoutApprovalStepsTest extends TestCase
         $this->confirmedSettlement();
         $manager = $this->user('manager');
         $bu = $this->user('admin', '관리', '부장');
-        $jeon = $this->user('admin', '관리', '전무');
+        $jeon = $this->user('admin', '관리', '상무');
         $ceo = $this->user('admin', '관리', '대표');
         $otherAdmin = $this->user('admin');   // 직급 없는 최고관리자 — 결재선 밖
 
-        $batch = SettlementPayoutBatch::submitForMonth($manager, '2026-10', [], ['부장' => $bu->id, '전무' => $jeon->id, '대표' => $ceo->id]);
+        $batch = SettlementPayoutBatch::submitForMonth($manager, '2026-10', [], ['부장' => $bu->id, '상무' => $jeon->id, '대표' => $ceo->id]);
 
         $this->assertTrue($batch->isStepsMode());
-        $this->assertSame(['부장', '전무', '대표'], $batch->steps->pluck('title')->all());
+        $this->assertSame(['부장', '상무', '대표'], $batch->steps->pluck('title')->all());
         $this->assertSame(1, (int) $batch->current_step);
         $this->assertSame(SettlementPayoutBatch::TOP_RANK, (int) $batch->current_level, '종전 소비자가 null 을 안 보게 TOP_RANK');
         $this->assertSame([$bu->id], $batch->currentApprovers()->pluck('id')->all(), '첫 차례 = 부장 한 사람');
         $this->assertTrue($batch->canDecide($bu));
-        $this->assertFalse($batch->canDecide($jeon), '전무는 아직 차례가 아니다');
+        $this->assertFalse($batch->canDecide($jeon), '상무는 아직 차례가 아니다');
         $this->assertFalse($batch->canDecide($ceo));
         $this->assertFalse($batch->canDecide($otherAdmin), '결재선 밖 최고관리자는 결재 못 한다');
         $this->assertSame(1, SettlementPayoutBatch::query()->awaitingDecisionBy($bu)->count());
@@ -123,8 +123,8 @@ class PayoutApprovalStepsTest extends TestCase
         $bu = $this->user('admin', '관리', '부장');
         $ceo = $this->user('admin', '관리', '대표');
 
-        // 부장만 넣으면 → 부장 → 대표 두 칸(전무 건너뜀)
-        $batch = SettlementPayoutBatch::submitForMonth($manager, '2026-10', [], ['부장' => $bu->id, '전무' => null, '대표' => $ceo->id]);
+        // 부장만 넣으면 → 부장 → 대표 두 칸(상무 건너뜀)
+        $batch = SettlementPayoutBatch::submitForMonth($manager, '2026-10', [], ['부장' => $bu->id, '상무' => null, '대표' => $ceo->id]);
         $this->assertSame(['부장', '대표'], $batch->steps->pluck('title')->all());
         $batch->approveBy($bu);
         $this->assertSame([$ceo->id], $batch->fresh()->currentApprovers()->pluck('id')->all(), '부장이 결재하면 바로 대표');
@@ -139,7 +139,7 @@ class PayoutApprovalStepsTest extends TestCase
     {
         $this->confirmedSettlement();
         $manager = $this->user('manager');
-        $notBu = $this->user('admin', '관리', '전무');
+        $notBu = $this->user('admin', '관리', '상무');
         $ceo = $this->user('admin', '관리', '대표');
         $this->expectException(\DomainException::class);
         SettlementPayoutBatch::submitForMonth($manager, '2026-10', [], ['부장' => $notBu->id, '대표' => $ceo->id]);

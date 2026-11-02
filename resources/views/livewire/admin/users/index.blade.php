@@ -17,12 +17,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     /**
      * 🔎 권한 → 하위 묶음 칩 (jin 2026-10-26 «일반사용자에서 관리를 찾을 수 있게») — 일반사용자는 역할(영업·재무·수출통관·관리),
-     *   최고관리자는 결재 직급(부장·전무·대표·미지정). 업무관리자·시스템관리자는 하위가 없다. 칩을 누르면 상위 권한까지 같이 잡힌다.
+     *   최고관리자는 결재 직급(부장·상무·대표·미지정). 업무관리자·시스템관리자는 하위가 없다. 칩을 누르면 상위 권한까지 같이 잡힌다.
      *   ⚠️ 메서드명을 프로퍼티와 같게 짓지 말 것(§8 #32) — pickPerm/pickRole/pickTitle.
      */
     public string $roleFilter = '';
 
-    public string $titleFilter = '';   // 부장·전무·대표 · '__none' = 직급 미지정
+    public string $titleFilter = '';   // 부장·상무·대표 · '__none' = 직급 미지정
     #[Url] public int $perPage = 10;
 
     /** 검색 실행 — 버튼·Enter 로만 (jin 2026-09-08). 🚨 `search()` 로 짓지 말 것: 프로퍼티와 겹쳐 버튼이 죽는다(SKILLS §8 #32). */
@@ -53,7 +53,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     // 회의확장씬 #11 (2026-05-22) — 영업이 어느 [관리] 의 부하인지 배정. role='영업' 일 때만 의미.
     // 2026-06-30 — 영업 1명을 여러 [관리]가 담당(다대다). 선택된 [관리] user id 배열.
     public array $manager_user_ids = [];
-    // 월정산 v3 (2026-10-09) — 최고관리자 결재 직급(부장/전무/대표). 빈값 = 종전(최종 승인자).
+    // 월정산 v3 (2026-10-09) — 최고관리자 결재 직급(부장/상무/대표). 빈값 = 종전(최종 승인자).
     public string $approval_title = '';
 
     public function pickPerm(string $perm): void
@@ -114,7 +114,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->titleFilter !== '' && $this->titleFilter !== '__none', fn($q) => $q->where('permission', 'admin')->where('approval_title', $this->titleFilter))
             // 권한 등급순(시스템관리자 → 최고관리자 → 업무관리자 → 일반사용자) → 역할/직급 → 이름. 목록의 묶음 캡션이 이 순서를 전제한다.
             ->orderByRaw("CASE permission WHEN 'super' THEN 0 WHEN 'admin' THEN 1 WHEN 'manager' THEN 2 ELSE 3 END")
-            ->orderByRaw("CASE WHEN permission = 'admin' THEN CASE approval_title WHEN '대표' THEN 0 WHEN '전무' THEN 1 WHEN '부장' THEN 2 ELSE 3 END ELSE 0 END")
+            ->orderByRaw("CASE WHEN permission = 'admin' THEN CASE approval_title WHEN '대표' THEN 0 WHEN '상무' THEN 1 WHEN '부장' THEN 2 ELSE 3 END ELSE 0 END")
             ->orderByRaw("CASE WHEN permission = 'user' THEN CASE role WHEN '관리' THEN 0 WHEN '재무' THEN 1 WHEN '수출통관' THEN 2 WHEN '영업' THEN 3 ELSE 4 END ELSE 0 END")
             ->orderBy('name')
             // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.

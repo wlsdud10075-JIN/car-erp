@@ -108,7 +108,7 @@ class SettlementPayoutBatch extends Model
     }
 
     // ── 월정산 v3 결재선 (jin 2026-10-08) ──────────────────────────────────────
-    //   행이 있으면 **steps 모드**(상신 때 고른 부장 → 전무 → 대표, 건너뛴 직급은 행 없음), 없으면 종전 사다리(current_level).
+    //   행이 있으면 **steps 모드**(상신 때 고른 부장 → 상무 → 대표, 건너뛴 직급은 행 없음), 없으면 종전 사다리(current_level).
     //   모드는 **배치 단위**다 — 직급을 아무도 안 넣은 회사(또는 배포 전에 올라간 배치)는 행이 0개라 종전과 똑같이 돈다.
 
     public function steps(): HasMany
@@ -177,7 +177,7 @@ class SettlementPayoutBatch extends Model
     }
 
     /**
-     * 결재선 선택지 — 직급(부장/전무/대표)별 최고관리자. 비어 있으면 그 회사는 종전 사다리로만 돈다.
+     * 결재선 선택지 — 직급(부장/상무/대표)별 최고관리자. 비어 있으면 그 회사는 종전 사다리로만 돈다.
      *
      * @return array<string, Collection<int, User>> title => users
      */
@@ -1083,7 +1083,7 @@ class SettlementPayoutBatch extends Model
                 ? ($this->salesman?->leaverTag() ?? '퇴사정산').' · '.($this->submitter?->name ?? '-')
                 : ($this->submitter?->name ?? '-'),
         ];
-        // 지금 차례인 사람에게만 — steps 모드 = 그 칸의 한 사람(부장·전무·대표 각자 차례에 1회, jin (가)) / 종전 = 그 계단 전원.
+        // 지금 차례인 사람에게만 — steps 모드 = 그 칸의 한 사람(부장·상무·대표 각자 차례에 1회, jin (가)) / 종전 = 그 계단 전원.
         foreach ($this->currentApprovers()->filter(fn (User $u) => trim((string) $u->phone) !== '') as $user) {
             $url = $this->approvalLinkFor($user);
             $svc->send('erp_payout_request', (string) $user->phone, $vars, ['user_id' => $user->id], [

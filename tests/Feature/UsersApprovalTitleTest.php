@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\Salesman;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -65,10 +66,23 @@ class UsersApprovalTitleTest extends TestCase
     public function test_the_title_survives_editing(): void
     {
         $this->actingAs($this->superUser());
-        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리', 'approval_title' => '전무', 'email_verified_at' => now()]);
+        $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리', 'approval_title' => '상무', 'email_verified_at' => now()]);
 
-        Volt::test('admin.users.index')->call('openEdit', $admin->id)->assertSet('approval_title', '전무')
+        Volt::test('admin.users.index')->call('openEdit', $admin->id)->assertSet('approval_title', '상무')
             ->set('approval_title', '')->call('save')->assertHasNoErrors();
         $this->assertNull($admin->fresh()->approval_title, '비우면 종전(최종 승인자)');
+    }
+
+    /** 직급 「전무」 → 「상무」 (jin 2026-11-02) — 기존 사람·결재선 칸의 저장값을 마이그레이션이 옮긴다(상수만 바꾸면 기존 값이 검증에서 튕긴다). */
+    public function test_jeonmu_rows_are_renamed_to_sangmu_by_the_migration(): void
+    {
+        $u = User::factory()->create(['permission' => 'admin', 'role' => '관리', 'email_verified_at' => now()]);
+        DB::table('users')->where('id', $u->id)->update(['approval_title' => '전무']);
+
+        (require database_path('migrations/2026_11_02_000002_rename_approval_title_jeonmu_to_sangmu.php'))->up();
+
+        $this->assertSame('상무', $u->fresh()->approval_title);
+        $this->assertSame(['부장', '상무', '대표'], User::APPROVAL_TITLES);
+        $this->assertNotContains('전무', User::APPROVAL_TITLES);
     }
 }

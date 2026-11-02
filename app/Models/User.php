@@ -44,7 +44,7 @@ class User extends Authenticatable
      * 월정산 결재 직급 (v3, jin 2026-10-08) — 최고관리자(admin)에게만 붙는다. 상신 때 업무관리자가 직급별 결재권자를
      * 고른다. 🔑 null = 종전 동작(직급 없는 최고관리자 = 최종 승인자) — 직급을 아무도 안 넣은 회사도 지금처럼 돈다.
      */
-    public const APPROVAL_TITLES = ['부장', '전무', '대표'];
+    public const APPROVAL_TITLES = ['부장', '상무', '대표'];
 
     // 2026-05-21 — 정산 분류 (role='영업' 일 때만 사용).
     // 사용자 결정: Salesman.type 단일 관리 → User.type 으로 이동. /admin/users 폼에서 입력.
