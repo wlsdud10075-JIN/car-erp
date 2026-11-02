@@ -45,6 +45,8 @@ class CapitalReportController extends Controller
         }
 
         $d = $svc->derive($snap);
+        // 🧾 지난 보고(7일 이상 전) 대비 변동 — 없으면 null(변동 열 숨김).
+        $cmp = $snap ? $svc->compare($snap) : null;
 
         // 요청한 날짜와 실제 스냅샷 날짜가 다르면(그 사이 입력 없음) 화면에 밝힌다.
         $stale = $d['has_data'] && $snap->snapshot_date->format('Y-m-d') !== $date;
@@ -52,6 +54,7 @@ class CapitalReportController extends Controller
         return view('reports.capital', [
             'asOf' => $date,
             'd' => $d,
+            'cmp' => $cmp,
             'stale' => $stale,
             // 갚아야 할 돈만 — 대표 자산성(equity)은 부채가 아니라 투입원금으로 잡힌다(jin 2026-07-31).
             'advances' => $d['has_data']

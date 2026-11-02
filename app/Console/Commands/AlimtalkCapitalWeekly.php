@@ -110,6 +110,20 @@ class AlimtalkCapitalWeekly extends Command
         //   매주 큰 마이너스가 와서 실제 상태를 오해하게 된다. 구 스냅샷은 청산 기준으로 폴백.
         $profit = $d['net_profit_krw'] ?? $d['profit_krw'];
 
+        // 🧾 지난 보고(7일 이상 전) 대비 변동을 값 뒤에 붙인다 (대표 2026-11-02 «미수가 줄어드는 만큼 총자산이 어디로 가나»).
+        //   등록본의 고정 문구·항목은 그대로이고 **변수 값만** 길어지므로 BizM 재등록이 필요 없다. 괄호·부호·한글은
+        //   아이템 줄에서 통과한 선례가 있다(채권현황 '(45%)' · 손익 '-5.99억'). 20자 컷(ITEM_DESC_MAX) 안 — '-12.3억 (+1.2억)' 16자.
+        //   비교 대상이 없으면(첫 주) 종전과 같은 값만 나간다.
+        $cmp = $svc->compare($svc->latest());
+        $withDelta = function (string $value, string $key) use ($cmp, $eok): string {
+            $v = $cmp['delta'][$key] ?? null;
+            if ($v === null) {
+                return $value;
+            }
+
+            return $value.' ('.($v < 0 ? '-' : '+').$eok(abs((int) $v)).')';
+        };
+
         // 🔀 2026-10-13 (jin) — 손익이 요약정보 칸에서 **아이템 줄**로 옮겨졌다(AlimtalkTemplates::ITEMLIST 주석).
         //    요약정보는 숫자·통화단위·쉼표·마침표만 허용이라 손실(음수)과 '원금 미설정'을 표기할 수 없어
         //    2026-09-14~10-12 ssancarerp 6주 연속 보류였다. 아이템 줄은 부호·한글이 통과하므로(실측 '-5.99억' sent)
@@ -118,16 +132,16 @@ class AlimtalkCapitalWeekly extends Command
 
         return [
             '기준일' => Carbon::parse($d['date'])->format('Y-m-d'),
-            '통장현금' => $eok($d['cash_krw']),
+            '통장현금' => $withDelta($eok($d['cash_krw']), 'cash_krw'),
             // ⚠️ 굴리는자금(순자산)의 구성요소인 **미판매 재고**를 쓴다 (jin 2026-07-31).
             //   선적 전 재고(inventory_krw)를 찍으면 "통장+재고+미수−미지급"이 굴리는자금과 안 맞아
             //   대표가 카톡에서 항목을 더해봤을 때 계산이 틀린 것처럼 보인다. 구 스냅샷은 폴백.
-            '재고' => $eok($d['unsold_inventory_krw'] ?? $d['inventory_krw']),
-            '미수' => $eok($d['receivable_krw']),
-            '미지급' => $eok($d['payable_krw']),
+            '재고' => $withDelta($eok($d['unsold_inventory_krw'] ?? $d['inventory_krw']), 'unsold_inventory_krw'),
+            '미수' => $withDelta($eok($d['receivable_krw']), 'receivable_krw'),
+            '미지급' => $withDelta($eok($d['payable_krw']), 'payable_krw'),
             '굴리는자금' => $eok($d['working_capital_krw']),
             // 아이템 description 은 20자 컷(AlimtalkTemplates::ITEM_DESC_MAX) — '-12.3억' 은 넉넉하다.
-            '손익' => $profit === null ? '원금 미설정' : (($profit < 0 ? '-' : '').$eok(abs((int) $profit))),
+            '손익' => $profit === null ? '원금 미설정' : $withDelta(($profit < 0 ? '-' : '').$eok(abs((int) $profit)), 'net_profit_krw'),
         ];
     }
 }

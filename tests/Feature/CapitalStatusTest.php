@@ -650,4 +650,92 @@ class CapitalStatusTest extends TestCase
         $this->assertFalse(Vehicle::query()->awaitingPurchasePayment()->where('id', $unpaid->id)->exists(),
             '매입취소 차가 지급대기에 있다');
     }
+
+    // ── 🧾 자산 = 자본 + 부채 (대표 2026-11-02) ──
+
+    /** 총자산 − 부채 = 순자산(자본). 공식이 새로 생긴 게 아니라 순자산을 양쪽으로 펼친 것이라 구조적으로 맞아야 한다. */
+    public function test_balance_sheet_identity_holds_and_frozen_receivable_is_captured(): void
+    {
+        $this->seedErp();
+        $svc = app(CapitalStatusService::class);
+        $d = $svc->derive($svc->capture(['krw' => 1_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-23'));
+
+        // 총자산 = 현금1백 + 미판매재고(CAP-INV 5백 + CAP-PAY 1천) + 미수2천 + 보증금0 = 3천6백만
+        $this->assertSame(36_000_000, (int) $d['total_assets_krw']);
+        // 부채 = 미지급7백 + 가수금0
+        $this->assertSame(7_000_000, (int) $d['liabilities_krw']);
+        $this->assertSame((int) $d['working_capital_krw'], (int) $d['total_assets_krw'] - (int) $d['liabilities_krw'], '자본 = 총자산 − 부채');
+        // 굳힌 미수(채권현황 기준) = KRW 2천만 → 환율 재평가 0
+        $this->assertSame(20_000_000, (int) $d['receivable_frozen_krw']);
+        $this->assertSame(0, (int) $d['fx_revaluation_krw']);
+    }
+
+    /** 굳힌 미수 컬럼이 없는 구 스냅샷은 환율 재평가 줄을 못 그린다(null) — 항등식은 그대로 선다. */
+    public function test_old_snapshot_has_no_fx_revaluation_but_identity_still_holds(): void
+    {
+        $s = CashSnapshot::create([
+            'snapshot_date' => '2026-07-01', 'balance_krw' => 1_000_000,
+            'inventory_krw' => 5_000_000, 'receivable_krw' => 2_000_000, 'payable_krw' => 500_000,
+            'advance_krw' => 300_000, 'auction_deposit_krw' => 0, 'fx_usd' => 1400, 'fx_eur' => 1600,
+        ]);
+        $d = app(CapitalStatusService::class)->derive($s);
+
+        $this->assertNull($d['receivable_frozen_krw']);
+        $this->assertNull($d['fx_revaluation_krw']);
+        $this->assertSame(8_000_000, (int) $d['total_assets_krw'], '구 스냅샷은 선적전 재고로 폴백(순자산 폴백과 같은 재고)');
+        $this->assertSame(800_000, (int) $d['liabilities_krw']);
+        $this->assertSame((int) $d['working_capital_krw'], (int) $d['total_assets_krw'] - (int) $d['liabilities_krw']);
+    }
+
+    /** 비교 대상 = 7일 이상 앞선 가장 최근 스냅샷(하루 전이 아니다). Δ총자산 = Δ부채 + Δ자본. */
+    public function test_compare_picks_a_snapshot_at_least_a_week_back_and_deltas_balance(): void
+    {
+        $mk = fn (string $date, int $cash, int $recv, int $pay) => CashSnapshot::create([
+            'snapshot_date' => $date, 'balance_krw' => $cash, 'inventory_krw' => 5_000_000, 'unsold_inventory_krw' => 5_000_000,
+            'receivable_krw' => $recv, 'receivable_frozen_krw' => $recv, 'payable_krw' => $pay,
+            'advance_krw' => 0, 'auction_deposit_krw' => 0, 'fx_usd' => 1400, 'fx_eur' => 1600,
+        ]);
+        $mk('2026-10-20', 1_000_000, 20_000_000, 7_000_000);   // 비교 대상(10일 전)
+        $mk('2026-10-27', 9_000_000, 12_000_000, 7_000_000);   // 3일 전 — 건너뛴다
+        $latest = $mk('2026-10-30', 10_000_000, 10_000_000, 5_000_000);
+
+        $svc = app(CapitalStatusService::class);
+        $cmp = $svc->compare($latest);
+
+        $this->assertSame('2026-10-20', $cmp['prev_date']->format('Y-m-d'));
+        $this->assertSame(10, $cmp['days']);
+        // 미수 2천 → 1천(−1천), 현금 1백 → 1천(+9백), 미지급 7백 → 5백(−2백)
+        $this->assertSame(-10_000_000, $cmp['delta']['receivable_krw']);
+        $this->assertSame(9_000_000, $cmp['delta']['cash_krw']);
+        $this->assertSame(-2_000_000, $cmp['delta']['liabilities_krw']);
+        $this->assertSame(-1_000_000, $cmp['delta']['total_assets_krw']);
+        $this->assertSame($cmp['delta']['total_assets_krw'], $cmp['delta']['liabilities_krw'] + $cmp['delta']['working_capital_krw'],
+            'Δ총자산 = Δ부채 + Δ자본');
+        $this->assertNull($cmp['delta']['principal_krw'], '원금 미설정이면 null');
+
+        // 정확히 7일 전은 비교 대상이 된다(경계 포함) / 그보다 앞선 스냅샷이 없으면 null
+        $this->assertSame('2026-10-20', $svc->compare(CashSnapshot::whereDate('snapshot_date', '2026-10-27')->first())['prev_date']->format('Y-m-d'));
+        $this->assertNull($svc->compare(CashSnapshot::whereDate('snapshot_date', '2026-10-20')->first()));
+    }
+
+    /** 알림톡 값 뒤에 지난 보고 대비 변동이 붙는다 — 등록본 고정 문구는 그대로, 20자 컷 안. 첫 주(비교 대상 없음)는 종전 값. */
+    public function test_alimtalk_capital_weekly_appends_the_delta_since_last_report(): void
+    {
+        $this->seedErp();
+        $svc = app(CapitalStatusService::class);
+        Setting::updateOrCreate(['key' => CapitalStatusService::PRINCIPAL_KEY], ['value' => '10000000', 'type' => 'integer']);
+
+        $svc->capture(['krw' => 1_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-16');
+        $this->assertMatchesRegularExpression('/^\d+(\.\d+)?억$/u', AlimtalkCapitalWeekly::buildVars()['통장현금'], '첫 주는 변동 없이');
+
+        $svc->capture(['krw' => 31_000_000, 'usd' => 0, 'eur' => 0], null, '2026-07-23');   // 현금 +3천만
+        $vars = AlimtalkCapitalWeekly::buildVars();
+        $this->assertSame('0.31억 (+0.30억)', $vars['통장현금']);
+        $this->assertSame('0.20억 (+0.00억)', $vars['미수'], '변동 0 도 붙인다(「안 움직였다」가 정보다)');
+        $this->assertMatchesRegularExpression('/^-?\d+(\.\d+)?억 \([+-]\d+(\.\d+)?억\)$/u', $vars['손익']);
+        foreach (['통장현금', '재고', '미수', '미지급', '손익'] as $k) {
+            $this->assertLessThanOrEqual(20, mb_strlen($vars[$k]), "{$k} 가 아이템 20자 컷을 넘는다: {$vars[$k]}");
+        }
+        $this->assertMatchesRegularExpression('/^\d+(\.\d+)?억$/u', $vars['굴리는자금'], '강조칸은 그대로(19자 제한 칸과 짝)');
+    }
 }

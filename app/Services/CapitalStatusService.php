@@ -11,6 +11,7 @@ use App\Models\Setting;
 use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
 /**
@@ -112,6 +113,19 @@ class CapitalStatusService
             });
 
         return $total;
+    }
+
+    /**
+     * 미수 합 — **차량별 판매환율로 굳힌 값**. 채권현황 알림톡(`AlimtalkReceivableStatus`)의 「미수합계」와 같은 질의다.
+     *
+     * 자금 보고의 미수(`receivableKrw`)는 오늘 환율로 재평가하므로 환율만 움직여도 숫자가 흔들린다. 대표가
+     * 채권현황에서 읽는 미수(50억 → 36억)와 다르면 두 보고를 다 못 믿는다(2026-11-02). 둘을 같이 박아
+     * 「미수(굳힌) + 환율 재평가」로 차이를 보여준다. 🚫 여기 조건을 바꾸면 채권현황 명령도 같이 바꿀 것.
+     */
+    public function receivableFrozenKrw(): int
+    {
+        return (int) Vehicle::where('sale_price', '>', 0)->where('sale_unpaid_amount_krw_cache', '>', 0)
+            ->sum('sale_unpaid_amount_krw_cache');
     }
 
     /**
@@ -284,6 +298,7 @@ class CapitalStatusService
             'advance_payment_krw' => $this->advancePaymentKrw($fx),
             'unsold_inventory_krw' => $this->unsoldInventoryKrw(),
             'receivable_krw' => $this->receivableKrw($fx),
+            'receivable_frozen_krw' => $this->receivableFrozenKrw(),
             'payable_krw' => $this->payableKrw(),
             // 예치·가수금 (안건4 2단계) — 실시간이 아니라 이 시점 값을 박는다.
             //   통장잔액과 같은 시점이어야 짝이 맞는다(§derive 주석 참조).
@@ -379,6 +394,20 @@ class CapitalStatusService
             ? $liquidation + $s->receivable_krw                                                   // 구 스냅샷 폴백
             : $cash + (int) $unsold + (int) $s->receivable_krw + $auctionDeposit - $s->payable_krw - $advance;
 
+        /*
+         * 🧾 총자산 = 자본 + 부채 (대표 2026-11-02 «자산 = 자본 + 부채 … 외부 투입이 없으면 총자산은 형태만 바뀐다»)
+         *   총자산 = 통장현금 + 미판매재고 + 미수 + 경매보증금      ← 순자산의 자산 쪽을 더하기만 한 것
+         *   부채   = 미지급 + 가수금(갚을 돈)
+         *   자본   = 총자산 − 부채 = 순자산(working) = 투입원금 + 번 돈
+         *   공식이 새로 생긴 게 아니다 — 순자산을 양쪽으로 펼쳐 놓은 것이라 항등식이 구조적으로 맞는다.
+         *   ⚠️ 구 스냅샷(미판매재고 null)은 순자산 폴백과 같은 재고(선적전)를 쓴다 — 그래야 자본 = 순자산이 유지된다.
+         * 환율 재평가 = 미수(오늘 환율) − 미수(굳힌 판매환율). 굳힌 값이 없는 구 스냅샷은 null.
+         */
+        $invForAssets = $unsold === null ? (int) $s->inventory_krw : (int) $unsold;
+        $totalAssets = $cash + $invForAssets + (int) $s->receivable_krw + $auctionDeposit;
+        $liabilities = (int) $s->payable_krw + $advance;
+        $frozen = $s->receivable_frozen_krw === null ? null : (int) $s->receivable_frozen_krw;
+
         // 원금이 주입됐다 = 추이처럼 여러 건을 도는 중 → 분해 정보는 만들지 않는다(쿼리 N배 방지).
         $injected = $principal !== null;
         $principal ??= $this->principal();
@@ -401,6 +430,11 @@ class CapitalStatusService
             'fx_eur' => (float) $s->fx_eur,
             'liquidation_krw' => $liquidation,
             'working_capital_krw' => $working,
+            // 🧾 자산 = 자본 + 부채 (위 주석). 자본 = working_capital_krw 그대로.
+            'total_assets_krw' => $totalAssets,
+            'liabilities_krw' => $liabilities,
+            'receivable_frozen_krw' => $frozen,
+            'fx_revaluation_krw' => $frozen === null ? null : (int) $s->receivable_krw - $frozen,
             // 마이너스 통장 (2026-08-12) — 표시 전용. 한도 미설정이면 null 이라 화면이 아무것도 안 그린다.
             'overdraft' => $injected ? null : $this->overdraft($s),
             'principal_krw' => $principal,
@@ -411,6 +445,45 @@ class CapitalStatusService
             //   두 값의 차이 = 바이어에게 걸린 위험(미수 규모)이다.
             'profit_krw' => $principal === null ? null : $liquidation - $principal,
             'net_profit_krw' => $principal === null ? null : $working - $principal,
+        ];
+    }
+
+    /** 「총자산 = 자본 + 부채」 화면·알림톡이 변동을 보여주는 항목 — derive() 키 그대로. */
+    public const COMPARE_KEYS = ['total_assets_krw', 'cash_krw', 'unsold_inventory_krw', 'receivable_krw', 'receivable_frozen_krw',
+        'auction_deposit_krw', 'liabilities_krw', 'payable_krw', 'advance_krw', 'working_capital_krw', 'principal_krw', 'net_profit_krw'];
+
+    /**
+     * 🧾 지난 보고 대비 변동 (대표 2026-11-02 «총미수가 줄어드는 만큼 총자산이 어디로 갔는지»).
+     *
+     * 기준 스냅샷보다 `$daysBack` 일 이상 앞선 **가장 최근** 스냅샷과 항목별 차이를 돌려준다. 주간 보고라 기본 7일 —
+     * 하루 전과 비교하면 「미수 → 현금」 같은 흐름이 안 보인다. 비교 대상이 없으면 null(화면은 변동 열을 숨긴다).
+     *
+     * 변동 항등식: Δ총자산 = Δ부채 + Δ자본. 외부 투입(원금 변경)이 없으면 Δ자본 = 그 기간 번 돈.
+     *   🚫 Δ총자산 = 0 을 기대하지 말 것 — 차를 팔면 재고(매입가)가 미수(판매가)로 바뀌어 마진만큼 늘고,
+     *   미지급을 갚으면 현금·부채가 같이 줄어 총자산은 줄되 자본은 그대로다. 「똑같아야 할」 것은 자본 쪽이다.
+     *
+     * @return array{prev_date:CarbonInterface, days:int, prev:array, delta:array<string,int|null>}|null
+     */
+    public function compare(CashSnapshot $s, int $daysBack = 7, ?int $principal = null): ?array
+    {
+        $prev = CashSnapshot::whereDate('snapshot_date', '<=', $s->snapshot_date->copy()->subDays($daysBack)->toDateString())
+            ->orderByDesc('snapshot_date')->first();
+        if (! $prev) {
+            return null;
+        }
+        $principal ??= $this->principal();
+        $now = $this->derive($s, $principal);
+        $before = $this->derive($prev, $principal);
+        $delta = [];
+        foreach (self::COMPARE_KEYS as $k) {
+            $delta[$k] = ($now[$k] ?? null) === null || ($before[$k] ?? null) === null ? null : (int) $now[$k] - (int) $before[$k];
+        }
+
+        return [
+            'prev_date' => $prev->snapshot_date,
+            'days' => (int) $prev->snapshot_date->diffInDays($s->snapshot_date),
+            'prev' => $before,
+            'delta' => $delta,
         ];
     }
 
