@@ -651,6 +651,24 @@ class CapitalStatusTest extends TestCase
             '매입취소 차가 지급대기에 있다');
     }
 
+    /**
+     * 🚨 환율 오타 하나가 보고 전체를 뒤집지 않게 — 최근 외화 판매차 환율이 상식 밖(heymanerp 실측 EUR 12)이면 건너뛰고
+     * 그 전 정상 값을 쓴다. 정상 값이 하나도 없으면 fallback.
+     */
+    public function test_fx_rate_skips_implausible_recent_values(): void
+    {
+        $buyer = Buyer::create(['name' => 'FX-BUYER', 'is_active' => true]);
+        $mk = fn (string $no, string $date, float $rate) => Vehicle::create(['vehicle_number' => $no, 'sales_channel' => 'export', 'buyer_id' => $buyer->id,
+            'sale_date' => $date, 'sale_price' => 10_000, 'currency' => 'EUR', 'exchange_rate' => $rate]);
+        $mk('FX-OK', '2026-10-01', 1495);
+        $mk('FX-TYPO', '2026-10-30', 12);        // 최근이지만 오타
+        $mk('FX-TYPO2', '2026-10-29', 15_000);   // 자릿수 오타
+
+        $fx = app(CapitalStatusService::class)->fxRates();
+        $this->assertSame(1495.0, $fx['EUR'], '상식 밖 값은 건너뛰고 그 전 정상 환율');
+        $this->assertSame(1495.0, $fx['USD'], 'USD 판매차가 없으면 fallback');
+    }
+
     // ── 🧾 자산 = 자본 + 부채 (대표 2026-11-02) ──
 
     /** 총자산 − 부채 = 순자산(자본). 공식이 새로 생긴 게 아니라 순자산을 양쪽으로 펼친 것이라 구조적으로 맞아야 한다. */

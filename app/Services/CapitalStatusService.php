@@ -36,12 +36,20 @@ class CapitalStatusService
 
     private const FX_FALLBACK = ['USD' => 1495, 'EUR' => 1682];
 
-    /** 통화별 최신 환율(→KRW). 최근 판매 차량 exchange_rate, 없으면 fallback. */
+    /**
+     * 통화별 상식 범위(원/1단위). 이 밖의 값은 **오타**로 보고 건너뛴다.
+     * 🚨 2026-11-02 heymanerp 실측: 최근 EUR 판매차 환율이 **12** 로 들어가 자금보고 미수가 9.38억 → 0.48억,
+     *    순자산 −3.45억으로 대표에게 나갔다(하루 전엔 다른 오타로 미수 126억). 최근 1건을 그대로 믿으면 오타 하나가 보고 전체를 뒤집는다.
+     */
+    private const FX_SANE = ['USD' => [800, 2500], 'EUR' => [900, 3000]];
+
+    /** 통화별 최신 환율(→KRW). 최근 판매 차량 exchange_rate 중 **상식 범위 안의 첫 값**, 없으면 fallback. */
     public function fxRates(): array
     {
         $fx = [];
         foreach (['USD', 'EUR'] as $c) {
-            $r = Vehicle::where('currency', $c)->where('exchange_rate', '>', 0)
+            [$lo, $hi] = self::FX_SANE[$c];
+            $r = Vehicle::where('currency', $c)->whereBetween('exchange_rate', [$lo, $hi])
                 ->orderByDesc('sale_date')->value('exchange_rate');
             $fx[$c] = $r ? (float) $r : (float) self::FX_FALLBACK[$c];
         }
