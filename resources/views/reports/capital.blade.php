@@ -89,7 +89,6 @@
             .bs .sub { padding-left:12px; font-size:12.5px; color:#9ca3af; }
             .bs .sum { border-top:1px solid #e5e7eb; margin-top:4px; padding-top:8px; font-weight:700; }
             .bs .grp { font-size:11px; color:#9ca3af; letter-spacing:.04em; margin:12px 0 2px; }
-            .bs .eq { text-align:center; color:#9ca3af; font-size:13px; margin:10px 0 2px; }
             .bs summary .k small { font-weight:400; font-size:11.5px; color:#9ca3af; margin-left:4px; }
             .bs .drow .dv { white-space:nowrap; }
             .bs .drow .d { min-width:56px; font-size:11.5px; }
@@ -106,7 +105,7 @@
 
             {{-- jin 2026-11-02 «총자산/부채합계/자본합계 각 탭을 접힌 상태로, 펼칠 수 있게» — 세 묶음 전부 <details>, 기본 접힘 --}}
             <details>
-                <summary><span class="k">총자산</span><span class="v">{{ $eok($d['total_assets_krw']) }}{!! $dl('total_assets_krw') !!}</span></summary>
+                <summary><span class="k">총자산 <small>= 부채 + 자본</small></span><span class="v">{{ $eok($d['total_assets_krw']) }}{!! $dl('total_assets_krw') !!}</span></summary>
                 <div class="detail">
                     <div class="drow"><span>통장 현금</span><span class="dv">{{ $eok($d['cash_krw']) }}{!! $dl('cash_krw') !!}</span></div>
                     <div class="drow"><span>안 팔린 차 (재고)</span><span class="dv">{{ $eok($d['unsold_inventory_krw'] ?? $d['inventory_krw']) }}{!! $dl('unsold_inventory_krw') !!}</span></div>
@@ -122,8 +121,6 @@
                     <div class="drow" style="color:#9ca3af;"><span>돈이 어떤 형태로 있는지의 합계입니다.</span><span></span></div>
                 </div>
             </details>
-
-            <div class="eq">= 부채 + 자본</div>
 
             <details>
                 <summary><span class="k">부채 합계 <small>남의 돈</small></span><span class="v">{{ $eok($d['liabilities_krw']) }}{!! $dl('liabilities_krw') !!}</span></summary>
