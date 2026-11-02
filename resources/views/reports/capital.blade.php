@@ -121,7 +121,17 @@
                         <div class="drow"><span>받을 돈 (미수)</span><span class="dv">{{ $eok($d['receivable_krw']) }}{!! $dl('receivable_krw') !!}</span></div>
                     @endif
                     @if ((int) $d['auction_deposit_krw'] > 0 || ($delta['auction_deposit_krw'] ?? 0))
-                        <div class="drow"><span>경매장에 맡긴 돈</span><span class="dv">{{ $eok($d['auction_deposit_krw']) }}{!! $dl('auction_deposit_krw') !!}</span></div>
+                        {{-- jin 2026-11-02 «경매장에 맡긴 돈도 빌린 돈처럼 접었다 폈다» — 경매장별 행 --}}
+                        <details class="nest">
+                            <summary><span class="k">경매장에 맡긴 돈</span><span class="v">{{ $eok($d['auction_deposit_krw']) }}{!! $dl('auction_deposit_krw') !!}</span></summary>
+                            <div class="detail">
+                                @forelse ($deposits as $dep)
+                                    <div class="drow"><span>{{ $dep->auction_house }}</span><span class="dv">{{ $won($dep->amount) }}</span></div>
+                                @empty
+                                    <div class="drow"><span>예치·가수금 화면의 경매보증금 행이 여기에 한 줄씩 보입니다.</span><span></span></div>
+                                @endforelse
+                            </div>
+                        </details>
                     @endif
                     <div class="drow" style="color:#9ca3af;"><span>돈이 어떤 형태로 있는지의 합계입니다.</span><span></span></div>
                 </div>
