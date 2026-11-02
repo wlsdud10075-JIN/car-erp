@@ -115,4 +115,41 @@ class CapitalReportLinkTest extends TestCase
         // 발급된 링크가 실제로 열리고, 펼침 항목에 건별 내역이 들어있다.
         $this->get($url)->assertOk()->assertSee('대표이사 가수금')->assertSee('케이카');
     }
+
+    // ── 🧾 자산 = 자본 + 부채 (대표 2026-11-02 «총 미수금 밑에 총 운영 자금 … 자산 = 자본 + 부채») ──
+
+    /** 맨 위 카드가 총자산을 자산 쪽·부채+자본 쪽으로 펼친다. 비교 대상이 없으면 변동 열 대신 안내 한 줄. */
+    public function test_report_opens_with_the_balance_sheet_card(): void
+    {
+        $this->snapshot();
+
+        $html = $this->get($this->link())->assertOk()->getContent();
+        $this->assertStringContainsString('자산 = 자본 + 부채', $html);
+        // 총자산 = 현금(8,760,397 + 16,281.71×1495 + 23,169.73×1682) + 선적전재고(구 스냅샷 폴백) + 미수 + 보증금
+        $cash = 8_760_397 + (int) round(16_281.71 * 1495 + 23_169.73 * 1682);
+        $assets = $cash + 2_350_792_830 + 1_015_201_100 + 14_500_000;
+        $this->assertStringContainsString(number_format($assets / 1e8, 2).'억', $html, '총자산');
+        $this->assertStringContainsString('부채 합계', $html);
+        $this->assertStringContainsString(number_format((819_542_180 + 795_294_000) / 1e8, 2).'억', $html, '부채 = 미지급 + 가수금');
+        $this->assertStringContainsString('자본 합계', $html);
+        $this->assertStringNotContainsString('환율 재평가', $html, '굳힌 미수가 없는 구 스냅샷은 환차 줄을 안 그린다');
+        $this->assertStringContainsString('7일 이상 전 통장 잔액 기록이 생기면', $html);
+        $this->assertStringNotContainsString('보고 대비 변동 (', $html, '비교 열 머리말은 없어야 한다');
+    }
+
+    /** 7일 이상 전 스냅샷이 있으면 항목별 변동과 「총자산 = 부채 + 내 돈」 변동 한 줄이 붙고, 굳힌 미수가 있으면 환차 줄이 생긴다. */
+    public function test_report_shows_the_delta_against_the_previous_report(): void
+    {
+        $this->snapshot('2026-07-20');
+        $now = $this->snapshot('2026-07-27');
+        $now->update(['receivable_krw' => 1_000_000_000, 'receivable_frozen_krw' => 980_000_000, 'balance_krw' => 23_960_397]);   // 미수 −1,520만 → 현금 +1,520만
+
+        $html = $this->get($this->link())->assertOk()->getContent();
+        $this->assertStringContainsString('7월 20일 보고 대비 변동 (7일)', $html);
+        $this->assertStringContainsString('환율 재평가', $html);
+        $this->assertStringContainsString('+20,000,000', $html, '오늘 환율 미수 − 굳힌 미수 (1억 미만은 원 단위)');
+        $this->assertStringContainsString('class="d dpos">+15,200,000', $html, '현금 변동 +1,520만');
+        $this->assertStringContainsString('7월 20일 이후 총자산', $html);
+        $this->assertStringContainsString('내 돈', $html);
+    }
 }
