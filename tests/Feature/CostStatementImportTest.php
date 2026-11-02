@@ -305,6 +305,67 @@ class CostStatementImportTest extends TestCase
         $this->assertSame(30000, (int) $ok->fresh()->cost_towing, '보험료 기입이 탁송비를 건드렸다');
     }
 
+    /**
+     * 🔀 보험료는 **기존 금액에 더한다**(jin 2026-11-02 «지난번에 덮어쓰기 아니고 + 더해야 한다고 했었는데»).
+     * 10-01 구현은 덮어쓰기였다 — ssancarerp 208저2815 가 7,650 → 15,300 으로 「교체」된 것을 보고 드러났다(실제론 실무자 수기 더하기였지만
+     * 구조는 덮어쓰기). 같은 파일을 두 번 올리면 두 배가 되므로 파일 지문으로 막고, 알고도 올릴 땐 체크박스.
+     */
+    public function test_daily_insurance_adds_to_existing_amount_and_blocks_the_same_file_twice(): void
+    {
+        $this->actingAs($this->admin());
+        $v = $this->vehicleWithVin('208저2815', 'KMHJ381ABGU124746');
+        $v->forceFill(['cost_insurance' => 7650])->save();   // 지난달 보험료가 이미 있다
+        $fresh = $this->vehicleWithVin('18가5347', 'KNAG541BBPA218651');   // 0원
+
+        $rows = $this->dailyRows([
+            ['208저2815', 'KMHJ381ABGU124746', 7650],
+            ['18가5347', 'KNAG541BBPA218651', 7650],
+        ]);
+        $c = Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportColumn', 'cost_insurance')
+            ->set('costImportFile', $this->uploadXlsx($rows));
+
+        // 미리보기: 더하기 안내 + 결과(기존+이번) 칸
+        $c->assertSee(__('vehicle.cost_import.result'))
+            ->assertSee(__('vehicle.cost_import.accumulate_hint', ['count' => 1]));
+        $this->assertStringContainsString('data-cost-result>15,300<', $c->html(), '결과 칸 = 7,650 + 7,650');
+
+        $c->call('applyCostImport');
+        $this->assertSame(15300, (int) $v->fresh()->cost_insurance, '기존 7,650 에 7,650 을 더한다(덮어쓰기 금지)');
+        $this->assertSame(7650, (int) $fresh->fresh()->cost_insurance, '0원이던 차는 파일 값 그대로');
+        $this->assertDatabaseHas('audit_logs', ['auditable_id' => $v->id, 'action' => 'bulk_cost_applied', 'column_name' => 'cost_insurance']);
+
+        // 같은 파일 재업로드 → 차단(값 불변)
+        $c2 = Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportColumn', 'cost_insurance')
+            ->set('costImportFile', $this->uploadXlsx($rows))
+            ->call('applyCostImport');
+        $this->assertSame(15300, (int) $v->fresh()->cost_insurance, '같은 파일을 두 번 더하면 안 된다');
+        $this->assertSame(7650, (int) $fresh->fresh()->cost_insurance);
+        $this->assertTrue($c2->get('showCostImport'), '차단되면 모달이 닫히지 않는다');
+
+        // 알고도 올리기(체크) → 한 번 더 더해진다
+        $c2->set('costImportForce', true)->call('applyCostImport');
+        $this->assertSame(22950, (int) $v->fresh()->cost_insurance);
+        $this->assertSame(15300, (int) $fresh->fresh()->cost_insurance);
+    }
+
+    /** 탁송비는 종전대로 덮어쓰기 — 더하기는 보험료에만. */
+    public function test_towing_import_still_overwrites(): void
+    {
+        $this->actingAs($this->admin());
+        $v = $this->makeVehicle('12가3456');
+        $v->forceFill(['cost_towing' => 30000])->save();
+
+        $c = Volt::test('erp.vehicles.index')->call('openCostImport');
+        $this->assertFalse($c->instance()->costImportAccumulates());
+        $c->set('costImportParsed', ['matched' => [['id' => $v->id, 'number' => '12가3456', 'model' => '', 'current' => 30000, 'amount' => 50000, 'finalized' => false]], 'unmatched' => []])
+            ->call('applyCostImport');
+        $this->assertSame(50000, (int) $v->fresh()->cost_towing, '탁송비는 교체');
+    }
+
     /** 보험료 거래처 목록은 데일리뿐 — 붙여넣기는 막힌다(좌표 파서). */
     public function test_daily_insurance_rejects_paste_and_other_companies(): void
     {
