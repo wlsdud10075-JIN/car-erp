@@ -79,6 +79,26 @@ class Buyer extends Model
         return $this->created_at->gte($from);
     }
 
+    /**
+     * 🌐 홈페이지 주소 정규화 (jin 2026-11-03) — 스킴이 없으면 `https://` 를 붙인다.
+     *   ssancar.com 지도는 `^https?://` 만 받아서 `www.koreancarsks.com`(heymanerp #10)이 지도에서 빠졌다.
+     *   저장(mutator)과 포털 응답이 같이 쓴다 — 응답 쪽은 이미 저장된 옛 값을 위해서.
+     */
+    public static function normalizeWebsite(?string $url): ?string
+    {
+        $url = trim((string) $url);
+        if ($url === '') {
+            return null;
+        }
+
+        return preg_match('#^[a-z][a-z0-9+.-]*://#i', $url) ? $url : 'https://'.ltrim($url, '/');
+    }
+
+    public function setWebsiteAttribute(?string $value): void
+    {
+        $this->attributes['website'] = self::normalizeWebsite($value);
+    }
+
     /** 바이어 정산 방식 선택지 — 비율(%) => 표시. NULL(기본)은 화면이 따로 그린다. */
     public const SETTLEMENT_RATIO_OPTIONS = [50 => '5:5', 30 => '7:3'];
 
