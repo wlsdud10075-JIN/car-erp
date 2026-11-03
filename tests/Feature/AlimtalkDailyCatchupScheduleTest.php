@@ -9,7 +9,7 @@ use Tests\TestCase;
  * 🔁 09:00 일간 알림톡 따라잡기 (2026-10-13).
  *
  * 실측: heymanerp 09-23 09:00 서버 정지 → 일간 5종 그날 결손 · ssancarerp 10-01 09:00 BizM 타임아웃 17건.
- * `dailyAt('09:00')` 은 그 분에 서버가 없으면 당일 따라잡기가 없다 → 같은 커맨드를 09:30 에 한 번 더 돌리고,
+ * `dailyAt('09:00')` 은 그 분에 서버가 없으면 당일 따라잡기가 없다 → 같은 커맨드를 09:10 에 한 번 더 돌리고,
  * 발송 자체는 `once_per_day` 가 코드·번호·차량 단위로 오늘 보낸 건을 건너뛴다(명령 단위 when 금지 — 한 명이라도
  * 보냈으면 전원 생략이 된다).
  */
@@ -21,7 +21,7 @@ class AlimtalkDailyCatchupScheduleTest extends TestCase
         'alimtalk:receivable-status',
     ];
 
-    public function test_every_daily_alimtalk_command_runs_at_0900_and_again_at_0930_on_weekdays(): void
+    public function test_every_daily_alimtalk_command_runs_at_0900_and_again_at_0910_on_weekdays(): void
     {
         $events = collect(app(Schedule::class)->events());
 
@@ -30,7 +30,7 @@ class AlimtalkDailyCatchupScheduleTest extends TestCase
             $exprs = $mine->map(fn ($e) => $e->expression)->values()->all();
 
             $this->assertContains('0 9 * * 1-5', $exprs, "{$cmd}: 09:00 평일 스케줄이 없다");
-            $this->assertContains('30 9 * * 1-5', $exprs, "{$cmd}: 09:30 따라잡기 스케줄이 없다");
+            $this->assertContains('10 9 * * 1-5', $exprs, "{$cmd}: 09:10 따라잡기 스케줄이 없다");
             $this->assertTrue($mine->every(fn ($e) => $e->withoutOverlapping), "{$cmd}: withoutOverlapping 이 빠졌다");
         }
     }
