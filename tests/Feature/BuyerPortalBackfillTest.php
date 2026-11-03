@@ -42,6 +42,30 @@ class BuyerPortalBackfillTest extends TestCase
             'SHQIPTARE, ALBANIA' => null,                                // 「알바니아의」 = 국가 별칭
             'CWS-1V-225818 26th Floor, Amber Gem Tower, Ajman' => 'Ajman',
             '서울시 강남구 테헤란로 123' => null,
+            // 2026-11-03 운영 dry-run 에서 도시로 새던 것 — 전부 모름(null)
+            'Parmentierplein 13, 3088 GN Rotterdam, Netherlands MwSt' => null,   // 세금 표기
+            'don bosko, Tirana, 1001, country: Albania' => null,                 // 양식 글자
+            'Lagja 28 Nentori, CITY: Elbasan, COUNTRY : Albania, POSTAL CODE : 3001' => null,
+            'Kosovo , podujevo , post cod 11000' => null,
+            'rruga Faik Jashari Skenderaj, Blerart @outlook.com' => null,         // 이메일
+            'Riyadh, alrabwah dist. , makkah st.' => null,                        // 거리
+            'Ole Messelts vei 148, Norway' => null,
+            '6, grape close, kamazo, kaduna state, nigeria' => null,              // 주
+            'Elbasan, Cerrik, Cerrik ,Lagja Nr 1 Cerrik Pasuria me nr 1/89+1-1, Zona Kadastrale 1389./ALBANIA' => null,
+            'Kosovo,Ferizaj (state and city) 70000' => null,
+            'SMOORSTRAAT 24 4705 AA ROOSENDAAL, THE NETHERLANDS' => null,         // 국가 「THE」만 남던 것
+            'Albania , Shqiptaree' => null,
+            'KOSOVO, FERIZAJ 70000, PRISHTIN MAGISTRALE' => null,                 // 간선도로
+            'Zona industriale Rr,dervish qollaku' => null,                        // 국가·우편번호 없는 두 토막
+            'Marije Kraja Tirane Albania 1015' => null,                           // 쉼표 없는 한 토막에 거리 이름
+            // 국가·우편번호가 덜 떨어지던 것 — 이제 도시만
+            '2: SUKTH , Durres Albania 2000' => 'Durres',
+            'Mustafe Kelmendi 21, Peje Kosovo 30000' => 'Peje',
+            'Jeronim de Rada 24, Vushtrri-Kosovo' => 'Vushtrri',
+            'Rruga  Sadik Rama, Kline 32000 , Kosove' => 'Kline',
+            'BEDRI PEJANI;18-K-5-H-6, FUSHE KOSOVO' => 'FUSHE KOSOVO',            // 도시명 「Fushë Kosovë」 — 국가로 떼지 않는다
+            'AZE 17700295, AZERBAIJAN BAKU' => 'BAKU',
+            'Pejë Kosovo 30000' => 'Pejë',
             '' => null,
         ] as $address => $want) {
             $this->assertSame($want, BuyerPortalBackfill::cityFromAddress($address), "주소 '{$address}'");

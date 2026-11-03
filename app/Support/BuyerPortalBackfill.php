@@ -22,7 +22,17 @@ class BuyerPortalBackfill
         'netherlands', 'italia', 'italy', 'españa', 'spain', 'türkiye', 'turkey', 'uae', 'u.a.e', 'usa', 'u.s.a', 'korea', 'south korea', 'lithuania',
         'georgia', 'moldova', 'kazakhstan', 'kyrgyzstan', 'azerbaijan', 'russia', 'france', 'norway', 'sweden', 'japan', 'mongolia', 'myanmar',
         'cote d\'ivoire', 'ivory coast', 'belgium', 'poland', 'ukraine', 'uzbekistan', 'tajikistan', 'armenia', 'greece', 'bulgaria', 'romania', 'serbia',
-        'north macedonia', 'macedonia', 'montenegro', 'bosnia', 'croatia', 'slovenia', 'austria', 'switzerland', 'denmark', 'finland', 'estonia', 'latvia'];
+        'north macedonia', 'macedonia', 'montenegro', 'bosnia', 'croatia', 'slovenia', 'austria', 'switzerland', 'denmark', 'finland', 'estonia', 'latvia',
+        // 2026-11-03 운영 dry-run 에서 국가가 덜 떨어져 「도시」로 남던 표기
+        'kosove', 'kosoves', 'shqiptaree', 'alb', 'the netherlands', 'iceland', 'slovakia', 'slovak republic', 'czech republic', 'czechia', 'chile',
+        'paraguay', 'nigeria', 'saudi arabia', 'costa rica', 'congo', 'drc'];
+
+    /**
+     * 「도시가 아닌 것」 낱말(통째 단어로만 비교) — 2026-11-03 운영 dry-run 에서 도시 칸으로 새던 것: 양식 글자(POSTAL CODE :·country:·post cod),
+     *   기관·가게(OFFICE II POST·lokali Nova Bar·Autoriteti Portual), 지번(Zona Kadastrale), 노르웨이·아랍 거리(vei·st), 주(kaduna state), 세금 표기(MwSt).
+     */
+    private const NOT_CITY_WORDS = ['postal', 'post', 'code', 'cod', 'country', 'state', 'republic', 'republika', 'zona', 'kadastrale', 'office', 'bar',
+        'lokali', 'ambasada', 'autoriteti', 'portual', 'vei', 'veien', 'gata', 'gatan', 'st', 'dist', 'mwst', 'industriale', 'village', 'fshati', 'neighborhood', 'city', 'siti', 'magistrale', 'magjistrale', 'magjistralja'];
 
     /** 거리·건물·층 같은 「도시가 아닌 것」 표식 — 후보에 섞이면 모른다고 답한다. */
     private const STREET_WORDS = ['rr.', 'rruga', 'rr ', 'str.', 'str ', 'strasse', 'straße', 'street', 'st.', 'plein', 'ulica', 'ul.', 'road', 'rd.', 'ave',
@@ -59,6 +69,10 @@ class BuyerPortalBackfill
     private static function stripCountryWord(string $segment): string
     {
         $words = preg_split('/\s+/u', trim($segment)) ?: [];
+        // 「Fushe Kosovo」(Fushë Kosovë)는 국가가 붙은 게 아니라 도시 이름이다
+        if (preg_match('/^fush[eë]\s+kosov/iu', trim($segment))) {
+            return trim($segment);
+        }
         if (count($words) >= 2) {
             if (self::isCountry(end($words))) {
                 array_pop($words);
@@ -74,7 +88,8 @@ class BuyerPortalBackfill
      * 주소 → 도시. 확신 없으면 null.
      *  1) 쉼표·슬래시로 토막 → 국가 토막 제거 → 남은 **마지막** 토막(유럽식 「거리, 우편번호 도시」 순서)
      *  2) 우편번호(숫자·네덜란드식 `3088 GN`)·「p.n./nn/n.n.」(번지 없음) 제거
-     *  3) 거리 표식·숫자·4단어 초과가 남으면 모른다(null)
+     *  3) 거리 표식·숫자·기호(@ : ;)·「도시가 아닌 낱말」(NOT_CITY_WORDS)·3단어 초과가 남으면 모른다(null)
+     *  4) 국가도 우편번호도 없는 두 토막 이하 · 쉼표 없는 한 토막의 3단어 이상도 모른다(2026-11-03 운영 dry-run 오답 정리)
      */
     public static function cityFromAddress(?string $address): ?string
     {
@@ -89,13 +104,20 @@ class BuyerPortalBackfill
             return null;   // 「KOSOVO」 한 토막 = 국가뿐
         }
         $hadCountry = count($parts) < count(array_filter(array_map('trim', preg_split('/[,\/]/u', $address) ?: [])));
-        $cand = self::stripCountryWord((string) end($parts));
+        $last = (string) end($parts);
+        // 같은 토막 안에 국가 단어가 붙어 있어도 「국가 있음」이다(「Tauragė Lithuania」·「AZERBAIJAN BAKU」·「Vushtrri-Kosovo」)
+        $hadCountry = $hadCountry || collect(preg_split('/[\s\-–]+/u', $last) ?: [])->contains(fn ($w) => self::isCountry($w));
+        $cand = self::stripCountryWord($last);
         // 번지 없음 표식(「nn - 15000 Obiliq」·「p.n. Rahovec」) — 우편번호보다 먼저 떼야 앞 우편번호 규칙이 닿는다
         $cand = trim((string) preg_replace('/\b(p\.?\s?n\.?|n\.?\s?n\.?)\b/iu', '', $cand), " \t,.-–");
         // 우편번호 — 앞(「27580 Bremerhaven」·「3088 GN Rotterdam」) 또는 뒤(「Podujevë 11000」·「Tokyo 105-0023」)
+        $beforePostal = $cand;
         $cand = preg_replace('/^\s*[0-9][0-9\-]{2,}(\s?[A-Z]{2})?\s+/u', '', $cand);
         $cand = preg_replace('/\s+[0-9][0-9\-]{2,}\s*$/u', '', (string) $cand);
+        $hadPostal = $cand !== $beforePostal || preg_match('/(^|[\s,])[0-9]{4,6}([\s,]|$)/u', $address) === 1;
         $cand = trim(preg_replace('/\s*[-–]\s*/u', ' ', (string) $cand), " \t,.-");
+        // 우편번호·붙임표를 뗀 뒤 다시 국가 단어 — 「Durres Albania 2000」·「Peje Kosovo 30000」·「Vushtrri-Kosovo」
+        $cand = self::stripCountryWord((string) $cand);
         $cand = trim(preg_replace('/\s{2,}/u', ' ', $cand));
         if ($cand === '' || mb_strlen($cand) > 100) {
             return null;
@@ -106,11 +128,24 @@ class BuyerPortalBackfill
                 return null;
             }
         }
-        if (preg_match('/[0-9]/u', $cand) || count(preg_split('/\s+/u', $cand) ?: []) > 4) {
+        if (preg_match('/[0-9@:;()"]/u', $cand) || count(preg_split('/\s+/u', $cand) ?: []) > 3 || self::isCountry($cand)) {
+            return null;
+        }
+        foreach (preg_split('/[\s.]+/u', $lower) ?: [] as $word) {
+            if (in_array($word, self::NOT_CITY_WORDS, true)) {
+                return null;
+            }
+        }
+        // 국가도 우편번호도 없는 짧은 주소(「Zona industriale Rr,dervish qollaku」)는 마지막 토막이 거리일 수 있다 — 세 토막 이상일 때만 믿는다
+        if (! $hadCountry && ! $hadPostal && count($parts) < 3) {
             return null;
         }
         // 토막이 하나뿐이고 국가도 없었으면 거리인지 도시인지 모른다(「Prishtina Rruga B」는 위에서 걸렸고, 「cerrik elbasan」은 여기서 걸린다)
         if (! $hadCountry && count($parts) === 1) {
+            return null;
+        }
+        // 쉼표 없는 한 토막은 거리 이름이 앞에 붙기 쉽다(「Marije Kraja Tirane Albania 1015」) — 두 단어까지만 믿는다
+        if (count($parts) === 1 && count(preg_split('/\s+/u', $cand) ?: []) > 2) {
             return null;
         }
 
