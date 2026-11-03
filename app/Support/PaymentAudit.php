@@ -42,9 +42,64 @@ class PaymentAudit
         $amount = $cur === 'KRW' || $cur === ''
             ? number_format($amt).'원'
             : rtrim(rtrim(number_format($amt, 2), '0'), '.').' '.$cur;
+        // 💱 외화 판매 입금은 입금 시점 환율도 — 「생성」·「확정」 줄이 금액만 남겨 환율을 누가 넣었는지 안 보였다(jin 2026-11-03).
+        $rate = $isSale && $cur !== 'KRW' && $cur !== '' && (float) ($p->exchange_rate ?? 0) > 0
+            ? ' @'.rtrim(rtrim(number_format((float) $p->exchange_rate, 4), '0'), '.')
+            : '';
         $date = $p->payment_date ? Carbon::parse($p->payment_date)->format('Y-m-d') : '';
 
-        return trim(implode(' · ', array_filter([trim($typeLabel.' '.$amount), $date])));
+        return trim(implode(' · ', array_filter([trim($typeLabel.' '.$amount.$rate), $date])));
+    }
+
+    /**
+     * 🧾 채권관리 회수 줄(현금·상계·기타·손실) — 판매 잔금으로 안 미러되는 방식. 종전엔 감사 기록이 아예 없었다(jin 2026-11-03 점검,
+     * ssancarerp 10일 = 현금 4·손실 9건이 기록 0). 입금(deposit)은 판매 잔금 줄이, 적립금은 차량 `savings_used` 가,
+     * 과입금 전환(잡손실·회사이익)은 전환 액션이 이미 남기므로 뺀다(같은 일을 두 줄로 남기지 않는다).
+     */
+    public const HISTORY_LOGGED_METHODS = ['cash', 'offset', 'other', 'write_off'];
+
+    public const HISTORY_COLUMNS = ['method', 'amount', 'exchange_rate', 'collected_at', 'note'];
+
+    public static function historySummary(Model $h): string
+    {
+        $method = __('receivable.method.'.$h->method);
+        $cur = (string) ($h->vehicle?->currency ?? '');
+        $amt = (float) ($h->amount ?? 0);
+        $amount = $cur === 'KRW' || $cur === ''
+            ? number_format($amt).'원'
+            : rtrim(rtrim(number_format($amt, 2), '0'), '.').' '.$cur;
+        $rate = $cur !== 'KRW' && $cur !== '' && (float) ($h->exchange_rate ?? 0) > 0
+            ? ' @'.rtrim(rtrim(number_format((float) $h->exchange_rate, 4), '0'), '.')
+            : '';
+        $date = $h->collected_at ? Carbon::parse($h->collected_at)->format('Y-m-d') : '';
+
+        return trim(implode(' · ', array_filter([trim($method.' '.$amount.$rate), $date, $h->note ? mb_substr((string) $h->note, 0, 80) : null])));
+    }
+
+    public static function historyCreated(Model $h): void
+    {
+        if (in_array($h->method, self::HISTORY_LOGGED_METHODS, true)) {
+            AuditLog::recordChange($h, 'history_row', null, self::historySummary($h), 'created');
+        }
+    }
+
+    public static function historyDeleted(Model $h): void
+    {
+        if (in_array($h->method, self::HISTORY_LOGGED_METHODS, true)) {
+            AuditLog::recordChange($h, 'history_row', self::historySummary($h), null, 'deleted');
+        }
+    }
+
+    public static function historyUpdated(Model $h): void
+    {
+        if (! in_array($h->method, self::HISTORY_LOGGED_METHODS, true) && ! in_array($h->getOriginal('method'), self::HISTORY_LOGGED_METHODS, true)) {
+            return;
+        }
+        foreach (self::HISTORY_COLUMNS as $col) {
+            if (AuditLog::isRealChange($h, $col)) {
+                AuditLog::recordChange($h, $col, $h->getOriginal($col), $h->getAttribute($col));
+            }
+        }
     }
 
     public static function created(Model $p): void

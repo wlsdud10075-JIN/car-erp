@@ -104,8 +104,9 @@ new #[Layout('components.layouts.app')] class extends Component
         $settlementIds = $vehicleIds ? \App\Models\Settlement::whereIn('vehicle_id', $vehicleIds)->pluck('id')->all() : [];
         $fpIds = $vehicleIds ? \App\Models\FinalPayment::whereIn('vehicle_id', $vehicleIds)->pluck('id')->all() : [];
         $pbpIds = $vehicleIds ? \App\Models\PurchaseBalancePayment::whereIn('vehicle_id', $vehicleIds)->pluck('id')->all() : [];
+        $rhIds = $vehicleIds ? \App\Models\ReceivableHistory::whereIn('vehicle_id', $vehicleIds)->pluck('id')->all() : [];   // 채권 회수 줄(2026-11-03)
 
-        return $q->where(function ($q2) use ($vehicleIds, $settlementIds, $fpIds, $pbpIds, $userIds) {
+        return $q->where(function ($q2) use ($vehicleIds, $settlementIds, $fpIds, $pbpIds, $rhIds, $userIds) {
             $matched = false;
             if ($userIds) {
                 $q2->orWhereIn('user_id', $userIds);
@@ -116,6 +117,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 [\App\Models\Settlement::class, $settlementIds],
                 [\App\Models\FinalPayment::class, $fpIds],
                 [\App\Models\PurchaseBalancePayment::class, $pbpIds],
+                [\App\Models\ReceivableHistory::class, $rhIds],
             ] as [$cls, $ids]) {
                 if ($ids) {
                     $q2->orWhere(fn ($s) => $s->where('auditable_type', $cls)->whereIn('auditable_id', $ids));
@@ -135,7 +137,7 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Computed]
     public function vehicleNumbers(): array
     {
-        $byType = ['Vehicle' => [], 'Settlement' => [], 'FinalPayment' => [], 'PurchaseBalancePayment' => []];
+        $byType = ['Vehicle' => [], 'Settlement' => [], 'FinalPayment' => [], 'PurchaseBalancePayment' => [], 'ReceivableHistory' => []];
         foreach ($this->logs as $log) {
             $short = class_basename($log->auditable_type);
             if (isset($byType[$short]) && $log->auditable_id) {
@@ -161,6 +163,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'Settlement' => \App\Models\Settlement::class,
             'FinalPayment' => \App\Models\FinalPayment::class,
             'PurchaseBalancePayment' => \App\Models\PurchaseBalancePayment::class,
+            'ReceivableHistory' => \App\Models\ReceivableHistory::class,
         ] as $short => $cls) {
             if (! $byType[$short]) {
                 continue;

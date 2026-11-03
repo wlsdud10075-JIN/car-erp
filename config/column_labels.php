@@ -191,6 +191,16 @@ return [
         'proof_path' => '전시문(송금증)',
     ],
 
+    // 2026-11-03 — 채권관리 회수 줄(현금·상계·기타·손실). 종전엔 감사 기록 자체가 없었다.
+    'receivable_histories' => [
+        'history_row' => '채권 회수 줄',
+        'method' => '회수 방식',
+        'amount' => '금액',
+        'exchange_rate' => '환율',
+        'collected_at' => '회수일',
+        'note' => '비고',
+    ],
+
     'purchase_balance_payments' => [
         'amount' => '금액',
         'payment_date' => '지급일',
@@ -590,6 +600,10 @@ return [
     // ─── 감사 로그 '변경' 열 값 한글화 (2026-07-09 jin — 최고관리자가 값도 알아보게) ──────
     // 테이블.컬럼 별 enum 원문값 → 한글. 매핑 없으면 원문 그대로.
     'value_maps' => [
+        'receivable_histories' => [
+            'method' => ['deposit' => '입금', 'cash' => '현금', 'offset' => '상계', 'other' => '기타', 'write_off' => '손실(셀러부담)',
+                'savings' => '적립금 사용', 'misc_loss' => '잡손실', 'company_income' => '회사이익(과입금 전환)'],
+        ],
         'settlements' => [
             'settlement_status' => ['pending' => '대기', 'calculating' => '계산중', 'confirmed' => '확정', 'paid' => '지급'],
             'secondary_status' => ['pending' => '2차 대기', 'closed' => '2차 마감'],
