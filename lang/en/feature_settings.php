@@ -202,4 +202,9 @@ return [
     'biz_cert_name_label' => 'Business name (as on the certificate)',
     'biz_cert_number_label' => 'Business registration number',
     'biz_cert_number_hint' => 'Appears verbatim in the tax-invoice request alert.',
+    'domestic_label' => 'Domestic staff monthly settlement',
+    'domestic_sub' => 'Approves domestic staff appraisal fees separately from the staff monthly settlement. The staff settlement keeps one domestic total line. Off hides the domestic tab, fee upload and the domestic role. Per company.',
+    'domestic_viewers' => 'Who can see it',
+    'domestic_viewers_sub' => 'Only checked people see the domestic settlement and the domestic staff tab (system admins always). Approvers act through the notification link.',
+    'domestic_viewers_save' => 'Save viewers',
 ];

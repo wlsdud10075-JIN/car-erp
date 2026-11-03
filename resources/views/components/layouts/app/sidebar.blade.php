@@ -66,8 +66,13 @@
     // Phase 2 — 이 사용자 차례(current_level==rank, super=전체)인 월정산 지급 대기 건수.
     //   월정산 v3 — steps 모드(결재선)면 「그 칸의 사람」 차례. 판정은 scopeAwaitingDecisionBy 한 곳.
     $pendingPayoutBatches = $user->canApprove()
-        ? \App\Models\SettlementPayoutBatch::query()->awaitingDecisionBy($user)->count()
+        ? \App\Models\SettlementPayoutBatch::query()->notDomestic()->awaitingDecisionBy($user)->count()
         : 0;
+    // 🧾 내수직원 월정산(2026-11-03) — 지정자 + 지금 차례인 결재자(지정 안 됐어도 자기 차례면 메뉴가 뜬다).
+    $pendingDomesticPayouts = $user->canApprove() && \App\Models\Setting::domesticPayoutEnabled()
+        ? \App\Models\SettlementPayoutBatch::query()->domestic()->awaitingDecisionBy($user)->count()
+        : 0;
+    $showDomesticPayouts = $user->canSeeDomesticPayout() || $pendingDomesticPayouts > 0;
 
     // 2026-06-18 ETA 통관서류 알람 — 미확인(미해소+미확인) 건수. canAccessClearance 만 계산.
     $alarmUnread = $user->canAccessClearance()
@@ -286,6 +291,14 @@
                     'active' => request()->routeIs('erp.payout-batches.*'),
                     'show' => $user->canApprove(),
                     'badge' => $pendingPayoutBatches > 0 ? $pendingPayoutBatches : null,
+                ],
+                [
+                    'label' => __('nav.menu.domestic_payouts'),
+                    'href' => $showDomesticPayouts ? route('erp.domestic-payouts.index') : '#',
+                    'icon' => 'banknotes',
+                    'active' => request()->routeIs('erp.domestic-payouts.*'),
+                    'show' => $showDomesticPayouts,
+                    'badge' => $pendingDomesticPayouts > 0 ? $pendingDomesticPayouts : null,
                 ],
                 [
                     'label' => __('nav.menu.transfers'),

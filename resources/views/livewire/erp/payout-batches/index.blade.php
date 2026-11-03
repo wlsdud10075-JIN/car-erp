@@ -4,6 +4,7 @@ use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
+use Livewire\Attributes\Locked;
 use Livewire\Volt\Component;
 
 new #[Layout('components.layouts.app')] class extends Component {
@@ -20,6 +21,72 @@ new #[Layout('components.layouts.app')] class extends Component {
     //   그래서 승인자가 카톡에서 본 총액과 실제 지급액이 어긋났다. 이 화면은 이제 승인 전용이다.
     //   조정 내역은 아래 배치 카드에 **읽기 전용**으로 표시된다.
 
+    // ── 🧾 내수직원 월정산 (jin 2026-11-03) — 같은 화면을 /erp/domestic-payouts 로 열면 내수 배치만 + 제출 칸 ──
+    //   볼 사람 = 지정자(canSeeDomesticPayout) + 지금 자기 차례인 결재자. 사내직원 월정산 쪽은 내수 배치를 안 보인다.
+    #[Locked]
+    public bool $domestic = false;
+
+    public string $domesticMonth = '';
+
+    /** 결재선 title => user_id(문자열) — 정산관리 제출 모달과 같은 기본값 규칙. */
+    public array $domesticLine = [];
+
+    public function mount(): void
+    {
+        $this->domestic = request()->routeIs('erp.domestic-payouts.*');
+        if (! $this->domestic) {
+            return;
+        }
+        $user = auth()->user();
+        abort_unless(\App\Models\Setting::domesticPayoutEnabled()
+            && ($user->canSeeDomesticPayout() || SettlementPayoutBatch::query()->domestic()->awaitingDecisionBy($user)->exists()), 403);
+
+        $this->domesticMonth = (string) (\App\Models\DomesticFeeStatement::query()->max('month') ?? now()->subMonth()->format('Y-m'));
+        $last = SettlementPayoutBatch::lastStepsLine();
+        foreach (SettlementPayoutBatch::approvalLineOptions() as $title => $users) {
+            $pick = $last[$title] ?? ($users->count() === 1 ? (int) $users->first()->id : null);
+            $this->domesticLine[$title] = $pick ? (string) $pick : '';
+        }
+    }
+
+    /** 제출 전 미리보기 — 고른 달의 평가수수료 표가 있는 내수직원 카드(지정자에게만). */
+    #[Computed]
+    public function domesticPreview(): ?array
+    {
+        if (! $this->domestic || ! auth()->user()->canSeeDomesticPayout() || ! \App\Models\PayrollEntry::isMonth($this->domesticMonth)) {
+            return null;
+        }
+        $bd = \App\Services\Payout\BatchPayoutBreakdown::forDomesticPreview($this->domesticMonth);
+
+        return $bd + ['total' => (int) collect($bd['people'])->sum('payout')];
+    }
+
+    /** 고를 수 있는 달 — 평가수수료 표가 올라온 달(최근 순). */
+    #[Computed]
+    public function domesticMonths(): array
+    {
+        return \App\Models\DomesticFeeStatement::query()->distinct()->orderByDesc('month')->pluck('month')->all();
+    }
+
+    public function updatedDomesticMonth(): void
+    {
+        unset($this->domesticPreview);
+    }
+
+    public function submitDomestic(): void
+    {
+        abort_unless($this->domestic, 403);
+        try {
+            SettlementPayoutBatch::submitForDomestic(auth()->user(), $this->domesticMonth, array_map('intval', $this->domesticLine));
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
+        unset($this->batches, $this->domesticPreview);
+        $this->dispatch('notify', message: __('payout_batch.domestic.submitted'), type: 'success');
+    }
+
     #[Computed]
     public function batches()
     {
@@ -31,6 +98,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'settlements.vehicle.finalPayments', 'settlements.vehicle.receivableHistories',
             'adjustments.salesman', 'adjustments.creator',
         ])
+            ->when($this->domestic, fn ($q) => $q->domestic(), fn ($q) => $q->notDomestic())
             ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
             ->orderByDesc('id')
             ->limit(60)
@@ -168,9 +236,62 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 <div class="p-3 md:p-6">
     <div class="mb-4">
-        <h1 class="text-xl font-bold text-gray-800">{{ __('payout_batch.title') }}</h1>
-        <p class="mt-0.5 text-xs text-gray-500">{{ __('payout_batch.subtitle') }}</p>
+        <h1 class="text-xl font-bold text-gray-800">{{ $domestic ? __('payout_batch.domestic.title') : __('payout_batch.title') }}</h1>
+        <p class="mt-0.5 text-xs text-gray-500">{{ $domestic ? __('payout_batch.domestic.subtitle') : __('payout_batch.subtitle') }}</p>
     </div>
+
+    {{-- 🧾 내수직원 월정산 제출 (2026-11-03) — 달 고르기 → 사람별 카드(엑셀 항목 그대로) → 결재선 → 올리기. 지정자에게만. --}}
+    @if($domestic && ($dp = $this->domesticPreview) !== null)
+    <div class="card-tight mb-4 max-w-3xl space-y-2" data-domestic-submit>
+        <div class="flex flex-wrap items-center gap-2">
+            <span class="section-dot bg-green-500"></span>
+            <span class="section-title">{{ __('payout_batch.domestic.submit_title') }}</span>
+            <div class="w-32">
+                <select wire:model.live="domesticMonth" class="input-base text-xs text-gray-800">
+                    @forelse($this->domesticMonths as $m)
+                    <option value="{{ $m }}">{{ $m }}</option>
+                    @empty
+                    <option value="{{ $domesticMonth }}">{{ $domesticMonth }}</option>
+                    @endforelse
+                </select>
+            </div>
+            <span class="pill-count">{{ __('payout_batch.domestic.people', ['n' => count($dp['people'])]) }}</span>
+            <span class="text-sm font-medium text-primary-text">₩{{ number_format($dp['total']) }}</span>
+        </div>
+        @if($dp['people'] === [])
+        <p class="text-xs text-gray-400">{{ __('payout_batch.domestic.no_statement') }}</p>
+        @else
+        @foreach($dp['people'] as $person)
+        <x-payout.person-card :person="$person" mode="batch" />
+        @endforeach
+        <x-payout.domestic-fee-total :total="$dp['domestic_fee_total'] ?? null" />
+        @php $lineOpts = \App\Models\SettlementPayoutBatch::approvalLineOptions(); @endphp
+        @if(!empty($lineOpts))
+        <div data-approval-line>
+            <div class="section-header"><span class="section-dot bg-sky-500"></span>
+                <span class="section-title">{{ __('settlement.batch.line_title') }}</span></div>
+            <div class="mt-1 grid gap-1.5 sm:grid-cols-3">
+                @foreach($lineOpts as $title => $users)
+                <div class="text-xs">
+                    <label class="label-base">{{ $title }}</label>
+                    <select wire:model="domesticLine.{{ $title }}" class="input-base text-xs text-gray-800">
+                        <option value="">{{ __('settlement.batch.line_none') }}</option>
+                        @foreach($users as $u)
+                        <option value="{{ $u->id }}">{{ $u->name }}@if(trim((string) $u->phone) === '') — {{ __('settlement.batch.line_no_phone') }}@endif</option>
+                        @endforeach
+                    </select>
+                </div>
+                @endforeach
+            </div>
+        </div>
+        @endif
+        <div class="flex justify-end">
+            <button type="button" wire:click="submitDomestic" wire:confirm="{{ __('payout_batch.domestic.confirm', ['month' => $domesticMonth]) }}"
+                    wire:loading.attr="disabled" wire:target="submitDomestic" class="btn-primary whitespace-nowrap text-xs">{{ __('payout_batch.domestic.submit') }}</button>
+        </div>
+        @endif
+    </div>
+    @endif
 
     <div class="space-y-3">
         @forelse($this->batches as $b)
@@ -187,9 +308,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <button type="button" wire:click="toggle({{ $b->id }})" class="flex flex-1 items-center gap-2 text-left">
                         <span class="whitespace-nowrap font-semibold text-gray-800">{{ $b->month }}</span>
                         {{-- 🚪 퇴사 정산 (2026-10-15) — 달을 닫지 않는 한 사람 배치. 월정산과 한눈에 갈리게 --}}
+                        @if($b->isDomesticBatch())<span class="badge badge-green" data-domestic-batch>{{ __('payout_batch.domestic.badge') }}</span>@endif
                         @if($b->isLeaverBatch())<span class="badge badge-purple" data-leaver-batch>{{ __('payout_batch.leaver_label', ['name' => $b->salesman?->name ?? '-']) }}</span>@endif
                         <span class="badge {{ $statusBadge }}">{{ __('payout_batch.status.'.$b->status) }}</span>
-                        <span class="pill-count">{{ __('payout_batch.count', ['n' => $b->settlement_count]) }}</span>
+                        <span class="pill-count">{{ $b->isDomesticBatch() ? __('payout_batch.domestic.people', ['n' => $b->settlement_count]) : __('payout_batch.count', ['n' => $b->settlement_count]) }}</span>
                         <span class="text-sm font-medium text-primary-text">₩{{ number_format($b->total_payout) }}</span>
                     </button>
                     <div class="text-xs text-gray-500">
@@ -316,13 +438,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </div>
                     @endif
+                    @unless($b->isDomesticBatch())
                     <x-payout.totals :totals="$bd['totals']" :settlement-total="(int) $b->total_payout" />
+                    @endunless
                     @foreach($bd['people'] as $person)
                     <x-payout.person-card :person="$person" mode="batch" :changed="$changed[$person['salesman_id']] ?? []" />
                     @endforeach
                     <x-payout.domestic-fee-total :total="$bd['domestic_fee_total'] ?? null" />
                     {{-- ✏️ 결재 중 인센티브 수정 — 제출 권한자·최고관리자. 포인터는 그대로(멈춘 단계부터 이어서). --}}
-                    @if($b->status === 'pending' && \App\Models\SettlementPayoutBatch::canEditAdjustments(auth()->user()))
+                    @if($b->status === 'pending' && ! $b->isDomesticBatch() && \App\Models\SettlementPayoutBatch::canEditAdjustments(auth()->user()))
                     <div class="rounded-md border border-dashed border-amber-300 bg-amber-50/40 px-2.5 py-2" data-incentive-form>
                         <div class="mb-1 text-[10px] font-semibold uppercase text-amber-700">{{ __('payout_batch.steps.incentive_title') }}</div>
                         @foreach($b->adjustments->where('kind', 'incentive') as $adj)

@@ -97,4 +97,15 @@ return [
         'title' => ':n settlement(s) changed after submission',
         'hint' => 'These payouts changed between submission and approval. Approving pays the new amount (right); nothing needs to be deducted.',
     ],
+    'domestic' => [
+        'title' => 'Domestic Staff Monthly Settlement',
+        'subtitle' => 'Pays each domestic staff total appraisal fees for the month through a separate approval line',
+        'submit_title' => 'Month',
+        'people' => ':n people',
+        'no_statement' => 'No appraisal fee sheet uploaded for this month — Staff → Domestic staff → Upload appraisal fees.',
+        'submit' => 'Submit for approval',
+        'confirm' => 'Submit the :month domestic staff settlement for approval?',
+        'submitted' => 'Submitted. The first approver will be notified.',
+        'badge' => 'Domestic',
+    ],
 ];

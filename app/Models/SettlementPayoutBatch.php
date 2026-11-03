@@ -64,6 +64,41 @@ class SettlementPayoutBatch extends Model
         return $this->kind === self::KIND_LEAVER;
     }
 
+    /**
+     * 🧾 내수직원 월정산 (jin 2026-11-03) — 그 달 평가수수료 표가 올라온 내수직원들의 「총 평가사수수료」를 별도 결재선으로 지급.
+     * 정산(차량)은 0건, 총액 = 그 사람들의 그 달 급여 줄 합. 달을 닫지 않는다 · 월결산 보고를 안 부른다.
+     * 회사 토글(Setting::domesticPayoutEnabled)이 켜진 회사에서만 생긴다.
+     */
+    public const KIND_DOMESTIC = 'domestic';
+
+    public function isDomesticBatch(): bool
+    {
+        return $this->kind === self::KIND_DOMESTIC;
+    }
+
+    public function scopeDomestic($q)
+    {
+        return $q->where('kind', self::KIND_DOMESTIC);
+    }
+
+    /** 사내직원 월정산 화면 쪽 — 월정산·퇴사 정산(내수직원 월정산 제외). */
+    public function scopeNotDomestic($q)
+    {
+        return $q->where('kind', '!=', self::KIND_DOMESTIC);
+    }
+
+    /** 그 달 내수직원 월정산에 들어갈 사람 id — 조건은 급여 인원과 같은 곳(BatchPayoutBreakdown) 한 곳. */
+    public static function domesticSalesmanIds(string $month): Collection
+    {
+        return BatchPayoutBreakdown::domesticSalesmanIds($month);
+    }
+
+    /** 내수직원 월정산 총액 = 그 사람들의 그 달 급여 줄 합(업로드가 「총 평가사수수료」 한 줄로 넣는다). */
+    public static function domesticPayoutTotal(string $month, Collection $ids): int
+    {
+        return (int) PayrollEntry::query()->where('month', $month)->whereIn('salesman_id', $ids)->countedInPay()->sum('amount');
+    }
+
     /** 퇴사 배치의 그 한 사람(월정산은 NULL). */
     public function salesman(): BelongsTo
     {
@@ -353,9 +388,17 @@ class SettlementPayoutBatch extends Model
         return $this->hasMany(SettlementPayoutAdjustment::class, 'batch_id');
     }
 
-    /** 배치 총액 재계산 — 정산 실지급 합 + 조정 합(음수 포함). 조정 변경 시 호출. */
+    /** 배치 총액 재계산 — 정산 실지급 합 + 조정 합(음수 포함). 조정 변경 시 호출. 내수직원 월정산 = 그 사람들의 그 달 급여 합. */
     public function recomputeTotal(): void
     {
+        if ($this->isDomesticBatch()) {
+            $ids = BatchPayoutBreakdown::domesticIdsOf($this);
+            $this->total_payout = self::domesticPayoutTotal($this->month, $ids);
+            $this->settlement_count = $ids->count();
+            $this->save();
+
+            return;
+        }
         $settleSum = (int) $this->settlements()->get()->sum(fn ($s) => $s->actual_payout);
         $adjSum = (int) $this->adjustments()->sum('amount');
         $this->total_payout = max(0, $settleSum + $adjSum);
@@ -672,6 +715,35 @@ class SettlementPayoutBatch extends Model
         return self::openBatch($submitter, $month, $ids, $adjustments, self::normalizeLine($line), [
             'kind' => self::KIND_LEAVER, 'salesman_id' => (int) $sm->id,
         ], $sm);
+    }
+
+    /**
+     * 🧾 **내수직원 월정산 제출** (jin 2026-11-03) — 그 달 평가수수료 표가 올라온 내수직원 전원을 한 배치로, 결재선은 사내직원 월정산과 같다.
+     * 올리는 사람 = 내수직원 월정산을 볼 수 있게 지정된 사람(canSeeDomesticPayout). 결재선 필수(종전 사다리는 안 쓴다 — 지정자가 rank 3 일 수 있다).
+     * 이중 지급 가드 = 그 달 진행 중·승인된 내수 배치가 있으면 거부(반려·취소 뒤엔 다시 올린다).
+     */
+    public static function submitForDomestic(User $submitter, string $month, array $line = []): self
+    {
+        if (! $submitter->canSeeDomesticPayout()) {
+            throw new \DomainException('내수직원 월정산 제출 권한이 없습니다.');
+        }
+        if (self::domestic()->where('month', $month)->whereIn('status', [self::STATUS_PENDING, self::STATUS_APPROVED])->exists()) {
+            throw new \DomainException('해당 월 내수직원 월정산이 이미 결재 중이거나 승인됐습니다.');
+        }
+        $steps = self::normalizeLine($line);
+        if ($steps === []) {
+            throw new \DomainException('결재선을 골라 주세요 (대표 포함).');
+        }
+        $ids = self::domesticSalesmanIds($month);
+        if ($ids->isEmpty()) {
+            throw new \DomainException('이 달에 올라온 평가수수료 표가 없습니다 (사내직원관리 → 평가수수료 업로드).');
+        }
+
+        return self::openBatch($submitter, $month, collect(), [], $steps, [
+            'kind' => self::KIND_DOMESTIC,
+            'total_payout' => self::domesticPayoutTotal($month, $ids),
+            'settlement_count' => $ids->count(),
+        ]);
     }
 
     /**
@@ -1079,9 +1151,12 @@ class SettlementPayoutBatch extends Model
             '총액' => number_format($this->total_payout).'원',
             '회사이익' => number_format($this->profitStats()['company_profit_after_payroll']).'원',
             // 🚪 퇴사 배치는 「제출」 칸(20자 자동컷)에 퇴사자 이름을 싣는다 — 본문·줄 구성은 BizM 등록본 그대로라 변수 값으로만 알린다(jin 2026-10-15 (가)).
-            '제출자' => $this->isLeaverBatch()
-                ? ($this->salesman?->leaverTag() ?? '퇴사정산').' · '.($this->submitter?->name ?? '-')
-                : ($this->submitter?->name ?? '-'),
+            '제출자' => match (true) {
+                $this->isLeaverBatch() => ($this->salesman?->leaverTag() ?? '퇴사정산').' · '.($this->submitter?->name ?? '-'),
+                // 🧾 내수직원 월정산 — 등록본 문구 그대로, 제출 칸에 「내수」를 실어 사내직원 월정산과 가른다(퇴사 정산과 같은 방식).
+                $this->isDomesticBatch() => '내수 · '.($this->submitter?->name ?? '-'),
+                default => $this->submitter?->name ?? '-',
+            },
         ];
         // 지금 차례인 사람에게만 — steps 모드 = 그 칸의 한 사람(부장·상무·대표 각자 차례에 1회, jin (가)) / 종전 = 그 계단 전원.
         foreach ($this->currentApprovers()->filter(fn (User $u) => trim((string) $u->phone) !== '') as $user) {

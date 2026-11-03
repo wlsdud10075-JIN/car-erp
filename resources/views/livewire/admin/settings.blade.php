@@ -31,6 +31,12 @@ new #[Layout('components.layouts.app')] class extends Component
     /** 🤝 B2B 파트너스 on/off (jin 2026-11-02) — 회사별. */
     public bool $b2bPartnersEnabled = false;
 
+    /** 🧾 내수직원 월정산 on/off (jin 2026-11-03) — 회사별, 기본 ssancarerp 만 켬. 볼 사람은 아래 지정. */
+    public bool $domesticPayoutEnabled = false;
+
+    /** 내수직원 월정산·사내직원관리 내수 탭을 볼 사람(user id 문자열) — 시스템관리자는 지정 없이 본다. */
+    public array $domesticViewerIds = [];
+
     public bool $assistantEnabled = false;
 
     // 🔒 락 관제 — 돈 흐름 락 토글. lock 키 => bool. 기본값·단일출처 = Setting::LOCK_DEFAULTS.
@@ -160,6 +166,8 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->unsecuredLimitEnabled = Setting::unsecuredLimitEnabled();
         $this->buyerCashEnabled = Setting::buyerCashEnabled();
         $this->b2bPartnersEnabled = Setting::b2bPartnersEnabled();
+        $this->domesticPayoutEnabled = Setting::domesticPayoutEnabled();
+        $this->domesticViewerIds = array_map('strval', Setting::domesticPayoutViewerIds());
         $this->assistantEnabled = (bool) Setting::get('assistant_enabled', false);
         foreach (Setting::LOCK_DEFAULTS as $lock => $default) {
             $this->lockToggles[$lock] = Setting::lockEnabled($lock);
@@ -1010,6 +1018,72 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
+    /** 🧾 내수직원 월정산 on/off (jin 2026-11-03) — 회사별 키, 시스템관리자만, 감사로그. 끄면 내수 기능이 통째로 숨는다(데이터는 남음). */
+    public function updatedDomesticPayoutEnabled(bool $value): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $setting = Setting::updateOrCreate(
+            ['key' => 'domestic_payout_enabled_'.Setting::companyTemplateSet()],
+            ['value' => $value ? '1' : '0', 'type' => 'boolean', 'description' => '내수직원 월정산 활성화'],
+        );
+        Setting::flushRiskParamMemo();
+
+        \App\Models\AuditLog::create([
+            'user_id' => auth()->id(),
+            'auditable_type' => Setting::class,
+            'auditable_id' => $setting->id,
+            'action' => 'domestic_payout_toggle_changed',
+            'column_name' => 'domestic_payout_enabled',
+            'old_value' => $value ? '0' : '1',
+            'new_value' => $value ? '1' : '0',
+            'ip_address' => request()?->ip(),
+        ]);
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    /** 내수직원 월정산을 볼 수 있는 사람 후보 — 관리 이상(관리·업무관리자·최고관리자). 시스템관리자는 항상 보므로 뺀다. */
+    #[\Livewire\Attributes\Computed]
+    public function domesticViewerCandidates()
+    {
+        return \App\Models\User::query()->whereIn('permission', ['admin', 'manager'])
+            ->orWhere(fn ($q) => $q->where('permission', 'user')->where('role', '관리'))
+            ->orderBy('name')->get(['id', 'name', 'permission', 'role', 'approval_title']);
+    }
+
+    public function saveDomesticViewers(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $allowed = $this->domesticViewerCandidates->pluck('id')->map(fn ($i) => (int) $i)->all();
+        $ids = array_values(array_intersect(array_map('intval', $this->domesticViewerIds), $allowed));
+        sort($ids);
+        $before = Setting::domesticPayoutViewerIds();
+        sort($before);
+
+        $setting = Setting::updateOrCreate(
+            ['key' => 'domestic_payout_viewers'],
+            ['value' => json_encode($ids), 'type' => 'string', 'description' => '내수직원 월정산 볼 사람(user id)'],
+        );
+        Setting::flushRiskParamMemo();
+        $this->domesticViewerIds = array_map('strval', $ids);
+
+        \App\Models\AuditLog::create([
+            'user_id' => auth()->id(),
+            'auditable_type' => Setting::class,
+            'auditable_id' => $setting->id,
+            'action' => 'domestic_payout_viewers_changed',
+            'column_name' => 'domestic_payout_viewers',
+            'old_value' => json_encode($before),
+            'new_value' => json_encode($ids),
+            'ip_address' => request()?->ip(),
+        ]);
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
     // 사내 업무 도우미(로컬 LLM 챗봇) on/off (jin 2026-07-24). 배포 ≠ 노출 —
     //   위젯은 .env ASSISTANT_ENABLED(인프라: LLM 연결 준비) AND 이 토글 둘 다 켜져야 뜸.
     public function updatedAssistantEnabled(bool $value): void
@@ -1813,6 +1887,35 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
                                  after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
                 </label>
+            </div>
+
+            {{-- 🧾 내수직원 월정산 on/off + 볼 사람 (jin 2026-11-03) — 회사별. 끄면 내수 탭·업로드·메뉴·「내수」 역할이 숨는다(데이터는 남음). --}}
+            <div class="rounded-md border border-gray-100 px-3 py-2" data-domestic-payout-setting>
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                    <span class="text-sm text-gray-700">{{ __('feature_settings.domestic_label') }}
+                        <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.domestic_sub') }}</span>
+                    </span>
+                    <input type="checkbox" wire:model.live="domesticPayoutEnabled" class="peer sr-only">
+                    <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
+                                 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+                </label>
+                @if($domesticPayoutEnabled)
+                <div class="mt-2 border-t border-gray-100 pt-2" data-domestic-viewers>
+                    <div class="text-xs font-medium text-gray-600">{{ __('feature_settings.domestic_viewers') }}</div>
+                    <p class="text-[11px] text-gray-400">{{ __('feature_settings.domestic_viewers_sub') }}</p>
+                    <div class="mt-1 grid gap-1 sm:grid-cols-2">
+                        @foreach($this->domesticViewerCandidates as $cand)
+                        <label class="flex items-center gap-2 text-xs text-gray-700">
+                            <input type="checkbox" wire:model="domesticViewerIds" value="{{ $cand->id }}" class="rounded border-gray-300">
+                            <span>{{ $cand->name }} <span class="text-gray-400">· {{ $cand->approval_title ?: ($cand->permission === 'user' ? $cand->role : __('nav.permission.'.$cand->permission)) }}</span></span>
+                        </label>
+                        @endforeach
+                    </div>
+                    <div class="mt-1.5 flex justify-end">
+                        <button type="button" wire:click="saveDomesticViewers" class="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50">{{ __('feature_settings.domestic_viewers_save') }}</button>
+                    </div>
+                </div>
+                @endif
             </div>
 
             <div class="flex justify-end pt-1">

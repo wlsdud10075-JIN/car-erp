@@ -67,7 +67,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function pickRole(string $role): void
     {
         // 🔍 검차직원·내수직원도 칩으로 고른다(jin 2026-11-03 «검차직원이 없는 거 같아») — 선택지 = ROLE_OPTIONS.
-        if (! in_array($role, \App\Models\User::ROLE_OPTIONS, true)) {
+        if (! in_array($role, \App\Models\User::roleOptions(), true)) {
             return;
         }
         $this->permFilter = 'user';
@@ -211,7 +211,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'permission' => 'required|in:super,admin,manager,user',
             // 회의확장씬 #11 별건 fix (2026-05-22) — 옛 role 명('전체','통관','정산')이 stale 이었음.
             // ROLES const 변경(2026-05-20 안건 I — 정산→재무 / 통관→수출통관) 동기화 누락 — 재무·수출통관 user 편집 시 validation fail.
-            'role'       => 'required|in:'.implode(',', \App\Models\User::ROLE_OPTIONS),   // ROLES + 검차(로그인 없음)
+            'role'       => 'required|in:'.implode(',', \App\Models\User::roleOptions()),   // ROLES + 검차(로그인 없음)
             // 2026-05-21 — role='영업' 일 때만 type 필수. 그 외 role 은 type 무시(null 저장).
             'type'       => 'nullable|in:employee,freelance|required_if:role,영업',
             // 2026-06-30 — 다중 관리 배정 (role='영업' 외엔 비움). pivot sync.
@@ -605,7 +605,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <button type="button" wire:click="pickPerm('')" class="{{ $permFilter === '' ? $chipOn : $chipOff }}">{{ __('user.all_perm') }}</button>
         <span class="flex flex-wrap items-center gap-1 rounded-lg bg-gray-50 px-1.5 py-1">
             <button type="button" wire:click="pickPerm('user')" class="{{ $permFilter === 'user' && $roleFilter === '' ? $chipOn : $chipOff }}">{{ __('nav.permission.user') }}</button>
-            @foreach(\App\Models\User::ROLE_OPTIONS as $r)
+            @foreach(\App\Models\User::roleOptions() as $r)
             <button type="button" wire:click="pickRole('{{ $r }}')" class="{{ $roleFilter === $r ? $subOn : $subOff }}">{{ __('domain.role.'.$r) }}</button>
             @endforeach
         </span>
@@ -794,7 +794,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div>
                 <label class="label-base">{{ __('user.field.role') }} <span class="text-red-500">*</span></label>
                 <select wire:model.live="role" class="input-base">
-                    @foreach(App\Models\User::ROLE_OPTIONS as $r)
+                    @foreach(App\Models\User::roleOptions() as $r)
                     <option value="{{ $r }}">{{ __('domain.role.'.$r) }}</option>
                     @endforeach
                 </select>

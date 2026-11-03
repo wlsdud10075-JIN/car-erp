@@ -154,7 +154,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function openDomesticImport(): void
     {
-        abort_unless(auth()->user()?->canEditPayroll(), 403);
+        abort_unless(auth()->user()?->canEditPayroll() && auth()->user()->canSeeDomesticPayout(), 403);
         $this->reset(['domesticFile', 'domesticPreview', 'domesticMatches']);
         $this->showDomesticImport = true;
     }
@@ -166,7 +166,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function updatedDomesticFile(): void
     {
-        abort_unless(auth()->user()?->canEditPayroll(), 403);
+        abort_unless(auth()->user()?->canEditPayroll() && auth()->user()->canSeeDomesticPayout(), 403);
         $this->validate(['domesticFile' => 'required|file|mimes:xls,xlsx|max:10240'], [], ['domesticFile' => __('salesman.domestic_import.file')]);
         $importer = new DomesticFeeImporter;
         $this->domesticPreview = $importer->parse($this->domesticFile->getRealPath());
@@ -188,7 +188,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function applyDomesticImport(): void
     {
         $actor = auth()->user();
-        abort_unless($actor?->canEditPayroll(), 403);
+        abort_unless($actor?->canEditPayroll() && $actor->canSeeDomesticPayout(), 403);
         $month = $this->domesticPreview['month'] ?? null;
         if (! $month || ! PayrollEntry::isMonth($month) || ($this->domesticPreview['errors'] ?? []) !== []) {
             $this->dispatch('notify', message: __('salesman.import.not_ready'), type: 'error');
@@ -247,6 +247,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $tabs = [];
         foreach (['employee', 'freelance', 'inspector', 'domestic_staff'] as $t) {   // 내수직원 = 검차직원 다음(jin 2026-11-03)
+            // 🧾 내수직원 탭은 내수직원 월정산을 볼 수 있게 지정된 사람만(jin 2026-11-03 — 회사 토글이 꺼지면 아무도 안 본다)
+            if ($t === 'domestic_staff' && ! auth()->user()?->canSeeDomesticPayout()) {
+                continue;
+            }
             $tabs[$t] = __('salesman.type.'.$t);
         }
         foreach (User::STAFF_ROLES as $role) {
@@ -327,6 +331,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         return Salesman::query()
             ->with('user')
             ->tap(fn ($q) => $this->applyTypeFilter($q))
+            // 🧾 지정 안 된 사람은 「전체」에서도 내수직원 행이 안 보인다(jin 2026-11-03)
+            ->when(! auth()->user()?->canSeeDomesticPayout(), fn ($q) => $q->where('type', '!=', 'domestic_staff'))
             ->when(SearchTerm::of($this->search), fn($q) => $q->where(fn($q2) =>
                 $q2->where('name', 'like', SearchTerm::like($this->search))
                    ->orWhere('email', 'like', SearchTerm::like($this->search))
@@ -735,7 +741,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
         @if(auth()->user()?->canEditPayroll())
         <button type="button" wire:click="openImport" class="btn-primary" title="{{ __('salesman.import.hint') }}">{{ __('salesman.import.button') }}</button>
+        @if(auth()->user()->canSeeDomesticPayout())
         <button type="button" wire:click="openDomesticImport" class="btn-primary" title="{{ __('salesman.domestic_import.hint') }}" data-domestic-import-button>{{ __('salesman.domestic_import.button') }}</button>
+        @endif
         @endif
     </div>
 </div>
@@ -1167,7 +1175,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('salesman.field.deposit_hint') }}</p>
         </div>
-        @elseif($linkedUserType === 'domestic_staff' && $canEditPayroll)
+        @elseif($linkedUserType === 'domestic_staff' && $canEditPayroll && auth()->user()->canSeeDomesticPayout())
         {{-- 🧾 내수직원 (jin 2026-11-03 «사내직원·검차직원처럼 항목들 다 나올 필요 없고, 엑셀에 기입된 헤더 부분만 항목들에 나오고 그 금액들»).
              18항목 입력칸 대신 그 달 「평가수수료 업로드」 표 한 줄을 그대로 보여 준다(읽기 전용 — 값은 업로드로만 바뀐다). --}}
         @php $dfee = $this->domesticStatement(); @endphp

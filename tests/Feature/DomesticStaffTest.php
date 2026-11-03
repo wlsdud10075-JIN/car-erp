@@ -6,6 +6,7 @@ use App\Models\AuditLog;
 use App\Models\DomesticFeeStatement;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
+use App\Models\Setting;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Services\Payout\BatchPayoutBreakdown;
@@ -31,9 +32,14 @@ class DomesticStaffTest extends TestCase
 
     private const HEADERS = ['컨설팅비', '회사컨설팅비', '건수', '평가사수수료', '매도비', '회사수익', '클레임 외', '총 평가사수수료', '총 회사수익'];
 
+    /** 내수 탭·업로드는 지정자만 본다(2026-11-03 내수직원 월정산) — 테스트의 관리자는 지정해 둔다. */
     private function admin(): User
     {
-        return User::factory()->create(['permission' => 'admin', 'role' => '관리', 'email_verified_at' => now()]);
+        $u = User::factory()->create(['permission' => 'admin', 'role' => '관리', 'email_verified_at' => now()]);
+        Setting::query()->updateOrCreate(['key' => 'domestic_payout_viewers'], ['value' => json_encode([$u->id]), 'type' => 'string']);
+        Setting::flushRiskParamMemo();
+
+        return $u;
     }
 
     /** 실측 양식 축소판 — 위쪽에 차량 목록(행이 달마다 밀린다), 아래에 평가사 표(G열부터), 합계 줄. */
@@ -182,8 +188,11 @@ class DomesticStaffTest extends TestCase
         $this->assertSame($vals[7], PayrollEntry::totalFor($kim->id, '2026-10'), '패널 저장이 업로드 값을 지우거나 바꾸면 안 된다');
     }
 
+    /** 내수직원 월정산이 꺼진 회사(heymanerp·karabaerp)의 종전 동작 — 켜진 회사는 DomesticPayoutBatchTest. */
     public function test_batch_puts_domestic_right_after_inspector_as_common_labor_with_a_total_row(): void
     {
+        Setting::query()->updateOrCreate(['key' => 'domestic_payout_enabled_system'], ['value' => '0', 'type' => 'boolean']);
+        Setting::flushRiskParamMemo();
         $i = Salesman::create(['name' => '오검차', 'type' => 'inspector', 'is_active' => true]);
         $staff = Salesman::create(['name' => '박재무', 'type' => 'staff', 'is_active' => true]);
         PayrollEntry::replaceFor($i->id, '2026-10', [['label' => '기본급', 'amount' => 2_000_000]]);
