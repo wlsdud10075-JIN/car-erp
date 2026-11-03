@@ -974,6 +974,7 @@ return [
         'unchanged_suffix' => '(:count unchanged)',
         'apply_btn' => 'Apply',
         // License fee (customs license monthly statement — split total n/1 by export declaration number)
+        'carry_col_hint' => 'DK Logis statement export (F plate · H amount incl. VAT). Matched vehicles get their carry cost replaced with this amount (overwrite — two lines for one vehicle are summed).',
         'ins_col_hint' => 'Daily "policy history" export (B plate · C VIN · G premium). Only vehicles whose plate and VIN both match are filled; same plate with a different VIN stays unmatched. Duplicate policies for one vehicle are summed.',
         'reason' => [
             'vin_mismatch' => 'VIN mismatch',
@@ -1001,6 +1002,7 @@ return [
             'mutual' => 'Mutual',
             'seongji' => 'Seongji',
             'daily' => 'Daily',
+            'dk_logis' => 'DK Logis',
         ],
         'seongji_notice' => 'Seongji license fees are infrequent (1-2/year), so instead of document mapping, enter the total in the shipping request "Secondary cost" tab to split n/1 across the bundle. (Handled from bundles pending secondary settlement.)',
         'seongji_goto' => 'Go to shipping requests',

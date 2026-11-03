@@ -13062,7 +13062,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         @endforeach
                     </select>
                 </div>
-                <p class="flex-1 text-[11px] text-gray-500">{{ $costImportColumn === 'cost_license' ? __('vehicle.cost_import.lic_col_hint') : ($costImportColumn === 'cost_insurance' ? __('vehicle.cost_import.ins_col_hint') : __('vehicle.cost_import.col_hint')) }}</p>
+                <p class="flex-1 text-[11px] text-gray-500">{{ $costImportColumn === 'cost_license' ? __('vehicle.cost_import.lic_col_hint') : ($costImportColumn === 'cost_insurance' ? __('vehicle.cost_import.ins_col_hint') : ($costImportColumn === 'cost_carry' ? __('vehicle.cost_import.carry_col_hint') : __('vehicle.cost_import.col_hint'))) }}</p>
             </div>
 
             @if($costImportColumn === 'cost_license' && $costImportCompany === 'seongji')
