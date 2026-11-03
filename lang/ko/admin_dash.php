@@ -24,6 +24,7 @@ return [
     'lead_profit_link' => '정산관리 →',
     'lead_profit_formula' => '총마진 :margin − 실지급(급여 포함) :payout − 발송비·공통 인건비 :ship',
     'lead_profit_overpay' => '과입금 전환 +:amount',
+    'lead_profit_domestic' => '내수직원 회사수익 +:amount',
     'lead_recv' => '받을 돈',
     'lead_recv_sub' => '총 미수 · 결제대기 제외 · 기간 무관',
     'lead_recv_risk' => '위험·심각 :count대 →',
@@ -102,6 +103,7 @@ return [
     // 월정산 v3 (2026-10-09) — 급여·인센티브까지 뺀 회사 순이익. 옛 「+ 사내직원 환차」 문구는 08-06 공식 변경 뒤 코드와 어긋나 있었다.
     'company_net_breakdown' => '총마진 ₩:margin − 실지급 ₩:payout(급여·인센티브 포함) − 발송비 ₩:shipping − 공통 인건비 ₩:labor',
     'company_fx_absorbed' => '사내직원 환차 회사 흡수: ₩:fx',
+    'company_domestic_profit' => '+ 내수직원 총 회사수익 ₩:amount (평가사 지급 뒤 · 평가수수료정산 엑셀)',
     'company_overpay_income' => '+ 과입금 회사이익 ₩:amount (채권관리에서 전환한 것, 이 기간 전환일 기준)',
     'company_contrib_title' => '인원별 회사기여 (상위 10명)',
     'company_contrib_empty' => '기간 내 지급완료 정산이 없습니다.',
@@ -114,7 +116,7 @@ return [
     'contrib_th_share' => '지분율',
     'contrib_th_ratio' => '이익배수',   // 🔀 2026-10-12 = 인센티브 전 회사이익 ÷ (급여 + 정산금) — 카드와 같은 식
     'contrib_ratio_na' => '프리랜서',
-    'common_labor' => '공통 인건비(검차·내수직원 급여) −₩:amount — 지분율 계산에서는 제외',
+    'common_labor' => '공통 인건비(급여만 받는 직원) −₩:amount — 지분율 계산에서는 제외',
 
     // 담당자 성과
     'salesman_count_title' => '담당자별 판매 대수 (상위 10명)',

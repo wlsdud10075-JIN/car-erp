@@ -3,8 +3,10 @@
 namespace Tests\Feature;
 
 use App\Console\Commands\AlimtalkMonthlyClosing;
+use App\Models\DomesticFeeStatement;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
+use App\Models\Setting;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
@@ -137,6 +139,30 @@ class AdminDashboardPayrollShareTest extends TestCase
         $stats = $batch->fresh()->profitStats()['company_profit_after_payroll'];
         $this->assertSame($dashboard, $closing, '대시보드 ≠ 월결산 알림톡');
         $this->assertSame($dashboard, $stats, '대시보드 ≠ 배치 profitStats');
+    }
+
+    /**
+     * 🧾 내수직원 월정산이 켜진 회사(2026-11-03, jin «맞춰야지 당연히») — 세 곳 모두 내수직원 급여는 빼지 않고 「총 회사수익」을 더한다.
+     *    총 회사수익 = 컨설팅비 + 매도비 − 총 평가사수수료(이미 평가사 지급 뒤)라 지급합계를 또 빼면 이중 차감.
+     */
+    public function test_three_company_profit_figures_add_domestic_company_profit(): void
+    {
+        [$admin, , , , $batch] = $this->fixture();
+        $d = Salesman::create(['name' => '김평가', 'type' => 'domestic_staff', 'is_active' => true]);
+        DomesticFeeStatement::create(['salesman_id' => $d->id, 'month' => '2026-09',
+            'headers' => ['건수', '총 평가사수수료', '총 회사수익'], 'values' => [5, 1_000_000, 3_000_000], 'payout' => 1_000_000]);
+        PayrollEntry::replaceFor($d->id, '2026-09', [['label' => '총 평가사수수료', 'amount' => 1_000_000]]);
+        $this->assertTrue(Setting::domesticPayoutEnabled(), '전제: 테스트 회사(system) = 켜짐');
+
+        $base = (17_010_000 - 100_000) + (17_010_000 - 8_455_000) - 500_000 - 2_740_000 - 2_450_000;
+        $dashboard = $this->cp($admin)['company_net'];
+        $closing = (int) str_replace([',', '원'], '', AlimtalkMonthlyClosing::buildVars('2026-09')['회사이익']);
+        $stats = $batch->fresh()->profitStats()['company_profit_after_payroll'];
+
+        $this->assertSame($base + 3_000_000, $stats, '배치 = 기존 + 총 회사수익(지급합계 1,000,000 은 안 뺀다)');
+        $this->assertSame($stats, $dashboard, '대시보드 ≠ 배치');
+        $this->assertSame($stats, $closing, '월결산 알림톡 ≠ 배치');
+        $this->assertSame(3_000_000, $this->cp($admin)['domestic_profit']);
     }
 
     /** 배포 전에 끝난 배치(박제 없음)는 처음 그릴 때 박제돼, 그 뒤 급여를 넣어도 카드가 안 바뀐다. */
