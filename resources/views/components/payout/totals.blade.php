@@ -24,6 +24,7 @@
         @if($settlementTotal !== null)<span>{{ __('payout_card.totals.settlement_total') }} ₩{{ number_format($settlementTotal) }}</span>@endif
         <span>{{ __('payout_card.totals.contribution_sum') }} ₩{{ number_format($t['contribution_sum']) }}</span>
         @if($t['common_labor'] !== 0)<span>{{ __('payout_card.totals.common_labor') }} −₩{{ number_format($t['common_labor']) }}</span>@endif
+        @if(($t['domestic_profit'] ?? 0) !== 0)<span class="text-emerald-700" data-totals-domestic-profit>{{ __('payout_card.totals.domestic_profit') }} +₩{{ number_format($t['domestic_profit']) }}</span>@endif
         @if(($t['external_total'] ?? 0) !== 0)<span data-totals-external>{{ __('payout_card.totals.external_total') }} ₩{{ number_format($t['external_total']) }}</span>@endif
         @if(($t['pension_total'] ?? 0) !== 0)<span data-totals-pension>{{ __('payout_card.totals.pension_total') }} ₩{{ number_format($t['pension_total']) }}</span>@endif
     </div>

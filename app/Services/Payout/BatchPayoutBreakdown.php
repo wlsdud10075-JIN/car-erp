@@ -167,6 +167,12 @@ final class BatchPayoutBreakdown
         }
         unset($r);
 
+        // 🧾 내수직원 회사수익(jin 2026-11-03 (가) «총 회사수익으로 더해줘») — 켜진 회사의 사내직원 월정산에서만.
+        //    엑셀 「총 회사수익」 = 컨설팅비 + 매도비 − 총 평가사수수료(클레임 반영) — 평가사에게 주는 돈(내수직원 지급합계)을
+        //    이미 뺀 값이라 지급합계를 또 빼면 이중 차감이다. 지급 자체는 내수직원 월정산 결재로 나가고 송금 총액엔 안 넣는다.
+        $domesticFee = $splitDomestic ? self::domesticFeeTotalForMonth($month) : null;
+        $domesticProfit = $domesticFee ? (int) round((float) (self::feeItem($domesticFee, '총 회사수익') ?? self::feeItem($domesticFee, '회사수익') ?? 0)) : 0;
+
         return [
             'month' => $month,
             'people' => $rows,
@@ -179,11 +185,12 @@ final class BatchPayoutBreakdown
                 'external_total' => $externalTotal,
                 'contribution_sum' => $contributionSum,
                 'common_labor' => $commonLabor,
-                'company_net' => $contributionSum - $commonLabor,
+                'domestic_profit' => $domesticProfit,
+                'company_net' => $contributionSum - $commonLabor + $domesticProfit,
             ],
             // 🧾 내수직원 합계 줄(jin 2026-11-03 — 엑셀 G74:P74) = 이번 달 카드에 들어간 내수직원 표의 열 합. 없으면 null.
             //    켜진 회사의 사내직원 월정산은 사람 카드가 없으므로 그 달 표에서 바로 더한다(표시 전용 — 송금·회사이익 무관, jin «합계 한 줄이면 족해»).
-            'domestic_fee_total' => $splitDomestic ? self::domesticFeeTotalForMonth($month) : self::domesticFeeTotal($rows),
+            'domestic_fee_total' => $splitDomestic ? $domesticFee : self::domesticFeeTotal($rows),
             'domestic_split' => $splitDomestic,
             // 그 달 내수직원 월정산 결재 상태(승인·결재 중, 없으면 null) — 한 줄 옆 뱃지. 내수가 먼저 끝나는 흐름이라 확인용.
             'domestic_batch_status' => $splitDomestic
@@ -211,6 +218,12 @@ final class BatchPayoutBreakdown
 
         return self::sumFeeTables(DomesticFeeStatement::query()->where('month', $month)->whereIn('salesman_id', $ids)
             ->get()->map(fn (DomesticFeeStatement $st) => $st->items())->all());
+    }
+
+    /** 합계 표에서 항목 하나(이름으로). 없으면 null. */
+    private static function feeItem(array $total, string $label): int|float|null
+    {
+        return collect($total['items'] ?? [])->firstWhere('label', $label)['value'] ?? null;
     }
 
     private static function sumFeeTables(array $tables): ?array

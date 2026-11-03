@@ -124,6 +124,10 @@ class DomesticPayoutBatchTest extends TestCase
         $this->assertSame(2, $month['domestic_fee_total']['count']);
         $this->assertSame(0, $month['totals']['common_labor'], '회사이익(공통 인건비)엔 안 들어간다 — 표시 전용 한 줄');
         $this->assertSame('pending', $month['domestic_batch_status'], '한 줄 옆 = 그 달 내수직원 월정산 결재 상태');
+        // 회사 순이익 += 내수직원 「총 회사수익」(2명 × 5,098,800) — 평가사 지급(지급합계)은 이미 빠진 값이라 다시 안 뺀다 (jin (가))
+        $this->assertSame(10_197_600, $month['totals']['domestic_profit']);
+        $this->assertSame(10_197_600, $month['totals']['company_net'], '정산·급여 없는 달 = 내수 총 회사수익만');
+        $this->assertSame(0, $month['totals']['transfer_total'], '내수 지급은 내수직원 월정산으로 — 사내직원 송금 총액엔 안 들어간다');
         $lineHtml = Blade::render('<x-payout.domestic-fee-total :total="$t" :compact="true" :status="$s" />', ['t' => $month['domestic_fee_total'], 's' => $month['domestic_batch_status']]);
         $this->assertStringContainsString('data-domestic-line-status="pending"', $lineHtml);
         $this->assertStringContainsString('₩9,189,770', $lineHtml, '한 줄의 지급합계 = 총 평가사수수료 합');
@@ -182,6 +186,8 @@ class DomesticPayoutBatchTest extends TestCase
         $this->assertContains($a->id, array_column($month['people'], 'salesman_id'));
         $this->assertFalse($month['domestic_split']);
         $this->assertSame(2_701_200, $month['totals']['common_labor']);
+        $this->assertSame(0, $month['totals']['domestic_profit'], '꺼진 회사는 종전 공식 그대로');
+        $this->assertSame(-2_701_200, $month['totals']['company_net']);
     }
 
     /** 이름별 카드 접힌 줄 = 건수 / 회사수익(총 회사수익) / 지급합계 (jin 2026-11-03). */
