@@ -703,7 +703,8 @@ new #[Layout('components.layouts.app')] class extends Component
         // 서류 발송비(우체국 EMS + DHL) — 🔀 2026-11-01 (jin) **비율(프리랜서)만 실지급에서 뺀다.** 건당(사내직원)은 발송비를
         //   건당 판정 마진에서 보고(perUnitPreview → 모델) 실지급에선 안 뺀다 → 미리보기 「− 발송비」 줄도 비율일 때만.
         //   ⚠️ 여기 안 맞추면 **미리보기와 실제 지급액이 갈린다**. 단일 출처 = Settlement::shippingFeeDeducted().
-        $shippingFee = $this->settlement_type === 'ratio' ? (int) ($v->shipping_fee_total ?? 0) : 0;
+        //   🔀 2026-11-03 (jin) — 발송비 회사:직원 5:5, 직원 몫만.
+        $shippingFee = $this->settlement_type === 'ratio' ? \App\Models\Settlement::shippingFeeEmployeeShare((int) ($v->shipping_fee_total ?? 0)) : 0;
 
         $actualPayout = $settlementAmount - $documentFee - $shippingFee - (int) ($this->other_deduction ?? 0);
 
