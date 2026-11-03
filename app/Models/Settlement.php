@@ -1092,6 +1092,22 @@ class Settlement extends Model
             : self::param('settlement_freelance_ratio');
     }
 
+    /**
+     * 화면에 보일 **실제 적용 비율(%)** — 정산액 계산과 같은 규칙 (jin 2026-11-03 «프리랜서가 비율 0.0% 로 나온다»).
+     *   목록은 `settlement_ratio` 를 그대로 찍어 자동 건(NULL)이 0.0% 로 보였다(건당 ₩0 과 같은 형태, 10-30).
+     *   karaba = 칸 값(>0) 아니면 이익률 구간표(getKarabaSettlementAmountAttribute 와 같은 판정) / 그 외 = effective_ratio.
+     */
+    public function getAppliedRatioAttribute(): float
+    {
+        if (self::isKarabaMemo()) {
+            return $this->settlement_ratio !== null && (float) $this->settlement_ratio > 0
+                ? (float) $this->settlement_ratio
+                : (float) $this->karaba_tier_percent;
+        }
+
+        return $this->settlement_ratio !== null ? (float) $this->settlement_ratio : (float) $this->effective_ratio;
+    }
+
     public function getEffectivePerUnitAmountAttribute(): int
     {
         // 재무가 per_unit_amount 명시 입력 시 그 값 override 우선.

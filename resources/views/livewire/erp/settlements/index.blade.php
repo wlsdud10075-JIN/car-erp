@@ -2855,7 +2855,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 </td>
                 <td class="py-3 pr-4 text-gray-600">
                     @if($s->settlement_type === 'ratio')
-                        {{ __('settlement.ratio_unit', ['ratio' => number_format($s->settlement_ratio, 1)]) }}
+                        {{-- 자동 건이면 settlement_ratio 가 NULL 이라 0.0% 로 찍혔다 — 실제 적용 비율(jin 2026-11-03) --}}
+                        {{ __('settlement.ratio_unit', ['ratio' => number_format($s->applied_ratio, 1)]) }}
                     @else
                         {{-- 자동 건이면 per_unit_amount 가 NULL 이라 ₩0 으로 찍혔다 — 실제 적용 건당액(승계·tier 반영)을 보인다 (jin 2026-10-30) --}}
                         {{ __('settlement.per_unit_unit', ['amount' => number_format($s->effective_per_unit_amount)]) }}
@@ -3020,7 +3021,7 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
         <div class="mt-2 grid grid-cols-2 gap-x-4 text-xs text-gray-500">
             <div>{{ __('settlement.mobile_salesman') }}: {{ $s->salesman?->name ?? '-' }}</div>
-            <div>{{ __('settlement.mobile_type') }}: {{ $s->settlement_type === 'ratio' ? number_format($s->settlement_ratio, 1).'%' : __('settlement.mobile_type_per_unit') }}</div>
+            <div>{{ __('settlement.mobile_type') }}: {{ $s->settlement_type === 'ratio' ? number_format($s->applied_ratio, 1).'%' : __('settlement.mobile_type_per_unit') }}</div>
             <div>{{ __('settlement.mobile_purchase_price') }}: ₩{{ number_format($s->vehicle?->purchase_price ?? 0) }}</div>
             <div>{{ \App\Models\Setting::isKaraba() ? __('settlement.label_operating_profit') : __('settlement.mobile_total_margin') }}: ₩{{ number_format($s->display_margin) }}</div>
             <div class="font-semibold text-gray-700">{{ __('settlement.mobile_actual') }}: ₩{{ number_format($s->actual_payout) }}</div>
