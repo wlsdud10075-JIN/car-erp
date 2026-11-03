@@ -377,7 +377,7 @@ return [
     'result_document_fee' => 'Document fee',
     'result_document_fee_sub' => '(freelancer auto)',
     'result_shipping_fee' => 'Shipping fee',
-    'result_shipping_fee_sub' => '(EMS/DHL actual)',
+    'result_shipping_fee_sub' => '(50% of EMS/DHL cost — company:staff 5:5)',
     'result_other_deduction' => 'Other deduction',
     'result_exchange' => 'FX diff (2nd confirmed)',
     'result_exchange_sub' => '(freelancer 1:1)',

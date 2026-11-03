@@ -138,7 +138,8 @@ class VehicleShipmentSettlementTest extends TestCase
 
     // ── ② 정산 반영 ──────────────────────────────────────────────
 
-    public function test_freelancer_payout_drops_by_the_full_shipping_fee(): void
+    /** 🔀 2026-11-03 (jin) — 발송비는 회사:직원 5:5. 프리랜서 실지급에서 **직원 몫(절반)** 만 빠진다(구 08-31~11-02 = 전액). */
+    public function test_freelancer_payout_drops_by_half_the_shipping_fee(): void
     {
         $v = $this->vehicle();
         $s = $this->settlement($v, 'ratio');
@@ -151,7 +152,7 @@ class VehicleShipmentSettlementTest extends TestCase
 
         $this->assertSame($margin, $s->total_margin, '총마진은 안 움직인다 — 비용 10칸이 아니다');
         $this->assertSame(30_000, $s->shipping_fee);
-        $this->assertSame($before - 30_000, $s->actual_payout, '반값(15,000)이 아니라 전액이어야 한다');
+        $this->assertSame($before - 15_000, $s->actual_payout, '직원 몫 절반(15,000)만 — 전액(30,000)이면 구 규칙');
     }
 
     /**
@@ -204,9 +205,23 @@ class VehicleShipmentSettlementTest extends TestCase
         $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'ED3KR', 'fee' => 30_000]);
         $s = $s->fresh()->load('vehicle');
 
-        $this->assertSame(100_000, $s->settlement_amount, '1,009,999 − 30,000 < 100만 → 10만');
+        $this->assertSame(100_000, $s->settlement_amount, '1,009,999 − 직원 몫 15,000 < 100만 → 10만');
         $this->assertSame(100_000, $s->actual_payout, '건당 그대로 — 발송비는 안 뺀다');
         $this->assertGreaterThanOrEqual(1_000_000, $s->total_margin, '총마진 자체는 안 움직인다(회사이익·카드가 쓴다)');
+    }
+
+    /** 🔀 2026-11-03 — 판정 마진은 「총마진 − 발송비 **직원 몫**」. 전액이면 경계 아래, 절반이면 위로 갈리는 차로 못 박는다. */
+    public function test_employee_tier_uses_only_the_staff_half_of_shipping(): void
+    {
+        $tierOn = Salesman::create(['name' => 'TIER2', 'is_active' => true, 'type' => 'employee', 'per_unit_tier_enabled' => true]);
+        $v = $this->vehicle(['sale_price' => 10_222_222]);   // 총마진 1,009,999
+        $s = $this->settlement($v, 'per_unit', $tierOn);
+
+        $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'ED4KR', 'fee' => 18_000]);   // 직원 몫 9,000
+        $s = $s->fresh()->load('vehicle');
+
+        $this->assertSame(200_000, $s->settlement_amount, '1,009,999 − 9,000 ≥ 100만 → 20만 (전액 18,000 을 빼면 10만으로 떨어진다)');
+        $this->assertSame(200_000, $s->actual_payout, '건당은 안 깎는다');
     }
 
     public function test_company_borne_shipment_keeps_the_number_but_costs_nobody(): void
@@ -236,7 +251,7 @@ class VehicleShipmentSettlementTest extends TestCase
         $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'ED8KR', 'fee' => 30_000]);
         $s = $s->fresh()->load('vehicle');
 
-        $this->assertSame($before, $s->company_net, '회사는 먼저 치르고 되받았을 뿐 순증이 없다');
+        $this->assertSame($before - 15_000, $s->company_net, '회사가 먼저 30,000 을 치르고 직원 몫 15,000 만 되받는다 — 회사 부담 절반(5:5)');
         $this->assertSame($s->total_margin - $s->actual_payout - 30_000, $s->company_net);
     }
 
@@ -371,7 +386,7 @@ class VehicleShipmentSettlementTest extends TestCase
         $preview = $component->instance()->marginData();
         $model = $s->fresh()->load('vehicle');
 
-        $this->assertSame(30_000, $preview['shippingFee']);
+        $this->assertSame(15_000, $preview['shippingFee'], '미리보기 「− 발송비」 = 직원 몫(5:5)');
         $this->assertSame($model->actual_payout, $preview['actualPayout'],
             '미리보기와 실제 실지급액이 갈리면 재무가 다른 숫자를 보고 지급한다');
     }

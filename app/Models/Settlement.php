@@ -1110,8 +1110,9 @@ class Settlement extends Model
     {
         // 📮 2026-11-01 (jin) — 건당 판정은 **총마진 − 발송비** 로. 발송비를 실지급에서 빼지 않는 대신 여기서 본다:
         //    음수면 건당 0(손해차량 + 발송비는 회사 부담), 양수면 그 금액으로 차등(100만·1억 경계). 승계 5만도 음수면 0.
+        //    🔀 2026-11-03 (jin) — 빼는 것은 발송비 **직원 몫(5:5 의 50%)** 만. 건당액 자체는 여전히 안 깎는다.
         //    `total_margin` 자체는 안 바꾼다 — 회사이익·월정산 카드·대시보드가 그 값을 쓴다(발송비는 거기서 따로 뺀다).
-        $totalMargin -= $this->shipping_fee;
+        $totalMargin -= self::shippingFeeEmployeeShare($this->shipping_fee);
 
         // NULL = 자동 차등 tier (2026-06-22 jin 확정). 매입합계(구입금액+매도비)·총마진 기준 (엑셀 BX=R열).
         $tier = self::employeePerUnitTier(
@@ -1289,7 +1290,10 @@ class Settlement extends Model
     }
 
     /**
-     * 서류 발송비 (우체국 EMS + DHL) — **프리랜서·사내직원 동일하게 전액 차감** (jin 2026-08-31).
+     * 서류 발송비 (우체국 EMS + DHL) — 차량별 실비(일괄 업로드는 n/1 로 나뉘어 들어온다).
+     * 🔀 2026-11-03 (jin) — **회사:직원 5:5.** 직원 몫만 프리랜서·비율은 실지급에서, 건당은 판정 마진에서 뺀다
+     *    (`shippingFeeEmployeeShare`·`shippingFeeDeducted`·`autoPerUnitAmountAt`). 아래 08-31 「전액 차감」 서술은 역사 기록.
+     * (구) **프리랜서·사내직원 동일하게 전액 차감** (jin 2026-08-31).
      *
      * 실무 관리표는 「담당자 × 월 → 우체국+DHL 월 계 → N/10 정산 반영」으로 집계하고,
      * 회사가 무는 몫은 별도 「회사 부담(싼카)」 행으로 뺀다 ⇒ **담당자에 붙은 건 그 사람이 전액 진다.**
@@ -1306,10 +1310,22 @@ class Settlement extends Model
         return (int) ($this->vehicle?->shipping_fee_total ?? 0);
     }
 
-    /** 실지급에서 실제로 빠지는 발송비 — 비율(프리랜서·바이어 비율)만. 건당은 0(회사 부담, 판정 마진에서만 본다). jin 2026-11-01. */
+    /** 📮 발송비 중 직원 몫(%) — 회사:직원 5:5 (jin 2026-11-03). 나머지는 회사가 진다(company_net 이 발송비 전액을 빼므로 자동). */
+    public const SHIPPING_FEE_EMPLOYEE_SHARE_PCT = 50;
+
+    /** 발송비 금액 → 직원 몫. 원 단위 끝수는 회사가 진다(내림). 드로어 미리보기도 이걸 부른다. */
+    public static function shippingFeeEmployeeShare(int $fee): int
+    {
+        return intdiv(max(0, $fee) * self::SHIPPING_FEE_EMPLOYEE_SHARE_PCT, 100);
+    }
+
+    /**
+     * 실지급에서 실제로 빠지는 발송비 — 비율(프리랜서·바이어 비율)만, **직원 몫(50%)만**. 건당은 0(판정 마진에서만 본다).
+     * 🔀 jin 2026-11-01 비율만 차감 → 2026-11-03 그 차감을 전액에서 5:5 직원 몫으로.
+     */
     public function shippingFeeDeducted(): int
     {
-        return $this->settlement_type === 'ratio' ? $this->shipping_fee : 0;
+        return $this->settlement_type === 'ratio' ? self::shippingFeeEmployeeShare($this->shipping_fee) : 0;
     }
 
     /**
@@ -1512,7 +1528,7 @@ class Settlement extends Model
     public function freelanceEquivalentPayout(?float $rate = null): int
     {
         return (int) ($this->totalMarginAt($rate) * ($this->effective_ratio / 100))
-            - self::param('settlement_freelance_document_fee') - $this->shipping_fee - (int) ($this->other_deduction ?? 0);
+            - self::param('settlement_freelance_document_fee') - self::shippingFeeEmployeeShare($this->shipping_fee) - (int) ($this->other_deduction ?? 0);
     }
 
     /**
