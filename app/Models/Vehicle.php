@@ -950,7 +950,7 @@ class Vehicle extends Model
     //   - cost_license : 통관 면허비 월명세서, 수출신고번호로 묶어 합계 n/1 분배
     // ⚠️ 봉인 화이트리스트는 BULK_COST_FIELDS(9개) 그대로 — 이건 UI 노출/파서 분기용 축소 목록.
     //   - cost_insurance : 데일리 가입이력조회 xlsx, 차량번호 + 차대번호 매칭 (jin 2026-10-01)
-    public const BULK_COST_UPLOAD_FIELDS = ['cost_towing', 'cost_license', 'cost_insurance'];
+    public const BULK_COST_UPLOAD_FIELDS = ['cost_towing', 'cost_license', 'cost_insurance', 'cost_carry'];   // 캐리비 = 디케이로지스(jin 2026-11-03, 덮어쓰기)
 
     // 명세서 기입 — 대상비용별 거래처(서식) 목록. 회사마다 엑셀 서식이 달라 좌표 파서를 분기한다.
     //   탁송비: wika(기존 범용) / gucheonyuk / hyundai_a1  — 면허비: mutual(기존 xlsx n/1) / seongji(→선적요청 딥링크)
@@ -958,6 +958,7 @@ class Vehicle extends Model
         'cost_towing' => ['wika', 'gucheonyuk', 'hyundai_a1'],
         'cost_license' => ['mutual', 'seongji'],
         'cost_insurance' => ['daily'],
+        'cost_carry' => ['dk_logis'],
     ];
 
     // 대상 비용별 기본 거래처 — 비용을 바꾸면 거래처를 이 값으로 되돌린다(현대A1 선택 뒤 면허 전환 시 stale 방지).
@@ -965,6 +966,7 @@ class Vehicle extends Model
         'cost_towing' => 'wika',
         'cost_license' => 'mutual',
         'cost_insurance' => 'daily',
+        'cost_carry' => 'dk_logis',
     ];
 
     // 탁송비 회사별 좌표 고정 파서 맵 — start=데이터 시작행, plate=차량번호열, amount=합산할 금액 성분열.
@@ -975,6 +977,9 @@ class Vehicle extends Model
         'gucheonyuk' => ['start' => 2, 'plate' => 'J', 'amount' => ['F', 'G']],   // 탁송비 F + 주유 G = 총액
         'hyundai_a1' => ['start' => 13, 'plate' => 'M', 'amount' => ['I', 'J']],  // 탁송 I + 추가 J = 총액
         'daily' => ['start' => 2, 'plate' => 'B', 'vin' => 'C', 'amount' => ['G']],   // 데일리 가입이력조회: B 차량번호 · C 차대번호 · G 가입금액. 마지막 합계행은 번호가 비어 skip
+        // 디케이로지스 거래명세서(캐리비, jin 2026-11-03): 13행 머리글 · F 「차대NO」 칸에 실제로는 **차량번호** · H 「비고」 = 공급가액×1.1(부가세 포함 — jin 「H열」).
+        //   합계·회사정보 줄은 번호가 없어 skip. 같은 차가 두 줄이면 합산(applyCostRowsToPreview).
+        'dk_logis' => ['start' => 14, 'plate' => 'F', 'amount' => ['H']],
     ];
 
     // ── Boot: 진행상태/채권 캐시 자동 갱신 ─────────────────────────

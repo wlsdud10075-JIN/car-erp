@@ -367,6 +367,44 @@ class CostStatementImportTest extends TestCase
     }
 
     /** 보험료 거래처 목록은 데일리뿐 — 붙여넣기는 막힌다(좌표 파서). */
+    /**
+     * 🚚 디케이로지스 거래명세서 → 캐리비 (jin 2026-11-03) — 13행 머리글 · F 「차대NO」 칸 = 차량번호 · H 「비고」 = 금액(부가세 포함).
+     *   덮어쓰기(jin «덮어쓰기») · 같은 차 두 줄은 합산 · 합계·회사정보 줄 skip · G(공급가액)를 읽지 않는다.
+     */
+    public function test_dk_logis_statement_overwrites_carry_cost_from_column_h(): void
+    {
+        $this->actingAs($this->admin());
+        $a = $this->makeVehicle('159머1768');
+        $a->forceFill(['cost_carry' => 50000])->save();   // 기존 값 — 덮어써야 한다
+        $b = $this->makeVehicle('22가3333');
+        $this->assertSame(['dk_logis'], Vehicle::COST_IMPORT_COMPANIES['cost_carry']);
+
+        $rows = array_fill(0, 11, []);
+        $rows[] = ['합 계 금 액', null, '\ 11,972,906원'];
+        $rows[] = ['날짜', '상차지', null, '하차지', '차종', '차대NO', '공급가액', '비  고'];
+        $rows[] = ['26-10-16', '오산 K카', null, '라성화물차', 'SONATA', '159머1768', 60000, 66000];
+        $rows[] = ['26-10-17', '용인', null, '인천항', 'K5 2.0', '22가3333', 40000, 44000];
+        $rows[] = ['26-10-20', '오산 K카', null, '인천항', 'SONATA', '159머1768', 10000, 11000];   // 같은 차 두 번째 줄
+        $rows[] = ['합    계', null, null, '', null, null, 110000, 121000];
+        $rows[] = ['(주)디케이로지스 TEL:032-710-2100'];
+
+        $c = Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportColumn', 'cost_carry')
+            ->assertSet('costImportCompany', 'dk_logis')
+            ->set('costImportFile', $this->uploadXlsx($rows));
+
+        $amounts = collect($c->get('costImportParsed')['matched'])->pluck('amount', 'number');
+        $this->assertSame(77000, (int) $amounts['159머1768'], 'H열(66,000 + 11,000) — G 공급가액이 아니다');
+        $this->assertSame(44000, (int) $amounts['22가3333']);
+        $this->assertCount(2, $amounts, '합계·회사정보 줄은 차량이 아니다');
+
+        $c->call('applyCostImport');
+        $this->assertSame(77000, (int) $a->fresh()->cost_carry, '기존 50,000 을 덮어쓴다(더하지 않는다)');
+        $this->assertSame(44000, (int) $b->fresh()->cost_carry);
+        $this->assertDatabaseHas('audit_logs', ['auditable_id' => $a->id, 'action' => 'bulk_cost_applied', 'column_name' => 'cost_carry']);
+    }
+
     public function test_daily_insurance_rejects_paste_and_other_companies(): void
     {
         $this->actingAs($this->admin());
