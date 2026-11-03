@@ -84,7 +84,7 @@ class BizmAlimtalkService
         if ($phone === '') {
             return AlimtalkLog::create($base + ['status' => 'skipped', 'error' => 'no_phone']);
         }
-        // 🔁 하루 한 번(2026-10-13) — 09:00 일간 발송의 09:30 따라잡기용. 같은 코드·번호(·차량)로 오늘 이미
+        // 🔁 하루 한 번(2026-10-13) — 09:00 일간 발송의 09:10 따라잡기용. 같은 코드·번호(·차량)로 오늘 이미
         //    sent 이거나 토글 off 로 skipped 됐으면 다시 보내지 않는다. failed 는 제외 → 따라잡기에서 한 번 더.
         //    🚫 로그를 남기지 않는다 — 따라잡기마다 수신자 수만큼 skipped 행이 쌓인다(ssancarerp 30일 skipped 15,662행).
         //    실측 배경: heymanerp 09-23 09:00 서버 정지로 일간 5종 결손, ssancarerp 10-01 09:00 BizM 타임아웃 17건.

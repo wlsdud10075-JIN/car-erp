@@ -136,7 +136,7 @@ class AlimtalkServiceTest extends TestCase
     }
 
     /**
-     * 🔁 `once_per_day` — 09:30 따라잡기가 같은 코드·번호로 오늘 이미 보낸 건을 다시 보내지 않고 **로그도 남기지 않는다**.
+     * 🔁 `once_per_day` — 09:10 따라잡기가 같은 코드·번호로 오늘 이미 보낸 건을 다시 보내지 않고 **로그도 남기지 않는다**.
      * failed 는 처리 안 된 것이라 다시 간다. 차량(픽업형)이 다르면 별건.
      */
     public function test_once_per_day_skips_what_was_sent_today_without_logging(): void
