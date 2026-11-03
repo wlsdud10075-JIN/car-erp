@@ -14,6 +14,8 @@ return [
     'contribution_actual' => 'Company profit (actually kept by the company)',
     'payout' => 'Take-home',
     'payroll_total' => 'Payroll total',
+    'domestic_count' => 'Count',
+    'domestic_profit' => 'Company profit',
     'share' => 'Share',
 
     'ledger_company' => 'Company profit',

@@ -17,6 +17,8 @@ return [
     'contribution_actual' => '회사이익 (실제로 회사에 남긴 돈)',
     'payout' => '실지급액',
     'payroll_total' => '지급합계',
+    'domestic_count' => '건수',
+    'domestic_profit' => '회사수익',
     'share' => '지분율',
 
     // 왼쪽 — 회사 손익 산출
