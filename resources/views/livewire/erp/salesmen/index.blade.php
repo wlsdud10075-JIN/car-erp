@@ -1173,17 +1173,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         @php $dfee = $this->domesticStatement(); @endphp
         <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3" data-domestic-panel>
             <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-semibold text-gray-800">{{ __('salesman.domestic_panel.title') }}</span>
-                <select wire:model.live="payrollMonth" class="input-base w-auto py-1 text-xs text-gray-800" aria-label="{{ __('salesman.payroll.month') }}">
+                <span class="whitespace-nowrap text-sm font-semibold text-gray-800">{{ __('salesman.domestic_panel.title') }}</span>
+                <div class="w-32 shrink-0">
+                <select wire:model.live="payrollMonth" class="input-base py-1 text-xs text-gray-800" aria-label="{{ __('salesman.payroll.month') }}">
                     @foreach($this->payrollMonthOptions() as $m)
                     <option value="{{ $m }}">{{ $m }}</option>
                     @endforeach
                 </select>
+                </div>
             </div>
             @if($dfee === null)
             <p class="mt-2 text-[11px] font-medium text-amber-700" data-domestic-empty>{{ __('salesman.domestic_panel.empty') }}</p>
             @else
-            <div class="mt-2 divide-y divide-emerald-100 rounded border border-emerald-100 bg-white">
+            <div class="mt-2 divide-y divide-gray-100 rounded border border-emerald-100 bg-white">
                 @foreach($dfee['items'] as $it)
                 @php $isPay = $it['label'] === \App\Services\Payroll\DomesticFeeImporter::PAYOUT_HEADER; @endphp
                 <div class="flex items-center justify-between px-2 py-1 text-xs {{ $isPay ? 'bg-emerald-50 font-semibold text-gray-900' : 'text-gray-700' }}" data-domestic-panel-item="{{ $it['label'] }}">
