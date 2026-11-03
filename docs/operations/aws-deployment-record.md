@@ -935,6 +935,14 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-03 (점심) — master `fcfe1e2e` · 마이그 0 (jin «추천대로 진행», 커밋 2개 cherry-pick — 공개지도 동의 칸 제거 · 도시 추출 보수화) + 운영 데이터 채움
+
+dev `3d906147`·`9fbb711e` → master `6afb7d86`·`fcfe1e2e`. push = Claude 가 정확히 `git push origin master` 로 실행 → ask 규칙 프롬프트로 jin 승인(앞서 막힌 건 `-q` 가 붙어 ask 패턴에 안 걸렸기 때문).
+1. **바이어 「공개 지도 이름 노출 동의」 체크칸 제거** — jin 결정: ERP 는 데이터만, 실명 공개는 ssancar.com 관리자 스위치(연동 전 규칙). ssancar 는 map_name_public 을 안 읽는다(그쪽 dev, 배포는 jin 지시). 키는 하위호환으로 계속 나감.
+2. **포털 칸 도시 추출 보수화** — 운영 dry-run 오답(이메일·POSTAL CODE :·country:·makkah st·THE·Alb 등 ~30건) 제거.
+- 운영 데이터(jin 승인, 빈 칸만·감사 `buyers_portal_backfill`): `buyers:backfill-portal-info --apply` heymanerp 사무실주소 19·도시 12 / ssancarerp 355·93 (재실행 dry-run 0). 본사 엑셀(`본사_바이어_고객관리_유럽_20260623 (2).xlsx`) 대조 ssancarerp 홈페이지 4·전화 6·이메일 2(담당자·국가·주소는 안 바꿈 — ERP 가 최신).
+- 확인: 로컬 병렬 3,614 pass · deploy 런 41562749440 잡 5 success · `/login` 200 ×3
+
 ## 2026-11-03 — master `b92222f8` · 마이그 0 (jin «1.2.해주고», 코드 커밋 3개 cherry-pick — 명세서 메모리 · 알림톡 09:10 · 홈페이지 https)
 
 dev `3486720b`·`d09fca9f`·`7c073e44` → master `e7e889de`·`23226dd4`·`b92222f8`. ⚠️ push 는 jin 이 `! git push origin master`(자동 모드 판정기가 Claude 의 master push 차단).
