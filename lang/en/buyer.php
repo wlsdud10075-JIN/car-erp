@@ -102,8 +102,6 @@ return [
         'photo' => 'Photo / logo',
         'photo_hint' => 'Used on the buyer map and cards. Replacing deletes the previous file.',
         'photo_remove' => 'Remove photo',
-        'map_name_public' => 'Consent to show name/logo on the public map',
-        'map_name_public_hint' => 'Turn on only after the buyer agrees (salesman confirms). Default off — off means not on the public map.',
         'api_linked' => 'API-linked buyer (display only)',
         'portal_section' => 'Portal / map info',
         'domestic_hint' => 'Vehicles sold to this buyer settle with the domestic formula (total sale − purchase − deregistration − towing) instead of the export margin. Only KRW vehicles get that treatment — non-KRW vehicles can still be assigned to this buyer, but they settle with the export formula until their currency is changed to KRW.',

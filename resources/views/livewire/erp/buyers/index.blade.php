@@ -533,7 +533,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             //      정산이 나면 일반(수출) 공식으로 떨어지지, 외화를 원화로 오인하지 않는다.
             //      🚫 여기에 다시 막지 말 것. 대신 아래 화면이 몇 대가 남았는지 말한다.
             $data['is_domestic'] = $this->is_domestic;
-            // 🤝 B2B 파트너스 관리대상·공개지도 동의·API 연동 표시 — 관리 이상(요청서 05 「지정 담당자」, jin 11-01 «관리 이상»).
+            // 🤝 B2B 파트너스 관리대상·API 연동 표시 (공개지도 동의 칸은 11-03 제거 — 불러온 값을 그대로 다시 저장) — 관리 이상(요청서 05 「지정 담당자」, jin 11-01 «관리 이상»).
             if (Setting::b2bPartnersEnabled()) {   // 꺼진 회사에선 칸이 안 보이니 값도 안 건드린다
                 $data['is_b2b_partner'] = $this->is_b2b_partner;
             }
@@ -2215,11 +2215,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </div>
                     </div>
                     @if(auth()->user()?->canApprove())
-                    <label class="flex items-start gap-2 cursor-pointer">
-                        <input wire:model="map_name_public" type="checkbox" class="mt-0.5 rounded" />
-                        <span class="text-sm text-gray-800">{{ __('buyer.field.map_name_public') }}
-                            <span class="mt-0.5 block text-[11px] leading-relaxed text-gray-600">{{ __('buyer.field.map_name_public_hint') }}</span></span>
-                    </label>
+                    {{-- 🚫 「공개 지도 이름 노출 동의」 체크칸 제거 (jin 2026-11-03) — ERP 는 데이터만 보내고 공개 여부는 ssancar.com 관리자가
+                         정한다(연동 전 규칙). 값은 그대로 남아 하위호환으로 포털 응답에 계속 실린다(ssancar 는 읽지 않는다). --}}
                     <label class="flex items-center gap-2 cursor-pointer text-sm text-gray-800">
                         <input wire:model="api_linked" type="checkbox" class="rounded" /> {{ __('buyer.field.api_linked') }}
                     </label>
