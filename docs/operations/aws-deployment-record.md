@@ -935,6 +935,15 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-03 (저녁) — master `51784391` · **마이그 2** (jin «배포해줘», 코드 커밋 2개 cherry-pick — 내수직원 · 캐리비 명세서)
+
+dev `60390f14`·`cebc45f4` → master `8e1d31c0`·`51784391`. push = `git push origin master` 단독 → YES/NO 승인.
+1. **내수직원** — 사용자관리 역할 「내수」(로그인 없음) → Salesman type `domestic_staff`(enum 마이그 2026_11_03_000001, 끝에 추가) · PAYROLL_ONLY. 사용자관리 필터 칩에 검차직원·내수직원. 사내직원관리 「평가수수료 업로드」(DomesticFeeImporter: 「딜러수수료_YYYY년MM월」 탭의 「평가사~합계」 표, 엑셀 저장값만·그 탭만 — 실파일 40MB·0.2초) → `domestic_fee_statements`(마이그 000002) + PayrollEntry 「총 평가사수수료」(=송금). 월정산·승인 링크: 검차 → 내수 → 직원 순, 카드에 엑셀 항목, 「내수직원 합계」 줄.
+2. **명세서 기입 캐리비** — 대상비용 캐리비 + 거래처 디케이로지스(14행~, F 차량번호·H 금액, 덮어쓰기). 실파일 63대·4,158,000원 · ssancarerp 63/63 매칭(읽기 대조).
+- 확인: 병렬 3,629 pass(실패 0) · deploy 런 41581195535 잡 5 success(mysql-check 포함) · `/login` 200 ×3
+- 후속(jin): heymanerp 사용자관리에서 평가사 7명 「내수직원」 등록 → 10월 평가수수료 업로드 · ssancarerp 디케이로지스 파일 업로드
+- 가이드·카드(dev `d327b19c`·`68baa5e4`) → Codex 발행
+
 ## 2026-11-03 (오후 2) — master `499ffc08` · 마이그 0 (jin «배포해줘. 상환된 것도 수정 가능하게», 커밋 1개 cherry-pick — 예치·가수금 날짜 수정)
 
 dev `ba96a279` → master `499ffc08`. push = `git push origin master` 단독 → YES/NO 승인. 구현 = 서브에이전트(worktree) 초안 → main 검토·적용.
