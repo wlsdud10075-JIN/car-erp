@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Services\BuyerCashService;
+use App\Support\PaymentAudit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -73,6 +74,11 @@ class ReceivableHistory extends Model
 
     protected static function booted(): void
     {
+        // 🧾 감사 기록(jin 2026-11-03) — 현금·상계·기타·손실 줄. 판단·형식은 PaymentAudit 한 곳.
+        static::created(fn (ReceivableHistory $h) => PaymentAudit::historyCreated($h));
+        static::updated(fn (ReceivableHistory $h) => PaymentAudit::historyUpdated($h));
+        static::deleted(fn (ReceivableHistory $h) => PaymentAudit::historyDeleted($h));
+
         static::saved(function (ReceivableHistory $h) {
             $h->syncFinalPayment();
             $h->syncSavingsUsed();
@@ -195,6 +201,11 @@ class ReceivableHistory extends Model
             }
 
             if ($this->final_payment_id) {
+                // 🧾 raw update 라 판매 입금 줄 훅이 안 뜬다 — 채권관리에서 금액·날짜·환율을 고친 것이 로그에 안 남았다(2026-11-03).
+                //    막 생긴 회수 줄(= 판매 잔금이 먼저 생겨 거꾸로 미러된 것)은 같은 값을 다시 쓰는 것뿐이라 남기지 않는다.
+                if (! $this->wasRecentlyCreated) {
+                    PaymentAudit::updatingRow(FinalPayment::with('vehicle')->find($this->final_payment_id), $payload);
+                }
                 FinalPayment::where('id', $this->final_payment_id)->update($payload);
                 // query builder update — 모델 이벤트 미발생. 캐시는 saved 핸들러에서 별도 refresh.
                 // 🚨 바이어 현금 원장(2026-09-04) — 모델 훅이 안 뜨므로 배분을 직접 다시 맞춘다.
