@@ -5,12 +5,14 @@ namespace App\Console\Commands;
 use App\Models\AlimtalkLog;
 use App\Models\ExternalSettlementPay;
 use App\Models\PayrollEntry;
+use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutAdjustment;
 use App\Models\SettlementPayoutBatch;
 use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
+use App\Services\Payout\BatchPayoutBreakdown;
 use App\Support\AlimtalkRecipients;
 use App\Support\AlimtalkTemplates;
 use App\Support\SettlementCkBatch;
@@ -198,7 +200,12 @@ class AlimtalkMonthlyClosing extends Command
         // 💴 월정산 v3 (jin 2026-10-08 «알림톡 문구는 그대로, 숫자만») — 그 달 급여(사내·검차)와 월정산 조정(인센티브 포함)을 뺀 회사 순이익.
         //    정의는 BatchPayoutBreakdown totals.company_net 과 같다. 3곳(대시보드·여기·승인화면)이 같은 뜻이어야 한다(§8 #72).
         // 🔀 2026-10-21 — 사내직원 판매수당은 빼고(정산금과 같은 돈) 헤이맨 정산금은 지급총액에만 더한다(회사이익 밖, 카드와 같은 정의).
-        $payroll = (int) PayrollEntry::query()->where('month', $month)->countedInPay()->sum('amount');
+        // 🧾 내수직원 월정산이 켜진 회사(2026-11-03) — 내수직원 급여는 따로 결재·지급되고, 회사이익엔 「총 회사수익」(평가사 지급 뒤)이 들어간다.
+        //    단일 출처 = BatchPayoutBreakdown::domesticProfitForMonth(월정산 카드·관리자 대시보드와 같은 값).
+        $splitDomestic = Setting::domesticPayoutEnabled();
+        $payroll = (int) PayrollEntry::query()->where('month', $month)->countedInPay()
+            ->when($splitDomestic, fn ($q) => $q->whereNotIn('salesman_id', Salesman::query()->where('type', 'domestic_staff')->select('id')))
+            ->sum('amount');
         $externalPay = (int) ExternalSettlementPay::query()->where('month', $month)->sum('amount');
         $adjQ = fn () => SettlementPayoutAdjustment::query()
             ->whereIn('batch_id', SettlementPayoutBatch::query()->where('month', $month)->where('status', 'approved')->pluck('id'));
@@ -207,6 +214,7 @@ class AlimtalkMonthlyClosing extends Command
         //    (SettlementPayoutAdjustment::KIND_DEPOSIT 주석, jin 2026-10-15). 2026-10-19 전엔 여기서 같이 빼고 있었다.
         $depositReturns = (int) $adjQ()->where('kind', SettlementPayoutAdjustment::KIND_DEPOSIT)->sum('amount');
         $companyProfit -= $payroll + ($adjustments - $depositReturns);
+        $companyProfit += BatchPayoutBreakdown::domesticProfitForMonth($month);
         // 💴 지급총액 = 정산 실지급 + 급여 + 월정산 조정 (jin 2026-10-19 — 대표가 「총마진 − 지급총액」으로 맞춰 볼 수 있게).
         //    급여가 없는 회사(heymanerp)는 종전과 같다. 발송비는 실지급에서 이미 빠져 있어 별도 항이 남는다.
         $totalPayout += $payroll + $adjustments + $externalPay;

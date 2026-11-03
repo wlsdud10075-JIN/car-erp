@@ -761,8 +761,11 @@ new #[Layout('components.layouts.app')] class extends Component
             ? \App\Models\SettlementPayoutBatch::query()->whereIn('id', array_keys($batchIds))->pluck('month')->unique()->values()
             : collect();
         if ($payrollMonths->isNotEmpty()) {
+            $splitDomestic = \App\Models\Setting::domesticPayoutEnabled();
             $payroll = \App\Models\PayrollEntry::query()->whereIn('month', $payrollMonths)->countedInPay()   // 판매수당 제외(2026-10-21)
                 ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
+                // 🧾 내수직원 월정산이 켜진 회사(2026-11-03) — 내수직원 급여는 비용으로 안 뺀다. 아래 「총 회사수익」이 이미 평가사 지급 뒤 값이다.
+                ->when($splitDomestic, fn ($q) => $q->whereNotIn('salesman_id', Salesman::query()->where('type', 'domestic_staff')->select('id')))
                 ->selectRaw('salesman_id, SUM(amount) as t')->groupBy('salesman_id')->pluck('t', 'salesman_id');
             $inspectorIds = $payroll->isEmpty() ? collect() : Salesman::query()->whereIn('id', $payroll->keys())->whereIn('type', Salesman::PAYROLL_ONLY_TYPES)->pluck('id');   // 검차·직원 = 공통 인건비
             foreach ($payroll as $sid => $t) {
@@ -784,6 +787,13 @@ new #[Layout('components.layouts.app')] class extends Component
                 $byPerson[$sid]['payroll'] = $t;
             }
         }
+        // 🧾 내수직원 총 회사수익(jin 2026-11-03 (가)) — 이 기간에 지급된 월정산 귀속월마다. 월정산 카드와 같은 함수.
+        $domesticProfit = 0;
+        foreach ($payrollMonths as $m) {
+            $domesticProfit += \App\Services\Payout\BatchPayoutBreakdown::domesticProfitForMonth($m, $ids);
+        }
+        $companyNet += $domesticProfit;
+
         // 💰 과입금 → 회사이익 전환 (jin 2026-10-16 B안) — 정산·급여 밖의 회사 수입. 기간은 전환일(collected_at), KRW 는 행 환율(없으면 차량 환율, KRW 는 그대로).
         //    담당자 스코프는 차량 담당자로 건다. 잡손실(misc_loss)은 종전대로 안 더한다(기록만). 사람별 기여엔 안 넣는다(누구의 성과가 아니다).
         $overpayIncome = 0;
@@ -838,6 +848,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'payroll_sum' => $payrollSum,
             'common_labor' => $commonLabor,
             'overpay_income' => $overpayIncome,
+            'domestic_profit' => $domesticProfit,
             'contribution_sum' => $contributionSum,
             'ranking' => $ranking,
         ];
@@ -1228,7 +1239,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <a href="{{ route('erp.settlements.index') }}" wire:navigate class="text-xs text-violet-600 hover:underline">{{ __('admin_dash.lead_profit_link') }}</a>
             </div>
             <div class="mt-1 text-3xl font-bold {{ $leadProfit['company_net'] < 0 ? 'text-red-600' : 'text-gray-900' }}" data-lead-profit>₩@krw($leadProfit['company_net'])</div>
-            <p class="mt-1 text-[11px] text-gray-500">{{ __('admin_dash.lead_profit_formula', ['margin' => \App\Support\Money::krw($leadProfit['margin_sum']), 'payout' => \App\Support\Money::krw($leadProfit['payout_sum']), 'ship' => \App\Support\Money::krw($leadProfit['shipping_sum'] + $leadProfit['common_labor'])]) }}@if($leadProfit['overpay_income'] > 0) · {{ __('admin_dash.lead_profit_overpay', ['amount' => \App\Support\Money::krw($leadProfit['overpay_income'])]) }}@endif</p>
+            <p class="mt-1 text-[11px] text-gray-500">{{ __('admin_dash.lead_profit_formula', ['margin' => \App\Support\Money::krw($leadProfit['margin_sum']), 'payout' => \App\Support\Money::krw($leadProfit['payout_sum']), 'ship' => \App\Support\Money::krw($leadProfit['shipping_sum'] + $leadProfit['common_labor'])]) }}@if(($leadProfit['domestic_profit'] ?? 0) !== 0) · {{ __('admin_dash.lead_profit_domestic', ['amount' => \App\Support\Money::krw($leadProfit['domestic_profit'])]) }}@endif@if($leadProfit['overpay_income'] > 0) · {{ __('admin_dash.lead_profit_overpay', ['amount' => \App\Support\Money::krw($leadProfit['overpay_income'])]) }}@endif</p>
         </div>
         <div class="card border-amber-200 bg-amber-50/30">
             <div class="flex items-center justify-between">
@@ -1602,6 +1613,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 </p>
                 @if($cp['fx_absorbed'] !== 0)
                 <p class="mt-0.5 text-[11px] text-gray-400">{{ __('admin_dash.company_fx_absorbed', ['fx' => number_format($cp['fx_absorbed'])]) }}</p>
+                @endif
+                @if(($cp['domestic_profit'] ?? 0) !== 0)
+                <p class="mt-0.5 text-[11px] text-emerald-600" data-domestic-profit>{{ __('admin_dash.company_domestic_profit', ['amount' => number_format($cp['domestic_profit'])]) }}</p>
                 @endif
                 @if(($cp['overpay_income'] ?? 0) !== 0)
                 <p class="mt-0.5 text-[11px] text-emerald-600" data-overpay-income>{{ __('admin_dash.company_overpay_income', ['amount' => number_format($cp['overpay_income'])]) }}</p>

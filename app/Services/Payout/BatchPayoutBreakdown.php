@@ -171,7 +171,7 @@ final class BatchPayoutBreakdown
         //    엑셀 「총 회사수익」 = 컨설팅비 + 매도비 − 총 평가사수수료(클레임 반영) — 평가사에게 주는 돈(내수직원 지급합계)을
         //    이미 뺀 값이라 지급합계를 또 빼면 이중 차감이다. 지급 자체는 내수직원 월정산 결재로 나가고 송금 총액엔 안 넣는다.
         $domesticFee = $splitDomestic ? self::domesticFeeTotalForMonth($month) : null;
-        $domesticProfit = $domesticFee ? (int) round((float) (self::feeItem($domesticFee, '총 회사수익') ?? self::feeItem($domesticFee, '회사수익') ?? 0)) : 0;
+        $domesticProfit = $domesticFee ? self::profitOfFeeTotal($domesticFee) : 0;
 
         return [
             'month' => $month,
@@ -218,6 +218,32 @@ final class BatchPayoutBreakdown
 
         return self::sumFeeTables(DomesticFeeStatement::query()->where('month', $month)->whereIn('salesman_id', $ids)
             ->get()->map(fn (DomesticFeeStatement $st) => $st->items())->all());
+    }
+
+    /**
+     * 🧾 그 달 내수직원 「총 회사수익」 합 — 내수직원 월정산이 켜진 회사만(꺼지면 0, 종전 공식).
+     * 회사 순이익을 내는 세 곳(월정산 카드 · 관리자 대시보드 · 월결산 알림톡)이 같이 쓴다(§8 #72 — 한 곳만 고치면 대표 화면끼리 갈린다).
+     * `$ids` = 담당자 스코프(업무관리자 화면) — 주면 그 안의 내수직원 것만.
+     */
+    public static function domesticProfitForMonth(string $month, ?array $ids = null): int
+    {
+        if (! Setting::domesticPayoutEnabled()) {
+            return 0;
+        }
+        $people = self::domesticSalesmanIds($month);
+        if ($ids !== null) {
+            $people = $people->intersect(array_map('intval', $ids))->values();
+        }
+        $total = self::sumFeeTables(DomesticFeeStatement::query()->where('month', $month)->whereIn('salesman_id', $people)
+            ->get()->map(fn (DomesticFeeStatement $st) => $st->items())->all());
+
+        return $total ? self::profitOfFeeTotal($total) : 0;
+    }
+
+    /** 평가수수료 합계 표 → 회사수익(「총 회사수익」, 없으면 「회사수익」). 평가사 지급을 이미 뺀 값이다. */
+    private static function profitOfFeeTotal(array $total): int
+    {
+        return (int) round((float) (self::feeItem($total, '총 회사수익') ?? self::feeItem($total, '회사수익') ?? 0));
     }
 
     /** 합계 표에서 항목 하나(이름으로). 없으면 null. */
