@@ -935,6 +935,14 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-03 (오후) — master `24cc787a` · 마이그 0 (jin «처리되어야», 커밋 1개 cherry-pick — 발송비 회사:직원 5:5)
+
+dev `a30d4d4c` → master `24cc787a`. push = `git push origin master` 단독 → YES/NO 승인.
+- **발송비(EMS·DHL) 회사:직원 5:5** — `Settlement::shippingFeeEmployeeShare()`(50%). 비율(프리랜서·바이어 비율) = 실지급에서 직원 몫만(구 11-01 전액) / 건당(사내직원) = 건당액 불변, 판정 마진 = 총마진 − 직원 몫 / 회사 몫은 `company_net`(발송비 전액 차감)이 진다. 드로어 미리보기·프리랜서 환산도 직원 몫.
+- 적용 범위(jin «아직 지급 안 된 정산부터»): 미지급 + 지급 뒤 2차 대기 비율 정산(지급 뒤 기록된 발송비라 마감 이월에서 직원 몫만 차감 — heymanerp 2건 −14만→−7만 · ssancarerp 20건 −58만→−29만 예상). 사내직원 지급분은 차이 0(실측).
+- 확인: 병렬 3,615(뷰 컴파일 경합 3건 → 순차 재실행 23 pass) · deploy 런 41569795694 잡 5 success · `/login` 200 ×3
+- 가이드·카드 문구(dev `1d1c9cad`) → Codex 발행
+
 ## 2026-11-03 (점심) — master `fcfe1e2e` · 마이그 0 (jin «추천대로 진행», 커밋 2개 cherry-pick — 공개지도 동의 칸 제거 · 도시 추출 보수화) + 운영 데이터 채움
 
 dev `3d906147`·`9fbb711e` → master `6afb7d86`·`fcfe1e2e`. push = Claude 가 정확히 `git push origin master` 로 실행 → ask 규칙 프롬프트로 jin 승인(앞서 막힌 건 `-q` 가 붙어 ask 패턴에 안 걸렸기 때문).
