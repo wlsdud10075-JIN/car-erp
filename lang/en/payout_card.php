@@ -93,8 +93,12 @@ return [
         'settlement_total' => 'Settlement + adjustments (approved amount)',
         'external_total' => 'Of transfer: Heyman settlement (outside profit)',
         'pension_total' => 'Of transfer: pension',
-        'common_labor' => 'Common labor (inspectors, domestic & staff)',
+        'common_labor' => 'Common labor (payroll-only staff)',
         'contribution_sum' => 'Sum of individual company profit',
         'hint' => 'Company net = Σ(total margin − take-home − shipping) − common labor. The approved amount is still the settlement + adjustments total.',
     ],
+    'domestic_line' => 'Domestic staff total (:n)',
+    'domestic_line_approved' => 'Domestic settlement approved',
+    'domestic_line_pending' => 'Domestic settlement in approval',
+    'domestic_line_none' => 'Domestic settlement not submitted',
 ];

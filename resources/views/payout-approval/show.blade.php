@@ -133,7 +133,7 @@
             @foreach($v3['people'] as $person)
             <x-payout.person-card :person="$person" mode="batch" :changed="$changed[$person['salesman_id']] ?? []" :show-submitted="false" />
             @endforeach
-            <x-payout.domestic-fee-total :total="$v3['domestic_fee_total'] ?? null" />
+            <x-payout.domestic-fee-total :total="$v3['domestic_fee_total'] ?? null" :compact="$v3['domestic_split'] ?? false" :status="$v3['domestic_batch_status'] ?? null" />
         </div>
         {{-- 전체 항목(25열)이 필요하면 엑셀로 (jin 2026-08-04). 서명 링크라 로그인 없이 받는다. --}}
         @if(isset($exportUrl) && ! $batch->isDomesticBatch())
@@ -170,7 +170,7 @@
         <div class="row" data-external-total><span class="k">{{ __('payout_card.external_in_transfer') }}</span><span class="v">+ {{ number_format($v3['totals']['external_total']) }}원</span></div>
         @endif
         <div class="row big"><span class="k">회사이익 (급여 차감 후)</span><span class="v {{ $v3['totals']['company_net'] < 0 ? 'loss' : '' }}">{{ number_format($v3['totals']['company_net']) }}원</span></div>
-        <div class="cap">회사이익 = 총마진 − (급여 + 정산 + 추가 인센티브) − 발송비 − 공통 인건비(검차·내수직원).</div>
+        <div class="cap">회사이익 = 총마진 − (급여 + 정산 + 추가 인센티브) − 발송비 − 공통 인건비(급여만 받는 직원).</div>
         @else
         <div class="row"><span class="k">직원 지급총액</span><span class="v">− {{ number_format($profit['payout']) }}원</span></div>
         <div class="row big"><span class="k">회사이익</span><span class="v {{ $profit['company_profit'] < 0 ? 'loss' : '' }}">{{ number_format($profit['company_profit']) }}원</span></div>

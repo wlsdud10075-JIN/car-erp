@@ -185,6 +185,12 @@ final class BatchPayoutBreakdown
             //    켜진 회사의 사내직원 월정산은 사람 카드가 없으므로 그 달 표에서 바로 더한다(표시 전용 — 송금·회사이익 무관, jin «합계 한 줄이면 족해»).
             'domestic_fee_total' => $splitDomestic ? self::domesticFeeTotalForMonth($month) : self::domesticFeeTotal($rows),
             'domestic_split' => $splitDomestic,
+            // 그 달 내수직원 월정산 결재 상태(승인·결재 중, 없으면 null) — 한 줄 옆 뱃지. 내수가 먼저 끝나는 흐름이라 확인용.
+            'domestic_batch_status' => $splitDomestic
+                ? SettlementPayoutBatch::domestic()->where('month', $month)
+                    ->whereIn('status', [SettlementPayoutBatch::STATUS_PENDING, SettlementPayoutBatch::STATUS_APPROVED])
+                    ->orderByDesc('id')->value('status')
+                : null,
         ];
     }
 

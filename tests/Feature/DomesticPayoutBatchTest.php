@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\Payout\BatchPayoutBreakdown;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Livewire\Volt\Volt;
@@ -122,6 +123,10 @@ class DomesticPayoutBatchTest extends TestCase
         $this->assertTrue($month['domestic_split']);
         $this->assertSame(2, $month['domestic_fee_total']['count']);
         $this->assertSame(0, $month['totals']['common_labor'], '회사이익(공통 인건비)엔 안 들어간다 — 표시 전용 한 줄');
+        $this->assertSame('pending', $month['domestic_batch_status'], '한 줄 옆 = 그 달 내수직원 월정산 결재 상태');
+        $lineHtml = Blade::render('<x-payout.domestic-fee-total :total="$t" :compact="true" :status="$s" />', ['t' => $month['domestic_fee_total'], 's' => $month['domestic_batch_status']]);
+        $this->assertStringContainsString('data-domestic-line-status="pending"', $lineHtml);
+        $this->assertStringContainsString('₩9,189,770', $lineHtml, '한 줄의 지급합계 = 총 평가사수수료 합');
 
         $this->expectException(\DomainException::class);
         SettlementPayoutBatch::submitForDomestic($submitter, '2026-10', $line);   // 같은 달 두 번 금지
