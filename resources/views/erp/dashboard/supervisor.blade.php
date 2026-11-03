@@ -9,9 +9,11 @@
     $t = fn (string $k, array $r = []) => __("dashboard.v.supervisor.$k", $r);
     $batch = $s['batch'];
     $monthLabel = \Illuminate\Support\Carbon::parse($s['month'].'-01')->format('n');
-    $batchLabel = fn ($b) => $b->kind === \App\Models\SettlementPayoutBatch::KIND_LEAVER
-        ? $t('submit.label_leaver', ['name' => $b->salesman?->name ?? '—'])
-        : $t('submit.label_month', ['month' => \Illuminate\Support\Carbon::parse($b->month.'-01')->format('n')]);
+    $batchLabel = fn ($b) => match ($b->kind) {
+        \App\Models\SettlementPayoutBatch::KIND_LEAVER => $t('submit.label_leaver', ['name' => $b->salesman?->name ?? '—']),
+        \App\Models\SettlementPayoutBatch::KIND_DOMESTIC => $t('submit.label_domestic', ['month' => \Illuminate\Support\Carbon::parse($b->month.'-01')->format('n')]),
+        default => $t('submit.label_month', ['month' => \Illuminate\Support\Carbon::parse($b->month.'-01')->format('n')]),
+    };
 @endphp
 
 {{-- 이번 달 올릴 것 --}}

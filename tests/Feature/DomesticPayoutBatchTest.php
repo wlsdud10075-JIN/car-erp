@@ -2,14 +2,18 @@
 
 namespace Tests\Feature;
 
+use App\Models\CarryoverClearance;
 use App\Models\DomesticFeeStatement;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Services\Payout\BatchPayoutBreakdown;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -201,6 +205,50 @@ class DomesticPayoutBatchTest extends TestCase
         Volt::test('erp.payout-batches.index')->assertDontSee('data-domestic-batch', false);
         $this->get(route('erp.domestic-payouts.index'))->assertOk()->assertSee('data-domestic-batch', false);
         $this->assertSame(SettlementPayoutBatch::STATUS_PENDING, $batch->status);
+    }
+
+    /** 이월(미청산 carryover)은 내수 배치가 흡수하지 않는다 — 흡수 기록만 남고 돈은 안 나가는 사고 방지. 다음 사내직원 월정산이 가져간다. */
+    public function test_domestic_batch_leaves_carryovers_to_the_staff_settlement(): void
+    {
+        $this->setCompany('system');
+        $this->domestic('김진기', 2_701_200);
+        $free = Salesman::create(['name' => '최딜러', 'type' => 'freelance', 'is_active' => true]);
+        $v = Vehicle::create(['vehicle_number' => '12가3456', 'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1, 'salesman_id' => $free->id]);
+        DB::table('settlements')->insert([
+            'vehicle_id' => $v->id, 'salesman_id' => $free->id, 'settlement_type' => 'ratio', 'settlement_status' => 'paid',
+            'secondary_status' => 'closed', 'carryover_out_krw' => 150_000, 'created_at' => now(), 'updated_at' => now(),
+        ]);
+        $this->assertSame(150_000, (int) $free->fresh()->unconsumed_carryover, '전제: 미청산 이월 15만');
+        $viewer = $this->user('user', '관리');
+        $this->viewers([$viewer]);
+        [, $line] = $this->line();
+
+        $batch = SettlementPayoutBatch::submitForDomestic($viewer, '2026-10', $line);
+
+        $this->assertSame(0, $batch->adjustments()->count(), '내수 배치에 이월 줄이 붙으면 안 된다');
+        $this->assertSame(0, CarryoverClearance::count());
+        $this->assertSame(150_000, (int) $free->fresh()->unconsumed_carryover, '이월은 그대로 남아 사내직원 월정산이 가져간다');
+        $this->assertSame(2_701_200, (int) $batch->fresh()->total_payout);
+    }
+
+    public function test_request_alimtalk_does_not_print_a_negative_company_profit(): void
+    {
+        $this->setCompany('system');
+        Http::fake(['*bizmsg.kr*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'M'], 'message' => 'K000']], 200)]);
+        foreach (['alimtalk_enabled_system' => '1', 'alimtalk_itemlist_system' => '1', 'alimtalk_userid_system' => 'uid', 'alimtalk_profile_system' => 'prof', 'alimtalk_tmpl_erp_payout_request_system' => 'T'] as $k => $v) {
+            Setting::query()->updateOrCreate(['key' => $k], ['value' => $v, 'type' => str_contains($k, 'enabled') || str_contains($k, 'itemlist') ? 'boolean' : 'string']);
+        }
+        $this->domestic('김진기', 2_701_200);
+        $viewer = $this->user('user', '관리');
+        $this->viewers([$viewer]);
+        [, $line] = $this->line();
+
+        SettlementPayoutBatch::submitForDomestic($viewer, '2026-10', $line);
+
+        $bodies = collect(Http::recorded())->map(fn ($pair) => json_encode(json_decode($pair[0]->body(), true), JSON_UNESCAPED_UNICODE))->implode("\n");
+        $this->assertStringContainsString('해당 없음', $bodies, '회사이익 칸 = 해당 없음');
+        $this->assertStringNotContainsString('-2,701,200', $bodies, '「−급여 합」이 회사이익으로 찍히면 안 된다');
+        $this->assertStringContainsString('내수', $bodies);
     }
 
     public function test_feature_settings_toggle_and_viewers_are_super_only_and_audited(): void

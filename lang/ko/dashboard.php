@@ -74,7 +74,7 @@ return [
                 'batch_pending' => '제출됨 · 대표 결재 중', 'batch_approved' => '승인됨', 'batch_rejected' => '반려됨', 'not_submitted' => '아직 제출 전',
                 'go' => '월정산 →', 'leaver' => '퇴사 정산', 'leaver_row' => ':name (:date 퇴사)', 'leaver_go' => '퇴사자 정산 →',
                 'awaiting' => '대표 결재 중', 'awaiting_row' => ':label — :who 제출 · :days일째', 'last_approved' => '승인됨: :month월 정산 (:date)', 'none_awaiting' => '결재 중인 제출 없음',
-                'label_month' => ':month월 정산', 'label_leaver' => '퇴사 정산 :name'],
+                'label_month' => ':month월 정산', 'label_leaver' => '퇴사 정산 :name', 'label_domestic' => '내수직원 :month월 정산'],
             'stuck' => ['total' => '총 :n대', 'page' => ':from–:to / :total대', 'prev' => '이전', 'next' => '다음',
                 'title' => '오래 멈춘 차 — 누가 어디서', 'sub' => '기준 = 통관 정체 30일 · 말소 기한 · 미수 stale · ETA 없음',
                 'col' => ['vehicle' => '차량', 'salesman' => '영업', 'manager' => '담당 관리', 'where' => '멈춘 곳', 'days' => '며칠', 'action' => '조치'],

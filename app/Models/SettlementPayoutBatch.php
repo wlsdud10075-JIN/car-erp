@@ -795,7 +795,10 @@ class SettlementPayoutBatch extends Model
             }
 
             // 💸 미청산 이월 자동 조정 줄 (jin 2026-10-06) — 제출 모달 미리보기와 **같은 함수**로 뽑는다.
-            foreach (self::carryoverLinesFor($settlements, $carryOnly) as $line) {
+            //    🧾 내수직원 월정산은 이월을 안 가져간다 — carryOnly=null 이 「전원」이라 다른 직원 이월을 흡수(CarryoverClearance)해 놓고
+            //       총액(급여 합)엔 안 넣어 그 돈이 사라진다(2026-11-03). 이월은 사내직원 월정산이 가져간다.
+            $carryLines = ($extra['kind'] ?? null) === self::KIND_DOMESTIC ? [] : self::carryoverLinesFor($settlements, $carryOnly);
+            foreach ($carryLines as $line) {
                 $batch->addAdjustment($submitter, $line['salesman_id'], $line['amount'], $line['reason'], null, SettlementPayoutAdjustment::KIND_CARRYOVER);
                 CarryoverClearance::create([
                     'salesman_id' => $line['salesman_id'], 'payout_batch_id' => $batch->id,
@@ -1149,7 +1152,8 @@ class SettlementPayoutBatch extends Model
             '귀속월' => $this->month,
             '건수' => (string) $this->settlement_count,
             '총액' => number_format($this->total_payout).'원',
-            '회사이익' => number_format($this->profitStats()['company_profit_after_payroll']).'원',
+            // 🧾 내수직원 월정산엔 총마진이 없다 — 계산하면 「−급여 합」이 회사이익으로 찍힌다(2026-11-03).
+            '회사이익' => $this->isDomesticBatch() ? '해당 없음' : number_format($this->profitStats()['company_profit_after_payroll']).'원',
             // 🚪 퇴사 배치는 「제출」 칸(20자 자동컷)에 퇴사자 이름을 싣는다 — 본문·줄 구성은 BizM 등록본 그대로라 변수 값으로만 알린다(jin 2026-10-15 (가)).
             '제출자' => match (true) {
                 $this->isLeaverBatch() => ($this->salesman?->leaverTag() ?? '퇴사정산').' · '.($this->submitter?->name ?? '-'),
