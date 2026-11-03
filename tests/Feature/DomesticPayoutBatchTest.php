@@ -188,12 +188,31 @@ class DomesticPayoutBatchTest extends TestCase
         $this->viewers([$viewer]);
 
         $html = $this->actingAs($viewer)->get(route('erp.domestic-payouts.index'))->assertOk()->getContent();
-        $summary = substr($html, strpos($html, '<summary'), strpos($html, '</summary>') - strpos($html, '<summary'));
+        $from = strpos($html, '<summary', strpos($html, 'data-person-card='));
+        $summary = substr($html, $from, strpos($html, '</summary>', $from) - $from);
         $this->assertMatchesRegularExpression('/건수 <b[^>]*data-domestic-count>10</u', $summary);
         $this->assertMatchesRegularExpression('/회사수익 <b[^>]*data-domestic-profit>₩5,098,800</u', $summary, '「총 회사수익」(지급과 짝)');
         $this->assertMatchesRegularExpression('/지급합계 <b[^>]*data-payout>₩2,701,200</u', $summary);
         $this->assertTrue(strpos($summary, 'data-domestic-count') < strpos($summary, 'data-domestic-profit')
             && strpos($summary, 'data-domestic-profit') < strpos($summary, 'data-payout'), '순서 = 건수 / 회사수익 / 지급합계');
+    }
+
+    /** 올린 결재가 맨 위 · 「올릴 달」 칸은 목록 아래, 이미 올린 달이면 접힘 (jin 2026-11-03 «최상단에 있어야 맞지 않나»). */
+    public function test_submitted_batch_sits_on_top_and_the_submit_panel_folds(): void
+    {
+        $this->setCompany('system');
+        $this->domestic('김진기', 2_701_200);
+        $viewer = $this->user('user', '관리');
+        $this->viewers([$viewer]);
+        [, $line] = $this->line();
+        $this->actingAs($viewer);
+
+        $this->assertStringContainsString('data-domestic-submit data-open="1"', $this->get(route('erp.domestic-payouts.index'))->getContent(), '올리기 전 = 펼침');
+
+        SettlementPayoutBatch::submitForDomestic($viewer, '2026-10', $line);
+        $html = $this->get(route('erp.domestic-payouts.index'))->getContent();
+        $this->assertStringContainsString('data-domestic-submit data-open="0"', $html, '올린 뒤 = 접힘');
+        $this->assertLessThan(strpos($html, 'data-domestic-submit'), strpos($html, 'data-domestic-batch'), '올린 결재가 제출 칸보다 위');
     }
 
     public function test_screens_are_gated(): void

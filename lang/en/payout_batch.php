@@ -107,5 +107,6 @@ return [
         'confirm' => 'Submit the :month domestic staff settlement for approval?',
         'submitted' => 'Submitted. The first approver will be notified.',
         'badge' => 'Domestic',
+        'already' => 'Already submitted',
     ],
 ];
