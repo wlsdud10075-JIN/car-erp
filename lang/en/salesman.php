@@ -56,6 +56,11 @@ return [
         'type_no_account' => 'No login account linked',
     ],
 
+    'domestic_panel' => [
+        'title' => 'Appraisal fee (sheet items)',
+        'empty' => 'No appraisal fee uploaded for this month yet — upload it with "Appraisal fee upload" and the sheet items appear here.',
+        'hint' => 'Changes only via the appraisal-fee upload (file: :file). The bold total appraiser fee line is the monthly payout.',
+    ],
     'domestic_import' => [
         'button' => 'Appraisal fee upload',
         'title' => 'Appraisal fee upload — domestic staff',

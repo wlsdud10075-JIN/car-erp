@@ -461,6 +461,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! PayrollEntry::isMonth($this->payrollMonth)) {
             $this->payrollMonth = now()->format('Y-m');
         }
+        // 🧾 내수직원은 마지막으로 올린 달을 연다 — 11월에 10월분을 올리므로 이번 달을 열면 늘 빈 화면이다(jin 2026-11-03).
+        if ($sm->isDomesticStaff()) {
+            $last = \App\Models\DomesticFeeStatement::where('salesman_id', $sm->id)->max('month');
+            if ($last && ! \App\Models\DomesticFeeStatement::where('salesman_id', $sm->id)->where('month', $this->payrollMonth)->exists()) {
+                $this->payrollMonth = $last;
+            }
+        }
         $this->loadPayroll($id);
         $this->showPanel   = true;
     }
@@ -468,6 +475,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 💴 급여 항목 (월정산 v3) ──────────────────────────────────────────
 
     /** 귀속월 선택지 — 지난 2달 · 이번 달 · 다음 달(11/10 전에 10월분을 적는다). 고른 값이 밖이면 그것도 포함. */
+    /** 🧾 내수직원 패널 — 고른 귀속월의 평가수수료 표 한 줄(없으면 null). 배열로(§8 #96-C). */
+    public function domesticStatement(): ?array
+    {
+        if (! $this->editingId || ! PayrollEntry::isMonth($this->payrollMonth)) {
+            return null;
+        }
+        $st = \App\Models\DomesticFeeStatement::where('salesman_id', $this->editingId)->where('month', $this->payrollMonth)->first();
+
+        return $st ? ['items' => $st->items(), 'payout' => $st->payout, 'file' => $st->source_file] : null;
+    }
+
     public function payrollMonthOptions(): array
     {
         $opts = [];
@@ -639,7 +657,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
 
             // 💴 급여 항목 — 사내직원·검차직원, 관리 이상 + 재무. 그 달을 통째로 교체하고 지급합계 변화를 감사로그 1줄로.
-            if (($sm->type === 'employee' || $sm->isPayrollOnly()) && $actor?->canEditPayroll() && PayrollEntry::isMonth($this->payrollMonth)) {
+            //   🧾 내수직원은 제외 — 값은 「평가수수료 업로드」로만 바뀐다(패널은 읽기 전용, jin 2026-11-03).
+            if (($sm->type === 'employee' || $sm->isPayrollOnly()) && ! $sm->isDomesticStaff() && $actor?->canEditPayroll() && PayrollEntry::isMonth($this->payrollMonth)) {
                 // 감사로그·결재 중 월정산 변경 이력은 writeMonthWithAudit 한 곳(급여대장 업로드와 공용, §8 #44).
                 PayrollEntry::writeMonthWithAudit($sm, $this->payrollMonth, $this->payrollRows(), $actor, '급여 항목 수정');
             }
@@ -1147,6 +1166,34 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="text-sm text-gray-600">{{ __('common.won') }}</span>
             </div>
             <p class="mt-1 text-[11px] leading-relaxed text-gray-600">{{ __('salesman.field.deposit_hint') }}</p>
+        </div>
+        @elseif($linkedUserType === 'domestic_staff' && $canEditPayroll)
+        {{-- 🧾 내수직원 (jin 2026-11-03 «사내직원·검차직원처럼 항목들 다 나올 필요 없고, 엑셀에 기입된 헤더 부분만 항목들에 나오고 그 금액들»).
+             18항목 입력칸 대신 그 달 「평가수수료 업로드」 표 한 줄을 그대로 보여 준다(읽기 전용 — 값은 업로드로만 바뀐다). --}}
+        @php $dfee = $this->domesticStatement(); @endphp
+        <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3" data-domestic-panel>
+            <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-semibold text-gray-800">{{ __('salesman.domestic_panel.title') }}</span>
+                <select wire:model.live="payrollMonth" class="input-base w-auto py-1 text-xs text-gray-800" aria-label="{{ __('salesman.payroll.month') }}">
+                    @foreach($this->payrollMonthOptions() as $m)
+                    <option value="{{ $m }}">{{ $m }}</option>
+                    @endforeach
+                </select>
+            </div>
+            @if($dfee === null)
+            <p class="mt-2 text-[11px] font-medium text-amber-700" data-domestic-empty>{{ __('salesman.domestic_panel.empty') }}</p>
+            @else
+            <div class="mt-2 divide-y divide-emerald-100 rounded border border-emerald-100 bg-white">
+                @foreach($dfee['items'] as $it)
+                @php $isPay = $it['label'] === \App\Services\Payroll\DomesticFeeImporter::PAYOUT_HEADER; @endphp
+                <div class="flex items-center justify-between px-2 py-1 text-xs {{ $isPay ? 'bg-emerald-50 font-semibold text-gray-900' : 'text-gray-700' }}" data-domestic-panel-item="{{ $it['label'] }}">
+                    <span>{{ $it['label'] }}</span>
+                    <span class="tabular-nums">{{ $it['value'] === null ? '—' : number_format((float) $it['value']) }}</span>
+                </div>
+                @endforeach
+            </div>
+            <p class="mt-1 text-[11px] text-gray-500">{{ __('salesman.domestic_panel.hint', ['file' => $dfee['file'] ?: '—']) }}</p>
+            @endif
         </div>
         @elseif(in_array($linkedUserType, ['employee', ...\App\Models\Salesman::PAYROLL_ONLY_TYPES], true) && $canEditPayroll)
         {{-- 💴 급여 항목 (월정산 v3, jin 2026-10-08) — 귀속월별 18항목 + 직접 추가. 매달 빈칸. 관리 이상 + 재무.
