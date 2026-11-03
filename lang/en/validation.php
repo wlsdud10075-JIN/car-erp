@@ -216,6 +216,8 @@ return [
         'token' => 'token',
         // 양식 컴포넌트(Livewire 프로퍼티)
         'costImportFile' => 'statement file',
+        'payrollFile' => 'payroll statement file',
+        'domesticFile' => 'appraisal fee file',
         'photoUpload' => 'attachment',
         'photoUpload.*' => 'attachment',
         'qaName' => 'name',

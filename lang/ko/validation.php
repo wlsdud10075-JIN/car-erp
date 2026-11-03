@@ -159,6 +159,8 @@ return [
             'token' => '토큰',
             // 차량목록 — 명세서 기입 / 빠른 추가 / 사진·첨부
             'costImportFile' => '명세서 파일',
+            'payrollFile' => '급여대장 파일',
+            'domesticFile' => '평가수수료정산 파일',   // 2026-11-03 — 84MB 원본이 업로드 단계에서 막혀 「domesticFile」이 그대로 보였다
             'photoUpload' => '첨부파일',
             'photoUpload.*' => '첨부파일',
             'qaName' => '이름',

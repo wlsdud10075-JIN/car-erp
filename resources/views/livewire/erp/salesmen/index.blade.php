@@ -730,6 +730,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <button type="button" wire:click="closeDomesticImport" class="rounded p-1 text-gray-400 hover:bg-gray-100">✕</button>
         </div>
         <p class="mt-1 text-xs text-gray-500">{{ __('salesman.domestic_import.hint') }}</p>
+        <p class="mt-1 text-[11px] text-amber-700" data-domestic-size-hint>{{ __('salesman.domestic_import.size_hint') }}</p>
         <div class="mt-3 flex flex-wrap items-center gap-3">
             <label class="btn-primary cursor-pointer">
                 <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12l-4 4m4-4l4 4"/></svg>

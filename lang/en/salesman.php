@@ -63,6 +63,7 @@ return [
         'file' => 'Appraisal fee file',
         'no_staff' => 'No domestic staff registered — register appraisers as "Domestic staff" in User Management first (same names as the Excel).',
         'apply' => 'Write :month (:n)',
+        'size_hint' => 'The file must be 10MB or smaller. Originals with heavily formatted per-appraiser sheets can exceed 80MB — copy only the dealer-fee sheet into a new workbook (paste values) and upload that.',
     ],
     'import' => [
         'col_commission' => 'Commission check',
