@@ -158,6 +158,30 @@ class DomesticStaffTest extends TestCase
         $this->assertNull(PayrollEntry::totalFor($emp->id, '2026-10'), '사내직원 급여를 평가수수료로 덮으면 안 된다');
     }
 
+    /**
+     * 사내직원관리 패널 — 내수직원은 18항목 입력칸 대신 엑셀 머리글 항목·금액만(jin 2026-11-03 «헤더 부분만 항목들에 나오고 그 금액들»).
+     * 마지막으로 올린 달을 열고, 패널 저장이 업로드 값을 덮지 않는다(값은 업로드로만).
+     */
+    public function test_panel_shows_only_the_sheet_items_and_saving_keeps_them(): void
+    {
+        $admin = $this->admin();
+        $kim = $this->domestic('김진기');
+        $vals = $this->people()['김진기'];
+        DomesticFeeStatement::create(['salesman_id' => $kim->id, 'month' => '2026-10', 'headers' => self::HEADERS, 'values' => $vals, 'payout' => $vals[7], 'source_file' => '10월.xlsx']);
+        PayrollEntry::replaceFor($kim->id, '2026-10', [['label' => DomesticFeeStatement::PAYROLL_LABEL, 'amount' => $vals[7], 'is_custom' => true]]);
+
+        $c = Volt::actingAs($admin)->test('erp.salesmen.index')->call('openEdit', $kim->id);
+        $c->assertSet('payrollMonth', '2026-10');
+        $html = $c->html();
+        $this->assertStringContainsString('data-domestic-panel', $html);
+        $this->assertStringNotContainsString('data-pay-amount', $html, '사내직원용 18항목 입력칸이 나오면 안 된다');
+        $this->assertMatchesRegularExpression('/data-domestic-panel-item="컨설팅비"[\s\S]{0,200}4,750,000/u', $html);
+        $this->assertMatchesRegularExpression('/data-domestic-panel-item="총 평가사수수료"[\s\S]{0,200}2,701,200/u', $html);
+
+        $c->call('save');
+        $this->assertSame($vals[7], PayrollEntry::totalFor($kim->id, '2026-10'), '패널 저장이 업로드 값을 지우거나 바꾸면 안 된다');
+    }
+
     public function test_batch_puts_domestic_right_after_inspector_as_common_labor_with_a_total_row(): void
     {
         $i = Salesman::create(['name' => '오검차', 'type' => 'inspector', 'is_active' => true]);
