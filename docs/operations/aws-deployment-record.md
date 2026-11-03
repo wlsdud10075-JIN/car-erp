@@ -935,6 +935,12 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-03 (심야) — master `2e57390d` · 마이그 0 (jin «응», 코드 커밋 2개 cherry-pick — 정산방식 비율 표시)
+
+dev `ad65ecaf`·`3b30f161` → master `3c1fbcce`·`2e57390d`. push = `git push origin master` 단독 → YES/NO.
+- 정산처리 목록 「정산방식」: 자동 프리랜서 건이 「비율 0.0%」(settlement_ratio NULL)로 찍히던 것 → `Settlement::applied_ratio`(정산액과 같은 규칙: 기본 50 / karaba 이익률 구간표). 바이어 비율 건은 「바이어 7:3 · 비율 30.0%」, 사내직원 차등 1억↑ 구간은 「건당 ₩… (차등 · 총마진 25%)」(`per_unit_tier_rate`). 표시만, 정산액 무변경.
+- 확인: 병렬 3,633 pass · deploy 런 41597445664 잡 5 success · `/login` 200 ×3
+
 ## 2026-11-03 (밤) — master `0d543758` · 마이그 0 (jin «배포해줘», 코드 커밋 3개 cherry-pick — 내수직원 화면 후속)
 
 dev `50610e43`·`ddf416d9`·`a9318a11` → master `f6483882`·`ef6dad7d`·`0d543758`. push = `git push origin master` 단독 → YES/NO.
