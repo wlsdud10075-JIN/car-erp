@@ -3,6 +3,8 @@
 use App\Models\AdvanceReceipt;
 use App\Models\AuctionDeposit;
 use App\Models\AuditLog;
+use App\Services\BulkVehicleShipmentService;
+use Illuminate\Support\Facades\Validator;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -130,6 +132,39 @@ new #[Layout('components.layouts.app')] class extends Component
         }
         $this->refreshTotals();
         session()->flash('success', __('deposits.nature_updated'));
+    }
+
+    /**
+     * 📅 기존 행의 날짜 수정 (jin 2026-11-03 «날짜 기입이 잘못된 게 많아서»).
+     *
+     * 날짜(입금일·예치일)는 **목록 정렬에만** 쓰인다 — 합계·청산가치·자금 스냅샷은 전부 금액 합이라
+     * 날짜를 고쳐도 숫자는 안 움직인다. 그래서 상환된 행도 고칠 수 있게 둔다(성격 잠금과 이유가 다르다).
+     * ⚠️ 8자리(20260717)는 서버에서도 정규화한다 — 그대로 새면 date 캐스트가 1970 으로 읽는다(SKILLS §14).
+     */
+    public function setDate(int $id, string $raw): void
+    {
+        abort_unless(auth()->user()?->canAccessDeposits(), 403);
+
+        [$row, $col] = $this->tab === 'auction'
+            ? [AuctionDeposit::findOrFail($id), 'deposited_date']
+            : [AdvanceReceipt::findOrFail($id), 'received_date'];
+
+        $new = BulkVehicleShipmentService::normalizeDate($raw);
+        if ($new === null || Validator::make(['d' => $new], ['d' => 'date_format:Y-m-d'])->fails()) {
+            $this->addError("rowDate.$id", __('deposits.err_date'));
+
+            return;
+        }
+
+        $old = $row->{$col}?->toDateString();
+        if ($old === $new) {
+            return;
+        }
+        $row->update([$col => $new]);
+        AuditLog::recordChange($row, $col, $old, $new);
+
+        unset($this->rows);
+        session()->flash('success', __('deposits.date_updated'));
     }
 
     /**
@@ -398,8 +433,13 @@ new #[Layout('components.layouts.app')] class extends Component
             <tbody class="divide-y divide-gray-100">
                 @forelse($this->rows as $row)
                     <tr wire:key="dep-{{ $tab }}-{{ $row->id }}">
+                        {{-- 📅 날짜는 목록에서 바로 고친다(jin 2026-11-03). 정렬에만 쓰여 합계는 안 움직인다. --}}
                         <td class="py-3 pr-4 text-gray-500">
-                            {{ ($tab === 'auction' ? $row->deposited_date : $row->received_date)?->format('Y-m-d') }}
+                            <input type="text" data-date placeholder="YYYY-MM-DD"
+                                   value="{{ ($tab === 'auction' ? $row->deposited_date : $row->received_date)?->format('Y-m-d') }}"
+                                   wire:change="setDate({{ $row->id }}, $event.target.value)"
+                                   class="input-base w-32 py-1 text-xs">
+                            @error("rowDate.{$row->id}") <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                         </td>
                         <td class="py-3 pr-4 font-medium text-gray-800">
                             {{ $tab === 'auction' ? $row->auction_house : $row->company_name }}
@@ -466,8 +506,13 @@ new #[Layout('components.layouts.app')] class extends Component
                             {{ $tab === 'auction' ? $row->auction_house : $row->company_name }}
                         </div>
                         <div class="mt-0.5 text-xs text-gray-500">
-                            {{ ($tab === 'auction' ? $row->deposited_date : $row->received_date)?->format('Y-m-d') }}
+                            {{-- 📅 폰에서도 날짜를 고칠 수 있어야 한다 — 표(데스크탑)와 같은 칸·같은 메서드. --}}
+                            <input type="text" data-date placeholder="YYYY-MM-DD"
+                                   value="{{ ($tab === 'auction' ? $row->deposited_date : $row->received_date)?->format('Y-m-d') }}"
+                                   wire:change="setDate({{ $row->id }}, $event.target.value)"
+                                   class="input-base w-32 py-1 text-xs">
                             @if ($tab === 'advance' && $row->repaid_at) · {{ \App\Models\AdvanceReceipt::NATURES[$row->nature] ?? $row->nature }} @endif
+                            @error("rowDate.{$row->id}") <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                         </div>
                         {{-- 🗂️ 성격은 **바꿀 수 있어야 한다** (jin 2026-09-14) — 나중에 정하는 값인데
                              폰에서는 글자로만 보여 **고칠 방법이 없었다**. 이 화면엔 편집 패널이 없어
