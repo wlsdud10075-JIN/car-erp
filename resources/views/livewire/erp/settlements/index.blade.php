@@ -2856,10 +2856,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 <td class="py-3 pr-4 text-gray-600">
                     @if($s->settlement_type === 'ratio')
                         {{-- 자동 건이면 settlement_ratio 가 NULL 이라 0.0% 로 찍혔다 — 실제 적용 비율(jin 2026-11-03) --}}
-                        {{ __('settlement.ratio_unit', ['ratio' => number_format($s->applied_ratio, 1)]) }}
+                        @if($s->isBuyerRatio()){{ __('payout_batch.type_buyer_ratio', ['split' => \App\Models\Buyer::SETTLEMENT_RATIO_OPTIONS[(int) $s->settlement_ratio] ?? '']) }} · @endif{{ __('settlement.ratio_unit', ['ratio' => number_format($s->applied_ratio, 1)]) }}
                     @else
                         {{-- 자동 건이면 per_unit_amount 가 NULL 이라 ₩0 으로 찍혔다 — 실제 적용 건당액(승계·tier 반영)을 보인다 (jin 2026-10-30) --}}
-                        {{ __('settlement.per_unit_unit', ['amount' => number_format($s->effective_per_unit_amount)]) }}
+                        {{ __('settlement.per_unit_unit', ['amount' => number_format($s->effective_per_unit_amount)]) }}@if($s->per_unit_tier_rate !== null) <span class="text-[11px] text-gray-500">{{ __('settlement.per_unit_tier_rate', ['rate' => $s->per_unit_tier_rate]) }}</span>@endif
                     @endif
                 </td>
                 {{-- 매입가 — tier 기준값(₩1억 이상이면 총마진×25%). 1억↑은 강조. --}}

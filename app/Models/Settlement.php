@@ -1165,6 +1165,29 @@ class Settlement extends Model
      *
      * @return int|null 다시 매긴 건당액. 대상이 아니면 null
      */
+    /**
+     * 자동 건당액이 **차등 비율 구간(매입합계 1억↑ → 총마진 × N%)** 에서 나왔으면 그 N, 아니면 null — 목록 표시용(jin 2026-11-03).
+     *   판정 입력은 autoPerUnitAmountAt·employeePerUnitTier 와 같다(직원 몫 발송비 차감 · 손해 0 · 승계 · tier on/off · 내수 바닥).
+     *   재무가 건당액을 직접 넣었으면 null(그 금액이 곧 정산액이다).
+     */
+    public function getPerUnitTierRateAttribute(): ?int
+    {
+        if ($this->settlement_type !== 'per_unit' || $this->per_unit_amount !== null || self::isKarabaMemo()) {
+            return null;
+        }
+        $margin = $this->total_margin - self::shippingFeeEmployeeShare($this->shipping_fee);
+        $purchase = (int) ($this->vehicle?->purchase_price ?? 0) + (int) ($this->vehicle?->selling_fee ?? 0);
+        if ($margin < 0 || $this->isInheritedBuyerDeal() || ! $this->salesman?->per_unit_tier_enabled
+            || $purchase < self::param('settlement_employee_high_threshold')) {
+            return null;
+        }
+        if ($this->is_domestic && $this->autoPerUnitAmountAt($this->total_margin) === 0) {
+            return null;
+        }
+
+        return self::param('settlement_employee_high_rate');
+    }
+
     /** 1차 정산 환율이 실입금환율로 바뀐 날 (CLAUDE.md 「정산 마진 공식」 2026-08-06). 이 전 지급분은 2차 마감 재평가 대상이 아니다. */
     public const RECEIPT_RATE_SINCE = '2026-08-06';
 
