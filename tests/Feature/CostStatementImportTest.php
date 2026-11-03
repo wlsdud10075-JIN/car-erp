@@ -379,4 +379,17 @@ class CostStatementImportTest extends TestCase
             ->call('parseCostImport')
             ->assertStatus(422);
     }
+
+    /**
+     * 🧠 명세서는 **값만** 읽는다 (2026-11-03 ssancarerp 128MB 초과 3건). `IOFactory::load()` 는 서식·빈 칸까지
+     *   올려 서식이 넓게 칠해진 명세서에서 실측 758MB/53초(값만 = 60MB/14초). 메모리 초과는 Fatal 이라 catch 로 못 잡는다.
+     *   정적 검사 — 기능 테스트의 작은 파일로는 원리상 안 드러난다.
+     */
+    public function test_statement_parsers_read_values_only(): void
+    {
+        $src = file_get_contents(resource_path('views/livewire/erp/vehicles/index.blade.php'));
+
+        $this->assertStringNotContainsString('IOFactory::load($this->costImportFile', $src);
+        $this->assertMatchesRegularExpression('/function loadCostStatementSheet\(\)[\s\S]{0,600}setReadDataOnly\(true\)/', $src);
+    }
 }
