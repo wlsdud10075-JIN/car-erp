@@ -935,6 +935,15 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-03 — master `b92222f8` · 마이그 0 (jin «1.2.해주고», 코드 커밋 3개 cherry-pick — 명세서 메모리 · 알림톡 09:10 · 홈페이지 https)
+
+dev `3486720b`·`d09fca9f`·`7c073e44` → master `e7e889de`·`23226dd4`·`b92222f8`. ⚠️ push 는 jin 이 `! git push origin master`(자동 모드 판정기가 Claude 의 master push 차단).
+1. **명세서 기입 엑셀을 값만 읽기** — ssancarerp 11-02 17:24·23:01·23:29 최영숙(user 3) 128MB 초과 500(차량관리 Livewire, 36~66초). `IOFactory::load()` → `loadCostStatementSheet()`(ReadDataOnly + 빈 칸 버림), 탁송비·면허비·범용 3곳. 합성 파일 758MB/52.7초 → 60MB/14.0초.
+2. **알림톡 따라잡기 09:30 → 09:10** — ssancarerp 11-02·03 09:00 BizM SSL 타임아웃 1~2건이 09:30 에 나갔다.
+3. **바이어 홈페이지 스킴 보정** — `Buyer::normalizeWebsite()`(저장 mutator + 포털 응답). heymanerp #10 `www.koreancarsks.com` 이 ssancar 지도에서 빠졌었다.
+- 확인: 로컬 병렬 3,614 pass(실패 0·skip 1) · deploy 런 41559724819 잡 5 success · `/login` 200 ×3
+- 후속: 최영숙 실패 파일 재업로드 확인(jin) · ssancar 크론 뒤 #10 홈페이지 확인(ssancar 세션) · 바이어 「공개 지도 동의」 칸 제거 = dev `3d906147` 다음 배포
+
 ## 2026-11-02 (심야) — master `ad7bf01b` · **마이그 1(데이터만)** (jin «배포해줘», 커밋 2개 cherry-pick — 결재 직급 전무 → 상무)
 
 dev `1e42f3c4`(테스트만 — 등급 위 계정 생성 불가 가드) · `ce671c97` → master `935eaf67`·`ad7bf01b`.
