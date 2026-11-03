@@ -240,59 +240,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         <p class="mt-0.5 text-xs text-gray-500">{{ $domestic ? __('payout_batch.domestic.subtitle') : __('payout_batch.subtitle') }}</p>
     </div>
 
-    {{-- 🧾 내수직원 월정산 제출 (2026-11-03) — 달 고르기 → 사람별 카드(엑셀 항목 그대로) → 결재선 → 올리기. 지정자에게만. --}}
-    @if($domestic && ($dp = $this->domesticPreview) !== null)
-    <div class="card-tight mb-4 max-w-3xl space-y-2" data-domestic-submit>
-        <div class="flex flex-wrap items-center gap-2">
-            <span class="section-dot bg-green-500"></span>
-            <span class="section-title">{{ __('payout_batch.domestic.submit_title') }}</span>
-            <div class="w-32">
-                <select wire:model.live="domesticMonth" class="input-base text-xs text-gray-800">
-                    @forelse($this->domesticMonths as $m)
-                    <option value="{{ $m }}">{{ $m }}</option>
-                    @empty
-                    <option value="{{ $domesticMonth }}">{{ $domesticMonth }}</option>
-                    @endforelse
-                </select>
-            </div>
-            <span class="pill-count">{{ __('payout_batch.domestic.people', ['n' => count($dp['people'])]) }}</span>
-            <span class="text-sm font-medium text-primary-text">₩{{ number_format($dp['total']) }}</span>
-        </div>
-        @if($dp['people'] === [])
-        <p class="text-xs text-gray-400">{{ __('payout_batch.domestic.no_statement') }}</p>
-        @else
-        @foreach($dp['people'] as $person)
-        <x-payout.person-card :person="$person" mode="batch" />
-        @endforeach
-        <x-payout.domestic-fee-total :total="$dp['domestic_fee_total'] ?? null" />
-        @php $lineOpts = \App\Models\SettlementPayoutBatch::approvalLineOptions(); @endphp
-        @if(!empty($lineOpts))
-        <div data-approval-line>
-            <div class="section-header"><span class="section-dot bg-sky-500"></span>
-                <span class="section-title">{{ __('settlement.batch.line_title') }}</span></div>
-            <div class="mt-1 grid gap-1.5 sm:grid-cols-3">
-                @foreach($lineOpts as $title => $users)
-                <div class="text-xs">
-                    <label class="label-base">{{ $title }}</label>
-                    <select wire:model="domesticLine.{{ $title }}" class="input-base text-xs text-gray-800">
-                        <option value="">{{ __('settlement.batch.line_none') }}</option>
-                        @foreach($users as $u)
-                        <option value="{{ $u->id }}">{{ $u->name }}@if(trim((string) $u->phone) === '') — {{ __('settlement.batch.line_no_phone') }}@endif</option>
-                        @endforeach
-                    </select>
-                </div>
-                @endforeach
-            </div>
-        </div>
-        @endif
-        <div class="flex justify-end">
-            <button type="button" wire:click="submitDomestic" wire:confirm="{{ __('payout_batch.domestic.confirm', ['month' => $domesticMonth]) }}"
-                    wire:loading.attr="disabled" wire:target="submitDomestic" class="btn-primary whitespace-nowrap text-xs">{{ __('payout_batch.domestic.submit') }}</button>
-        </div>
-        @endif
-    </div>
-    @endif
-
     <div class="space-y-3">
         @forelse($this->batches as $b)
             @php
@@ -490,4 +437,69 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="py-12 text-center text-sm text-gray-400">{{ __('payout_batch.empty') }}</div>
         @endforelse
     </div>
+
+    {{-- 🧾 내수직원 월정산 제출 (2026-11-03) — 달 고르기 → 사람별 카드(엑셀 항목 그대로) → 결재선 → 올리기. 지정자에게만.
+         올린 결재가 맨 위에 보이게 목록 **아래**에 두고(jin «최상단에 있어야 맞지 않나»), 고른 달을 이미 올렸으면 **접어 둔다**.
+         열림 상태는 Alpine 이 쥔다 — 서버가 open 을 다시 그리면 달을 바꾸는 사이에 닫혀 버린다. --}}
+    @if($domestic && ($dp = $this->domesticPreview) !== null)
+    @php
+        $monthSubmitted = $this->batches->contains(fn ($b) => $b->month === $domesticMonth
+            && in_array($b->status, [\App\Models\SettlementPayoutBatch::STATUS_PENDING, \App\Models\SettlementPayoutBatch::STATUS_APPROVED], true));
+    @endphp
+    <details class="card-tight mt-4 max-w-3xl" data-domestic-submit data-open="{{ $monthSubmitted ? '0' : '1' }}"
+             x-data="{ o: {{ $monthSubmitted ? 'false' : 'true' }} }" :open="o" @toggle="o = $el.open" wire:key="domestic-submit-{{ $monthSubmitted ? 'done' : 'open' }}">
+        <summary class="flex cursor-pointer flex-wrap items-center gap-2">
+            <span class="section-dot bg-green-500"></span>
+            <span class="section-title">{{ __('payout_batch.domestic.submit_title') }}</span>
+            <span class="pill-count">{{ __('payout_batch.domestic.people', ['n' => count($dp['people'])]) }}</span>
+            <span class="text-sm font-medium text-primary-text">₩{{ number_format($dp['total']) }}</span>
+            @if($monthSubmitted)<span class="badge badge-gray text-[10px]">{{ __('payout_batch.domestic.already') }}</span>@endif
+        </summary>
+        <div class="mt-2 space-y-2">
+        <div class="flex flex-wrap items-center gap-2">
+            <div class="w-32">
+                <select wire:model.live="domesticMonth" class="input-base text-xs text-gray-800">
+                    @forelse($this->domesticMonths as $m)
+                    <option value="{{ $m }}">{{ $m }}</option>
+                    @empty
+                    <option value="{{ $domesticMonth }}">{{ $domesticMonth }}</option>
+                    @endforelse
+                </select>
+            </div>
+        </div>
+        @if($dp['people'] === [])
+        <p class="text-xs text-gray-400">{{ __('payout_batch.domestic.no_statement') }}</p>
+        @else
+        @foreach($dp['people'] as $person)
+        <x-payout.person-card :person="$person" mode="batch" />
+        @endforeach
+        <x-payout.domestic-fee-total :total="$dp['domestic_fee_total'] ?? null" />
+        @php $lineOpts = \App\Models\SettlementPayoutBatch::approvalLineOptions(); @endphp
+        @if(!empty($lineOpts))
+        <div data-approval-line>
+            <div class="section-header"><span class="section-dot bg-sky-500"></span>
+                <span class="section-title">{{ __('settlement.batch.line_title') }}</span></div>
+            <div class="mt-1 grid gap-1.5 sm:grid-cols-3">
+                @foreach($lineOpts as $title => $users)
+                <div class="text-xs">
+                    <label class="label-base">{{ $title }}</label>
+                    <select wire:model="domesticLine.{{ $title }}" class="input-base text-xs text-gray-800">
+                        <option value="">{{ __('settlement.batch.line_none') }}</option>
+                        @foreach($users as $u)
+                        <option value="{{ $u->id }}">{{ $u->name }}@if(trim((string) $u->phone) === '') — {{ __('settlement.batch.line_no_phone') }}@endif</option>
+                        @endforeach
+                    </select>
+                </div>
+                @endforeach
+            </div>
+        </div>
+        @endif
+        <div class="flex justify-end">
+            <button type="button" wire:click="submitDomestic" wire:confirm="{{ __('payout_batch.domestic.confirm', ['month' => $domesticMonth]) }}"
+                    wire:loading.attr="disabled" wire:target="submitDomestic" class="btn-primary whitespace-nowrap text-xs">{{ __('payout_batch.domestic.submit') }}</button>
+        </div>
+        @endif
+        </div>
+    </details>
+    @endif
 </div>
