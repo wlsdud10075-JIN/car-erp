@@ -31,6 +31,8 @@ return [
     'removed' => '삭제되었습니다.',
     'empty' => '등록된 내역이 없습니다.',
     'err_amount' => '금액을 입력하세요.',
+    'err_date' => '날짜를 YYYY-MM-DD 또는 8자리(20260717)로 입력하세요.',
+    'date_updated' => '날짜를 수정했습니다.',
     'confirm_advance' => '이 가수금을 목록에서 지웁니다. 계속할까요?',
     'confirm_auction' => '이 보증금을 목록에서 지웁니다(회수 처리). 계속할까요?',
 

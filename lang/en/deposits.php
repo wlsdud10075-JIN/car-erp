@@ -31,6 +31,8 @@ return [
     'removed' => 'Deleted.',
     'empty' => 'No entries yet.',
     'err_amount' => 'Enter an amount.',
+    'err_date' => 'Enter the date as YYYY-MM-DD or 8 digits (20260717).',
+    'date_updated' => 'Date updated.',
     'confirm_advance' => 'Remove this advance receipt from the list. Continue?',
     'confirm_auction' => 'Remove this deposit from the list (treated as refunded). Continue?',
 
