@@ -85,6 +85,7 @@ return [
     'inspector_in_share_v' => '제외',
     'where_reflected' => '반영 위치',
     // 내수직원 (2026-11-03)
+    'domestic_fee' => '평가수수료 (엑셀 항목)',
     'domestic_total' => '내수직원 합계 (:n명) — 평가수수료정산 합계 줄',
 
     'unsupported' => '이 회사의 정산 공식(구간표)은 환산 카드를 아직 지원하지 않습니다 — 정산·급여·인센티브와 실지급액만 표시합니다.',

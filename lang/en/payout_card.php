@@ -77,6 +77,7 @@ return [
     'inspector_in_net_v' => 'deducted as common labor',
     'inspector_in_share' => 'Share',
     'inspector_in_share_v' => 'excluded',
+    'domestic_fee' => 'Appraisal fee (sheet items)',
     'domestic_total' => 'Domestic staff total (:n) — appraisal fee sheet total row',
     'where_reflected' => 'Reflected in',
 
