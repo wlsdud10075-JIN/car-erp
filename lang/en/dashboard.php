@@ -74,7 +74,7 @@ return [
                 'batch_pending' => 'Submitted · awaiting CEO', 'batch_approved' => 'Approved', 'batch_rejected' => 'Rejected', 'not_submitted' => 'Not submitted yet',
                 'go' => 'Monthly settlement →', 'leaver' => 'Leaver settlement', 'leaver_row' => ':name (left :date)', 'leaver_go' => 'Leaver settlements →',
                 'awaiting' => 'Awaiting CEO decision', 'awaiting_row' => ':label — submitted by :who · day :days', 'last_approved' => 'Approved: month :month (:date)', 'none_awaiting' => 'Nothing awaiting decision',
-                'label_month' => 'Month :month settlement', 'label_leaver' => 'Leaver settlement :name'],
+                'label_month' => 'Month :month settlement', 'label_leaver' => 'Leaver settlement :name', 'label_domestic' => 'Domestic staff month :month settlement'],
             'stuck' => ['total' => ':n in total', 'page' => ':from–:to of :total', 'prev' => 'Prev', 'next' => 'Next',
                 'title' => 'Stalled vehicles — who and where', 'sub' => 'Basis = clearance stuck 30 d · deregistration due · stale receivable · missing ETA',
                 'col' => ['vehicle' => 'Vehicle', 'salesman' => 'Sales', 'manager' => 'Manager', 'where' => 'Stuck at', 'days' => 'Days', 'action' => 'Action'],
