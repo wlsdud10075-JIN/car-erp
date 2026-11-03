@@ -56,6 +56,14 @@ return [
         'type_no_account' => 'No login account linked',
     ],
 
+    'domestic_import' => [
+        'button' => 'Appraisal fee upload',
+        'title' => 'Appraisal fee upload — domestic staff',
+        'hint' => 'Reads the appraiser table (header row to the total row) from the dealer-fee sheet of the monthly appraisal file and writes the month items and payout (total appraiser fee) to domestic staff with the same name. Only that month and person change.',
+        'file' => 'Appraisal fee file',
+        'no_staff' => 'No domestic staff registered — register appraisers as "Domestic staff" in User Management first (same names as the Excel).',
+        'apply' => 'Write :month (:n)',
+    ],
     'import' => [
         'col_commission' => 'Commission check',
         'commission_hint' => 'Sheet sales commission − ERP (settlement + Heyman + adjustments − pension 1/12). Non-zero means one side is wrong.',
@@ -108,12 +116,14 @@ return [
         'employee' => 'Employee',
         'freelance' => 'Freelancer',
         'inspector' => 'Inspector',
+        'domestic_staff' => 'Domestic staff',
         'staff' => 'Staff',
     ],
     'type_suffix' => [
         'employee' => '(per-unit)',
         'freelance' => '(ratio)',
         'inspector' => '(payroll only)',
+        'domestic_staff' => '(appraisal fee)',
         'staff' => '(payroll only)',
     ],
     'left_badge' => 'Left :date',

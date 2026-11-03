@@ -320,6 +320,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @foreach($bd['people'] as $person)
                     <x-payout.person-card :person="$person" mode="batch" :changed="$changed[$person['salesman_id']] ?? []" />
                     @endforeach
+                    <x-payout.domestic-fee-total :total="$bd['domestic_fee_total'] ?? null" />
                     {{-- ✏️ 결재 중 인센티브 수정 — 제출 권한자·최고관리자. 포인터는 그대로(멈춘 단계부터 이어서). --}}
                     @if($b->status === 'pending' && \App\Models\SettlementPayoutBatch::canEditAdjustments(auth()->user()))
                     <div class="rounded-md border border-dashed border-amber-300 bg-amber-50/40 px-2.5 py-2" data-incentive-form>

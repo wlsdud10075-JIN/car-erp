@@ -49,13 +49,16 @@ class Salesman extends Model
         // 직원 명부 확장 (jin 2026-10-14) — 영업이 아닌 일반사용자(관리·수출통관·재무)의 미러. 급여만(검차직원과 같은 취급).
         //   라벨은 연결 계정의 role(관리/수출통관/재무)로 보여 준다(`type_label`). 🚨 DB enum 마이그 2026_10_14_000001 과 같은 커밋.
         'staff' => '직원',
+        // 내수직원 (jin 2026-11-03) — 국내 평가사. 검차직원과 같은 취급(급여만·정산 없음), 금액은 「평가수수료정산」 엑셀의 총 평가사수수료.
+        //   🚨 DB enum 마이그 2026_11_03_000001 과 같은 커밋 — 가드 SalesmanTypeEnumTest(목록 **끝**에 붙인다).
+        'domestic_staff' => '내수직원',
     ];
 
     /** 영업을 하는 유형 — 차량을 맡고 정산을 받는다. */
     public const SALES_TYPES = ['employee', 'freelance'];
 
-    /** 급여만 받는 유형 — 정산·회사 기여 없음, 월정산엔 지급합계만(공통 인건비). 검차직원·직원. */
-    public const PAYROLL_ONLY_TYPES = ['inspector', 'staff'];
+    /** 급여만 받는 유형 — 정산·회사 기여 없음, 월정산엔 지급합계만(공통 인건비). 검차직원·직원·내수직원. */
+    public const PAYROLL_ONLY_TYPES = ['inspector', 'staff', 'domestic_staff'];
 
     /**
      * 영업을 하는 사람만(검차직원·직원 제외) — 차량 담당자 드롭다운·필터·대시보드 랭킹·board 이메일 매칭은 이 스코프를 쓴다.
@@ -74,6 +77,17 @@ class Salesman extends Model
     public function isInspector(): bool
     {
         return $this->type === 'inspector';
+    }
+
+    public function isDomesticStaff(): bool
+    {
+        return $this->type === 'domestic_staff';
+    }
+
+    /** 내수직원의 월별 평가수수료 표(엑셀 한 줄) — 월정산 카드가 항목을 그린다. */
+    public function domesticFeeStatements(): HasMany
+    {
+        return $this->hasMany(DomesticFeeStatement::class);
     }
 
     /** 급여만 받는 사람인가(검차직원·직원) — 월정산 카드·합계 띠·대시보드 공통 인건비가 이걸로 가른다. */
@@ -127,6 +141,7 @@ class Salesman extends Model
         return match (true) {
             $user->role === '영업' => $salesType ?: ($user->type ?: 'employee'),
             $user->role === User::INSPECTOR_ROLE => 'inspector',
+            $user->role === User::DOMESTIC_STAFF_ROLE => 'domestic_staff',
             $user->permission === 'user' && in_array($user->role, User::STAFF_ROLES, true) => 'staff',
             default => null,
         };
@@ -135,7 +150,7 @@ class Salesman extends Model
     /** 유형 뱃지 색 — 목록·월정산 카드가 같은 표를 쓴다. */
     public static function typeBadgeClass(?string $type): string
     {
-        return ['employee' => 'badge-blue', 'freelance' => 'badge-purple', 'inspector' => 'badge-amber', 'staff' => 'badge-teal'][$type] ?? 'badge-gray';
+        return ['employee' => 'badge-blue', 'freelance' => 'badge-purple', 'inspector' => 'badge-amber', 'staff' => 'badge-teal', 'domestic_staff' => 'badge-green'][$type] ?? 'badge-gray';
     }
 
     /** 정산 type 자동 매핑: employee → per_unit, freelance → ratio. */

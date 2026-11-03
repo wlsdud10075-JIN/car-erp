@@ -110,7 +110,7 @@ return [
     'contrib_th_share' => 'Share',
     'contrib_th_ratio' => 'Profit multiple',
     'contrib_ratio_na' => 'freelancer',
-    'common_labor' => 'Common labor (inspector payroll) −₩:amount — excluded from shares',
+    'common_labor' => 'Common labor (inspector & domestic staff payroll) −₩:amount — excluded from shares',
 
     'salesman_count_title' => 'Sales count by salesman (top 10)',
     'salesman_count_note' => 'basis',

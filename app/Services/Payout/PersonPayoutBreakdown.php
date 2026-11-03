@@ -3,6 +3,7 @@
 namespace App\Services\Payout;
 
 use App\Models\Buyer;
+use App\Models\DomesticFeeStatement;
 use App\Models\ExternalSettlementPay;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
@@ -138,6 +139,11 @@ final class PersonPayoutBreakdown
             // 2026-10-21 — 헤이맨 정산금·퇴직연금·판매수당 대조. 옛 박제엔 이 키들이 없다(카드는 없으면 안 그린다).
             'heyman_pay' => $heymanPay, 'pension_on' => $pensionOn, 'pension' => 0,
             'sales_commission' => $salesCommission, 'sales_commission_expected' => null, 'sales_commission_diff' => null,
+            // 🧾 내수직원 평가수수료 표 한 줄(jin 2026-11-03) — 카드가 엑셀 항목 그대로 그린다. 내수직원 몇 명뿐이라 사람당 1쿼리.
+            //    박제(breakdown_snapshot)에 같이 실려 지난 배치는 그때 표 그대로 보인다. 옛 박제엔 키가 없다(카드는 없으면 종전 급여 항목).
+            'domestic_fee' => $type === 'domestic_staff'
+                ? (DomesticFeeStatement::where('salesman_id', $sm->id)->where('month', $month)->first()?->items())
+                : null,
         ];
 
         if (in_array($type, Salesman::PAYROLL_ONLY_TYPES, true)) {   // 검차직원·직원 = 급여만

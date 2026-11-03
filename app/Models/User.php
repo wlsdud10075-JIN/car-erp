@@ -29,11 +29,21 @@ class User extends Authenticatable
      */
     public const INSPECTOR_ROLE = '검차';
 
+    /**
+     * 내수직원 역할 (jin 2026-11-03 «검차직원과 같아») — 국내 평가사. 검차직원과 같은 원리로 `ROLES` 밖·로그인 없음.
+     * 저장 시 Salesman(type=domestic_staff)으로 미러되고, 월 금액은 사내직원관리 「평가수수료정산」 업로드로 들어온다.
+     * 🚫 키에 「domestic」 하나만 쓰지 말 것 — 차량 국내판매(`is_domestic`)와 뜻이 다르다.
+     */
+    public const DOMESTIC_STAFF_ROLE = '내수';
+
+    /** 로그인하지 않는 일반사용자 역할(이메일·비밀번호 없이 등록) — 검차직원·내수직원. */
+    public const NO_LOGIN_ROLES = [self::INSPECTOR_ROLE, self::DOMESTIC_STAFF_ROLE];
+
     /** 영업이 아닌 일반사용자 역할 — 사내직원관리에 「직원(staff)」으로 미러돼 급여를 적는다(2026-10-14). */
     public const STAFF_ROLES = ['관리', '수출통관', '재무'];   // 순서 = 사내직원관리 탭 순서(jin «관리, 수출통관, 재무»)
 
-    /** 사용자 관리 폼의 역할 선택지 = ERP 역할 + 검차직원. */
-    public const ROLE_OPTIONS = ['영업', '수출통관', '재무', '관리', self::INSPECTOR_ROLE];
+    /** 사용자 관리 폼의 역할 선택지 = ERP 역할 + 검차직원 + 내수직원. 필터 칩 순서도 이것. */
+    public const ROLE_OPTIONS = ['영업', '수출통관', '재무', '관리', self::INSPECTOR_ROLE, self::DOMESTIC_STAFF_ROLE];
 
     // item 1 (jin 2026-07-07) — 권한 등급. super > admin(대표) > manager(업무관리자) > user.
     //   manager = admin 등가 권한에서 [기능설정·단계강제·super/admin 계정관리]만 제외.

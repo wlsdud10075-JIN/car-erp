@@ -39,6 +39,7 @@ return [
         'perm' => 'Permission',
         'role' => 'Role',
         'role_note' => 'Accessible menus depend on the role.',
+        'domestic_staff_note' => 'Domestic staff do not log in to the ERP — registered without email/password; monthly amounts come from the appraisal-fee upload in Staff Management (register with the same name as in the Excel).',
         'inspector_note' => 'Inspectors do not log in to the ERP — registered without email/password; payroll is entered in Staff Management.',
         'settlement_type' => 'Settlement Type',
         'type_select' => '— Select —',

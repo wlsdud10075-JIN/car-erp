@@ -62,6 +62,7 @@ return [
         '재무' => '재무',
         '관리' => '관리',
         '검차' => '검차직원',   // 로그인 없는 역할(User::INSPECTOR_ROLE, ROLES 밖) — 2026-10-14
+        '내수' => '내수직원',   // 로그인 없는 역할(User::DOMESTIC_STAFF_ROLE) — 2026-11-03 국내 평가사
     ],
 
     // 판매채널 (sales_channel enum — 값은 영어 코드, 표시만).
