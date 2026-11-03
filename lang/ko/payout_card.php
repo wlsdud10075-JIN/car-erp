@@ -101,8 +101,12 @@ return [
         'settlement_total' => '정산·조정 총액 (승인 금액)',
         'external_total' => '송금 중 헤이맨 정산금(회사이익 밖)',
         'pension_total' => '송금 중 퇴직연금 적립',
-        'common_labor' => '공통 인건비 (검차·내수·직원)',
+        'common_labor' => '공통 인건비 (급여만 받는 직원)',
         'contribution_sum' => '개인 회사이익 합',
         'hint' => '회사 순이익 = Σ(총마진 − 실지급 − 발송비) − 공통 인건비. 승인하는 금액은 종전처럼 「정산·조정 총액」입니다.',
     ],
+    'domestic_line' => '내수직원 합계 (:n명)',
+    'domestic_line_approved' => '내수직원 월정산 승인됨',
+    'domestic_line_pending' => '내수직원 월정산 결재 중',
+    'domestic_line_none' => '내수직원 월정산 아직 안 올림',
 ];
