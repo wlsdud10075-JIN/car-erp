@@ -935,6 +935,13 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-03 (오후 2) — master `499ffc08` · 마이그 0 (jin «배포해줘. 상환된 것도 수정 가능하게», 커밋 1개 cherry-pick — 예치·가수금 날짜 수정)
+
+dev `ba96a279` → master `499ffc08`. push = `git push origin master` 단독 → YES/NO 승인. 구현 = 서브에이전트(worktree) 초안 → main 검토·적용.
+- **예치·가수금 목록에서 날짜 바로 수정**(가수금 입금일·경매보증금 예치일, 데스크탑·모바일). 8자리 정규화·잘못된 날짜 거부·바뀐 때만 감사로그. 권한 = canAccessDeposits. 날짜는 정렬에만 쓰여 합계·청산가치·자금 스냅샷 무영향. 상환된 행도 허용(jin 확인). 상환일(repaid_at)은 종전대로 자동.
+- 확인: 병렬 3,622 pass(실패 0) · deploy 런 41572005070 잡 5 success · `/login` 200 ×3
+- 가이드·카드(dev `5b95bdfd`) → Codex 발행
+
 ## 2026-11-03 (오후) — master `24cc787a` · 마이그 0 (jin «처리되어야», 커밋 1개 cherry-pick — 발송비 회사:직원 5:5)
 
 dev `a30d4d4c` → master `24cc787a`. push = `git push origin master` 단독 → YES/NO 승인.
