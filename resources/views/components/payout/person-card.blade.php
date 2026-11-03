@@ -48,6 +48,17 @@
             @if(! $payrollOnly && ! $p['unsupported'])
             <span class="text-gray-500">{{ __('payout_card.total_margin') }} <b class="font-mono {{ $cls($p['total_margin']) }}" data-total-margin-head>{{ $signed($p['total_margin']) }}</b></span>
             @endif
+            @if(! empty($p['domestic_fee']))
+            {{-- 🧾 내수직원 접힌 줄 = 건수 / 회사수익 / 지급합계 (jin 2026-11-03). 엑셀 항목에서 이름으로 찾는다 —
+                 회사수익은 지급(총 평가사수수료)과 짝인 「총 회사수익」, 없으면 「회사수익」. --}}
+            @php
+                $feeVal = fn (string $label) => collect($p['domestic_fee'])->firstWhere('label', $label)['value'] ?? null;
+                $feeCount = $feeVal('건수');
+                $feeProfit = $feeVal('총 회사수익') ?? $feeVal('회사수익');
+            @endphp
+            <span class="text-gray-500">{{ __('payout_card.domestic_count') }} <b class="font-mono text-gray-800" data-domestic-count>{{ $feeCount === null ? '—' : number_format((float) $feeCount) }}</b></span>
+            <span class="text-gray-500">{{ __('payout_card.domestic_profit') }} <b class="font-mono {{ $cls($feeProfit === null ? null : (float) $feeProfit) }}" data-domestic-profit>{{ $feeProfit === null ? '—' : '₩'.number_format((float) $feeProfit) }}</b></span>
+            @endif
             <span class="text-gray-500">{{ $payrollOnly ? __('payout_card.payroll_total') : __('payout_card.payout') }} <b class="font-mono text-gray-800" data-payout>₩{{ $fmt($p['payout']) }}</b></span>
             @if($t === 'employee' && ! $p['unsupported'])
             {{-- 🔀 2026-10-12 jin — 「급여공제후 마진·초과 배율」(프리랜서 환산 계열)은 뺐다. 이익배수 = 인센티브 전 회사이익 ÷ (급여+정산금) · 회사이익 = 최종(인센티브 뺀 뒤). --}}

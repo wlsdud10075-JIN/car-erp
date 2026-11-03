@@ -55,7 +55,8 @@ class DomesticPayoutBatchTest extends TestCase
     private function domestic(string $name, int $payout, string $month = '2026-10'): Salesman
     {
         $sm = Salesman::create(['name' => $name, 'type' => 'domestic_staff', 'is_active' => true]);
-        DomesticFeeStatement::create(['salesman_id' => $sm->id, 'month' => $month, 'headers' => ['건수', '총 평가사수수료'], 'values' => [10, $payout], 'payout' => $payout]);
+        DomesticFeeStatement::create(['salesman_id' => $sm->id, 'month' => $month,
+            'headers' => ['건수', '회사수익', '총 평가사수수료', '총 회사수익'], 'values' => [10, 5_282_500, $payout, 5_098_800], 'payout' => $payout]);
         PayrollEntry::create(['salesman_id' => $sm->id, 'month' => $month, 'label' => DomesticFeeStatement::PAYROLL_LABEL, 'amount' => $payout, 'sort' => 0, 'is_custom' => true]);
 
         return $sm;
@@ -176,6 +177,23 @@ class DomesticPayoutBatchTest extends TestCase
         $this->assertContains($a->id, array_column($month['people'], 'salesman_id'));
         $this->assertFalse($month['domestic_split']);
         $this->assertSame(2_701_200, $month['totals']['common_labor']);
+    }
+
+    /** 이름별 카드 접힌 줄 = 건수 / 회사수익(총 회사수익) / 지급합계 (jin 2026-11-03). */
+    public function test_collapsed_card_shows_count_profit_and_payout(): void
+    {
+        $this->setCompany('system');
+        $this->domestic('김진기', 2_701_200);
+        $viewer = $this->user('user', '관리');
+        $this->viewers([$viewer]);
+
+        $html = $this->actingAs($viewer)->get(route('erp.domestic-payouts.index'))->assertOk()->getContent();
+        $summary = substr($html, strpos($html, '<summary'), strpos($html, '</summary>') - strpos($html, '<summary'));
+        $this->assertMatchesRegularExpression('/건수 <b[^>]*data-domestic-count>10</u', $summary);
+        $this->assertMatchesRegularExpression('/회사수익 <b[^>]*data-domestic-profit>₩5,098,800</u', $summary, '「총 회사수익」(지급과 짝)');
+        $this->assertMatchesRegularExpression('/지급합계 <b[^>]*data-payout>₩2,701,200</u', $summary);
+        $this->assertTrue(strpos($summary, 'data-domestic-count') < strpos($summary, 'data-domestic-profit')
+            && strpos($summary, 'data-domestic-profit') < strpos($summary, 'data-payout'), '순서 = 건수 / 회사수익 / 지급합계');
     }
 
     public function test_screens_are_gated(): void
