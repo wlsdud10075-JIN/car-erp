@@ -847,8 +847,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         } else {
             try {
                 $rows = [];
-                $ss = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->costImportFile->getRealPath());
-                foreach ($ss->getSheet(0)->getRowIterator() as $row) {
+                $sheet = $this->loadCostStatementSheet();
+                foreach ($sheet->getRowIterator() as $row) {
                     $cells = [];
                     $it = $row->getCellIterator();
                     $it->setIterateOnlyExistingCells(false);
@@ -870,6 +870,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
+     * 명세서 첫 시트를 **값만** 읽는다 (2026-11-03 ssancarerp 128MB 초과 3건 — 업로드 36~66초 뒤 500).
+     *   `IOFactory::load()` 는 서식·빈 칸까지 셀 객체로 올려 서식이 넓게 칠해진 명세서에서 메모리가 터졌다.
+     *   파서는 값(getCalculatedValue)만 쓰므로 서식·빈 칸은 버린다. 수식은 그대로 남아 계산된다.
+     *   ⚠️ 메모리 초과는 Fatal 이라 아래 catch 로 못 잡는다 — 화면이 「파일 오류」 없이 죽는다.
+     */
+    private function loadCostStatementSheet(): \PhpOffice\PhpSpreadsheet\Worksheet\Worksheet
+    {
+        $path = $this->costImportFile->getRealPath();
+        $reader = \PhpOffice\PhpSpreadsheet\IOFactory::createReaderForFile($path);
+        $reader->setReadDataOnly(true);
+        $reader->setReadEmptyCells(false);
+
+        return $reader->load($path)->getSheet(0);
+    }
+
+    /**
      * 회사별 좌표 고정 탁송비 파서 — 지정 시작행부터 차량번호열·금액 성분열을 직접 읽는다.
      * 범용 '마지막 숫자' 파서의 차종 숫자(아우디 Q5→5)·비고 오파싱을 피한다. 금액=성분열 합(수식셀 의존 X).
      */
@@ -877,8 +893,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $rows = [];
         try {
-            $ss = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->costImportFile->getRealPath());
-            $sheet = $ss->getSheet(0);
+            $sheet = $this->loadCostStatementSheet();
             $highest = $sheet->getHighestRow();
             for ($r = $layout['start']; $r <= $highest; $r++) {
                 // 차량번호 — 앞뒤·내부 공백 제거 후 정규식 검증(합계행·빈행·헤더 skip).
@@ -1001,8 +1016,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function parseLicenseFile(): void
     {
         try {
-            $ss = \PhpOffice\PhpSpreadsheet\IOFactory::load($this->costImportFile->getRealPath());
-            $records = $this->extractLicenseRecords($ss->getSheet(0));
+            $records = $this->extractLicenseRecords($this->loadCostStatementSheet());
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: __('vehicle.cost_import.file_error'), type: 'error');
 
