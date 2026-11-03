@@ -114,7 +114,7 @@ return [
     'contrib_th_share' => '지분율',
     'contrib_th_ratio' => '이익배수',   // 🔀 2026-10-12 = 인센티브 전 회사이익 ÷ (급여 + 정산금) — 카드와 같은 식
     'contrib_ratio_na' => '프리랜서',
-    'common_labor' => '공통 인건비(검차직원 급여) −₩:amount — 지분율 계산에서는 제외',
+    'common_labor' => '공통 인건비(검차·내수직원 급여) −₩:amount — 지분율 계산에서는 제외',
 
     // 담당자 성과
     'salesman_count_title' => '담당자별 판매 대수 (상위 10명)',

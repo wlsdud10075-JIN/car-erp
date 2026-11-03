@@ -66,7 +66,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function pickRole(string $role): void
     {
-        if (! in_array($role, \App\Models\User::ROLES, true)) {
+        // 🔍 검차직원·내수직원도 칩으로 고른다(jin 2026-11-03 «검차직원이 없는 거 같아») — 선택지 = ROLE_OPTIONS.
+        if (! in_array($role, \App\Models\User::ROLE_OPTIONS, true)) {
             return;
         }
         $this->permFilter = 'user';
@@ -115,7 +116,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 권한 등급순(시스템관리자 → 최고관리자 → 업무관리자 → 일반사용자) → 역할/직급 → 이름. 목록의 묶음 캡션이 이 순서를 전제한다.
             ->orderByRaw("CASE permission WHEN 'super' THEN 0 WHEN 'admin' THEN 1 WHEN 'manager' THEN 2 ELSE 3 END")
             ->orderByRaw("CASE WHEN permission = 'admin' THEN CASE approval_title WHEN '대표' THEN 0 WHEN '상무' THEN 1 WHEN '부장' THEN 2 ELSE 3 END ELSE 0 END")
-            ->orderByRaw("CASE WHEN permission = 'user' THEN CASE role WHEN '관리' THEN 0 WHEN '재무' THEN 1 WHEN '수출통관' THEN 2 WHEN '영업' THEN 3 ELSE 4 END ELSE 0 END")
+            ->orderByRaw("CASE WHEN permission = 'user' THEN CASE role WHEN '관리' THEN 0 WHEN '재무' THEN 1 WHEN '수출통관' THEN 2 WHEN '영업' THEN 3 WHEN '검차' THEN 4 WHEN '내수' THEN 5 ELSE 6 END ELSE 0 END")
             ->orderBy('name')
             // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
             //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
@@ -196,7 +197,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 🔍 검차직원(jin 2026-10-14 «사용자관리에서 한번에 관리») — 로그인하지 않는 사람. 이메일·비밀번호 없이 등록된다.
         //   role 은 ROLES 밖이라 canAccessErp() 가 막고, 저장 시 Salesman(type=inspector)으로 미러된다.
-        $isInspector = $this->permission === 'user' && $this->role === \App\Models\User::INSPECTOR_ROLE;
+        //   🔀 2026-11-03 — 내수직원도 같은 취급(NO_LOGIN_ROLES).
+        $isInspector = $this->permission === 'user' && in_array($this->role, \App\Models\User::NO_LOGIN_ROLES, true);
         if ($isInspector) {
             $this->type = '';
             $this->manager_user_ids = [];
@@ -603,7 +605,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <button type="button" wire:click="pickPerm('')" class="{{ $permFilter === '' ? $chipOn : $chipOff }}">{{ __('user.all_perm') }}</button>
         <span class="flex flex-wrap items-center gap-1 rounded-lg bg-gray-50 px-1.5 py-1">
             <button type="button" wire:click="pickPerm('user')" class="{{ $permFilter === 'user' && $roleFilter === '' ? $chipOn : $chipOff }}">{{ __('nav.permission.user') }}</button>
-            @foreach(\App\Models\User::ROLES as $r)
+            @foreach(\App\Models\User::ROLE_OPTIONS as $r)
             <button type="button" wire:click="pickRole('{{ $r }}')" class="{{ $roleFilter === $r ? $subOn : $subOff }}">{{ __('domain.role.'.$r) }}</button>
             @endforeach
         </span>
@@ -719,8 +721,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <input wire:model="name" type="text" class="input-base" placeholder="{{ __('user.field.name_ph') }}" />
                 @error('name')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
-            @php $formIsInspector = $permission === 'user' && $role === \App\Models\User::INSPECTOR_ROLE; @endphp
-            {{-- 검차직원(로그인 없음)은 이메일·비밀번호 칸을 숨긴다 — 2026-10-14 --}}
+            @php $formIsInspector = $permission === 'user' && in_array($role, \App\Models\User::NO_LOGIN_ROLES, true); @endphp
+            {{-- 검차직원·내수직원(로그인 없음)은 이메일·비밀번호 칸을 숨긴다 — 2026-10-14 · 내수 2026-11-03 --}}
             @if(! $formIsInspector)
             <div>
                 <label class="label-base">{{ __('common.email') }} <span class="text-red-500">*</span></label>
@@ -796,7 +798,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <option value="{{ $r }}">{{ __('domain.role.'.$r) }}</option>
                     @endforeach
                 </select>
-                <p class="mt-1 text-xs text-gray-400">{{ $role === \App\Models\User::INSPECTOR_ROLE ? __('user.field.inspector_note') : __('user.field.role_note') }}</p>
+                <p class="mt-1 text-xs text-gray-400">{{ match ($role) { \App\Models\User::INSPECTOR_ROLE => __('user.field.inspector_note'), \App\Models\User::DOMESTIC_STAFF_ROLE => __('user.field.domestic_staff_note'), default => __('user.field.role_note') } }}</p>
                 @error('role')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             </div>
             @endif

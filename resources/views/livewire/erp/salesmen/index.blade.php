@@ -4,6 +4,7 @@ use App\Models\ExternalSettlementPay;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
 use App\Models\User;
+use App\Services\Payroll\DomesticFeeImporter;
 use App\Services\Payroll\PayrollStatementImporter;
 use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
@@ -141,6 +142,97 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->closeImport();
     }
 
+    // ── 🧾 평가수수료정산 업로드 — 내수직원 (jin 2026-11-03 «내가 지정한 행의 정보만 … 월정산에 나타나게, 검차처럼») ──
+    //   딜러수수료 탭의 평가사 요약표(헤더 「평가사」 ~ 「합계」)를 읽어(DomesticFeeImporter) 미리보기 → 이름으로 내수직원 연결 → 「기입」.
+    //   그 달·그 사람만: 표 한 줄(DomesticFeeStatement) + 송금액 한 줄(PayrollEntry 「총 평가사수수료」). 다른 달은 그대로.
+    //   ⚠️ 프로퍼티와 메서드 이름을 같게 두지 말 것(§8 #32) — domesticFile / updatedDomesticFile.
+    public $domesticFile = null;
+    public bool $showDomesticImport = false;
+    public array $domesticPreview = [];
+    /** @var array<int, string> 엑셀 행번호 → salesman_id('' = 미매칭) */
+    public array $domesticMatches = [];
+
+    public function openDomesticImport(): void
+    {
+        abort_unless(auth()->user()?->canEditPayroll(), 403);
+        $this->reset(['domesticFile', 'domesticPreview', 'domesticMatches']);
+        $this->showDomesticImport = true;
+    }
+
+    public function closeDomesticImport(): void
+    {
+        $this->reset(['domesticFile', 'domesticPreview', 'domesticMatches', 'showDomesticImport']);
+    }
+
+    public function updatedDomesticFile(): void
+    {
+        abort_unless(auth()->user()?->canEditPayroll(), 403);
+        $this->validate(['domesticFile' => 'required|file|mimes:xls,xlsx|max:10240'], [], ['domesticFile' => __('salesman.domestic_import.file')]);
+        $importer = new DomesticFeeImporter;
+        $this->domesticPreview = $importer->parse($this->domesticFile->getRealPath());
+        $this->domesticMatches = [];
+        foreach ($importer->match($this->domesticPreview['people'] ?? []) as $row => $id) {
+            $this->domesticMatches[$row] = $id === null ? '' : (string) $id;
+        }
+    }
+
+    /** 미매칭을 연결할 후보 — 내수직원만(배열, §8 #96-C). */
+    #[Computed]
+    public function domesticCandidates(): array
+    {
+        return Salesman::query()->where('type', 'domestic_staff')
+            ->where(fn ($q) => $q->where('is_active', true)->orWhereNotNull('left_at'))
+            ->orderBy('name')->get(['id', 'name'])->map(fn ($s) => ['id' => $s->id, 'name' => $s->name])->all();
+    }
+
+    public function applyDomesticImport(): void
+    {
+        $actor = auth()->user();
+        abort_unless($actor?->canEditPayroll(), 403);
+        $month = $this->domesticPreview['month'] ?? null;
+        if (! $month || ! PayrollEntry::isMonth($month) || ($this->domesticPreview['errors'] ?? []) !== []) {
+            $this->dispatch('notify', message: __('salesman.import.not_ready'), type: 'error');
+
+            return;
+        }
+        $ids = array_filter(array_map('intval', $this->domesticMatches));
+        if (count($ids) !== count(array_unique($ids))) {
+            $this->dispatch('notify', message: __('salesman.import.duplicate'), type: 'error');
+
+            return;
+        }
+        // 후보 밖 id 는 받지 않는다(§8 #26 — 드롭다운 값을 그대로 믿지 않는다)
+        $allowed = array_column($this->domesticCandidates, 'id');
+        $done = 0;
+        $skipped = 0;
+        foreach ($this->domesticPreview['people'] as $p) {
+            $id = (int) ($this->domesticMatches[$p['row']] ?? 0);
+            $sm = $id && in_array($id, $allowed, true) ? Salesman::find($id) : null;
+            if (! $sm) {
+                $skipped++;
+
+                continue;
+            }
+            \Illuminate\Support\Facades\DB::transaction(function () use ($sm, $month, $p, $actor) {
+                \App\Models\DomesticFeeStatement::updateOrCreate(
+                    ['salesman_id' => $sm->id, 'month' => $month],
+                    ['headers' => $this->domesticPreview['headers'], 'values' => $p['values'], 'payout' => $p['payout'],
+                        'source_file' => mb_substr((string) $this->domesticFile?->getClientOriginalName(), 0, 200)],
+                );
+                PayrollEntry::writeMonthWithAudit($sm, $month,
+                    [['label' => \App\Models\DomesticFeeStatement::PAYROLL_LABEL, 'amount' => $p['payout'], 'is_custom' => true]],
+                    $actor, '평가수수료 업로드 '.$month);
+            });
+            $done++;
+        }
+        unset($this->salesmen);
+        if ($this->editingId) {
+            $this->loadPayroll($this->editingId);
+        }
+        $this->dispatch('notify', message: __('salesman.import.applied', ['month' => $month, 'done' => $done, 'skipped' => $skipped]), type: 'success');
+        $this->closeDomesticImport();
+    }
+
     public string $search    = '';
     #[Url] public int $perPage = 10;
     // 2026-09-22 jin — 「ssancarerp 는 사람이 많아 하나하나 찾기 어렵다」→ 사내직원/프리랜서 pill 필터.
@@ -154,7 +246,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public static function rosterTabs(): array
     {
         $tabs = [];
-        foreach (['employee', 'freelance', 'inspector'] as $t) {
+        foreach (['employee', 'freelance', 'inspector', 'domestic_staff'] as $t) {   // 내수직원 = 검차직원 다음(jin 2026-11-03)
             $tabs[$t] = __('salesman.type.'.$t);
         }
         foreach (User::STAFF_ROLES as $role) {
@@ -624,9 +716,93 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
         @if(auth()->user()?->canEditPayroll())
         <button type="button" wire:click="openImport" class="btn-primary" title="{{ __('salesman.import.hint') }}">{{ __('salesman.import.button') }}</button>
+        <button type="button" wire:click="openDomesticImport" class="btn-primary" title="{{ __('salesman.domestic_import.hint') }}" data-domestic-import-button>{{ __('salesman.domestic_import.button') }}</button>
         @endif
     </div>
 </div>
+
+{{-- 🧾 평가수수료정산 업로드 모달 — 내수직원 (jin 2026-11-03). 카드는 max-h + overflow(폰에서 아래 버튼 닿게, §8 #98). --}}
+@if($showDomesticImport)
+<div class="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-3 sm:items-center sm:p-6" wire:click.self="closeDomesticImport">
+    <div class="w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-5 shadow-2xl" data-domestic-import>
+        <div class="flex items-center justify-between">
+            <h3 class="text-base font-bold text-gray-800">{{ __('salesman.domestic_import.title') }}</h3>
+            <button type="button" wire:click="closeDomesticImport" class="rounded p-1 text-gray-400 hover:bg-gray-100">✕</button>
+        </div>
+        <p class="mt-1 text-xs text-gray-500">{{ __('salesman.domestic_import.hint') }}</p>
+        <div class="mt-3 flex flex-wrap items-center gap-3">
+            <label class="btn-primary cursor-pointer">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M12 4v12m0-12l-4 4m4-4l4 4"/></svg>
+                <span wire:loading.remove wire:target="domesticFile">{{ __('salesman.import.choose') }}</span>
+                <span wire:loading wire:target="domesticFile">{{ __('salesman.import.reading') }}</span>
+                <input type="file" wire:model="domesticFile" accept=".xls,.xlsx" class="hidden" />
+            </label>
+            <span class="text-xs text-gray-500">{{ $domesticFile ? $domesticFile->getClientOriginalName() : __('salesman.import.no_file') }}</span>
+            @error('domesticFile')<p class="w-full text-xs text-red-500">{{ $message }}</p>@enderror
+        </div>
+        @if($domesticPreview !== [])
+            @foreach(($domesticPreview['errors'] ?? []) as $err)
+            <p class="mt-2 rounded bg-red-50 px-3 py-2 text-xs text-red-700">{{ $err }}</p>
+            @endforeach
+            @foreach(($domesticPreview['warnings'] ?? []) as $w)
+            <p class="mt-2 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">{{ $w }}</p>
+            @endforeach
+            @php
+                $dPeople = $domesticPreview['people'] ?? [];
+                $dHeaders = $domesticPreview['headers'] ?? [];
+                $dMonth = $domesticPreview['month'] ?? null;
+                $dCands = $this->domesticCandidates;
+                $dMatched = array_filter(array_map('intval', $domesticMatches));
+                $dNum = fn ($v) => $v === null ? '—' : number_format((float) $v);
+            @endphp
+            <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-700">
+                <span>{{ __('salesman.import.month') }} <b>{{ $dMonth ?? '—' }}</b></span>
+                <span>{{ __('salesman.import.count', ['n' => count($dPeople)]) }}</span>
+                <span>{{ __('salesman.import.matched', ['n' => count($dMatched)]) }}</span>
+            </div>
+            @if($dCands === [])
+            <p class="mt-2 rounded bg-amber-50 px-3 py-2 text-xs text-amber-800">{{ __('salesman.domestic_import.no_staff') }}</p>
+            @endif
+            <div class="mt-2 overflow-x-auto">
+                <table class="w-full min-w-[760px] text-xs">
+                    <thead><tr class="border-b border-gray-200 text-left text-gray-500">
+                        <th class="py-1 pr-2">{{ \App\Services\Payroll\DomesticFeeImporter::NAME_HEADER }}</th>
+                        @foreach($dHeaders as $h)<th class="py-1 pr-2 text-right {{ $h === \App\Services\Payroll\DomesticFeeImporter::PAYOUT_HEADER ? 'text-gray-800' : '' }}">{{ $h }}</th>@endforeach
+                        <th class="py-1">{{ __('salesman.import.col_match') }}</th>
+                    </tr></thead>
+                    <tbody class="divide-y divide-gray-100">
+                    @foreach($dPeople as $p)
+                        @php $dmid = (int) ($domesticMatches[$p['row']] ?? 0); @endphp
+                        <tr class="{{ $dmid ? '' : 'bg-amber-50' }}" data-domestic-row="{{ $p['row'] }}">
+                            <td class="py-1 pr-2 font-medium text-gray-800">{{ $p['name'] }}</td>
+                            @foreach($dHeaders as $i => $h)<td class="py-1 pr-2 text-right font-mono {{ $h === \App\Services\Payroll\DomesticFeeImporter::PAYOUT_HEADER ? 'font-semibold text-gray-900' : 'text-gray-600' }}">{{ $dNum($p['values'][$i] ?? null) }}</td>@endforeach
+                            <td class="py-1">
+                                <select wire:model.live="domesticMatches.{{ $p['row'] }}" class="input-base py-1 text-xs text-gray-800">
+                                    <option value="">{{ __('salesman.import.unmatched') }}</option>
+                                    @foreach($dCands as $c)<option value="{{ $c['id'] }}">{{ $c['name'] }}</option>@endforeach
+                                </select>
+                            </td>
+                        </tr>
+                    @endforeach
+                    @if(($domesticPreview['total'] ?? []) !== [])
+                        <tr class="border-t-2 border-gray-300 bg-gray-50 font-semibold" data-domestic-total>
+                            <td class="py-1 pr-2">{{ \App\Services\Payroll\DomesticFeeImporter::TOTAL_LABEL }}</td>
+                            @foreach($dHeaders as $i => $h)<td class="py-1 pr-2 text-right font-mono">{{ $dNum($domesticPreview['total'][$i] ?? null) }}</td>@endforeach
+                            <td></td>
+                        </tr>
+                    @endif
+                    </tbody>
+                </table>
+            </div>
+            <div class="mt-4 flex flex-wrap justify-end gap-2">
+                <button type="button" wire:click="closeDomesticImport" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">{{ __('common.cancel') }}</button>
+                <button type="button" wire:click="applyDomesticImport" wire:loading.attr="disabled" class="btn-primary"
+                        @disabled(($domesticPreview['errors'] ?? []) !== [] || $dMatched === [])>{{ __('salesman.domestic_import.apply', ['month' => $dMonth ?? '—', 'n' => count($dMatched)]) }}</button>
+            </div>
+        @endif
+    </div>
+</div>
+@endif
 
 {{-- 📄 급여대장 업로드 모달 (jin 2026-10-14). 카드는 max-h + overflow(폰에서 아래 버튼 닿게, §8 #98). --}}
 @if($showImport)

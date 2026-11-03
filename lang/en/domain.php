@@ -63,6 +63,7 @@ return [
         '재무' => 'Finance',
         '관리' => 'Management',
         '검차' => 'Inspector',
+        '내수' => 'Domestic staff',
     ],
 
     // Sales channel (sales_channel enum — value is English code, display only).

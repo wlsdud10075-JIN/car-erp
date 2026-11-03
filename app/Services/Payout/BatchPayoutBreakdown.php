@@ -101,9 +101,10 @@ final class BatchPayoutBreakdown
             );
         }
 
-        // 정렬 — 회사 기여 큰 순(검차는 맨 뒤)
-        usort($rows, fn ($a, $b) => [$b['company_contribution'] !== null, $b['company_contribution'] ?? PHP_INT_MIN]
-            <=> [$a['company_contribution'] !== null, $a['company_contribution'] ?? PHP_INT_MIN]);
+        // 정렬 — 회사 기여 큰 순, 급여만 받는 사람은 맨 뒤에 검차직원 → 내수직원 → 직원 순(jin 2026-11-03 «검차직원 아래쪽에 내수직원»).
+        $payrollRank = fn (array $r): int => ['inspector' => 0, 'domestic_staff' => 1][$r['type']] ?? 2;
+        usort($rows, fn ($a, $b) => [$b['company_contribution'] !== null, $b['company_contribution'] ?? PHP_INT_MIN, $payrollRank($a)]
+            <=> [$a['company_contribution'] !== null, $a['company_contribution'] ?? PHP_INT_MIN, $payrollRank($b)]);
 
         $contributionSum = 0;
         $commonLabor = 0;
@@ -148,6 +149,31 @@ final class BatchPayoutBreakdown
                 'common_labor' => $commonLabor,
                 'company_net' => $contributionSum - $commonLabor,
             ],
+            // 🧾 내수직원 합계 줄(jin 2026-11-03 — 엑셀 G74:P74) = 이번 달 카드에 들어간 내수직원 표의 열 합. 없으면 null.
+            'domestic_fee_total' => self::domesticFeeTotal($rows),
         ];
+    }
+
+    /**
+     * 내수직원 카드들의 평가수수료 표를 열마다 더한다 — 항목 이름은 첫 사람 것(같은 파일이면 같다). 내수직원이 없으면 null.
+     *
+     * @return array{items: list<array{label:string, value:int|float|null}>, count:int}|null
+     */
+    public static function domesticFeeTotal(array $rows): ?array
+    {
+        $tables = array_values(array_filter(array_map(fn ($r) => $r['domestic_fee'] ?? null, $rows)));
+        if ($tables === []) {
+            return null;
+        }
+        $items = [];
+        foreach ($tables[0] as $i => $it) {
+            $sum = 0;
+            foreach ($tables as $t) {
+                $sum += (float) ($t[$i]['value'] ?? 0);
+            }
+            $items[] = ['label' => $it['label'], 'value' => $sum + 0];
+        }
+
+        return ['items' => $items, 'count' => count($tables)];
     }
 }

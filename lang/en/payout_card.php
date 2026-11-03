@@ -77,6 +77,7 @@ return [
     'inspector_in_net_v' => 'deducted as common labor',
     'inspector_in_share' => 'Share',
     'inspector_in_share_v' => 'excluded',
+    'domestic_total' => 'Domestic staff total (:n) — appraisal fee sheet total row',
     'where_reflected' => 'Reflected in',
 
     'unsupported' => 'This company\'s settlement formula (tiers) is not supported by the equivalent card yet — only settlement, payroll, incentive and take-home are shown.',
@@ -89,7 +90,7 @@ return [
         'settlement_total' => 'Settlement + adjustments (approved amount)',
         'external_total' => 'Of transfer: Heyman settlement (outside profit)',
         'pension_total' => 'Of transfer: pension',
-        'common_labor' => 'Common labor (inspectors & staff)',
+        'common_labor' => 'Common labor (inspectors, domestic & staff)',
         'contribution_sum' => 'Sum of individual company profit',
         'hint' => 'Company net = Σ(total margin − take-home − shipping) − common labor. The approved amount is still the settlement + adjustments total.',
     ],

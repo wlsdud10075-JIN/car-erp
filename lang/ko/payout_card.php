@@ -84,6 +84,8 @@ return [
     'inspector_in_share' => '지분율 계산',
     'inspector_in_share_v' => '제외',
     'where_reflected' => '반영 위치',
+    // 내수직원 (2026-11-03)
+    'domestic_total' => '내수직원 합계 (:n명) — 평가수수료정산 합계 줄',
 
     'unsupported' => '이 회사의 정산 공식(구간표)은 환산 카드를 아직 지원하지 않습니다 — 정산·급여·인센티브와 실지급액만 표시합니다.',
 
@@ -96,7 +98,7 @@ return [
         'settlement_total' => '정산·조정 총액 (승인 금액)',
         'external_total' => '송금 중 헤이맨 정산금(회사이익 밖)',
         'pension_total' => '송금 중 퇴직연금 적립',
-        'common_labor' => '공통 인건비 (검차·직원)',
+        'common_labor' => '공통 인건비 (검차·내수·직원)',
         'contribution_sum' => '개인 회사이익 합',
         'hint' => '회사 순이익 = Σ(총마진 − 실지급 − 발송비) − 공통 인건비. 승인하는 금액은 종전처럼 「정산·조정 총액」입니다.',
     ],
