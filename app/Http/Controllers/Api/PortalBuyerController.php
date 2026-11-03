@@ -159,7 +159,7 @@ class PortalBuyerController extends Controller
             'contact_phone' => $b->contact_phone,
             // 🗺️ 2단계 (2026-11-01) — WhatsApp 은 전화와 다를 때만 값이 있고, 비면 사이트가 contact_phone 을 쓴다(합의).
             'whatsapp_phone' => $b->whatsapp_phone ?: null,
-            'website' => $b->website ?: null,
+            'website' => Buyer::normalizeWebsite($b->website),
             'office_address' => $b->office_address ?: null,
             'city' => $b->city ?: null,
             // 사진/로고 — 15분 서명 URL(`/files` 와 같은 방식). 사이트는 받자마자 사본을 저장하고 photo_updated_at 이 바뀔 때만 다시 받는다.

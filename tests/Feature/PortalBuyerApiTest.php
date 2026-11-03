@@ -380,6 +380,28 @@ class PortalBuyerApiTest extends TestCase
         $this->assertFalse($row['api_linked']);
     }
 
+    /**
+     * 🌐 홈페이지는 스킴 없이 적혀도 `https://` 를 붙여 나간다 (jin 2026-11-03) — ssancar 지도가 `^https?://` 만 받아
+     *   heymanerp #10 `www.koreancarsks.com` 이 빠졌다. 저장 때 붙이고(mutator), 이미 저장된 옛 값은 응답에서 붙인다.
+     */
+    public function test_website_without_scheme_ships_with_https(): void
+    {
+        $saved = $this->buyer(['name' => 'Saved', 'website' => '  www.koreancarsks.com ']);
+        $this->assertSame('https://www.koreancarsks.com', $saved->fresh()->website);
+
+        $http = $this->buyer(['name' => 'Http', 'website' => 'http://old.example.com']);
+        $this->assertSame('http://old.example.com', $http->fresh()->website, '스킴이 있으면 그대로');
+
+        // 정규화 전에 저장된 옛 값 — mutator 를 안 거친 raw
+        $legacy = $this->buyer(['name' => 'Legacy']);
+        DB::table('buyers')->where('id', $legacy->id)->update(['website' => 'example.org/shop']);
+
+        $rows = collect($this->signed()->assertOk()->json('data'));
+        $this->assertSame('https://www.koreancarsks.com', $rows->firstWhere('id', $saved->id)['website']);
+        $this->assertSame('http://old.example.com', $rows->firstWhere('id', $http->id)['website']);
+        $this->assertSame('https://example.org/shop', $rows->firstWhere('id', $legacy->id)['website']);
+    }
+
     /** 🚫 B2B 파트너스 내부 표시(관리대상·DP/FD·계약서)는 포털에 안 나간다(요청서 05). */
     public function test_b2b_internal_markers_never_leave(): void
     {
