@@ -169,8 +169,11 @@
         {{-- 헤이맨 정산금은 송금엔 있고 회사이익엔 없다 — 이 줄이 없으면 위 산수가 안 닫힌다(2026-10-21) --}}
         <div class="row" data-external-total><span class="k">{{ __('payout_card.external_in_transfer') }}</span><span class="v">+ {{ number_format($v3['totals']['external_total']) }}원</span></div>
         @endif
+        @if(($v3['totals']['domestic_profit'] ?? 0) !== 0)
+        <div class="row" data-domestic-profit-row><span class="k">내수직원 총 회사수익 (평가사 지급 뒤)</span><span class="v">+ {{ number_format($v3['totals']['domestic_profit']) }}원</span></div>
+        @endif
         <div class="row big"><span class="k">회사이익 (급여 차감 후)</span><span class="v {{ $v3['totals']['company_net'] < 0 ? 'loss' : '' }}">{{ number_format($v3['totals']['company_net']) }}원</span></div>
-        <div class="cap">회사이익 = 총마진 − (급여 + 정산 + 추가 인센티브) − 발송비 − 공통 인건비(급여만 받는 직원).</div>
+        <div class="cap">회사이익 = 총마진 − (급여 + 정산 + 추가 인센티브) − 발송비 − 공통 인건비(급여만 받는 직원) + 내수직원 총 회사수익.</div>
         @else
         <div class="row"><span class="k">직원 지급총액</span><span class="v">− {{ number_format($profit['payout']) }}원</span></div>
         <div class="row big"><span class="k">회사이익</span><span class="v {{ $profit['company_profit'] < 0 ? 'loss' : '' }}">{{ number_format($profit['company_profit']) }}원</span></div>
