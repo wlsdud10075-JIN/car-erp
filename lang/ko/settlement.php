@@ -237,6 +237,7 @@ return [
     ],
     'ratio_unit' => '비율 :ratio%',
     'per_unit_unit' => '건당 ₩:amount',
+    'per_unit_tier_rate' => '(차등 · 총마진 :rate%)',
     'paid_ratio_no_rate' => '환율 미입력',
     'paid_ratio_full' => '완납',
     'paid_ratio_receivable' => '받을 ₩:amount',

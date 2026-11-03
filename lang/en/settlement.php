@@ -225,6 +225,7 @@ return [
     ],
     'ratio_unit' => 'Ratio :ratio%',
     'per_unit_unit' => 'Per-unit ₩:amount',
+    'per_unit_tier_rate' => '(tier · :rate% of margin)',
     'paid_ratio_no_rate' => 'No rate',
     'paid_ratio_full' => 'Fully paid',
     'paid_ratio_receivable' => 'Due ₩:amount',
