@@ -66,20 +66,25 @@
     </div>
     @endif
     <div class="card">
-        <h1>{{ $batch->isLeaverBatch() ? '퇴사 정산 지급 승인 요청' : '정산 지급 승인 요청' }}</h1>
+        <h1>{{ $batch->isLeaverBatch() ? '퇴사 정산 지급 승인 요청' : ($batch->isDomesticBatch() ? '내수직원 월정산 지급 승인 요청' : '정산 지급 승인 요청') }}</h1>
         {{-- 🚪 퇴사 정산 (2026-10-15) — 월정산이 아니라 그 한 사람의 즉시 정산. 결재자가 카톡 카드에서 본 「퇴사정산 이름」과 같은 말 --}}
         @if($batch->isLeaverBatch())<p class="sub" style="color:#6d28d9;font-weight:600;">퇴사자 {{ $batch->salesman?->name ?? '-' }} · 퇴사일 {{ $batch->salesman?->left_at?->format('Y-m-d') ?? '-' }}</p>@endif
         <p class="sub">{{ $batch->month }} 귀속 · 제출: {{ $batch->submitter?->name ?? '-' }}</p>
         <div class="row"><span class="k">귀속월</span><span class="v">{{ $batch->month }}</span></div>
+        @if($batch->isDomesticBatch())
+        {{-- 🧾 내수직원 월정산(2026-11-03) — 차량 정산이 아니라 사람별 평가수수료라 건수 대신 인원. 회사이익 줄은 사내직원 월정산에만. --}}
+        <div class="row" data-domestic-batch><span class="k">인원</span><span class="v">{{ number_format($batch->settlement_count) }}명</span></div>
+        @else
         <div class="row"><span class="k">건수</span><span class="v">{{ number_format($batch->settlement_count) }}건</span></div>
+        @endif
         <div class="row total"><span class="k">지급 총액</span><span class="v">{{ number_format($batch->total_payout) }}원</span></div>
         {{-- 💰 기본급은 지급 총액 밖이다 — 승인하는 숫자는 위의 「지급 총액」 그대로고,
              아래는 통장에서 나갈 돈을 한 번에 보기 위한 참고치다. --}}
         {{-- 🧾 월정산 v3 — 급여까지 포함한 송금 총액과 급여 차감 후 회사 순이익. 승인하는 숫자는 위 「지급 총액」 그대로. --}}
-        @isset($v3)
+        @if(isset($v3) && ! $batch->isDomesticBatch())
         <div class="row"><span class="k">송금 총액 (급여 포함)</span><span class="v">{{ number_format($v3['totals']['transfer_total']) }}원</span></div>
         <div class="row"><span class="k">회사 순이익 (급여 차감 후)</span><span class="v {{ $v3['totals']['company_net'] < 0 ? 'loss' : '' }}">{{ number_format($v3['totals']['company_net']) }}원</span></div>
-        @endisset
+        @endif
     </div>
 
     {{-- 🪜 결재선 + 결재 내역 (월정산 v3) --}}
@@ -131,9 +136,9 @@
             <x-payout.domestic-fee-total :total="$v3['domestic_fee_total'] ?? null" />
         </div>
         {{-- 전체 항목(25열)이 필요하면 엑셀로 (jin 2026-08-04). 서명 링크라 로그인 없이 받는다. --}}
-        @isset($exportUrl)
+        @if(isset($exportUrl) && ! $batch->isDomesticBatch())
         <a class="xlsx" href="{{ $exportUrl }}">📄 전체 내역 엑셀 내려받기</a>
-        @endisset
+        @endif
     </div>
     @endisset
 
@@ -149,7 +154,7 @@
     </div>
     @endif
 
-    @isset($profit)
+    @if(isset($profit) && ! $batch->isDomesticBatch())
     <div class="card profit">
         <div class="sub" style="margin-bottom:8px;">회사이익</div>
         <div class="row"><span class="k">총마진</span><span class="v">{{ number_format($profit['total_margin']) }}원</span></div>
@@ -172,7 +177,7 @@
         <div class="cap">총마진에서 직원 실지급을 뺀 회사 몫입니다.</div>
         @endisset
     </div>
-    @endisset
+    @endif
 
     @if($decidable && $decideUrl)
     <div class="card">

@@ -2,9 +2,11 @@
 
 namespace App\Services\Payout;
 
+use App\Models\DomesticFeeStatement;
 use App\Models\ExternalSettlementPay;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
+use App\Models\Setting;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutAdjustment;
 use App\Models\SettlementPayoutBatch;
@@ -34,8 +36,35 @@ final class BatchPayoutBreakdown
             : $batch->settlements()->with(['salesman', 'vehicle.finalPayments', 'vehicle.receivableHistories'])->get();
         $adjustments = $batch->relationLoaded('adjustments') ? $batch->adjustments : $batch->adjustments()->with('salesman')->get();
 
+        // 🧾 내수직원 월정산(2026-11-03) — 그 달 평가수수료 표가 있는 내수직원만. 정산·조정·외부 정산금은 없다.
+        if ($batch->isDomesticBatch()) {
+            return self::assemble($batch->month, collect(), collect(), self::domesticIdsOf($batch)->all(), true);
+        }
+
         // 🚪 퇴사 배치는 그 한 사람을 반드시 그린다(정산 0건·이월만일 수 있다) (2026-10-15)
         return self::assemble($batch->month, $settlements, $adjustments, $batch->isLeaverBatch() && $batch->salesman_id ? [(int) $batch->salesman_id] : []);
+    }
+
+    /** 그 달 평가수수료 표가 있고 재직(또는 퇴사일 있음)·지급 대상인 내수직원 id — 급여 인원(assemble)과 같은 조건. */
+    public static function domesticSalesmanIds(string $month): Collection
+    {
+        return Salesman::query()->where('type', 'domestic_staff')
+            ->whereIn('id', DomesticFeeStatement::query()->where('month', $month)->select('salesman_id'))
+            ->where(fn ($q) => $q->where('is_active', true)->orWhereNotNull('left_at'))
+            ->where('payout_excluded', false)
+            ->orderBy('name')->pluck('id')->map(fn ($i) => (int) $i);
+    }
+
+    /** 내수직원 월정산 배치의 사람 — 지금 그 달 평가수수료 표가 있는 내수직원(끝난 배치는 박제를 쓰므로 진행 중일 때만 의미가 있다). */
+    public static function domesticIdsOf(SettlementPayoutBatch $batch): Collection
+    {
+        return self::domesticSalesmanIds($batch->month);
+    }
+
+    /** 내수직원 월정산 제출 전 미리보기 — 그 달 평가수수료 표가 올라온 내수직원 카드. */
+    public static function forDomesticPreview(string $month): array
+    {
+        return self::assemble($month, collect(), collect(), self::domesticSalesmanIds($month)->all(), true);
     }
 
     /**
@@ -59,12 +88,14 @@ final class BatchPayoutBreakdown
      * @param  Collection<int, Settlement>  $settlements
      * @param  Collection<int, SettlementPayoutAdjustment>  $adjustments
      */
-    private static function assemble(string $month, Collection $settlements, Collection $adjustments, array $forceIds = []): array
+    private static function assemble(string $month, Collection $settlements, Collection $adjustments, array $forceIds = [], bool $domesticOnly = false): array
     {
         $bySalesman = $settlements->groupBy('salesman_id');
         $adjBySalesman = $adjustments->groupBy('salesman_id');
 
         $ids = $bySalesman->keys()->merge($adjBySalesman->keys())->merge($forceIds)->filter()->map(fn ($i) => (int) $i);
+        // 🧾 내수직원 월정산이 켜진 회사(2026-11-03) — 내수직원은 별도 결재라 사내직원 월정산 사람에서 뺀다(합계 한 줄만 남긴다).
+        $splitDomestic = ! $domesticOnly && Setting::domesticPayoutEnabled();
         // 그 달 급여가 입력된 사내직원·검차직원 — 정산이 0건이어도 월급은 나간다(jin 2026-10-06 → v3 급여 항목)
         //   🚪 퇴사자(퇴사일 있음)는 비활성이어도 들어간다 — 마지막 달 급여는 종전대로 월정산 10일에 나간다(jin 2026-10-15).
         //      재직 표시 없이 그냥 비활성인 옛 행(관리자 계정 미러 등)은 종전대로 빠진다.
@@ -73,12 +104,13 @@ final class BatchPayoutBreakdown
             ->where(fn ($q) => $q->where('is_active', true)->orWhereNotNull('left_at'))
             ->where('payout_excluded', false)
             ->where('type', '!=', 'freelance')
+            ->when($splitDomestic, fn ($q) => $q->where('type', '!=', 'domestic_staff'))
             ->pluck('id');
         // 💱 다른 회사(heymanerp) 정산금만 있는 사람도 그린다(2026-10-21) — 송금에 들어가는 돈이다.
         //    지급 대상 아님(payout_excluded)은 급여 인원과 같이 뺀다.
         $externalIds = Salesman::query()->whereIn('id', ExternalSettlementPay::query()->where('month', $month)->select('salesman_id'))
             ->where('payout_excluded', false)->pluck('id')->map(fn ($i) => (int) $i);
-        $ids = $ids->merge($salaried)->merge($externalIds)->unique()->values();
+        $ids = $domesticOnly ? $ids->unique()->values() : $ids->merge($salaried)->merge($externalIds)->unique()->values();
 
         $people = Salesman::query()->whereIn('id', $ids)->get()->keyBy('id');
         $payrollTotals = PayrollEntry::query()->where('month', $month)->whereIn('salesman_id', $ids)
@@ -150,7 +182,9 @@ final class BatchPayoutBreakdown
                 'company_net' => $contributionSum - $commonLabor,
             ],
             // 🧾 내수직원 합계 줄(jin 2026-11-03 — 엑셀 G74:P74) = 이번 달 카드에 들어간 내수직원 표의 열 합. 없으면 null.
-            'domestic_fee_total' => self::domesticFeeTotal($rows),
+            //    켜진 회사의 사내직원 월정산은 사람 카드가 없으므로 그 달 표에서 바로 더한다(표시 전용 — 송금·회사이익 무관, jin «합계 한 줄이면 족해»).
+            'domestic_fee_total' => $splitDomestic ? self::domesticFeeTotalForMonth($month) : self::domesticFeeTotal($rows),
+            'domestic_split' => $splitDomestic,
         ];
     }
 
@@ -161,7 +195,20 @@ final class BatchPayoutBreakdown
      */
     public static function domesticFeeTotal(array $rows): ?array
     {
-        $tables = array_values(array_filter(array_map(fn ($r) => $r['domestic_fee'] ?? null, $rows)));
+        return self::sumFeeTables(array_values(array_filter(array_map(fn ($r) => $r['domestic_fee'] ?? null, $rows))));
+    }
+
+    /** 그 달 내수직원 월정산에 들어갈 사람들의 평가수수료 표 합(사내직원 월정산의 합계 한 줄). */
+    public static function domesticFeeTotalForMonth(string $month): ?array
+    {
+        $ids = self::domesticSalesmanIds($month);
+
+        return self::sumFeeTables(DomesticFeeStatement::query()->where('month', $month)->whereIn('salesman_id', $ids)
+            ->get()->map(fn (DomesticFeeStatement $st) => $st->items())->all());
+    }
+
+    private static function sumFeeTables(array $tables): ?array
+    {
         if ($tables === []) {
             return null;
         }

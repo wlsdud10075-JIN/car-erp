@@ -147,6 +147,8 @@ Route::middleware(['auth', 'verified', 'approve'])->prefix('erp')->name('erp.')-
     Volt::route('approvals', 'erp.approvals.index')->name('approvals.index');
     // Phase 2 — 월배치 정산지급 승인큐 (제출자 [관리]/업무관리자 상태확인 + 승인자 결정)
     Volt::route('payout-batches', 'erp.payout-batches.index')->name('payout-batches.index');
+    // 🧾 내수직원 월정산 (2026-11-03) — 같은 화면, 내수 배치만 + 제출 칸. 볼 사람은 컴포넌트 mount 가 다시 좁힌다(지정자·자기 차례 결재자).
+    Volt::route('domestic-payouts', 'erp.payout-batches.index')->name('domestic-payouts.index');
 });
 
 // 정산 — settlement role 이상

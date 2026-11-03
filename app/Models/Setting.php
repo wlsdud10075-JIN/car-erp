@@ -44,10 +44,13 @@ class Setting extends Model
     /** B2B 파트너스 토글 메모(요청 단위) — 같은 flush 를 탄다. */
     private static ?bool $b2bMemo = null;
 
+    private static ?bool $domesticPayoutMemo = null;
+
     public static function flushRiskParamMemo(): void
     {
         self::$riskParamMemo = [];
         self::$b2bMemo = null;
+        self::$domesticPayoutMemo = null;
     }
 
     private static function riskParam(string $key, callable $resolve): int|float
@@ -191,6 +194,28 @@ class Setting extends Model
     public static function b2bPartnersEnabled(): bool
     {
         return self::$b2bMemo ??= (bool) self::get('b2b_partners_enabled_'.self::companyTemplateSet(), false);
+    }
+
+    /**
+     * 🧾 내수직원 월정산(별도 결재) on/off — **회사별**(jin 2026-11-03). 키 = `domestic_payout_enabled_{회사}`.
+     *   기본값 = ssancarerp(system) 켬 · heymanerp·karabaerp 끔. 끄면 내수 기능이 통째로 숨는다
+     *   (사내직원관리 내수 탭·평가수수료 업로드·내수직원 월정산 메뉴·사용자관리 「내수」 역할). 켜면 내수직원은 사내직원 월정산에서 빠지고
+     *   「내수직원 합계」 한 줄로만 보인다 — 지급은 내수직원 월정산(kind=domestic)의 결재로.
+     */
+    public static function domesticPayoutEnabled(): bool
+    {
+        $set = self::companyTemplateSet();
+
+        return self::$domesticPayoutMemo ??= (bool) self::get('domestic_payout_enabled_'.$set, $set === 'system');
+    }
+
+    /** 내수직원 월정산을 볼 수 있게 시스템관리자가 지정한 사용자 id 목록(기능설정). 시스템관리자는 지정 없이 본다. */
+    public static function domesticPayoutViewerIds(): array
+    {
+        $raw = self::get('domestic_payout_viewers', '[]');
+        $ids = is_array($raw) ? $raw : (json_decode((string) $raw, true) ?: []);
+
+        return array_values(array_unique(array_map('intval', $ids)));
     }
 
     /**

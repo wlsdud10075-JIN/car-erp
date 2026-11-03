@@ -45,6 +45,14 @@ class User extends Authenticatable
     /** 사용자 관리 폼의 역할 선택지 = ERP 역할 + 검차직원 + 내수직원. 필터 칩 순서도 이것. */
     public const ROLE_OPTIONS = ['영업', '수출통관', '재무', '관리', self::INSPECTOR_ROLE, self::DOMESTIC_STAFF_ROLE];
 
+    /** 화면에 내놓는 역할 — 내수직원 월정산이 꺼진 회사는 「내수」를 안 보인다(jin 2026-11-03 «내수 기능 통째로 숨김»). */
+    public static function roleOptions(): array
+    {
+        return Setting::domesticPayoutEnabled()
+            ? self::ROLE_OPTIONS
+            : array_values(array_diff(self::ROLE_OPTIONS, [self::DOMESTIC_STAFF_ROLE]));
+    }
+
     // item 1 (jin 2026-07-07) — 권한 등급. super > admin(대표) > manager(업무관리자) > user.
     //   manager = admin 등가 권한에서 [기능설정·단계강제·super/admin 계정관리]만 제외.
     //   Phase 2 정산지급 월정산 승인 사다리의 중간 계단([관리]→manager→대표).
@@ -392,6 +400,22 @@ class User extends Authenticatable
     public function canApprove(): bool
     {
         return $this->isAdmin() || $this->isManager() || $this->role === '관리';
+    }
+
+    /**
+     * 🧾 내수직원 월정산·사내직원관리 내수 탭을 볼 수 있나 (jin 2026-11-03) — 회사 토글이 켜져 있고,
+     * 시스템관리자이거나 기능설정에서 지정된 관리 이상. 결재자(대표 등)는 지정 없이 알림톡 링크로 승인 화면을 본다.
+     */
+    public function canSeeDomesticPayout(): bool
+    {
+        if (! Setting::domesticPayoutEnabled()) {
+            return false;
+        }
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+
+        return $this->approvalRank() >= 1 && in_array((int) $this->id, Setting::domesticPayoutViewerIds(), true);
     }
 
     /**
