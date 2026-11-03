@@ -184,12 +184,13 @@ SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 �
   - 사내직원 (settlement_type='per_unit') = per_unit_amount
                                             기본값: per_unit_amount = 100,000  (Settlement::EMPLOYEE_PER_UNIT_DEFAULT)
 
-실지급액          = 정산액 - 서류비 - 발송비(비율만) - other_deduction
+실지급액          = 정산액 - 서류비 - 발송비 직원 몫 50%(비율만) - other_deduction
 서류비:
   - 프리랜서 = 50,000  (Settlement::FREELANCE_DOCUMENT_FEE — 엑셀 CJ = CH/2 - 50000 의 -50000)
   - 사내직원 = 0
 발송비 (2026-08-31 신설) = 그 차량의 서류 발송 실비 합 (우체국 EMS + DHL)
   - 단일 출처 = Vehicle::shipping_fee_total (= vehicle_shipments 행 합계, 캐시 컬럼)
+  - 🔀 2026-11-03 (jin) — **회사:직원 5:5.** 아래 「전액」은 이제 **직원 몫(50%, `Settlement::shippingFeeEmployeeShare`)** 으로 읽는다 — 비율은 실지급에서 직원 몫만, 건당은 판정 마진 = 총마진 − 직원 몫. 회사 몫 50%는 `company_net`(발송비 전액 차감)이 저절로 진다. 적용 = 미지급 정산 + 지급 뒤 2차 대기분(마감 때 직원 몫만 이월 차감). 일괄 업로드는 그 전에 n/1 로 나뉜다.
   - 🔀 2026-11-01 (jin) — **비율(프리랜서·바이어 비율)만 실지급에서 전액 차감.** 사내직원(건당)은 건당액을 안 건드리고
     **건당 판정 마진 = 총마진 − 발송비** 로 본다(음수 → 건당 0, 양수 → 그 금액으로 차등). 발송비는 회사가 진다.
     단일 출처 = Settlement::shippingFeeDeducted() · autoPerUnitAmountAt(). 구(08-31) 「두 유형 전액 차감」은 손해차량에

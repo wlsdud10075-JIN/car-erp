@@ -1496,7 +1496,7 @@ unpaid_ratio       = sale_unpaid_amount / sale_total_amount  (0~1)
 서류비:
   - 프리랜서 = 50,000  (Settlement::FREELANCE_DOCUMENT_FEE)
   - 사내직원 = 0
-발송비            = Vehicle::shipping_fee_total (우체국 EMS + DHL) — 🔀 2026-11-01 비율(프리랜서)만 실지급 차감,
+발송비            = Vehicle::shipping_fee_total (우체국 EMS + DHL) — 🔀 2026-11-03 회사:직원 5:5, 아래는 직원 몫(50%) 기준 / 2026-11-01 비율(프리랜서)만 실지급 차감,
                    건당(사내직원)은 판정 마진(총마진 − 발송비)에서만 본다(음수 → 건당 0, 회사 부담)
 ```
 
