@@ -6861,9 +6861,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     continue;
                 }
 
+                $existingShip = ! empty($row['id']) ? $vehicle->shipments()->find($row['id']) : null;
+                // 🔒 2차 정산 마감 차량 = 금액 고정(번호·날짜는 고친다, jin 2026-11-04) — 기존 줄은 그 금액, 새 줄은 0.
+                if ($vehicle->hasClosedSecondarySettlement() && ! \Illuminate\Support\Facades\Cache::has(\App\Models\Vehicle::ledgerUnlockCacheKey($vehicle->id))) {   // [🔓 회계 재조정] 토큰이 있으면 금액도 고친다
+                    $fee = $existingShip ? (int) $existingShip->fee : 0;
+                }
                 $attrs = ['carrier' => $carrier, 'tracking_no' => $trackingNo, 'fee' => $fee, 'sent_date' => $sentDate];
 
-                if (! empty($row['id']) && ($model = $vehicle->shipments()->find($row['id']))) {
+                if ($existingShip && ($model = $existingShip)) {
                     $model->fill($attrs);
                     if ($model->isDirty()) {
                         $model->save();
@@ -11384,7 +11389,12 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 ];
                 $shipmentTotal = collect($shipments)
                     ->sum(fn ($r) => (int) round((float) str_replace(',', '', (string) ($r['fee'] ?? 0))));
+                // 🔒 2차 정산 마감 차량 = 금액만 잠금(번호·날짜는 고친다, jin 2026-11-04). 저장도 금액을 그대로 둔다.
+                $shipFeeLocked = $editingId && \App\Models\Vehicle::find($editingId)?->hasClosedSecondarySettlement();
             @endphp
+            @if($shipFeeLocked)
+            <p class="mb-2 rounded border border-sky-200 bg-sky-50 px-2 py-1 text-[11px] text-sky-800" data-ship-fee-locked>{{ __('vehicle.panel.shipment_fee_locked') }}</p>
+            @endif
 
             @foreach($shipmentSections as $shipCarrier => $shipMeta)
             <div class="section-header">
@@ -11409,7 +11419,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     </div>
                     <div class="col-span-3">
                         <label class="label-base">{{ $shipMeta['fee'] }}</label>
-                        <input wire:model="shipments.{{ $shipIdx }}.fee" type="text" data-money class="input-base text-right" />
+                        <input wire:model="shipments.{{ $shipIdx }}.fee" type="text" data-money class="input-base text-right {{ $shipFeeLocked ? 'bg-gray-100 text-gray-500' : '' }}" @readonly($shipFeeLocked) />
                     </div>
                     <div class="col-span-3">
                         <label class="label-base">{{ __('vehicle.field.shipment_sent_date') }}</label>
@@ -12979,6 +12989,14 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 @endif
             </div>
 
+            {{-- 2차 정산 마감 차량 = 번호·날짜만, 금액은 나머지 차량에 n/1 (jin 2026-11-04) --}}
+            @if(($shipBulkPlan['text_only'] ?? 0) > 0)
+            <div class="rounded border border-sky-200 bg-sky-50 p-2 text-sky-800" data-ship-text-only>{{ __('vehicle.ship_import.text_only', ['count' => $shipBulkPlan['text_only']]) }}</div>
+            @endif
+            @if(! empty($shipBulkPlan['no_fee_target']))
+            <div class="rounded border border-red-300 bg-red-50 p-2 font-medium text-red-700" data-ship-no-fee-target>{{ __('vehicle.ship_import.no_fee_target') }}</div>
+            @endif
+
             {{-- 🚨 숫자로 뭉치지 않는다 — 손봐야 할 건이 카운터에 묻힌다(SKILLS §8 #67). --}}
             @if(count($shipBulkPlan['skipped'] ?? []))
             <div class="rounded border border-red-200 bg-red-50 p-2">
@@ -13011,10 +13029,14 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     <tr class="{{ $row['state'] === 'unchanged' ? 'text-gray-400' : 'text-gray-700' }}">
                         <td class="px-2 py-1">{{ $row['number'] ?? ('#'.$row['id']) }}</td>
                         <td class="px-2 py-1 text-right">
+                            @if($row['state'] === 'text_only')
+                                <span class="text-sky-700">{{ __('vehicle.ship_import.text_only_row') }}</span>
+                            @else
                             @if($row['current'] !== null && $row['state'] === 'changed')
                                 <span class="text-gray-400 line-through">{{ number_format($row['current']) }}</span>
                             @endif
                             {{ number_format($row['fee']) }}
+                            @endif
                         </td>
                     </tr>
                     @endforeach

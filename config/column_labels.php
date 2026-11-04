@@ -142,6 +142,13 @@ return [
         // 서류 발송 (우체국 EMS · DHL) — 캐시 컬럼이지만 감사로그에 그대로 찍힌다.
         //   원본은 vehicle_shipments 행이고, 금액·번호 변경은 이 컬럼명으로 기록된다(SKILLS §8 #41).
         'ems_tracking_no_cache' => 'EMS 등기번호',
+        // 2026-11-04 — 발송 줄 단위 감사(차량에 단다)
+        'shipment_row' => '서류 발송 줄',
+        'shipment_carrier' => '발송 구분',
+        'shipment_tracking_no' => '발송 번호',
+        'shipment_sent_date' => '발송일',
+        'shipment_note' => '발송 비고',
+        'shipment_fee' => '발송 금액',
         'dhl_tracking_no_cache' => 'DHL 운송장번호',
         'ems_fee_total_cache' => '우편요금(EMS)',
         'dhl_fee_total_cache' => '청구금액(DHL)',
@@ -507,6 +514,8 @@ return [
         'domestic_payout_toggle_changed' => '내수직원 월정산 켜기/끄기',   // 2026-11-03 회사별 토글
         'domestic_payout_viewers_changed' => '내수직원 월정산 볼 사람 변경',   // 2026-11-03 기능설정
         'payroll_viewers_changed' => '사내직원관리 공개 범위 변경',   // 2026-11-04 기능설정
+        'shipment_added' => '서류 발송 줄 추가',   // 2026-11-04 EMS·DHL 줄 감사
+        'shipment_removed' => '서류 발송 줄 삭제',
         'buyer_cash_receipt_added' => '바이어 현금 입금 기재',
         'buyer_cash_fee_added' => '바이어 현금 수수료 처리',
         'buyer_cash_to_savings' => '바이어 남은 현금 → 적립금 전환',

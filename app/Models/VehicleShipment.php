@@ -6,6 +6,7 @@ use DomainException;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Carbon;
 
 /**
  * 서류 발송 1건 — 우체국 EMS · DHL (jin 2026-08-31).
@@ -16,7 +17,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * 🔑 **금액의 뜻** — `fee` 는 그 차량 몫이지 발송 총액이 아니다.
  *    `0` 은 «회사 부담»: 번호는 남겨 바이어가 조회할 수 있게 하되 담당자 정산에서는 안 뺀다.
  *
- * 🔒 **회계 락** — 2차 정산 마감(`secondary_status='closed'`) 차량의 행은 추가·수정·삭제 불가.
+ * 🔒 **회계 락** — 2차 정산 마감(`secondary_status='closed'`) 차량은 **금액만** 잠근다(jin 2026-11-04).
+ *    번호·날짜·비고·구분은 고칠 수 있고, 금액 0원(회사 부담·번호만) 줄은 추가·삭제도 된다 — 서류는 3·6개월 뒤에도 나간다.
+ *    금액은 그 발송의 다른(마감 안 된) 차량들에게 n/1 로 나뉘므로 정산이 흔들리지 않는다.
+ *    🔀 구: 행 자체를 추가·수정·삭제 불가.
  *    트리거는 차량 회계컬럼과 같은 `Vehicle::hasClosedSecondarySettlement()` 단일 출처이고,
  *    해제도 같은 [🔓 회계 재조정] 토큰을 소비한다 — 발송비 전용 우회로를 새로 만들지 않는다.
  *    시드·artisan(auth 없음)은 통과(대량 적재용) — `FinalPayment::creating` 과 같은 규칙.
@@ -60,6 +64,38 @@ class VehicleShipment extends Model
 
         static::saved(fn (VehicleShipment $s) => $s->vehicle?->refreshShippingCaches());
         static::deleted(fn (VehicleShipment $s) => $s->vehicle?->refreshShippingCaches());
+
+        // 🧾 줄마다 감사 기록(jin 2026-11-04 «로그기록에도 남기고») — 차량에 단다(차량번호로 검색되게).
+        //    종전엔 차량의 「최신 번호·금액 합계」 캐시 변화만 남아, 옛 줄의 번호·날짜·비고를 고친 건 흔적이 없었다.
+        static::created(fn (VehicleShipment $s) => $s->vehicle && AuditLog::recordChange($s->vehicle, 'shipment_row', null, $s->summary(), 'shipment_added'));
+        static::deleted(fn (VehicleShipment $s) => $s->vehicle && AuditLog::recordChange($s->vehicle, 'shipment_row', $s->summary(), null, 'shipment_removed'));
+        static::updated(function (VehicleShipment $s) {
+            if (! $s->vehicle) {
+                return;
+            }
+            foreach (['carrier', 'tracking_no', 'sent_date', 'note', 'fee'] as $col) {
+                if (AuditLog::isRealChange($s, $col)) {
+                    $old = $s->getOriginal($col);
+                    $new = $s->getAttribute($col);
+                    if ($col === 'sent_date') {
+                        $old = $old ? Carbon::parse($old)->format('Y-m-d') : null;
+                        $new = $new ? Carbon::parse($new)->format('Y-m-d') : null;
+                    }
+                    AuditLog::recordChange($s->vehicle, 'shipment_'.$col, $old, $new);
+                }
+            }
+        });
+    }
+
+    /** 한 줄 요약 — 「EMS EE123KR · 2026-11-04 · 12,000원 · 비고」. */
+    public function summary(): string
+    {
+        return implode(' · ', array_filter([
+            trim($this->carrierLabel().' '.($this->tracking_no ?? '')),
+            $this->sent_date?->format('Y-m-d'),
+            number_format((int) $this->fee).'원',
+            $this->note ? mb_substr((string) $this->note, 0, 80) : null,
+        ]));
     }
 
     public function vehicle(): BelongsTo
@@ -108,13 +144,22 @@ class VehicleShipment extends Model
         if (! $vehicle || ! $vehicle->hasClosedSecondarySettlement()) {
             return;
         }
+        // 금액이 안 움직이는 변경은 통과 — 번호·날짜·비고 수정, 0원 줄 추가·삭제 (jin 2026-11-04).
+        $feeUntouched = match ($what) {
+            '추가' => (int) $this->fee === 0,
+            '삭제' => (int) $this->getOriginal('fee') === 0,
+            default => ! $this->isDirty('fee') && ! $this->isDirty('vehicle_id'),
+        };
+        if ($feeUntouched) {
+            return;
+        }
         // 차량 회계컬럼과 같은 잠금해제 토큰을 소비한다 — 전용 우회로를 만들지 않는다.
         if ($vehicle->consumeLedgerUnlockToken() !== null) {
             return;
         }
 
         throw new DomainException(
-            "2차 정산이 마감된 차량의 발송 내역은 {$what}할 수 없습니다 — 정산 화면의 [🔓 회계 재조정]으로 잠금 해제 후 가능합니다."
+            "2차 정산이 마감된 차량의 발송 금액은 {$what}할 수 없습니다(번호·날짜·비고는 가능) — 금액 정정은 정산 화면의 [🔓 회계 재조정]으로 잠금 해제 후 가능합니다."
         );
     }
 }

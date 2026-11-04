@@ -134,6 +134,26 @@ class VehicleShipmentPanelTest extends TestCase
         $this->assertSame(12_345, $v->shipping_fee_total, '발송 금액은 그대로여야 한다');
     }
 
+    /** 마감 차량 패널 — 번호·날짜는 고쳐지고, 금액은 바꿔 보내도 그대로, 새 줄은 금액 0 (jin 2026-11-04). */
+    public function test_closed_vehicle_panel_edits_text_but_keeps_the_fee(): void
+    {
+        $v = $this->vehicle();
+        $v->shipments()->create(['carrier' => 'dhl', 'tracking_no' => '999', 'fee' => 12_345, 'sent_date' => '2026-05-01']);
+        Settlement::create(['vehicle_id' => $v->id, 'settlement_type' => 'ratio', 'settlement_status' => 'paid', 'secondary_status' => 'closed']);
+
+        $c = Volt::actingAs($this->admin())->test('erp.vehicles.index')->call('openEdit', $v->id);
+        $this->assertStringContainsString('data-ship-fee-locked', $c->html());
+        $c->set('shipments.0.tracking_no', '888')->set('shipments.0.fee', '99,999')->set('shipments.0.sent_date', '2026-11-04')
+            ->call('addShipment', 'ems')->set('shipments.1.tracking_no', 'EE1KR')->set('shipments.1.fee', '5,000')
+            ->call('save')->assertHasNoErrors();
+
+        $rows = $v->shipments()->orderBy('id')->get();
+        $this->assertSame(['888', 'EE1KR'], $rows->pluck('tracking_no')->all());
+        $this->assertSame([12_345, 0], $rows->pluck('fee')->map(fn ($f) => (int) $f)->all(), '금액은 그대로 · 새 줄은 0');
+        $this->assertSame('2026-11-04', $rows[0]->sent_date->format('Y-m-d'));
+        $this->assertSame(12_345, $v->fresh()->shipping_fee_total);
+    }
+
     // ── 일괄 기입 모달 ───────────────────────────────────────────
 
     public function test_bulk_modal_matches_by_vin_and_shows_what_it_could_not_find(): void
@@ -181,13 +201,16 @@ class VehicleShipmentPanelTest extends TestCase
             ->set('shipBulkRaw', $open->vehicle_number.' '.$closed->vehicle_number)
             ->call('previewShipmentBulk');
 
+        // 🔀 2026-11-04 (jin) — 마감 차량은 건너뛰지 않고 번호·날짜만(금액 0), 금액은 나머지 차량에 n/1.
         $plan = $c->get('shipBulkPlan');
-        $this->assertSame([$closed->id], array_column($plan['skipped'], 'id'));
-        $this->assertSame('settlement_closed', $plan['skipped'][0]['reason']);
+        $this->assertSame([], $plan['skipped']);
+        $this->assertSame(1, $plan['text_only']);
+        $this->assertStringContainsString('data-ship-text-only', $c->html());
 
         $c->call('applyShipmentBulk');
         $this->assertSame(10_000, $open->fresh()->shipping_fee_total);
         $this->assertSame(0, $closed->fresh()->shipping_fee_total);
+        $this->assertSame('4508354922', $closed->fresh()->dhl_tracking_no_cache, '마감 차량에도 번호는 남는다');
     }
 
     /**

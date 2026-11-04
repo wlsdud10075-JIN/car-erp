@@ -43,6 +43,7 @@ class BulkVehicleShipmentService
         $targets = [];
         $skipped = [];
         $eligible = [];
+        $textOnly = [];   // 2차 정산 마감 차량 — 번호·날짜만, 금액 0 (jin 2026-11-04)
 
         foreach (array_values(array_unique(array_map('intval', $vehicleIds))) as $id) {
             $vehicle = Vehicle::find($id);
@@ -56,10 +57,10 @@ class BulkVehicleShipmentService
 
                 continue;
             }
-            // 2차 정산 마감 차량은 절대 안 건드린다 — 지급이 끝난 달의 숫자가 바뀐다.
-            //   정정이 필요하면 정산 화면 [🔓 회계 재조정] 후 차량 패널에서 개별로.
+            // 2차 정산 마감 차량 — 금액은 안 건드리고 번호·날짜·비고만 남긴다(jin 2026-11-04 «텍스트는 기입, 금액은 다른 차량들에게 n/1»).
+            //   서류는 3·6개월 뒤에도 나간다. 지급이 끝난 달의 숫자는 그대로다.
             if ($vehicle->hasClosedSecondarySettlement()) {
-                $skipped[] = ['id' => $id, 'number' => $vehicle->vehicle_number, 'reason' => 'settlement_closed'];
+                $textOnly[] = $vehicle;
 
                 continue;
             }
@@ -82,6 +83,17 @@ class BulkVehicleShipmentService
                 'state' => $existing === null ? 'new' : ((int) $existing->fee === $fee ? 'unchanged' : 'changed'),
             ];
         }
+        // 마감 차량 = 금액 없는 줄(기존 줄이 있으면 그 금액 그대로 — 금액은 못 바꾼다).
+        foreach ($textOnly as $vehicle) {
+            $existing = $this->existingRow($vehicle, $carrier, $trackingNo);
+            $targets[] = [
+                'id' => $vehicle->id,
+                'number' => $vehicle->vehicle_number,
+                'fee' => $existing !== null ? (int) $existing->fee : 0,
+                'current' => $existing?->fee,
+                'state' => 'text_only',
+            ];
+        }
 
         // 같은 번호를 달고 있는데 이번 대상에 없는 차량 = 이 발송에서 빠진다.
         $removed = [];
@@ -93,9 +105,16 @@ class BulkVehicleShipmentService
                 ->with('vehicle')
                 ->get()
                 ->each(function (VehicleShipment $s) use (&$removed) {
+                    // 마감 차량의 금액 있는 줄은 빼지 않는다 — 지급 끝난 금액이다(모델 가드도 막는다).
+                    if ((int) $s->fee !== 0 && $s->vehicle?->hasClosedSecondarySettlement()) {
+                        return;
+                    }
                     $removed[] = ['id' => $s->vehicle_id, 'number' => $s->vehicle?->vehicle_number, 'fee' => (int) $s->fee];
                 });
         }
+
+        // 금액은 있는데 나눌(마감 안 된) 차량이 없다 — 그 금액이 어디에도 안 들어간다. 기입 전에 멈춘다.
+        $noFeeTarget = $totalFee > 0 && $eligible === [];
 
         return [
             'targets' => $targets,
@@ -103,6 +122,8 @@ class BulkVehicleShipmentService
             'skipped' => $skipped,
             'total' => max(0, $totalFee),
             'per_unit' => $per,
+            'text_only' => count($textOnly),
+            'no_fee_target' => $noFeeTarget,
         ];
     }
 
@@ -127,6 +148,9 @@ class BulkVehicleShipmentService
         }
 
         $plan = $this->plan($carrier, $trackingNo, $vehicleIds, $totalFee, $by);
+        if ($plan['no_fee_target']) {
+            throw new \DomainException('금액을 나눌 차량이 없습니다 — 고른 차량이 전부 2차 정산 마감이라 금액은 넣을 수 없습니다(금액 0 으로 번호만 넣으세요).');
+        }
         $carrier = VehicleShipment::normalizeCarrier($carrier);
         $trackingNo = VehicleShipment::normalizeTrackingNo($trackingNo);
         $sentDate = self::normalizeDate($sentDate);
@@ -153,14 +177,19 @@ class BulkVehicleShipmentService
 
                 if ($existing !== null) {
                     // 값이 같으면 손대지 않는다 — 재기입 때 감사로그가 무의미하게 쌓이지 않게.
-                    if ((int) $existing->fee === $row['fee']
-                        && (string) $existing->sent_date?->format('Y-m-d') === (string) $sentDate) {
+                    //   마감 차량(text_only)은 금액을 안 건드리고 날짜·비고만.
+                    $newFee = $row['state'] === 'text_only' ? (int) $existing->fee : $row['fee'];
+                    $newNote = $note ?? $existing->note;
+                    if ((int) $existing->fee === $newFee
+                        && (string) $existing->sent_date?->format('Y-m-d') === (string) $sentDate
+                        && (string) $existing->note === (string) $newNote) {
                         $unchanged++;
 
                         continue;
                     }
-                    $existing->fee = $row['fee'];
+                    $existing->fee = $newFee;
                     $existing->sent_date = $sentDate;
+                    $existing->note = $newNote;
                     $existing->save();
                 } else {
                     $vehicle->shipments()->create([
