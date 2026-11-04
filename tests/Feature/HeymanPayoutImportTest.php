@@ -97,15 +97,16 @@ class HeymanPayoutImportTest extends TestCase
 
         $c = Volt::test('erp.salesmen.index')->assertSee('data-heyman-import-button', false)
             ->call('openHeymanImport')->set('heymanMonth', '2026-10');
-        $this->assertSame([(string) $live->id, (string) $park->id, ''], array_values($c->get('heymanPick')), '전화 → 유일한 이름 → 동명이인은 비움');
-        $c->set('heymanUse.1', false)->call('applyHeymanImport');   // 박병훈은 체크 해제
+        $this->assertSame(['무사백', '조하'], array_column($c->get('heymanRows'), 'name'), '프리랜서(박병훈)는 가져오지 않는다 — jin 11-04 «사내직원만»');
+        $this->assertSame([(string) $live->id, ''], array_values($c->get('heymanPick')), '전화 → 유일한 이름 → 동명이인은 비움');
+        $c->call('applyHeymanImport');
 
         $this->assertSame(2_240_619, ExternalSettlementPay::heymanFor($live->id, '2026-10'));
-        $this->assertNull(ExternalSettlementPay::heymanFor($park->id, '2026-10'), '체크 안 한 줄은 안 넣는다');
+        $this->assertNull(ExternalSettlementPay::heymanFor($park->id, '2026-10'), '프리랜서는 안 넣는다');
         $logs = AuditLog::where('column_name', 'heyman_pay_2026-10')->count();
         $this->assertSame(1, $logs);
 
-        Volt::test('erp.salesmen.index')->call('openHeymanImport')->set('heymanMonth', '2026-10')->set('heymanUse.1', false)->call('applyHeymanImport');
+        Volt::test('erp.salesmen.index')->call('openHeymanImport')->set('heymanMonth', '2026-10')->call('applyHeymanImport');
         $this->assertSame(1, AuditLog::where('column_name', 'heyman_pay_2026-10')->count(), '같은 값은 다시 안 쓴다');
     }
 

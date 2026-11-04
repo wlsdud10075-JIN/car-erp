@@ -68,13 +68,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->fetchHeymanPayouts();
     }
 
-    /** 고를 수 있는 사람 — 살아 있는 사내직원·프리랜서 중 내 급여 공개 범위 안. */
+    /** 고를 수 있는 사람 — 살아 있는 **사내직원만**(jin 2026-11-04 «프리랜서는 아니야») 중 내 급여 공개 범위 안. */
     #[Computed]
     public function heymanCandidates(): array
     {
         $u = auth()->user();
 
-        return Salesman::query()->where('is_active', true)->whereIn('type', ['employee', 'freelance'])
+        return Salesman::query()->where('is_active', true)->where('type', 'employee')
             ->orderBy('name')->get(['id', 'name', 'type', 'phone', 'user_id'])
             ->filter(fn ($s) => $u?->canSeePayrollOf($s))
             ->map(fn ($s) => ['id' => (int) $s->id, 'name' => $s->name, 'type' => $s->type, 'phone' => $s->phone])->values()->all();
@@ -103,7 +103,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
-        $this->heymanRows = array_values($data['people'] ?? []);
+        // 사내직원만 가져온다 — 헤이맨 프리랜서 정산은 이 회사가 대신 지급하지 않는다(jin 2026-11-04).
+        $this->heymanRows = array_values(array_filter($data['people'] ?? [], fn ($p) => ($p['type'] ?? '') === 'employee'));
         if ($this->heymanRows === []) {
             $this->heymanError = __('salesman.heyman_import.no_people', ['month' => $this->heymanMonth]);
 
@@ -142,7 +143,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $same = 0;
         foreach ($picked as $i => $id) {
             $sm = Salesman::find($id);
-            if (! $sm || ! in_array($sm->type, ['employee', 'freelance'], true) || ! $actor->canSeePayrollOf($sm)) {
+            if (! $sm || $sm->type !== 'employee' || ($this->heymanRows[$i]['type'] ?? '') !== 'employee' || ! $actor->canSeePayrollOf($sm)) {
                 continue;
             }
             $amount = (int) $this->heymanRows[$i]['payout'];
