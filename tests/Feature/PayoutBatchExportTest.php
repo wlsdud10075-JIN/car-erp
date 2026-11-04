@@ -80,8 +80,21 @@ class PayoutBatchExportTest extends TestCase
             '엑셀 지급합계 = 화면 카드 합'
         );
 
+        // 유형별 묶음 — 머리줄 · 소계 · 합계(= 소계들의 합)
+        $col0 = array_column($people, 0);
+        $this->assertContains('■ 사내직원 (1명)', $col0);
+        $this->assertContains('■ 검차직원 (1명)', $col0);
+        $this->assertSame(2_740_000, (int) $byName['검차직원 소계'][12]);
+        $this->assertSame(2_840_000, (int) $byName['합계'][12], '합계 = 소계들의 합');
+
+        // 급여 항목 = 사람마다 카드(이름·유형 → 항목·금액 → 합계). 급여가 없는 사람은 「급여 미입력」.
         $items = $ss->getSheetByName('급여 항목')->toArray(null, true, false, false);
-        $this->assertContains(['최검차', '검차직원', '기본급', 2_740_000], array_map(fn ($r) => [$r[0], $r[1], $r[2], (int) $r[3]], array_slice($items, 1)));
+        $flat = array_merge(...$items);
+        $this->assertContains('최검차 · 검차직원', $flat);
+        $this->assertContains('김영업 · 사내직원', $flat);
+        $this->assertContains('급여 미입력', $flat);
+        $card = collect($items)->first(fn ($r) => in_array('기본급', $r, true));
+        $this->assertSame(2_740_000, (int) $card[array_search('기본급', $card, true) + 1]);
 
         $this->assertDatabaseHas('export_logs', ['user_id' => $manager->id, 'target' => 'settlements', 'scope' => 'payout_batch']);
     }
