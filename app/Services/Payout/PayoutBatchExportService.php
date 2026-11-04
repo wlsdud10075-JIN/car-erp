@@ -111,27 +111,46 @@ class PayoutBatchExportService
         $last = Coordinate::stringFromColumnIndex(count($cols));
         $this->header($sheet, array_column($cols, 0));
 
+        // 🗂️ 유형별 묶음(jin 2026-11-04 «유형별로 나누면 더 깔끔») — 머리줄 「■ 유형 (N명)」 → 사람 → 소계. 맨 아래 합계 = 소계들의 합.
         $row = 2;
-        foreach ($people as $i => $p) {
-            foreach ($cols as $c => [, $key]) {
-                $cell = Coordinate::stringFromColumnIndex($c + 1).$row;
-                if ($key === null) {
-                    $sheet->setCellValue($cell, $i + 1);
-                } elseif (in_array($key, ['name', 'type_label'], true)) {
-                    $sheet->setCellValueExplicit($cell, (string) ($p[$key] ?? ''), DataType::TYPE_STRING);
-                } elseif (($p[$key] ?? null) !== null) {
-                    $sheet->setCellValue($cell, (int) $p[$key]);
-                }
-            }
+        $subtotalRows = [];
+        foreach ($this->groupByType($people) as $label => $group) {
+            $sheet->setCellValueExplicit("A{$row}", '■ '.$label.' ('.count($group).'명)', DataType::TYPE_STRING);
+            $sheet->getStyle("A{$row}:{$last}{$row}")->getFont()->setBold(true);
+            $sheet->getStyle("A{$row}:{$last}{$row}")->getFill()->setFillType('solid')->getStartColor()->setRGB('F3F4F6');
             $row++;
+            $first = $row;
+            foreach ($group as $i => $p) {
+                foreach ($cols as $c => [, $key]) {
+                    $cell = Coordinate::stringFromColumnIndex($c + 1).$row;
+                    if ($key === null) {
+                        $sheet->setCellValue($cell, $i + 1);
+                    } elseif (in_array($key, ['name', 'type_label'], true)) {
+                        $sheet->setCellValueExplicit($cell, (string) ($p[$key] ?? ''), DataType::TYPE_STRING);
+                    } elseif (($p[$key] ?? null) !== null) {
+                        $sheet->setCellValue($cell, (int) $p[$key]);
+                    }
+                }
+                $row++;
+            }
+            $sheet->setCellValueExplicit("B{$row}", $label.' 소계', DataType::TYPE_STRING);
+            for ($c = 4; $c <= count($cols); $c++) {
+                $col = Coordinate::stringFromColumnIndex($c);
+                $sheet->setCellValue("{$col}{$row}", "=SUM({$col}{$first}:{$col}".($row - 1).')');
+            }
+            $sheet->getStyle("B{$row}:{$last}{$row}")->getFont()->setBold(true);
+            $sheet->getStyle("A{$row}:{$last}{$row}")->getBorders()->getTop()->setBorderStyle('thin');
+            $subtotalRows[] = $row;
+            $row += 2;   // 묶음 사이 한 줄
         }
-        if ($row > 2) {
+        if ($subtotalRows !== []) {
             $sheet->setCellValueExplicit("B{$row}", '합계', DataType::TYPE_STRING);
             for ($c = 4; $c <= count($cols); $c++) {
                 $col = Coordinate::stringFromColumnIndex($c);
-                $sheet->setCellValue("{$col}{$row}", "=SUM({$col}2:{$col}".($row - 1).')');
+                $sheet->setCellValue("{$col}{$row}", '='.implode('+', array_map(fn ($r) => $col.$r, $subtotalRows)));
             }
             $sheet->getStyle("A{$row}:{$last}{$row}")->getFont()->setBold(true);
+            $sheet->getStyle("A{$row}:{$last}{$row}")->getFill()->setFillType('solid')->getStartColor()->setRGB('ECE9F8');
         }
         $this->money($sheet, "E2:{$last}".max(2, $row));
 
@@ -204,23 +223,88 @@ class PayoutBatchExportService
     /** 급여 항목 — 사람 × 기입된 항목(행 없는 항목은 안 실린다). 프리랜서는 급여가 없어 빠진다. */
     private function payrollItemsSheet(Worksheet $sheet, array $people): void
     {
+        // 🪪 한 사람 = 카드 한 장(jin 2026-11-04) — 이름·유형 머리 → 항목·금액 → 합계, 테두리. 유형별로 한 줄에 CARDS_PER_ROW 장.
         $sheet->setTitle('급여 항목');
-        $this->header($sheet, ['이름', '유형', '항목', '금액']);
-        $row = 2;
-        foreach ($people as $p) {
-            if (($p['type'] ?? '') === 'freelance') {
-                continue;
-            }
-            foreach ($p['payroll_items'] ?? [] as $it) {
-                $sheet->setCellValueExplicit("A{$row}", (string) ($p['name'] ?? ''), DataType::TYPE_STRING);
-                $sheet->setCellValueExplicit("B{$row}", (string) ($p['type_label'] ?? ''), DataType::TYPE_STRING);
-                $sheet->setCellValueExplicit("C{$row}", (string) ($it['label'] ?? ''), DataType::TYPE_STRING);
-                $sheet->setCellValue("D{$row}", (int) ($it['amount'] ?? 0));
-                $row++;
-            }
+        $perRow = self::CARDS_PER_ROW;
+        for ($k = 0; $k < $perRow; $k++) {
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($k * 3 + 1))->setWidth(18);
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($k * 3 + 2))->setWidth(14);
+            $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($k * 3 + 3))->setWidth(3);
         }
-        $this->money($sheet, 'D2:D'.max(2, $row));
-        $this->autosize($sheet, 4);
+        $lastCol = Coordinate::stringFromColumnIndex($perRow * 3 - 1);
+
+        $row = 1;
+        $groups = $this->groupByType(array_values(array_filter($people, fn ($p) => ($p['type'] ?? '') !== 'freelance')));
+        foreach ($groups as $label => $group) {
+            $sheet->setCellValueExplicit("A{$row}", '■ '.$label.' ('.count($group).'명)', DataType::TYPE_STRING);
+            $sheet->getStyle("A{$row}:{$lastCol}{$row}")->getFont()->setBold(true);
+            $sheet->getStyle("A{$row}:{$lastCol}{$row}")->getFill()->setFillType('solid')->getStartColor()->setRGB('F3F4F6');
+            $row += 2;
+            foreach (array_chunk($group, $perRow) as $band) {
+                $height = 0;
+                foreach ($band as $k => $p) {
+                    $height = max($height, $this->payrollCard($sheet, $k * 3 + 1, $row, $p));
+                }
+                $row += $height + 1;
+            }
+            $row++;
+        }
+    }
+
+    private const CARDS_PER_ROW = 4;
+
+    /** 카드 한 장을 (열, 행)에 그린다 — 그린 줄 수를 돌려준다. 항목이 없으면 「급여 미입력」. */
+    private function payrollCard(Worksheet $sheet, int $col, int $top, array $p): int
+    {
+        $a = Coordinate::stringFromColumnIndex($col);
+        $b = Coordinate::stringFromColumnIndex($col + 1);
+        $sheet->mergeCells("{$a}{$top}:{$b}{$top}");
+        $sheet->setCellValueExplicit("{$a}{$top}", (string) ($p['name'] ?? '').' · '.(string) ($p['type_label'] ?? ''), DataType::TYPE_STRING);
+        $sheet->getStyle("{$a}{$top}")->getFont()->setBold(true);
+        $sheet->getStyle("{$a}{$top}:{$b}{$top}")->getFill()->setFillType('solid')->getStartColor()->setRGB('ECE9F8');
+
+        $r = $top + 1;
+        $items = $p['payroll_items'] ?? [];
+        if ($items === []) {
+            $sheet->setCellValueExplicit("{$a}{$r}", '급여 미입력', DataType::TYPE_STRING);
+            $sheet->getStyle("{$a}{$r}")->getFont()->getColor()->setRGB('9CA3AF');
+            $r++;
+        }
+        foreach ($items as $it) {
+            $sheet->setCellValueExplicit("{$a}{$r}", (string) ($it['label'] ?? ''), DataType::TYPE_STRING);
+            $sheet->setCellValue("{$b}{$r}", (int) ($it['amount'] ?? 0));
+            $r++;
+        }
+        $sheet->setCellValueExplicit("{$a}{$r}", '합계', DataType::TYPE_STRING);
+        $sheet->setCellValue("{$b}{$r}", $items === [] ? 0 : "=SUM({$b}".($top + 1).":{$b}".($r - 1).')');
+        $sheet->getStyle("{$a}{$r}:{$b}{$r}")->getFont()->setBold(true);
+        $sheet->getStyle("{$a}{$r}:{$b}{$r}")->getBorders()->getTop()->setBorderStyle('thin');
+        $sheet->getStyle("{$b}".($top + 1).":{$b}{$r}")->getNumberFormat()->setFormatCode('#,##0');
+        $sheet->getStyle("{$a}{$top}:{$b}{$r}")->getBorders()->getOutline()->setBorderStyle('thin');
+
+        return $r - $top + 1;
+    }
+
+    /**
+     * 유형별 묶음 — 화면 유형 라벨 기준, 이 순서로(그 밖의 라벨은 뒤에 나온 순서대로). 묶음 안 순서는 카드 순서 그대로.
+     *
+     * @return array<string, list<array>>
+     */
+    private function groupByType(array $people): array
+    {
+        $order = ['사내직원', '프리랜서', '검차직원', '업무관리자', '관리', '재무', '수출통관', '내수직원'];
+        $groups = [];
+        foreach ($people as $p) {
+            $groups[(string) ($p['type_label'] ?? '기타')][] = $p;
+        }
+        uksort($groups, function ($x, $y) use ($order) {
+            $ix = array_search($x, $order, true);
+            $iy = array_search($y, $order, true);
+
+            return ($ix === false ? 99 : $ix) <=> ($iy === false ? 99 : $iy);
+        });
+
+        return $groups;
     }
 
     private function header(Worksheet $sheet, array $labels): void
