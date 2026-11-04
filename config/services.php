@@ -94,6 +94,14 @@ return [
         'source' => env('SSANCAR_PORTAL_SOURCE', 'heymanerp'),
     ],
 
+    // 🔗 ERP ↔ ERP 읽기 채널 (2026-11-04) — ssancarerp 가 heymanerp 의 승인 월정산(사람별 실지급)을 읽어 「헤이맨 정산금」을 채운다.
+    //   board·포털과 시크릿을 분리한다. 두 서버에 **같은 값**을 넣는다(heymanerp = 받는 쪽 검증 · ssancarerp = 보내는 쪽 서명).
+    //   비면 받는 쪽 401(fail-closed) · 보내는 쪽 버튼 숨김. heyman_url 은 ssancarerp 에만(예: https://heysellcar.com).
+    'erp_peer' => [
+        'hmac_secret' => env('ERP_PEER_HMAC_SECRET'),
+        'heyman_url' => env('HEYMAN_ERP_URL'),
+    ],
+
     // 카카오 알림톡 — 발신 계정(userid·profile·tmplId)은 기능설정(admin/settings) DB 저장.
     // ⚠️ 로컬 테스트 안전장치(jin 2026-07-10): 운영 크리덴셜을 로컬에서 쓰는 구조라, 로컬 테스트가
     //    실수신자에게 실제 카톡을 보내는 사고를 막는다. local 환경에서 ALIMTALK_TEST_PHONE 설정 시

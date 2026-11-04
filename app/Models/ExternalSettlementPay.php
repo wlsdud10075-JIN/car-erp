@@ -9,7 +9,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * 💱 다른 회사에서 정산된 금액 — 이 회사 급여에 얹어 보낸다 (jin 2026-10-21).
  *
  * 예: 무사백 9월 = heymanerp 정산 2,800,000 + ssancarerp 정산 6,400,000 을 ssancar 가 한 번에 지급한다.
- * - 귀속월·사람·출처(source)별 한 행. 지금은 수기 입력, 나중에 heymanerp 연동이 같은 행을 채운다.
+ * - 귀속월·사람·출처(source)별 한 행. 사내직원관리에서 수기 입력하거나, 🔗 「헤이맨 정산 가져오기」(2026-11-04)가
+ *   heymanerp 승인 월정산의 사람별 실지급을 읽어 같은 행을 채운다(HeymanPayoutClient · 받는 쪽 PeerPayoutController).
  * - 월정산 카드: **송금엔 들어가고 회사이익에선 뺀다**(마진은 그 회사 장부에 있다). 퇴직연금 1/12 기준엔 들어간다.
  */
 class ExternalSettlementPay extends Model

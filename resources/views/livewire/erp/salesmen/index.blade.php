@@ -30,6 +30,135 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 판매수당 대조 기준(그 달 사내직원별 정산금 쪽 합 · 연금 토글) — 파일을 읽을 때 한 번만 계산(드롭다운을 바꿀 때마다 한 달 배치를 다시 돌지 않게). */
     public array $commissionBase = [];
 
+    // ── 🔗 헤이맨 정산 가져오기 (jin 2026-11-04 «heyman 정산 끝났는데 ssancar 로 왜 미러가 안 되지») ──
+    //   heymanerp 의 **승인된** 그 달 사내직원 월정산에서 사람별 실지급을 읽어 「헤이맨 정산금」 칸에 넣는다.
+    //   미리보기 → 줄마다 넣을지 체크 → 적용. 매칭 = 전화번호 → 이름(살아 있는 명부에서 하나일 때만) → 수동.
+    //   쓰기는 ExternalSettlementPay::writeHeyman(감사로그 + 결재 중 월정산 변경 이력). 같은 값이면 안 쓴다.
+    public bool $showHeymanImport = false;
+
+    public string $heymanMonth = '';
+
+    /** @var list<array{salesman_id:int,name:string,type:string,payout:int,phone:?string}> */
+    public array $heymanRows = [];
+
+    /** @var array<int, string> 행 → ssancar salesman_id('' = 안 넣음) */
+    public array $heymanPick = [];
+
+    /** @var array<int, bool> 행 → 넣을지 */
+    public array $heymanUse = [];
+
+    public ?string $heymanError = null;
+
+    public function openHeymanImport(): void
+    {
+        abort_unless(\App\Services\Payout\HeymanPayoutClient::configured() && auth()->user()?->canEditPayroll(), 403);
+        $this->reset(['heymanRows', 'heymanPick', 'heymanUse', 'heymanError']);
+        $this->heymanMonth = now()->subMonth()->format('Y-m');
+        $this->showHeymanImport = true;
+        $this->fetchHeymanPayouts();
+    }
+
+    public function closeHeymanImport(): void
+    {
+        $this->reset(['showHeymanImport', 'heymanRows', 'heymanPick', 'heymanUse', 'heymanError']);
+    }
+
+    public function updatedHeymanMonth(): void
+    {
+        $this->fetchHeymanPayouts();
+    }
+
+    /** 고를 수 있는 사람 — 살아 있는 사내직원·프리랜서 중 내 급여 공개 범위 안. */
+    #[Computed]
+    public function heymanCandidates(): array
+    {
+        $u = auth()->user();
+
+        return Salesman::query()->where('is_active', true)->whereIn('type', ['employee', 'freelance'])
+            ->orderBy('name')->get(['id', 'name', 'type', 'phone', 'user_id'])
+            ->filter(fn ($s) => $u?->canSeePayrollOf($s))
+            ->map(fn ($s) => ['id' => (int) $s->id, 'name' => $s->name, 'type' => $s->type, 'phone' => $s->phone])->values()->all();
+    }
+
+    public function fetchHeymanPayouts(): void
+    {
+        abort_unless(\App\Services\Payout\HeymanPayoutClient::configured() && auth()->user()?->canEditPayroll(), 403);
+        $this->reset(['heymanRows', 'heymanPick', 'heymanUse', 'heymanError']);
+        if (! PayrollEntry::isMonth($this->heymanMonth)) {
+            return;
+        }
+        try {
+            $data = \App\Services\Payout\HeymanPayoutClient::fetch($this->heymanMonth);
+        } catch (\DomainException $e) {
+            $this->heymanError = $e->getMessage();
+
+            return;
+        }
+        // ⚠️ 승인 전이면 아무것도 안 가져온다 — 「결재 중」과 「아직 안 올라옴」을 갈라 경고한다(jin 2026-11-04 «눌러보는 사람이 꼭 있을 것»).
+        if (($data['batches'] ?? []) === []) {
+            $pending = $data['pending'] ?? [];
+            $this->heymanError = $pending !== []
+                ? __('salesman.heyman_import.pending', ['month' => $this->heymanMonth, 'who' => $pending[0]['waiting_for'] ?? __('salesman.heyman_import.approver')])
+                : __('salesman.heyman_import.no_batch', ['month' => $this->heymanMonth]);
+
+            return;
+        }
+        $this->heymanRows = array_values($data['people'] ?? []);
+        if ($this->heymanRows === []) {
+            $this->heymanError = __('salesman.heyman_import.no_people', ['month' => $this->heymanMonth]);
+
+            return;
+        }
+        $cands = collect($this->heymanCandidates);
+        $digits = fn ($v) => preg_replace('/\D/', '', (string) $v);
+        foreach ($this->heymanRows as $i => $r) {
+            $byPhone = $digits($r['phone'] ?? '') !== '' ? $cands->filter(fn ($c) => $digits($c['phone']) === $digits($r['phone'])) : collect();
+            $byName = $cands->where('name', $r['name']);
+            $pick = $byPhone->count() === 1 ? $byPhone->first() : ($byName->count() === 1 ? $byName->first() : null);
+            $this->heymanPick[$i] = $pick ? (string) $pick['id'] : '';
+            $this->heymanUse[$i] = $pick !== null && (int) $r['payout'] !== 0;
+        }
+    }
+
+    public function applyHeymanImport(): void
+    {
+        $actor = auth()->user();
+        abort_unless(\App\Services\Payout\HeymanPayoutClient::configured() && $actor?->canEditPayroll(), 403);
+        if (! PayrollEntry::isMonth($this->heymanMonth) || $this->heymanRows === []) {
+            return;
+        }
+        $picked = [];
+        foreach ($this->heymanRows as $i => $r) {
+            if (! empty($this->heymanUse[$i]) && ($id = (int) ($this->heymanPick[$i] ?? 0)) > 0) {
+                $picked[$i] = $id;
+            }
+        }
+        if (count($picked) !== count(array_unique($picked))) {
+            $this->dispatch('notify', message: __('salesman.import.duplicate'), type: 'error');
+
+            return;
+        }
+        $done = 0;
+        $same = 0;
+        foreach ($picked as $i => $id) {
+            $sm = Salesman::find($id);
+            if (! $sm || ! in_array($sm->type, ['employee', 'freelance'], true) || ! $actor->canSeePayrollOf($sm)) {
+                continue;
+            }
+            $amount = (int) $this->heymanRows[$i]['payout'];
+            if (ExternalSettlementPay::heymanFor($sm->id, $this->heymanMonth) === $amount) {
+                $same++;
+
+                continue;   // 같은 값 — 감사로그를 또 남기지 않는다
+            }
+            ExternalSettlementPay::writeHeyman($sm, $this->heymanMonth, $amount, $actor);
+            $done++;
+        }
+        unset($this->salesmen);
+        $this->dispatch('notify', message: __('salesman.heyman_import.done', ['n' => $done, 'same' => $same]), type: 'success');
+        $this->closeHeymanImport();
+    }
+
     /** 🔒 급여대장 행번호 → true = 매칭된 사람이 내 공개 범위 밖(금액 숨김·건너뜀, jin 2026-11-04). */
     public array $importHidden = [];
 
@@ -772,6 +901,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         </a>
         @endif
         @if(auth()->user()?->canEditPayroll())
+        @if(\App\Services\Payout\HeymanPayoutClient::configured())
+        <button type="button" wire:click="openHeymanImport" class="btn-primary" data-heyman-import-button>{{ __('salesman.heyman_import.button') }}</button>
+        @endif
         @php $canUploadPayroll = collect(array_keys(\App\Models\Salesman::PAYROLL_VIEW_CATEGORIES))->contains(fn ($c) => $c !== 'domestic' && auth()->user()->canSeePayrollCategory($c)); @endphp
         @if($canUploadPayroll)
         <button type="button" wire:click="openImport" class="btn-primary" title="{{ __('salesman.import.hint') }}">{{ __('salesman.import.button') }}</button>
@@ -782,6 +914,66 @@ new #[Layout('components.layouts.app')] class extends Component {
         @endif
     </div>
 </div>
+
+{{-- 🔗 헤이맨 정산 가져오기 모달 (jin 2026-11-04) — heymanerp 승인 월정산의 사람별 실지급 → 「헤이맨 정산금」. --}}
+@if($showHeymanImport)
+<div class="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-3 sm:items-center sm:p-6" wire:click.self="closeHeymanImport">
+    <div class="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-5 shadow-2xl" data-heyman-import>
+        <div class="flex items-start justify-between gap-3">
+            <h3 class="text-base font-bold text-gray-800">{{ __('salesman.heyman_import.title') }}</h3>
+            <button type="button" wire:click="closeHeymanImport" class="text-xl leading-none text-gray-400 hover:text-gray-600" aria-label="{{ __('common.close') }}">&times;</button>
+        </div>
+        <p class="mt-1 text-xs text-gray-500">{{ __('salesman.heyman_import.hint') }}</p>
+        <div class="mt-3 flex flex-wrap items-center gap-2">
+            <span class="text-xs text-gray-600">{{ __('salesman.heyman_import.month') }}</span>
+            <input type="month" wire:model.change="heymanMonth" class="input-base w-40 text-xs" />
+            <span wire:loading wire:target="heymanMonth,fetchHeymanPayouts" class="text-xs text-gray-400">{{ __('salesman.import.reading') }}</span>
+        </div>
+        @if($heymanError)<p class="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800" data-heyman-error>{{ $heymanError }}</p>@endif
+        @if($heymanRows !== [])
+        @php $hCands = $this->heymanCandidates; @endphp
+        <div class="mt-3 overflow-x-auto">
+            <table class="w-full min-w-[600px] text-xs">
+                <thead><tr class="border-b border-gray-200 text-left text-gray-500">
+                    <th class="py-1 pr-2">{{ __('salesman.heyman_import.col_use') }}</th>
+                    <th class="py-1 pr-2">{{ __('salesman.heyman_import.col_heyman') }}</th>
+                    <th class="py-1 pr-2 text-right">{{ __('salesman.heyman_import.col_payout') }}</th>
+                    <th class="py-1 pr-2">{{ __('salesman.heyman_import.col_match') }}</th>
+                    <th class="py-1 text-right">{{ __('salesman.heyman_import.col_current') }}</th>
+                </tr></thead>
+                <tbody class="divide-y divide-gray-100">
+                @foreach($heymanRows as $i => $r)
+                    @php $pid = (int) ($heymanPick[$i] ?? 0); $cur = $pid ? \App\Models\ExternalSettlementPay::heymanFor($pid, $heymanMonth) : null; @endphp
+                    <tr class="{{ $pid ? '' : 'bg-amber-50' }}" data-heyman-row="{{ $r['salesman_id'] }}">
+                        <td class="py-1 pr-2"><input type="checkbox" wire:model="heymanUse.{{ $i }}" class="h-4 w-4 rounded border-gray-300" @disabled(! $pid)></td>
+                        <td class="py-1 pr-2 font-medium text-gray-800">{{ $r['name'] }} <span class="text-gray-400">{{ __('salesman.type.'.$r['type']) }}</span></td>
+                        <td class="py-1 pr-2 text-right font-mono {{ (int) $r['payout'] < 0 ? 'text-red-600' : '' }}">{{ number_format((int) $r['payout']) }}</td>
+                        <td class="py-1 pr-2">
+                            <select wire:model.live="heymanPick.{{ $i }}" class="input-base h-8 py-0 text-xs text-gray-800">
+                                <option value="">{{ __('salesman.import.unmatched') }}</option>
+                                @foreach($hCands as $c)
+                                <option value="{{ $c['id'] }}">{{ $c['name'] }} ({{ __('salesman.type.'.$c['type']) }})</option>
+                                @endforeach
+                            </select>
+                        </td>
+                        <td class="py-1 text-right font-mono text-[11px]">
+                            @if($cur === null)<span class="text-gray-400">{{ __('salesman.heyman_import.cur_none') }}</span>
+                            @elseif($cur === (int) $r['payout'])<span class="text-emerald-700">{{ __('salesman.heyman_import.cur_same') }}</span>
+                            @else<span class="text-amber-700">{{ number_format($cur) }} → {{ number_format((int) $r['payout']) }}</span>@endif
+                        </td>
+                    </tr>
+                @endforeach
+                </tbody>
+            </table>
+        </div>
+        <div class="mt-3 flex flex-wrap items-center justify-end gap-2">
+            <button type="button" wire:click="closeHeymanImport" class="rounded-lg border px-3 py-2 text-sm text-gray-600">{{ __('common.cancel') }}</button>
+            <button type="button" wire:click="applyHeymanImport" wire:confirm="{{ __('salesman.heyman_import.confirm', ['month' => $heymanMonth]) }}" class="btn-primary">{{ __('salesman.heyman_import.apply') }}</button>
+        </div>
+        @endif
+    </div>
+</div>
+@endif
 
 {{-- 🧾 평가수수료정산 업로드 모달 — 내수직원 (jin 2026-11-03). 카드는 max-h + overflow(폰에서 아래 버튼 닿게, §8 #98). --}}
 @if($showDomesticImport)

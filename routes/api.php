@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\Internal\BoardRequestController;
 use App\Http\Controllers\Api\Internal\InternalDocumentController;
 use App\Http\Controllers\Api\Internal\InternalPortalController;
+use App\Http\Controllers\Api\Internal\PeerPayoutController;
 use App\Http\Controllers\Api\Internal\ShippingRequestController;
 use App\Http\Controllers\Api\Internal\SigningRequestController;
 use App\Http\Controllers\Api\PortalBuyerController;
@@ -10,6 +11,7 @@ use App\Http\Controllers\Api\PortalDocumentController;
 use App\Http\Controllers\Api\PortalVehicleController;
 use App\Http\Controllers\Webhook\PurchaseSyncController;
 use App\Http\Middleware\VerifyBoardReadHmac;
+use App\Http\Middleware\VerifyErpPeerHmac;
 use App\Http\Middleware\VerifyPortalReadHmac;
 use App\Http\Middleware\VerifyPurchaseSyncHmac;
 use Illuminate\Support\Facades\Route;
@@ -26,6 +28,14 @@ use Illuminate\Support\Facades\Route;
 Route::middleware([VerifyPurchaseSyncHmac::class, 'throttle:30,1'])
     ->post('/internal/purchase-sync', PurchaseSyncController::class)
     ->name('api.internal.purchase-sync');
+
+/*
+| 🔗 ERP ↔ ERP 읽기 (2026-11-04) — 승인된 사내직원 월정산의 사람별 실지급. ssancarerp 「헤이맨 정산 가져오기」가 heymanerp 를 읽는다.
+| 인증 = VerifyErpPeerHmac(ERP_PEER_HMAC_SECRET, 없으면 401). 읽기 전용.
+*/
+Route::middleware([VerifyErpPeerHmac::class, 'throttle:30,1'])
+    ->get('/internal/peer/payouts', [PeerPayoutController::class, 'payouts'])
+    ->name('api.internal.peer.payouts');
 
 /*
 | board 영업 포털 읽기 API (HMAC GET) — purchase-sync 의 역방향.
