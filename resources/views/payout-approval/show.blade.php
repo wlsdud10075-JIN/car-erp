@@ -136,7 +136,7 @@
             <x-payout.domestic-fee-total :total="$v3['domestic_fee_total'] ?? null" :compact="$v3['domestic_split'] ?? false" :status="$v3['domestic_batch_status'] ?? null" />
         </div>
         {{-- 전체 항목(25열)이 필요하면 엑셀로 (jin 2026-08-04). 서명 링크라 로그인 없이 받는다. --}}
-        @if(isset($exportUrl) && ! $batch->isDomesticBatch())
+        @if(isset($exportUrl))
         <a class="xlsx" href="{{ $exportUrl }}">📄 전체 내역 엑셀 내려받기</a>
         @endif
     </div>
