@@ -935,6 +935,17 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-04 — master `aea7aafa` · 마이그 0 (jin «같이 배포해줘», 코드 커밋 4개 — 공개 범위·업무관리자·헤이맨 정산 가져오기)
+
+dev `eb716c24`·`27ebec40`·`1b04d8f2`·`4110c36c` → master `bb61822d`…`aea7aafa`. push = `git push origin master` 단독 → YES/NO.
+1. **사내직원관리 공개 범위** — 기능설정 표(사람 × 내수·사내직원·검차·관리·수출통관·재무·업무관리자). 체크한 칸의 급여 항목만 사내직원관리에서 보이고 저장(급여대장 업로드도). 후보 = 급여 입력 권한자(재무 포함). 저장 전 = 종전(급여 입력 권한자 모두). 내수 칸 = 내수직원 월정산 지정자. 월정산·결재 화면 무관.
+2. **업무관리자 명부** — mirrorTypeFor: manager → staff(「업무관리자」 탭). 구: 미러 안 함 → 관리→업무관리자 전환 시 비활성 → 그 달 급여가 월정산에서 빠짐(ssancarerp 이다은 10월 9줄). 내수직원 월정산 라우트 approve → settlement 그룹.
+3. **헤이맨 정산 가져오기**(ssancarerp 사내직원관리) — heymanerp `GET /api/internal/peer/payouts`(VerifyErpPeerHmac, ERP_PEER_HMAC_SECRET, 승인 kind=month 박제의 사람별 payout + 결재 중 목록). **사내직원만**(프리랜서 제외). 승인 전 = 「결재 중(누구 차례)」/「아직 안 올라옴」 경고. 같은 값 안 씀. 헤이맨 정산금 수기 칸도 사내직원만(프리랜서는 예치금만).
+- 확인: 병렬 3,661 pass · deploy 런 41771204772 잡 5 success · `/login` 200 ×3.
+- **운영 실행(jin 승인)**: `salesmen:sync-staff --apply` — ssancarerp 김담희·이새롬·최영숙 생성 + 문진회·이다은 활성(업무관리자 5명 전부 staff·활성) / heymanerp 이새롬 생성. ⚠️ 최영숙의 옛 행 #17(이름 「임윤태」)은 07-29 소프트 삭제된 것이라 새로 만든 게 맞다.
+- **`.env`(jin 승인, 오토모드 해제 후)**: heymanerp·ssancarerp `ERP_PEER_HMAC_SECRET`(같은 무작위 값, 문서에 평문 없음) + ssancarerp `HEYMAN_ERP_URL=https://heysellcar.com` → `config:cache`. 백업 `.env.bak.peer-<시각>`. 실호출 확인: ssancarerp → heymanerp 2026-10 승인 1건(무사백 2,240,619 · 조하 50,000 · 박병훈은 프리랜서라 화면에서 제외) / 2026-11 없음.
+- jin 몫: ssancarerp 기능설정 「사내직원관리 공개 범위」 체크 · 사내직원관리 [헤이맨 정산 가져오기] 2026-10 적용 → 10월 사내직원 월정산 제출(지급 11-10). ⚠️ Desktop `ssancarerp.env.txt`·`heymanerp.env.txt` 백업은 새 키가 없다(서버 .env 가 정본).
+
 ## 2026-11-03 (심야 3) — master `abb5172c` · 마이그 0 (jin «배포해줘», 코드 커밋 1개 — 로그 기록 누락 보완)
 
 dev `670070a0` → master `abb5172c`. push = `git push origin master` 단독 → YES/NO.
