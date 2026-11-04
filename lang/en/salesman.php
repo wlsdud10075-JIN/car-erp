@@ -171,7 +171,7 @@ return [
     'heyman_import' => [
         'button' => 'Import Heyman payouts',
         'title' => 'Import Heyman payouts',
-        'hint' => 'Reads each person\'s take-home from the approved Heyman monthly settlement and fills the Heyman settlement field. Matched by phone and name; tick the rows to apply. Same values are not rewritten.',
+        'hint' => 'Reads each in-house employee\'s take-home (freelancers excluded) from the approved Heyman monthly settlement and fills the Heyman settlement field. Matched by phone and name; tick the rows to apply. Same values are not rewritten.',
         'month' => 'Month',
         'no_batch' => 'The Heyman settlement for :month has not been submitted yet. Import after it is approved.',
         'pending' => 'The Heyman settlement for :month is still in approval (waiting for :who). Import after it is approved.',
