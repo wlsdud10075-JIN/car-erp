@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\AuditLog;
 use App\Models\Salesman;
 use App\Models\User;
 use Illuminate\Console\Command;
@@ -35,10 +36,23 @@ class SyncStaffSalesmen extends Command
             $u = $r['user'];
             $this->line(sprintf('  #%d %s · %s/%s → %s', $u->id, $u->name, $u->permission, $u->role, $r['type']));
         }
+        // 🔀 2026-11-04 — 업무관리자도 명부(staff). 종전 규칙이 「미러 안 함 → 비활성」이라 관리→업무관리자로 바꾼 사람의 행이 꺼져 있다.
+        //    되살리는 건 **업무관리자 + 퇴사일 없음**만 — 그만둔 영업의 비활성 행까지 켜면 안 된다.
+        $revive = Salesman::query()->where('is_active', false)->whereNull('left_at')
+            ->whereHas('user', fn ($q) => $q->where('permission', 'manager'))
+            ->with('user')->orderBy('name')->get();
+        $this->line('되살릴 업무관리자 '.$revive->count().'명 (비활성 · 퇴사일 없음)');
+        foreach ($revive as $s) {
+            $this->line(sprintf('  #%d %s · %s → 활성', $s->id, $s->name, $s->type));
+        }
         if (! $this->option('apply')) {
             $this->warn('dry-run — 실제로 만들려면 --apply');
 
             return self::SUCCESS;
+        }
+        foreach ($revive as $s) {
+            $s->update(['is_active' => true]);
+            AuditLog::recordChange($s, 'is_active', false, true);
         }
         foreach ($candidates as $r) {
             $u = $r['user'];

@@ -207,4 +207,8 @@ return [
     'domestic_viewers' => 'Who can see it',
     'domestic_viewers_sub' => 'Only checked people see the domestic settlement and the domestic staff tab (system admins always). Approvers act through the notification link.',
     'domestic_viewers_save' => 'Save viewers',
+    'payroll_viewers' => 'Staff page visibility',
+    'payroll_viewers_sub' => 'Only checked people see and edit that column\'s payroll items on the Staff page (including payroll upload). The domestic column covers the domestic tab, fee upload and domestic settlement. Monthly settlement and approval pages are not affected. System admins always see everything.',
+    'payroll_viewers_person' => 'Person',
+    'payroll_viewers_save' => 'Save visibility',
 ];

@@ -69,7 +69,7 @@
         ? \App\Models\SettlementPayoutBatch::query()->notDomestic()->awaitingDecisionBy($user)->count()
         : 0;
     // 🧾 내수직원 월정산(2026-11-03) — 지정자 + 지금 차례인 결재자(지정 안 됐어도 자기 차례면 메뉴가 뜬다).
-    $pendingDomesticPayouts = $user->canApprove() && \App\Models\Setting::domesticPayoutEnabled()
+    $pendingDomesticPayouts = \App\Models\Setting::domesticPayoutEnabled()
         ? \App\Models\SettlementPayoutBatch::query()->domestic()->awaitingDecisionBy($user)->count()
         : 0;
     $showDomesticPayouts = $user->canSeeDomesticPayout() || $pendingDomesticPayouts > 0;

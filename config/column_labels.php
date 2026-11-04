@@ -411,6 +411,7 @@ return [
         'b2b_partners_enabled' => 'B2B 파트너스 사용',   // 2026-11-02 회사별 토글
         'domestic_payout_enabled' => '내수직원 월정산 사용',   // 2026-11-03 회사별 토글
         'domestic_payout_viewers' => '내수직원 월정산 볼 사람',   // 2026-11-03 기능설정
+        'payroll_viewers' => '사내직원관리 공개 범위',   // 2026-11-04 기능설정
         'unsecured_limit_krw' => '무담보 한도',
         'credit_score_weights' => '신용도 가중치',
         'lock_threshold_bl_issue' => 'B/L 발행 필요입금률',
@@ -505,6 +506,7 @@ return [
         'b2b_partners_toggle_changed' => 'B2B 파트너스 켜기/끄기',   // 2026-11-02 회사별 토글
         'domestic_payout_toggle_changed' => '내수직원 월정산 켜기/끄기',   // 2026-11-03 회사별 토글
         'domestic_payout_viewers_changed' => '내수직원 월정산 볼 사람 변경',   // 2026-11-03 기능설정
+        'payroll_viewers_changed' => '사내직원관리 공개 범위 변경',   // 2026-11-04 기능설정
         'buyer_cash_receipt_added' => '바이어 현금 입금 기재',
         'buyer_cash_fee_added' => '바이어 현금 수수료 처리',
         'buyer_cash_to_savings' => '바이어 남은 현금 → 적립금 전환',

@@ -34,8 +34,11 @@ new #[Layout('components.layouts.app')] class extends Component
     /** 🧾 내수직원 월정산 on/off (jin 2026-11-03) — 회사별, 기본 ssancarerp 만 켬. 볼 사람은 아래 지정. */
     public bool $domesticPayoutEnabled = false;
 
-    /** 내수직원 월정산·사내직원관리 내수 탭을 볼 사람(user id 문자열) — 시스템관리자는 지정 없이 본다. */
-    public array $domesticViewerIds = [];
+    /**
+     * 🔒 사내직원관리 공개 범위(jin 2026-11-04) — [칸 키 => [user id 문자열, …]]. 칸 = Salesman::PAYROLL_VIEW_CATEGORIES
+     * (내수직원 = 탭 전체 · 나머지 = 급여 항목). 시스템관리자는 지정 없이 본다.
+     */
+    public array $payrollViewerMatrix = [];
 
     public bool $assistantEnabled = false;
 
@@ -167,7 +170,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->buyerCashEnabled = Setting::buyerCashEnabled();
         $this->b2bPartnersEnabled = Setting::b2bPartnersEnabled();
         $this->domesticPayoutEnabled = Setting::domesticPayoutEnabled();
-        $this->domesticViewerIds = array_map('strval', Setting::domesticPayoutViewerIds());
+        $this->loadPayrollViewerMatrix();
         $this->assistantEnabled = (bool) Setting::get('assistant_enabled', false);
         foreach (Setting::LOCK_DEFAULTS as $lock => $default) {
             $this->lockToggles[$lock] = Setting::lockEnabled($lock);
@@ -1044,43 +1047,69 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
-    /** 내수직원 월정산을 볼 수 있는 사람 후보 — 관리 이상(관리·업무관리자·최고관리자). 시스템관리자는 항상 보므로 뺀다. */
+    /**
+     * 공개 범위 후보 — 급여 입력 권한자(관리·업무관리자·최고관리자·재무, = User::canEditPayroll). 시스템관리자는 항상 보므로 뺀다.
+     * jin 2026-11-04 «볼 사람 자체를 시스템관리자가 설정» — 역할로 미리 거르지 않고 이 화면에 들어올 수 있는 사람 전부.
+     */
     #[\Livewire\Attributes\Computed]
-    public function domesticViewerCandidates()
+    public function payrollViewerCandidates()
     {
         return \App\Models\User::query()->whereIn('permission', ['admin', 'manager'])
-            ->orWhere(fn ($q) => $q->where('permission', 'user')->where('role', '관리'))
+            ->orWhere(fn ($q) => $q->where('permission', 'user')->whereIn('role', ['관리', '재무']))
             ->orderBy('name')->get(['id', 'name', 'permission', 'role', 'approval_title']);
     }
 
-    public function saveDomesticViewers(): void
+    /** 칸별 체크 상태 — 한 번도 저장 안 한 급여 칸은 「종전 = 후보 전원」을 체크해 둔다(저장해도 지금과 같게). */
+    private function loadPayrollViewerMatrix(): void
+    {
+        $saved = Setting::payrollViewers();
+        $all = $this->payrollViewerCandidates->pluck('id')->map(fn ($i) => (string) $i)->all();
+        $this->payrollViewerMatrix = [];
+        foreach (array_keys(\App\Models\Salesman::PAYROLL_VIEW_CATEGORIES) as $cat) {
+            $this->payrollViewerMatrix[$cat] = $cat === 'domestic'
+                ? array_map('strval', Setting::domesticPayoutViewerIds())
+                : ($saved === null ? $all : array_map('strval', $saved[$cat] ?? []));
+        }
+    }
+
+    public function savePayrollViewers(): void
     {
         if (! auth()->user()?->isSuperAdmin()) {
             abort(403);
         }
-        $allowed = $this->domesticViewerCandidates->pluck('id')->map(fn ($i) => (int) $i)->all();
-        $ids = array_values(array_intersect(array_map('intval', $this->domesticViewerIds), $allowed));
-        sort($ids);
-        $before = Setting::domesticPayoutViewerIds();
-        sort($before);
+        $allowed = $this->payrollViewerCandidates->pluck('id')->map(fn ($i) => (int) $i)->all();
+        $clean = [];
+        foreach (array_keys(\App\Models\Salesman::PAYROLL_VIEW_CATEGORIES) as $cat) {
+            $ids = array_values(array_intersect(array_map('intval', (array) ($this->payrollViewerMatrix[$cat] ?? [])), $allowed));
+            sort($ids);
+            $clean[$cat] = $ids;
+        }
+        $domestic = $clean['domestic'];
+        unset($clean['domestic']);
 
-        $setting = Setting::updateOrCreate(
-            ['key' => 'domestic_payout_viewers'],
-            ['value' => json_encode($ids), 'type' => 'string', 'description' => '내수직원 월정산 볼 사람(user id)'],
-        );
-        Setting::flushRiskParamMemo();
-        $this->domesticViewerIds = array_map('strval', $ids);
+        $beforeMap = Setting::payrollViewers();
+        $beforeDomestic = Setting::domesticPayoutViewerIds();
+        sort($beforeDomestic);
 
+        $setting = Setting::updateOrCreate(['key' => 'payroll_viewers'],
+            ['value' => json_encode($clean, JSON_UNESCAPED_UNICODE), 'type' => 'string', 'description' => '사내직원관리 급여 공개 범위(칸 => user id)']);
         \App\Models\AuditLog::create([
-            'user_id' => auth()->id(),
-            'auditable_type' => Setting::class,
-            'auditable_id' => $setting->id,
-            'action' => 'domestic_payout_viewers_changed',
-            'column_name' => 'domestic_payout_viewers',
-            'old_value' => json_encode($before),
-            'new_value' => json_encode($ids),
-            'ip_address' => request()?->ip(),
+            'user_id' => auth()->id(), 'auditable_type' => Setting::class, 'auditable_id' => $setting->id,
+            'action' => 'payroll_viewers_changed', 'column_name' => 'payroll_viewers',
+            'old_value' => $beforeMap === null ? null : json_encode($beforeMap, JSON_UNESCAPED_UNICODE),
+            'new_value' => json_encode($clean, JSON_UNESCAPED_UNICODE), 'ip_address' => request()?->ip(),
         ]);
+        if ($domestic !== $beforeDomestic) {
+            $d = Setting::updateOrCreate(['key' => 'domestic_payout_viewers'],
+                ['value' => json_encode($domestic), 'type' => 'string', 'description' => '내수직원 월정산 볼 사람(user id)']);
+            \App\Models\AuditLog::create([
+                'user_id' => auth()->id(), 'auditable_type' => Setting::class, 'auditable_id' => $d->id,
+                'action' => 'domestic_payout_viewers_changed', 'column_name' => 'domestic_payout_viewers',
+                'old_value' => json_encode($beforeDomestic), 'new_value' => json_encode($domestic), 'ip_address' => request()?->ip(),
+            ]);
+        }
+        Setting::flushRiskParamMemo();
+        $this->loadPayrollViewerMatrix();
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
@@ -1899,23 +1928,38 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
                                  after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
                 </label>
-                @if($domesticPayoutEnabled)
-                <div class="mt-2 border-t border-gray-100 pt-2" data-domestic-viewers>
-                    <div class="text-xs font-medium text-gray-600">{{ __('feature_settings.domestic_viewers') }}</div>
-                    <p class="text-[11px] text-gray-400">{{ __('feature_settings.domestic_viewers_sub') }}</p>
-                    <div class="mt-1 grid gap-1 sm:grid-cols-2">
-                        @foreach($this->domesticViewerCandidates as $cand)
-                        <label class="flex items-center gap-2 text-xs text-gray-700">
-                            <input type="checkbox" wire:model="domesticViewerIds" value="{{ $cand->id }}" class="rounded border-gray-300">
-                            <span>{{ $cand->name }} <span class="text-gray-400">· {{ $cand->approval_title ?: ($cand->permission === 'user' ? $cand->role : __('nav.permission.'.$cand->permission)) }}</span></span>
-                        </label>
-                        @endforeach
-                    </div>
-                    <div class="mt-1.5 flex justify-end">
-                        <button type="button" wire:click="saveDomesticViewers" class="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50">{{ __('feature_settings.domestic_viewers_save') }}</button>
-                    </div>
+            </div>
+
+            {{-- 🔒 사내직원관리 공개 범위 (jin 2026-11-04) — 사람 × 칸 체크. 내수직원 = 탭 전체(내수직원 월정산 포함), 나머지 = 급여 항목.
+                 사내직원관리에서만 숨긴다(월정산·결재 화면 무관). 처음엔 급여 칸 전원 체크(= 종전). 시스템관리자는 늘 본다. --}}
+            @php $pvCats = \App\Models\Salesman::PAYROLL_VIEW_CATEGORIES; if (! $domesticPayoutEnabled) { unset($pvCats['domestic']); } @endphp
+            <div class="rounded-md border border-gray-100 px-3 py-2" data-payroll-viewers>
+                <div class="text-sm text-gray-700">{{ __('feature_settings.payroll_viewers') }}
+                    <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.payroll_viewers_sub') }}</span>
                 </div>
-                @endif
+                <div class="mt-2 overflow-x-auto">
+                    <table class="w-full min-w-[520px] text-xs">
+                        <thead><tr class="border-b border-gray-200 text-gray-500">
+                            <th class="py-1 pr-2 text-left font-normal">{{ __('feature_settings.payroll_viewers_person') }}</th>
+                            @foreach($pvCats as $cat => $label)
+                            <th class="px-1 py-1 text-center font-normal whitespace-nowrap">{{ $label }}{{ $cat === 'domestic' ? '' : '' }}</th>
+                            @endforeach
+                        </tr></thead>
+                        <tbody class="divide-y divide-gray-100">
+                        @foreach($this->payrollViewerCandidates as $cand)
+                        <tr data-payroll-viewer-row="{{ $cand->id }}">
+                            <td class="py-1 pr-2 whitespace-nowrap text-gray-700">{{ $cand->name }} <span class="text-gray-400">· {{ $cand->approval_title ?: ($cand->permission === 'user' ? $cand->role : __('nav.permission.'.$cand->permission)) }}</span></td>
+                            @foreach($pvCats as $cat => $label)
+                            <td class="px-1 py-1 text-center"><input type="checkbox" wire:model="payrollViewerMatrix.{{ $cat }}" value="{{ $cand->id }}" class="h-4 w-4 rounded border-gray-300" aria-label="{{ $cand->name }} {{ $label }}"></td>
+                            @endforeach
+                        </tr>
+                        @endforeach
+                        </tbody>
+                    </table>
+                </div>
+                <div class="mt-1.5 flex justify-end">
+                    <button type="button" wire:click="savePayrollViewers" class="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50">{{ __('feature_settings.payroll_viewers_save') }}</button>
+                </div>
             </div>
 
             <div class="flex justify-end pt-1">
