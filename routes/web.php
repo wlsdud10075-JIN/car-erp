@@ -4,6 +4,7 @@ use App\Http\Controllers\BuyerAccountExportController;
 use App\Http\Controllers\BuyerDocumentController;
 use App\Http\Controllers\CapitalReportController;
 use App\Http\Controllers\PayoutApprovalController;
+use App\Http\Controllers\PayoutBatchExportController;
 use App\Http\Controllers\ProvideNiceLookupController;
 use App\Http\Controllers\PurchaseProofController;
 use App\Http\Controllers\SettlementExportController;
@@ -228,6 +229,11 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
 Route::middleware(['auth', 'verified', 'super-admin'])->prefix('admin')->name('admin.')->group(function () {
     Volt::route('settings', 'admin.settings')->name('settings');
 });
+
+// 월정산 엑셀 (2026-11-04) — 사내직원·내수직원 두 화면이 같이 쓰므로 그룹 밖. 받을 사람 판정은 컨트롤러(화면과 같은 게이트).
+Route::get('erp/payout-batches/{batch}/export', PayoutBatchExportController::class)
+    ->middleware(['auth', 'verified'])
+    ->name('erp.payout-batches.export');
 
 Route::middleware(['auth'])->group(function () {
     Route::redirect('settings', 'settings/profile');

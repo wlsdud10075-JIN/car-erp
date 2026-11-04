@@ -267,6 +267,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             · <span class="text-amber-600">{{ $b->isStepsMode() ? __('payout_batch.steps.next', ['who' => $b->currentStepLabel()]) : __('payout_batch.next_level', ['role' => $this->levelLabel($b->current_level)]) }}</span>
                         @endif
                     </div>
+                    {{-- 📄 엑셀 (jin 2026-11-04 (나)) — 사람별 지급·급여 항목(+ 사내직원은 차량별 정산). 승인 링크 엑셀과 같은 파일. --}}
+                    <a href="{{ route('erp.payout-batches.export', $b) }}" data-payout-export
+                       class="whitespace-nowrap rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-600 hover:bg-gray-100">{{ __('payout_batch.export') }}</a>
                     {{-- 📨 승인요청 발송 결과 (jin 2026-10-07 「색상으로 발송성공·실패 둘만」) — 시각 없이 뱃지 하나. 알림톡 자체는 무변경.
                          초록 = 발송성공(카카오 접수·전달) / 빨강 = 발송실패(실패·미전달·설정으로 차단). 기록 없으면 안 그린다. --}}
                     @if($b->status === 'pending' && ($sendOk = $b->requestSendOk()) !== null)

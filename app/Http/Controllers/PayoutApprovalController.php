@@ -3,15 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
-use App\Models\ExportLog;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
-use App\Services\SettlementExportService;
+use App\Services\Payout\PayoutBatchExportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\URL;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
@@ -62,37 +60,10 @@ class PayoutApprovalController extends Controller
      * 25열 전체가 필요하면 여기서 받는다. 인가 = show 와 동일한 서명 URL(로그인 없음).
      * ⚠️ 이 배치의 정산만 — 화면 export 처럼 필터를 받지 않는다(서명 링크에 필터를 실으면 범위가 새어난다).
      */
-    public function export(Request $request, SettlementPayoutBatch $batch, SettlementExportService $exporter): StreamedResponse
+    public function export(Request $request, SettlementPayoutBatch $batch, PayoutBatchExportService $exporter): StreamedResponse
     {
-        $user = User::find((int) $request->query('u'));
-
-        // 💡 잔금·회수이력까지 얹는다 — 엑셀의 마진율·환차가 그것을 타고 내려간다(560건 N+1 방지).
-        $settlements = $batch->settlements()
-            ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
-            ->orderBy('salesman_id')->orderBy('id')
-            ->get();
-
-        $spreadsheet = $exporter->build($settlements);
-
-        ExportLog::create([
-            'user_id' => $user?->id,
-            'ip_address' => $request->ip(),
-            'target' => 'settlements',
-            'scope' => 'payout_batch',
-            'row_count' => $settlements->count(),
-            'columns' => $exporter->columnLabels(),
-            'filters' => ['batch' => (string) $batch->id, 'month' => (string) $batch->month],
-        ]);
-
-        $filename = '정산_'.$batch->month.'_배치'.$batch->id.'.xlsx';
-
-        return response()->streamDownload(
-            function () use ($spreadsheet) {
-                (new Xlsx($spreadsheet))->save('php://output');
-            },
-            $filename,
-            ['Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
-        );
+        // 🔀 2026-11-04 (jin (나)) — 사람별 지급·급여 항목 시트 추가 + 내수직원 월정산도. ERP 월정산 화면 [엑셀] 과 같은 파일.
+        return $exporter->download($batch, User::find((int) $request->query('u')), $request->ip());
     }
 
     /** 승인 페이지 진입 시 새로 발급하는 엑셀 다운로드 링크(60분) — decideUrl 과 같은 수명. */
