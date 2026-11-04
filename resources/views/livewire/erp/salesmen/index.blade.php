@@ -30,21 +30,40 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 판매수당 대조 기준(그 달 사내직원별 정산금 쪽 합 · 연금 토글) — 파일을 읽을 때 한 번만 계산(드롭다운을 바꿀 때마다 한 달 배치를 다시 돌지 않게). */
     public array $commissionBase = [];
 
+    /** 🔒 급여대장 행번호 → true = 매칭된 사람이 내 공개 범위 밖(금액 숨김·건너뜀, jin 2026-11-04). */
+    public array $importHidden = [];
+
+    /** 급여대장을 올릴 수 있나 — 급여 공개 칸(내수 제외) 중 하나라도 보면. */
+    private function canUploadPayroll(): bool
+    {
+        $u = auth()->user();
+        if (! $u?->canEditPayroll()) {
+            return false;
+        }
+        foreach (array_keys(Salesman::PAYROLL_VIEW_CATEGORIES) as $cat) {
+            if ($cat !== 'domestic' && $u->canSeePayrollCategory($cat)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function openImport(): void
     {
-        abort_unless(auth()->user()?->canEditPayroll(), 403);
-        $this->reset(['payrollFile', 'importPreview', 'importMatches', 'commissionBase']);
+        abort_unless($this->canUploadPayroll(), 403);
+        $this->reset(['payrollFile', 'importPreview', 'importMatches', 'commissionBase', 'importHidden']);
         $this->showImport = true;
     }
 
     public function closeImport(): void
     {
-        $this->reset(['payrollFile', 'importPreview', 'importMatches', 'showImport', 'commissionBase']);
+        $this->reset(['payrollFile', 'importPreview', 'importMatches', 'showImport', 'commissionBase', 'importHidden']);
     }
 
     public function updatedPayrollFile(): void
     {
-        abort_unless(auth()->user()?->canEditPayroll(), 403);
+        abort_unless($this->canUploadPayroll(), 403);
         $this->validate(['payrollFile' => 'required|file|mimes:xls,xlsx|max:10240'], [], ['payrollFile' => __('salesman.import.file')]);
         $importer = new PayrollStatementImporter;
         $this->importPreview = $importer->parse($this->payrollFile->getRealPath());
@@ -52,7 +71,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $month = $this->importPreview['month'] ?? null;
         $this->commissionBase = $month && PayrollEntry::isMonth($month) && ($this->importPreview['people'] ?? []) !== []
             ? \App\Services\Payout\PersonPayoutBreakdown::commissionBaseFor($month) : [];
+        $this->importHidden = [];
+        $visible = array_column($this->importCandidates, 'id');
         foreach ($importer->match($this->importPreview['people']) as $row => $id) {
+            if ($id !== null && ! in_array((int) $id, $visible, true)) {
+                $this->importHidden[$row] = true;   // 공개 범위 밖 사람 — 금액을 안 보이고 건너뛴다
+                $id = null;
+            }
             $this->importMatches[$row] = $id === null ? '' : (string) $id;
         }
     }
@@ -91,14 +116,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function importCandidates(): array
     {
-        return Salesman::query()->where('is_active', true)->orderBy('name')->get(['id', 'name', 'type'])
-            ->map(fn ($s) => ['id' => $s->id, 'name' => $s->name, 'type' => $s->type])->all();
+        $u = auth()->user();
+
+        return Salesman::query()->where('is_active', true)->with('user:id,permission,role')->orderBy('name')->get(['id', 'name', 'type', 'user_id'])
+            ->filter(fn ($s) => $u?->canSeePayrollOf($s))   // 🔒 공개 범위 밖 사람은 고를 수 없다(2026-11-04)
+            ->map(fn ($s) => ['id' => $s->id, 'name' => $s->name, 'type' => $s->type])->values()->all();
     }
 
     public function applyImport(): void
     {
         $actor = auth()->user();
-        abort_unless($actor?->canEditPayroll(), 403);
+        abort_unless($this->canUploadPayroll(), 403);
         $month = $this->importPreview['month'] ?? null;
         if (! $month || ! PayrollEntry::isMonth($month) || ($this->importPreview['errors'] ?? []) !== []) {
             $this->dispatch('notify', message: __('salesman.import.not_ready'), type: 'error');
@@ -122,7 +150,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 continue;
             }
             $sm = Salesman::find($id);
-            if (! $sm) {
+            if (! $sm || ! $actor->canSeePayrollOf($sm)) {   // 🔒 공개 범위 밖은 화면을 조작해도 안 쓴다
                 $skipped++;
 
                 continue;
@@ -256,6 +284,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         foreach (User::STAFF_ROLES as $role) {
             $tabs['staff:'.$role] = __('domain.role.'.$role);
         }
+        $tabs['manager'] = __('nav.permission.manager');   // 업무관리자(2026-11-04) — type=staff + 계정 permission=manager
 
         return $tabs;
     }
@@ -271,10 +300,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($this->typeFilter === '') {
             return $q;
         }
+        if ($this->typeFilter === 'manager') {
+            return $q->where('type', 'staff')->whereHas('user', fn ($u) => $u->where('permission', 'manager'));
+        }
         if (str_starts_with($this->typeFilter, 'staff:')) {
             $role = substr($this->typeFilter, 6);
 
-            return $q->where('type', 'staff')->whereHas('user', fn ($u) => $u->where('role', $role));
+            return $q->where('type', 'staff')->whereHas('user', fn ($u) => $u->where('role', $role)->where('permission', '!=', 'manager'));
         }
 
         return $q->where('type', $this->typeFilter);
@@ -664,12 +696,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             // 💴 급여 항목 — 사내직원·검차직원, 관리 이상 + 재무. 그 달을 통째로 교체하고 지급합계 변화를 감사로그 1줄로.
             //   🧾 내수직원은 제외 — 값은 「평가수수료 업로드」로만 바뀐다(패널은 읽기 전용, jin 2026-11-03).
-            if (($sm->type === 'employee' || $sm->isPayrollOnly()) && ! $sm->isDomesticStaff() && $actor?->canEditPayroll() && PayrollEntry::isMonth($this->payrollMonth)) {
+            if (($sm->type === 'employee' || $sm->isPayrollOnly()) && ! $sm->isDomesticStaff() && $actor?->canSeePayrollOf($sm) && PayrollEntry::isMonth($this->payrollMonth)) {
                 // 감사로그·결재 중 월정산 변경 이력은 writeMonthWithAudit 한 곳(급여대장 업로드와 공용, §8 #44).
                 PayrollEntry::writeMonthWithAudit($sm, $this->payrollMonth, $this->payrollRows(), $actor, '급여 항목 수정');
             }
             // 💱 헤이맨 정산금 — 사내직원·프리랜서, 급여와 같은 권한·같은 귀속월. 감사로그·결재 중 변경 이력은 writeHeyman 한 곳.
-            if (in_array($sm->type, ['employee', 'freelance'], true) && $actor?->canEditPayroll() && PayrollEntry::isMonth($this->payrollMonth)) {
+            if (in_array($sm->type, ['employee', 'freelance'], true) && $actor?->canSeePayrollOf($sm) && PayrollEntry::isMonth($this->payrollMonth)) {
                 ExternalSettlementPay::writeHeyman($sm, $this->payrollMonth, $this->signedMoneyOrNull($this->heymanPayStr), $actor);
             }
         } else {
@@ -740,7 +772,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         </a>
         @endif
         @if(auth()->user()?->canEditPayroll())
+        @php $canUploadPayroll = collect(array_keys(\App\Models\Salesman::PAYROLL_VIEW_CATEGORIES))->contains(fn ($c) => $c !== 'domestic' && auth()->user()->canSeePayrollCategory($c)); @endphp
+        @if($canUploadPayroll)
         <button type="button" wire:click="openImport" class="btn-primary" title="{{ __('salesman.import.hint') }}">{{ __('salesman.import.button') }}</button>
+        @endif
         @if(auth()->user()->canSeeDomesticPayout())
         <button type="button" wire:click="openDomesticImport" class="btn-primary" title="{{ __('salesman.domestic_import.hint') }}" data-domestic-import-button>{{ __('salesman.domestic_import.button') }}</button>
         @endif
@@ -891,7 +926,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <td class="py-1 pr-2 text-gray-500">{{ $p['employee_no'] }}</td>
                             <td class="py-1 pr-2 font-medium text-gray-800">{{ $p['name'] }} <span class="text-gray-400">{{ $p['position'] }}</span></td>
                             <td class="py-1 pr-2 text-gray-500">{{ $p['dept'] }}</td>
-                            <td class="py-1 pr-2 text-right font-mono">{{ number_format($p['total']) }}</td>
+                            @php $hiddenRow = ! empty($importHidden[$p['row']]); @endphp
+                            <td class="py-1 pr-2 text-right font-mono" @if($hiddenRow) data-import-hidden="{{ $p['row'] }}" @endif>{{ $hiddenRow ? '—' : number_format($p['total']) }}</td>
                             @php $cc = $commissionCheck[$p['row']] ?? null; @endphp
                             <td class="py-1 pr-2 text-right font-mono text-[11px]" data-import-commission="{{ $p['row'] }}">
                                 @if($cc)
@@ -902,15 +938,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @else<span class="text-gray-300">—</span>@endif
                             </td>
                             <td class="py-1 pr-2">
+                                @if($hiddenRow)<span class="text-gray-400">—</span>@else
                                 <select wire:model="importMatches.{{ $p['row'] }}" class="input-base h-8 py-0 text-xs text-gray-800">
                                     <option value="">{{ __('salesman.import.unmatched') }}</option>
                                     @foreach($candidates as $c)
                                     <option value="{{ $c['id'] }}">{{ $c['name'] }} ({{ __('salesman.type.'.$c['type']) }})</option>
                                     @endforeach
                                 </select>
+                                @endif
                             </td>
                             <td class="py-1 text-[11px]">
-                                @if(! $p['ok'])<span class="text-red-600">{{ $p['error'] }}</span>
+                                @if($hiddenRow)<span class="text-gray-500">{{ __('salesman.import.hidden') }}</span>
+                                @elseif(! $p['ok'])<span class="text-red-600">{{ $p['error'] }}</span>
                                 @elseif(! $mid)<span class="text-amber-700">{{ __('salesman.import.pick') }}</span>
                                 @elseif(($m['type'] ?? '') === 'freelance')<span class="text-amber-700">{{ __('salesman.import.freelance_note') }}</span>
                                 @else<span class="text-green-600">{{ __('salesman.import.ready') }}</span>@endif
@@ -1119,7 +1158,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 월정산 v3 — 유형의 출처는 salesmen.type (user.type 의 미러 + 계정 없는 검차직원). 사용자 관리에서 바꾸면 따라온다.
             $linkedUserType  = $editingSalesman?->type;
             $typeLabel       = $linkedUserType ? $editingSalesman->type_label : null;   // staff 는 연결 계정 role(관리/수출통관/재무)
-            $canEditPayroll  = (bool) auth()->user()?->canEditPayroll();
+            // 🔒 급여 칸은 공개 범위 안일 때만(jin 2026-11-04) — 사람 유형별 칸(사내직원·검차·관리·수출통관·재무·업무관리자). 프리랜서는 종전 권한.
+            $canEditPayroll  = $editingSalesman && auth()->user()?->canSeePayrollOf($editingSalesman);
         @endphp
         <div>
             <label class="label-base">{{ __('salesman.field.settlement_type') }}</label>

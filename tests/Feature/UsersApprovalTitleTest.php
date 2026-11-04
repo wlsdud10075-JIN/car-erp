@@ -38,7 +38,10 @@ class UsersApprovalTitleTest extends TestCase
         $this->assertSame('manager', $u->permission);
         $this->assertSame('관리', $u->role, '권한이 user 가 아니면 역할은 관리로 정리된다');
         $this->assertNull($u->type);
-        $this->assertSame(0, Salesman::where('user_id', $u->id)->count(), '업무관리자에게 영업담당자 행이 생기면 안 된다');
+        // 🔀 2026-11-04 (jin «사내직원관리에 업무관리자도») — 명부엔 올라오되 **급여만 받는 직원(staff)** 이다. 영업담당자(employee·freelance)
+        //    행이 생기면 차량·바이어 담당자 목록에 뜨므로 그건 여전히 안 된다(staff 는 PAYROLL_ONLY 라 담당자 목록 밖).
+        $this->assertSame(['staff'], Salesman::where('user_id', $u->id)->pluck('type')->all(), '업무관리자 = 급여만(staff), 영업담당자 행 아님');
+        $this->assertContains('staff', Salesman::PAYROLL_ONLY_TYPES);
     }
 
     public function test_an_admin_gets_an_approval_title_and_others_do_not(): void

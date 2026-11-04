@@ -306,17 +306,21 @@ class DomesticPayoutBatchTest extends TestCase
         $manager = $this->user('user', '관리');
         $finance = $this->user('user', '재무');
 
+        $sales = $this->user('user', '영업');
+
         $this->actingAs($super);
-        $c = Volt::test('admin.settings')->assertSet('domesticPayoutEnabled', false)
+        // 2026-11-04 — 내수 칸은 「사내직원관리 공개 범위」 표의 한 열. 후보 = 급여 입력 권한자(관리 이상 + 재무), 영업은 후보 아님.
+        Volt::test('admin.settings')->assertSet('domesticPayoutEnabled', false)
             ->set('domesticPayoutEnabled', true)
-            ->assertSee('data-domestic-viewers', false)
-            ->assertSee($manager->name)->assertDontSee($finance->name)   // 후보 = 관리 이상
-            ->set('domesticViewerIds', [(string) $manager->id, (string) $finance->id])
-            ->call('saveDomesticViewers');
+            ->assertSee('data-payroll-viewers', false)
+            ->assertSee($manager->name)->assertSee($finance->name)->assertDontSee($sales->name)
+            ->set('payrollViewerMatrix.domestic', [(string) $finance->id, (string) $sales->id])
+            ->call('savePayrollViewers');
 
         $this->assertTrue(Setting::domesticPayoutEnabled());
-        $this->assertSame([$manager->id], Setting::domesticPayoutViewerIds(), '후보 밖(재무)은 저장되지 않는다');
-        $this->assertTrue($manager->fresh()->canSeeDomesticPayout());
+        $this->assertSame([$finance->id], Setting::domesticPayoutViewerIds(), '후보 밖(영업)은 저장되지 않는다');
+        $this->assertTrue($finance->fresh()->canSeeDomesticPayout(), '재무도 지정할 수 있다(jin 11-04)');
+        $this->assertFalse($manager->fresh()->canSeeDomesticPayout());
         $this->assertDatabaseHas('audit_logs', ['action' => 'domestic_payout_toggle_changed', 'new_value' => '1']);
         $this->assertDatabaseHas('audit_logs', ['action' => 'domestic_payout_viewers_changed']);
 

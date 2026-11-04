@@ -209,6 +209,24 @@ class Setting extends Model
         return self::$domesticPayoutMemo ??= (bool) self::get('domestic_payout_enabled_'.$set, $set === 'system');
     }
 
+    /**
+     * 🔒 급여 항목 공개 범위(jin 2026-11-04) — [칸 키 => [user id, …]] (칸 = Salesman::PAYROLL_VIEW_CATEGORIES, 내수직원 제외 — 그건 아래 키).
+     * **한 번도 저장 안 했으면 null** = 종전대로 급여 입력 권한자(관리 이상 + 재무) 모두 본다 — 배포 직후 재무의 급여 입력이 갑자기 막히지 않게.
+     */
+    public static function payrollViewers(): ?array
+    {
+        $raw = self::get('payroll_viewers');
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        $map = is_array($raw) ? $raw : json_decode((string) $raw, true);
+        if (! is_array($map)) {
+            return null;
+        }
+
+        return array_map(fn ($ids) => array_values(array_unique(array_map('intval', (array) $ids))), $map);
+    }
+
     /** 내수직원 월정산을 볼 수 있게 시스템관리자가 지정한 사용자 id 목록(기능설정). 시스템관리자는 지정 없이 본다. */
     public static function domesticPayoutViewerIds(): array
     {

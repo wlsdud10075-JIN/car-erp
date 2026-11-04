@@ -134,15 +134,45 @@ class Salesman extends Model
      *  - 영업 → 정산 분류(employee/freelance) 그대로(권한 무관 — 종전 동작)
      *  - 검차(ROLES 밖) → inspector
      *  - 일반사용자 ∧ 관리·수출통관·재무 → staff(급여만)
-     *  - 그 외(관리자 등급의 비영업) → null = 미러 안 함(기존 행은 비활성화)
+     *  - 업무관리자(manager) → staff(급여만, 「업무관리자」 탭) — jin 2026-11-04 «사내직원관리에 업무관리자도».
+     *    구: null 이라 관리→업무관리자로 바꾸면 명부 행이 **비활성**이 되고 그 달 급여가 월정산에서 조용히 빠졌다(ssancarerp 이다은 10월 9줄).
+     *    ⚠️ 이미 영업 사내직원·프리랜서 행이 있는 업무관리자(ssancarerp 최영숙)는 그 유형을 지킨다 — staff 로 바꾸면 차량·정산 분류가 깨진다.
+     *  - 그 외(최고관리자 등) → null = 미러 안 함(기존 행은 비활성화)
      */
-    public static function mirrorTypeFor(User $user, ?string $salesType = null): ?string
+    public static function mirrorTypeFor(User $user, ?string $salesType = null, ?string $currentType = null): ?string
     {
         return match (true) {
             $user->role === '영업' => $salesType ?: ($user->type ?: 'employee'),
             $user->role === User::INSPECTOR_ROLE => 'inspector',
             $user->role === User::DOMESTIC_STAFF_ROLE => 'domestic_staff',
             $user->permission === 'user' && in_array($user->role, User::STAFF_ROLES, true) => 'staff',
+            $user->permission === 'manager' => in_array($currentType, ['employee', 'freelance'], true) ? $currentType : 'staff',
+            default => null,
+        };
+    }
+
+    /**
+     * 🔒 급여 항목 공개 범위의 칸(jin 2026-11-04) — 기능설정에서 칸마다 볼 사람을 고른다. 내수직원은 탭 전체, 나머지는 급여 항목.
+     * 키 → 라벨. 순서 = 기능설정 표의 열 순서.
+     */
+    public const PAYROLL_VIEW_CATEGORIES = [
+        'domestic' => '내수직원',
+        'employee' => '사내직원',
+        'inspector' => '검차직원',
+        'staff:관리' => '관리',
+        'staff:수출통관' => '수출통관',
+        'staff:재무' => '재무',
+        'manager' => '업무관리자',
+    ];
+
+    /** 이 사람의 급여가 어느 공개 칸에 속하나. 프리랜서(급여 없음)는 null. */
+    public function payrollCategory(): ?string
+    {
+        return match ($this->type) {
+            'employee' => 'employee',
+            'inspector' => 'inspector',
+            'domestic_staff' => 'domestic',
+            'staff' => $this->user?->permission === 'manager' ? 'manager' : 'staff:'.($this->user?->role ?: '관리'),
             default => null,
         };
     }
@@ -163,6 +193,9 @@ class Salesman extends Model
     {
         // 직원(staff)은 연결 계정의 역할(관리/수출통관/재무)이 곧 유형이다 — 역할이 바뀌면 따라온다.
         if ($this->type === 'staff') {
+            if ($this->user?->permission === 'manager') {
+                return __('nav.permission.manager');
+            }
             $role = $this->user?->role;
 
             return $role ? __('domain.role.'.$role) : __('salesman.type.staff');

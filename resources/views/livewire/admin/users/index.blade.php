@@ -282,7 +282,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 폼 내부에서만 호출 (Vehicle::saved 훅처럼 booted 에 박지 않음) — 테스트의 Salesman::create + user_id 패턴과 충돌 회피.
         // 🔀 2026-10-14 (jin) — 직원 명부 확장. 영업뿐 아니라 검차직원·일반사용자(관리/수출통관/재무)도 Salesman 으로 미러돼
         //   사내직원관리에 올라와 급여를 적는다. 단일 출처 = Salesman::mirrorTypeFor() — 백필 커맨드(salesmen:sync-staff)와 같은 판정.
-        $mirrorType = \App\Models\Salesman::mirrorTypeFor($user, $typeValue);
+        $currentMirrorType = \App\Models\Salesman::where('user_id', $user->id)->value('type');   // 업무관리자의 기존 영업행 보존(2026-11-04)
+        $mirrorType = \App\Models\Salesman::mirrorTypeFor($user, $typeValue, $currentMirrorType);
         if ($mirrorType !== null) {
             $mirrorAttrs = [
                 'name'      => $user->name,

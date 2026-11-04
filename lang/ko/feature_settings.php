@@ -207,4 +207,8 @@ return [
     'domestic_viewers' => '볼 수 있는 사람',
     'domestic_viewers_sub' => '체크한 사람만 내수직원 월정산과 사내직원관리 내수 탭을 봅니다(시스템관리자는 항상). 결재자는 체크 없이도 알림톡 링크로 결재합니다.',
     'domestic_viewers_save' => '볼 사람 저장',
+    'payroll_viewers' => '사내직원관리 공개 범위',
+    'payroll_viewers_sub' => '체크한 사람만 사내직원관리에서 그 칸의 급여 항목을 보고 고칩니다(급여대장 업로드 포함). 내수직원 칸은 내수직원 탭·평가수수료 업로드·내수직원 월정산 전체입니다. 월정산·대표 결재 화면은 이 설정과 무관합니다. 시스템관리자는 항상 봅니다.',
+    'payroll_viewers_person' => '사람',
+    'payroll_viewers_save' => '공개 범위 저장',
 ];

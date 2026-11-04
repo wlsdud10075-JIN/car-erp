@@ -415,7 +415,36 @@ class User extends Authenticatable
             return true;
         }
 
-        return $this->approvalRank() >= 1 && in_array((int) $this->id, Setting::domesticPayoutViewerIds(), true);
+        // 후보 = 급여 입력 권한자(관리 이상 + 재무) — jin 2026-11-04 «볼 사람 자체를 시스템관리자가 설정»(재무도 고를 수 있다).
+        return $this->canEditPayroll() && in_array((int) $this->id, Setting::domesticPayoutViewerIds(), true);
+    }
+
+    /**
+     * 🔒 이 공개 칸(Salesman::PAYROLL_VIEW_CATEGORIES 키)의 급여를 보나 (jin 2026-11-04 — 사내직원관리 한정, 월정산·결재 화면은 무관).
+     * 내수직원 = 내수직원 월정산 지정자와 같다. 시스템관리자는 늘 본다. 공개 범위를 한 번도 저장 안 했으면 종전(급여 입력 권한자 모두).
+     */
+    public function canSeePayrollCategory(string $category): bool
+    {
+        if ($category === 'domestic') {
+            return $this->canSeeDomesticPayout();
+        }
+        if (! $this->canEditPayroll()) {
+            return false;
+        }
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+        $map = Setting::payrollViewers();
+
+        return $map === null || in_array((int) $this->id, $map[$category] ?? [], true);
+    }
+
+    /** 이 사람(명부 행)의 급여 칸을 보고 고칠 수 있나. 프리랜서(급여 없음)는 종전 권한 그대로. */
+    public function canSeePayrollOf(Salesman $s): bool
+    {
+        $cat = $s->payrollCategory();
+
+        return $cat === null ? $this->canEditPayroll() : $this->canSeePayrollCategory($cat);
     }
 
     /**

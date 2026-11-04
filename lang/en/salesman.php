@@ -71,6 +71,7 @@ return [
         'size_hint' => 'The file must be 10MB or smaller. Originals with heavily formatted per-appraiser sheets can exceed 80MB — copy only the dealer-fee sheet into a new workbook (paste values) and upload that.',
     ],
     'import' => [
+        'hidden' => 'Outside your visibility — skipped',
         'col_commission' => 'Commission check',
         'commission_hint' => 'Sheet sales commission − ERP (settlement + Heyman + adjustments − pension 1/12). Non-zero means one side is wrong.',
         'commission_ok' => 'Match',
