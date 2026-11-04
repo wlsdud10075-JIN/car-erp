@@ -28,6 +28,10 @@ return [
 
     'env' => env('APP_ENV', 'production'),
 
+    // 로컬 전용 사용자 전환(jin 2026-11-04) — 시스템관리자가 상단바에서 다른 계정으로 들어가 본다.
+    // 기본 = APP_ENV=local 일 때만. 🚫 운영에서 켜지 말 것(남의 계정으로 행동 = 감사 추적이 깨진다).
+    'dev_user_switch' => (bool) env('ERP_DEV_USER_SWITCH', env('APP_ENV') === 'local'),
+
     /*
     |--------------------------------------------------------------------------
     | Application Debug Mode

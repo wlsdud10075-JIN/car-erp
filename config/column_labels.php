@@ -495,6 +495,7 @@ return [
 
     // ─── audit_logs.action 한글 ─────────────────────────────────────────
     'actions' => [
+        'dev_user_switch' => '사용자 전환(로컬)',
         'created' => '생성',
         'updated' => '수정',
         'deleted' => '삭제',

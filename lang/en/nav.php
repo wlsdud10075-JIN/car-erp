@@ -92,6 +92,8 @@ return [
         'work_guide' => 'Work Guide',
     ],
 
+    'dev_switch' => ['label' => '🔀 Switch user (local)', 'back' => '↩ Back to my account'],
+
     'lang' => [
         'label' => 'Language',
         'ko' => '한국어',

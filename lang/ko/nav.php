@@ -92,6 +92,8 @@ return [
         'work_guide' => '업무 가이드',
     ],
 
+    'dev_switch' => ['label' => '🔀 사용자 전환(로컬)', 'back' => '↩ 원래 계정으로'],
+
     'lang' => [
         'label' => '언어',
         'ko' => '한국어',

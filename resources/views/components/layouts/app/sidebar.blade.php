@@ -572,6 +572,25 @@
 
             <div class="flex-1"></div>
 
+            {{-- 로컬 전용 사용자 전환(jin 2026-11-04) — 시스템관리자, 또는 시스템관리자가 전환해 들어온 상태에서만. 운영은 config 가 꺼져 안 보인다. --}}
+            @if(config('app.dev_user_switch') && (auth()->user()->isSuperAdmin() || session('dev_switch_from')))
+                <form method="POST" action="{{ route('dev.switch-user') }}" class="mr-2 flex items-center gap-1">
+                    @csrf
+                    <span class="hidden text-[11px] font-semibold text-amber-600 sm:inline">{{ __('nav.dev_switch.label') }}</span>
+                    <select name="user_id" class="input-base w-auto py-0.5 text-[12px]" onchange="this.form.submit()">
+                        @foreach(\App\Models\User::query()->whereNotIn('role', \App\Models\User::NO_LOGIN_ROLES)->orderByRaw("CASE permission WHEN 'super' THEN 0 WHEN 'admin' THEN 1 WHEN 'manager' THEN 2 ELSE 3 END")->orderBy('role')->orderBy('name')->get() as $su)
+                            <option value="{{ $su->id }}" @selected($su->id === auth()->id())>{{ $su->name }} · {{ $su->permission === 'user' ? __('domain.role.'.$su->role) : __('nav.permission.'.$su->permission).($su->approval_title ? ' '.$su->approval_title : '') }}</option>
+                        @endforeach
+                    </select>
+                </form>
+                @if(session('dev_switch_from'))
+                    <form method="POST" action="{{ route('dev.switch-back') }}" class="mr-2">
+                        @csrf
+                        <button type="submit" class="rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800 hover:bg-amber-200">{{ __('nav.dev_switch.back') }}</button>
+                    </form>
+                @endif
+            @endif
+
             {{-- i18n Phase 0 — 언어 전환 (영어 활성 시만) --}}
             @if($localeEnEnabled)
                 <form method="POST" action="{{ route('locale.update') }}" class="flex items-center gap-0.5 rounded-md bg-gray-100 p-0.5">

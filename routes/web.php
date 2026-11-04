@@ -3,6 +3,7 @@
 use App\Http\Controllers\BuyerAccountExportController;
 use App\Http\Controllers\BuyerDocumentController;
 use App\Http\Controllers\CapitalReportController;
+use App\Http\Controllers\DevUserSwitchController;
 use App\Http\Controllers\PayoutApprovalController;
 use App\Http\Controllers\ProvideNiceLookupController;
 use App\Http\Controllers\PurchaseProofController;
@@ -230,6 +231,10 @@ Route::middleware(['auth', 'verified', 'super-admin'])->prefix('admin')->name('a
 });
 
 Route::middleware(['auth'])->group(function () {
+    // 로컬 전용 사용자 전환 — 꺼져 있으면 컨트롤러가 404(config app.dev_user_switch = APP_ENV local 기본)
+    Route::post('dev/switch-user', [DevUserSwitchController::class, 'switch'])->name('dev.switch-user');
+    Route::post('dev/switch-back', [DevUserSwitchController::class, 'back'])->name('dev.switch-back');
+
     Route::redirect('settings', 'settings/profile');
 
     Volt::route('settings/profile', 'settings.profile')->name('settings.profile');
