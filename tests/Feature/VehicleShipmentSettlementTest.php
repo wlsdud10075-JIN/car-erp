@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\User;
@@ -313,7 +314,11 @@ class VehicleShipmentSettlementTest extends TestCase
         $this->assertSame(0, $vs[1]->fresh()->shipping_fee_total);
     }
 
-    public function test_closed_secondary_settlement_is_skipped_with_a_reason(): void
+    /**
+     * 🔀 2026-11-04 (jin «2차 정산이 완료된 건 금액 수정 불가, 텍스트는 수정 가능») — 서류는 3·6개월 뒤에도 나간다.
+     * 일괄 기입: 마감 차량 = 번호·날짜만(금액 0) · 금액은 나머지 차량에 n/1(합 = 총액).
+     */
+    public function test_closed_vehicle_gets_number_only_and_the_fee_goes_to_the_others(): void
     {
         $by = $this->admin();
         $this->actingAs($by);
@@ -326,26 +331,56 @@ class VehicleShipmentSettlementTest extends TestCase
 
         $svc = app(BulkVehicleShipmentService::class);
         $plan = $svc->plan('ems', 'ED5KR', [$open->id, $closed->id], 10_000, $by);
-        $out = $svc->apply('ems', 'ED5KR', [$open->id, $closed->id], 10_000, null, $by, '테스트');
+        $out = $svc->apply('ems', 'ED5KR', [$open->id, $closed->id], 10_000, '2026-11-04', $by, '테스트');
 
-        $this->assertSame([['id' => $closed->id, 'number' => $closed->vehicle_number, 'reason' => 'settlement_closed']], $plan['skipped']);
-        $this->assertSame($plan['skipped'], $out['skipped'], '미리보기와 실행이 갈리면 안 된다');
-        $this->assertSame(10_000, $open->fresh()->shipping_fee_total, '건너뛴 차량 몫까지 남은 차량이 받는다');
+        $this->assertSame([], $plan['skipped']);
+        $this->assertSame('text_only', $plan['targets'][1]['state']);
+        $this->assertSame(2, $out['applied']);
+        $this->assertSame(10_000, $open->fresh()->shipping_fee_total, '금액은 마감 안 된 차량이 전부 받는다');
         $this->assertSame(0, $closed->fresh()->shipping_fee_total);
+        $this->assertSame('ED5KR', $closed->fresh()->ems_tracking_no_cache, '번호는 마감 차량에도 남는다');
+        $this->assertTrue(AuditLog::where('auditable_id', $closed->id)->where('action', 'shipment_added')->exists(), '줄 추가가 감사로그에');
     }
 
-    public function test_closed_vehicle_blocks_individual_row_too(): void
+    public function test_all_closed_with_a_fee_is_refused_before_writing(): void
+    {
+        $by = $this->admin();
+        $this->actingAs($by);
+        $closed = $this->vehicle();
+        Settlement::create(['vehicle_id' => $closed->id, 'settlement_type' => 'ratio', 'settlement_status' => 'paid', 'secondary_status' => 'closed']);
+
+        $svc = app(BulkVehicleShipmentService::class);
+        $this->assertTrue($svc->plan('ems', 'ED6KR', [$closed->id], 5_000, $by)['no_fee_target'], '금액을 나눌 곳이 없다');
+        $this->assertFalse($svc->plan('ems', 'ED6KR', [$closed->id], 0, $by)['no_fee_target'], '금액 0 이면 번호만 넣는다');
+        $this->expectException(DomainException::class);
+        $svc->apply('ems', 'ED6KR', [$closed->id], 5_000, null, $by, '테스트');
+    }
+
+    /** 개별 줄 — 금액은 잠기고, 번호·날짜는 고칠 수 있고 감사로그에 칸별로 남는다. 0원 줄은 추가된다. */
+    public function test_closed_vehicle_locks_fee_but_not_text(): void
     {
         $by = $this->admin();
         $this->actingAs($by);
         $v = $this->vehicle();
-        Settlement::create([
-            'vehicle_id' => $v->id, 'settlement_type' => 'ratio',
-            'settlement_status' => 'paid', 'secondary_status' => 'closed',
-        ]);
+        $row = $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'ED7KR', 'fee' => 3000, 'sent_date' => '2026-08-01']);
+        Settlement::create(['vehicle_id' => $v->id, 'settlement_type' => 'ratio', 'settlement_status' => 'paid', 'secondary_status' => 'closed']);
 
+        $row->fresh()->update(['tracking_no' => 'ED8KR', 'sent_date' => '2026-11-04']);   // 텍스트 = 됨
+        $this->assertSame('ED8KR', $row->fresh()->tracking_no);
+        $cols = AuditLog::where('auditable_id', $v->id)->where('action', 'updated')->pluck('column_name')->all();
+        $this->assertContains('shipment_tracking_no', $cols);
+        $this->assertContains('shipment_sent_date', $cols);
+
+        $v->shipments()->create(['carrier' => 'dhl', 'tracking_no' => '4508', 'fee' => 0]);   // 0원 줄 추가 = 됨
+
+        try {
+            $row->fresh()->update(['fee' => 9000]);   // 금액 = 막힘
+            $this->fail('마감 차량 금액이 바뀌면 안 된다');
+        } catch (DomainException) {
+            $this->assertSame(3000, (int) $row->fresh()->fee);
+        }
         $this->expectException(DomainException::class);
-        $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'ED4KR', 'fee' => 1000]);
+        $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'ED9KR', 'fee' => 1000]);   // 금액 있는 새 줄 = 막힘
     }
 
     public function test_eight_digit_date_is_normalized_on_the_server(): void
