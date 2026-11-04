@@ -287,4 +287,16 @@ class PayoutGapsTest extends TestCase
             ->assertSet('heymanPayStr', '2800000')->set('heymanPayStr', '')->call('save');
         $this->assertNull(ExternalSettlementPay::heymanFor($sm->id, '2026-10'), '비우면 지운다');
     }
+
+    /** 헤이맨 정산금은 사내직원만 (jin 2026-11-04 «프리랜서는 아니야 — 프리랜서는 예치금 칸»). */
+    public function test_freelancer_has_no_heyman_pay_box_and_cannot_save_one(): void
+    {
+        $f = Salesman::create(['name' => '박병훈', 'type' => 'freelance', 'is_active' => true]);
+        $this->actingAs($this->user('admin'));
+
+        $c = Volt::test('erp.salesmen.index')->call('openEdit', $f->id);
+        $this->assertStringNotContainsString('data-heyman-input', $c->html());
+        $c->set('payrollMonth', '2026-10')->set('heymanPayStr', '1,374,468')->call('save');
+        $this->assertNull(ExternalSettlementPay::heymanFor($f->id, '2026-10'), '화면을 조작해도 안 들어간다');
+    }
 }

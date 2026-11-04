@@ -831,7 +831,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 PayrollEntry::writeMonthWithAudit($sm, $this->payrollMonth, $this->payrollRows(), $actor, '급여 항목 수정');
             }
             // 💱 헤이맨 정산금 — 사내직원·프리랜서, 급여와 같은 권한·같은 귀속월. 감사로그·결재 중 변경 이력은 writeHeyman 한 곳.
-            if (in_array($sm->type, ['employee', 'freelance'], true) && $actor?->canSeePayrollOf($sm) && PayrollEntry::isMonth($this->payrollMonth)) {
+            if ($sm->type === 'employee' && $actor?->canSeePayrollOf($sm) && PayrollEntry::isMonth($this->payrollMonth)) {   // 사내직원만(2026-11-04)
                 ExternalSettlementPay::writeHeyman($sm, $this->payrollMonth, $this->signedMoneyOrNull($this->heymanPayStr), $actor);
             }
         } else {
@@ -1493,21 +1493,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="mt-1 text-[11px] text-gray-500">{{ __('salesman.field.heyman_pay_hint') }}</p>
             @endif
         </div>
-        @elseif($linkedUserType === 'freelance' && $canEditPayroll)
-        {{-- 💱 프리랜서도 헤이맨 정산금을 같이 받는 경우가 있다(jin «사내직원/프리랜서 다 필요») — 귀속월은 급여와 같은 선택. --}}
-        <div class="rounded-lg border border-violet-200 bg-violet-50 p-3" data-heyman-input>
-            <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-semibold text-gray-800">{{ __('salesman.field.heyman_pay') }}</span>
-                <select wire:model.live="payrollMonth" class="input-base w-auto py-1 text-xs text-gray-800" aria-label="{{ __('salesman.payroll.month') }}">
-                    @foreach($this->payrollMonthOptions() as $m)
-                    <option value="{{ $m }}">{{ $m }}</option>
-                    @endforeach
-                </select>
-            </div>
-            <input wire:model="heymanPayStr" data-money data-money-signed type="text" inputmode="numeric"
-                   class="input-base mt-2 text-right text-xs tabular-nums" placeholder="{{ __('salesman.payroll.amount_ph') }}" />
-            <p class="mt-1 text-[11px] text-gray-500">{{ __('salesman.field.heyman_pay_hint') }}</p>
-        </div>
+        {{-- 💱 헤이맨 정산금은 사내직원만(jin 2026-11-04 «프리랜서는 아니야» — 프리랜서는 예치금 칸만). 구 10-21 프리랜서 상자 제거. --}}
         @endif
         {{-- 🚪 지급 대상 제외 (jin 2026-09-16) — 「헤이맨」처럼 사람이 아닌 계정(자매 회사)용.
              ⚠️ tier 와 달리 **사내직원 한정이 아니다** — 어떤 유형이든 지급 안 하는 계정이 있을 수 있다. --}}
