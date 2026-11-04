@@ -32,7 +32,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     // ── 🔗 헤이맨 정산 가져오기 (jin 2026-11-04 «heyman 정산 끝났는데 ssancar 로 왜 미러가 안 되지») ──
     //   heymanerp 의 **승인된** 그 달 사내직원 월정산에서 사람별 실지급을 읽어 「헤이맨 정산금」 칸에 넣는다.
-    //   미리보기 → 줄마다 넣을지 체크 → 적용. 매칭 = 전화번호 → 이름(살아 있는 명부에서 하나일 때만) → 수동.
+    //   미리보기 → 줄마다 넣을지 체크 → 적용. 연결 = 드롭다운에서 직접 고름(자동 매칭 없음, jin 11-04) — 적용하면 기억해 다음 달부터 미리 골라 둔다.
+    //   🔒 공개 범위 「사내직원」 칸에 체크된 사람만(버튼·미리보기 금액 포함) — 범위 밖 계정에 금액이 보이고 후보가 비던 것(jin 11-04 제보).
     //   쓰기는 ExternalSettlementPay::writeHeyman(감사로그 + 결재 중 월정산 변경 이력). 같은 값이면 안 쓴다.
     public bool $showHeymanImport = false;
 
@@ -49,9 +50,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public ?string $heymanError = null;
 
+    /** 가져오기를 쓸 수 있나 — 연결 설정 + 공개 범위 「사내직원」 칸. */
+    private function canImportHeyman(): bool
+    {
+        return \App\Services\Payout\HeymanPayoutClient::configured() && (bool) auth()->user()?->canSeePayrollCategory('employee');
+    }
+
     public function openHeymanImport(): void
     {
-        abort_unless(\App\Services\Payout\HeymanPayoutClient::configured() && auth()->user()?->canEditPayroll(), 403);
+        abort_unless($this->canImportHeyman(), 403);
         $this->reset(['heymanRows', 'heymanPick', 'heymanUse', 'heymanError']);
         $this->heymanMonth = now()->subMonth()->format('Y-m');
         $this->showHeymanImport = true;
@@ -61,6 +68,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function closeHeymanImport(): void
     {
         $this->reset(['showHeymanImport', 'heymanRows', 'heymanPick', 'heymanUse', 'heymanError']);
+    }
+
+    /** 드롭다운에서 사람을 고르면 「넣기」도 같이 켠다(비우면 끈다). */
+    public function updatedHeymanPick($value, $key): void
+    {
+        $this->heymanUse[(int) $key] = (string) $value !== '' && (int) ($this->heymanRows[(int) $key]['payout'] ?? 0) !== 0;
     }
 
     public function updatedHeymanMonth(): void
@@ -82,7 +95,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function fetchHeymanPayouts(): void
     {
-        abort_unless(\App\Services\Payout\HeymanPayoutClient::configured() && auth()->user()?->canEditPayroll(), 403);
+        abort_unless($this->canImportHeyman(), 403);
         $this->reset(['heymanRows', 'heymanPick', 'heymanUse', 'heymanError']);
         if (! PayrollEntry::isMonth($this->heymanMonth)) {
             return;
@@ -110,21 +123,21 @@ new #[Layout('components.layouts.app')] class extends Component {
 
             return;
         }
-        $cands = collect($this->heymanCandidates);
-        $digits = fn ($v) => preg_replace('/\D/', '', (string) $v);
+        // 기억한 연결만 미리 고른다 — 처음엔 비어 있고 사람이 드롭다운에서 고른다(jin 11-04 «매칭하지 말고»).
+        $candIds = array_column($this->heymanCandidates, 'id');
+        $links = \App\Models\Setting::heymanPayoutLinks();
         foreach ($this->heymanRows as $i => $r) {
-            $byPhone = $digits($r['phone'] ?? '') !== '' ? $cands->filter(fn ($c) => $digits($c['phone']) === $digits($r['phone'])) : collect();
-            $byName = $cands->where('name', $r['name']);
-            $pick = $byPhone->count() === 1 ? $byPhone->first() : ($byName->count() === 1 ? $byName->first() : null);
-            $this->heymanPick[$i] = $pick ? (string) $pick['id'] : '';
-            $this->heymanUse[$i] = $pick !== null && (int) $r['payout'] !== 0;
+            $id = (int) ($links[(string) $r['salesman_id']] ?? 0);
+            $ok = $id > 0 && in_array($id, $candIds, true);
+            $this->heymanPick[$i] = $ok ? (string) $id : '';
+            $this->heymanUse[$i] = $ok && (int) $r['payout'] !== 0;
         }
     }
 
     public function applyHeymanImport(): void
     {
         $actor = auth()->user();
-        abort_unless(\App\Services\Payout\HeymanPayoutClient::configured() && $actor?->canEditPayroll(), 403);
+        abort_unless($this->canImportHeyman(), 403);
         if (! PayrollEntry::isMonth($this->heymanMonth) || $this->heymanRows === []) {
             return;
         }
@@ -155,6 +168,13 @@ new #[Layout('components.layouts.app')] class extends Component {
             ExternalSettlementPay::writeHeyman($sm, $this->heymanMonth, $amount, $actor);
             $done++;
         }
+        // 연결 기억 — 고른 줄(넣었든 같아서 건너뛰었든)의 헤이맨 사람 → 이 회사 사람. 다음 달부터 미리 골라진다.
+        $links = \App\Models\Setting::heymanPayoutLinks();
+        foreach ($picked as $i => $id) {
+            $links[(string) $this->heymanRows[$i]['salesman_id']] = (int) $id;
+        }
+        \App\Models\Setting::updateOrCreate(['key' => 'heyman_payout_links'],
+            ['value' => json_encode($links), 'type' => 'string', 'description' => '헤이맨 정산 가져오기 연결(헤이맨 사람 → 이 회사 사람)']);
         unset($this->salesmen);
         $this->dispatch('notify', message: __('salesman.heyman_import.done', ['n' => $done, 'same' => $same]), type: 'success');
         $this->closeHeymanImport();
@@ -902,7 +922,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         </a>
         @endif
         @if(auth()->user()?->canEditPayroll())
-        @if(\App\Services\Payout\HeymanPayoutClient::configured())
+        @if(\App\Services\Payout\HeymanPayoutClient::configured() && auth()->user()->canSeePayrollCategory('employee'))
         <button type="button" wire:click="openHeymanImport" class="btn-primary" data-heyman-import-button>{{ __('salesman.heyman_import.button') }}</button>
         @endif
         @php $canUploadPayroll = collect(array_keys(\App\Models\Salesman::PAYROLL_VIEW_CATEGORIES))->contains(fn ($c) => $c !== 'domestic' && auth()->user()->canSeePayrollCategory($c)); @endphp

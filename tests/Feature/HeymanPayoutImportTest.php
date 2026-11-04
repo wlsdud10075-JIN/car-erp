@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AuditLog;
 use App\Models\ExternalSettlementPay;
 use App\Models\Salesman;
+use App\Models\Setting;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Services\Payout\HeymanPayoutClient;
@@ -79,35 +80,50 @@ class HeymanPayoutImportTest extends TestCase
         $this->withHeaders($headers)->get('/api/internal/peer/payouts?month=2026-10')->assertStatus(401);   // 같은 nonce 재사용 거부
     }
 
-    public function test_import_matches_by_phone_then_unique_name_and_writes_only_changes(): void
+    /** 연결 = 처음 한 번 직접 고름(자동 매칭 없음) → 적용하면 기억해 다음부터 미리 골라 둔다 (jin 2026-11-04). */
+    public function test_first_pick_is_manual_and_remembered_after_apply(): void
     {
         config(['services.erp_peer.hmac_secret' => self::SECRET, 'services.erp_peer.heyman_url' => 'https://heyman.test']);
         $admin = User::factory()->create(['permission' => 'admin', 'role' => '관리', 'email_verified_at' => now()]);
-        $live = Salesman::create(['name' => '무사백', 'type' => 'employee', 'is_active' => true, 'phone' => '01021114540']);
+        $live = Salesman::create(['name' => '무사백', 'type' => 'employee', 'is_active' => true, 'phone' => '010-2111-4540']);
         Salesman::create(['name' => '무사백', 'type' => 'employee', 'is_active' => true])->delete();   // 소프트 삭제된 옛 행 — 후보 아님
         $park = Salesman::create(['name' => '박병훈', 'type' => 'freelance', 'is_active' => true]);
-        Salesman::create(['name' => '조하', 'type' => 'employee', 'is_active' => true]);
-        Salesman::create(['name' => '조하', 'type' => 'employee', 'is_active' => true]);   // 살아 있는 동명이인 → 자동 연결 안 함
         Http::fake(['heyman.test/*' => Http::response(['month' => '2026-10', 'batches' => [['id' => 5]], 'people' => [
             ['salesman_id' => 1, 'name' => '무사백', 'type' => 'employee', 'payout' => 2_240_619, 'phone' => '010-2111-4540'],
             ['salesman_id' => 9, 'name' => '박병훈', 'type' => 'freelance', 'payout' => 1_374_468, 'phone' => '010-4985-6986'],
-            ['salesman_id' => 6, 'name' => '조하', 'type' => 'employee', 'payout' => 50_000, 'phone' => null],
         ]])]);
         $this->actingAs($admin);
 
-        $c = Volt::test('erp.salesmen.index')->assertSee('data-heyman-import-button', false)
-            ->call('openHeymanImport')->set('heymanMonth', '2026-10');
-        $this->assertSame(['무사백', '조하'], array_column($c->get('heymanRows'), 'name'), '프리랜서(박병훈)는 가져오지 않는다 — jin 11-04 «사내직원만»');
-        $this->assertSame([(string) $live->id, ''], array_values($c->get('heymanPick')), '전화 → 유일한 이름 → 동명이인은 비움');
+        $c = Volt::test('erp.salesmen.index')->assertSee('data-heyman-import-button', false)->call('openHeymanImport');
+        $this->assertSame(['무사백'], array_column($c->get('heymanRows'), 'name'), '프리랜서(박병훈)는 가져오지 않는다 — jin 11-04 «사내직원만»');
+        $this->assertSame([''], array_values($c->get('heymanPick')), '처음엔 자동으로 고르지 않는다');
+        $this->assertNotContains($live->id + 1, array_column($c->instance()->heymanCandidates(), 'id'), '지워진 옛 행은 후보 아님');
+        $c->set('heymanPick.0', (string) $live->id);
+        $this->assertTrue($c->get('heymanUse')[0], '고르면 넣기가 같이 켜진다');
         $c->call('applyHeymanImport');
 
         $this->assertSame(2_240_619, ExternalSettlementPay::heymanFor($live->id, '2026-10'));
         $this->assertNull(ExternalSettlementPay::heymanFor($park->id, '2026-10'), '프리랜서는 안 넣는다');
-        $logs = AuditLog::where('column_name', 'heyman_pay_2026-10')->count();
-        $this->assertSame(1, $logs);
+        $this->assertSame(['1' => $live->id], Setting::heymanPayoutLinks());
+        $this->assertSame(1, AuditLog::where('column_name', 'heyman_pay_2026-10')->count());
 
-        Volt::test('erp.salesmen.index')->call('openHeymanImport')->set('heymanMonth', '2026-10')->call('applyHeymanImport');
+        $again = Volt::test('erp.salesmen.index')->call('openHeymanImport');
+        $this->assertSame([(string) $live->id], array_values($again->get('heymanPick')), '두 번째부터는 기억한 사람이 미리 골라진다');
+        $again->call('applyHeymanImport');
         $this->assertSame(1, AuditLog::where('column_name', 'heyman_pay_2026-10')->count(), '같은 값은 다시 안 쓴다');
+    }
+
+    /** 공개 범위 「사내직원」 칸 밖 계정 — 버튼이 없고 열 수도 없다(금액이 보이고 후보가 비던 것, jin 11-04 제보). */
+    public function test_people_outside_the_employee_column_cannot_import(): void
+    {
+        config(['services.erp_peer.hmac_secret' => self::SECRET, 'services.erp_peer.heyman_url' => 'https://heyman.test']);
+        $outside = User::factory()->create(['permission' => 'manager', 'role' => '관리', 'email_verified_at' => now()]);
+        Setting::query()->updateOrCreate(['key' => 'payroll_viewers'], ['value' => json_encode(['employee' => []]), 'type' => 'string']);
+        Setting::flushRiskParamMemo();
+        $this->actingAs($outside);
+
+        Volt::test('erp.salesmen.index')->assertDontSee('data-heyman-import-button', false)
+            ->call('openHeymanImport')->assertForbidden();
     }
 
     /** ⚠️ 승인 전에 누르면 — 「결재 중(누구 차례)」/「아직 안 올라옴」을 갈라 경고하고 아무것도 안 넣는다 (jin 2026-11-04). */

@@ -227,6 +227,18 @@ class Setting extends Model
         return array_map(fn ($ids) => array_values(array_unique(array_map('intval', (array) $ids))), $map);
     }
 
+    /**
+     * 🔗 헤이맨 정산 가져오기 연결 기억(jin 2026-11-04 «최초 매칭만 한 번 하면 그 뒤로는 계속 유지») — [heymanerp salesman_id => 이 회사 salesman_id].
+     * 자동 매칭은 안 한다(jin «매칭하지 말고 드롭박스에서 고르자») — 처음 한 번 고르고 적용하면 여기에 남는다.
+     */
+    public static function heymanPayoutLinks(): array
+    {
+        $raw = self::get('heyman_payout_links');
+        $map = is_array($raw) ? $raw : (json_decode((string) $raw, true) ?: []);
+
+        return array_map('intval', $map);
+    }
+
     /** 내수직원 월정산을 볼 수 있게 시스템관리자가 지정한 사용자 id 목록(기능설정). 시스템관리자는 지정 없이 본다. */
     public static function domesticPayoutViewerIds(): array
     {
