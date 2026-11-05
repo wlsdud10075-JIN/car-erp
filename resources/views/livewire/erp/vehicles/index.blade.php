@@ -4737,6 +4737,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function openEdit(int $id): void
     {
+        // 🚨 직전에 다른 차에서 받은 NICE 원본을 비운다(jin 2026-11-05) — 안 비우면 이 차를 저장할 때 그 원본이
+        //    이 차 nice_raw 로 들어간다(신규 등록은 resetForm 이 비웠지만 편집 열기엔 없었다). 3사 830대가 그렇게 섞였다.
+        $this->niceRaw = [];
         $v = Vehicle::with(['finalPayments', 'purchaseBalancePayments'])->findOrFail($id);
 
         // C7-b — 영업 role은 본인 담당 차량만 편집 가능.
@@ -6650,7 +6653,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
 
         // NICE 조회 원본 보존 — 이번에 조회한 경우에만 기입(편집 시 빈 niceRaw 가 기존 값을 덮어쓰지 않도록 조건부).
-        if (! empty($this->niceRaw)) {
+        //   🛡️ 원본 차대번호가 이 차 차대번호와 다르면 저장하지 않는다(2026-11-05) — 다른 차 원본이 섞여 들어오는 길을 한 번 더 막는다.
+        $rawVin = strtoupper(preg_replace('/\s+/', '', (string) ($this->niceRaw['resVehicleIdNo'] ?? '')));
+        $ownVin = strtoupper(preg_replace('/\s+/', '', (string) $this->nice_reg_vin));
+        if (! empty($this->niceRaw) && ($rawVin === '' || $ownVin === '' || $rawVin === $ownVin)) {
             $data['nice_raw'] = $this->niceRaw;
         }
 

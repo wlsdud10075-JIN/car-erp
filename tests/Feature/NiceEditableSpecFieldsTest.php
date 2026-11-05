@@ -232,4 +232,54 @@ class NiceEditableSpecFieldsTest extends TestCase
             ->expectsOutputToContain('채울 차량 0대')
             ->assertSuccessful();
     }
+
+    /**
+     * 🚨 A차에서 NICE 조회 → B차를 열어 저장해도 A차 원본이 B차에 안 들어간다 (jin 2026-11-05, 3사 830대가 이렇게 섞였다).
+     * 원인 = 편집 열기가 niceRaw 를 안 비웠다. 한 겹 더 = 원본 차대번호 ≠ 이 차 차대번호면 저장하지 않는다.
+     */
+    public function test_a_lookup_on_one_vehicle_never_lands_on_the_next_one(): void
+    {
+        Http::fake(['*' => Http::response(['success' => true, 'message' => 'ok', 'data' => array_merge(self::RAW, [
+            'resVehicleIdNo' => 'KNAAAAA111', 'resFinalOwner' => '홍길동',
+        ])], 200)]);
+        $a = $this->vehicle();
+        $b = $this->vehicle(['vehicle_number' => '34나5678', 'nice_reg_vin' => 'WBBBBBB222']);
+        $this->actingAs($this->admin());
+
+        Volt::test('erp.vehicles.index')
+            ->call('openEdit', $a->id)->call('lookupNiceApi')
+            ->call('openEdit', $b->id)->call('save')->assertHasNoErrors();
+
+        $this->assertNull($b->fresh()->nice_raw, '편집 열기가 앞 차 원본을 비워야 한다');
+
+        // 저장 가드 — 원본이 남아 있어도 차대번호가 다르면 저장 안 함
+        $c = Volt::test('erp.vehicles.index')->call('openEdit', $b->id)
+            ->set('niceRaw', ['resVehicleIdNo' => 'KNAAAAA111', 'resSpecControlNo' => 'X'])->call('save')->assertHasNoErrors();
+        $this->assertNull($b->fresh()->nice_raw, '차대번호가 다른 원본은 저장하지 않는다');
+    }
+
+    /** 정리 명령 — 차대번호가 다른 원본만 비우고, 그 원본에서 온 칸만 비운다(사람이 고친 값·맞는 차는 그대로). 멱등. */
+    public function test_clear_command_removes_only_foreign_raw_and_the_columns_it_filled(): void
+    {
+        $foreign = ['resVehicleIdNo' => 'KNAAAAA111', 'commCarName' => '모닝', 'resSpecControlNo' => 'A011-00048-0140-1414', 'fomNm' => 'TA55BG-L', 'engineSpec' => '3/998'];
+        $bad = $this->vehicle(['vehicle_number' => '01부5398', 'nice_reg_vin' => 'WBATX310XJLB58905', 'nice_raw' => $foreign,
+            'nice_spec_control_no' => 'A011-00048-0140-1414', 'nice_spec_form_name' => '수기로 고친 형식', 'nice_spec_cylinders' => 3]);
+        $ok = $this->vehicle(['vehicle_number' => '08오4540', 'nice_reg_vin' => 'KNAAAAA111', 'nice_raw' => $foreign,
+            'nice_spec_control_no' => 'A011-00048-0140-1414']);
+
+        $this->artisan('vehicles:clear-mismatched-nice')->expectsOutputToContain('dry-run · 다른 차 NICE 원본 1대')->assertSuccessful();
+        $this->assertNotNull($bad->fresh()->nice_raw, 'dry-run 은 안 바꾼다');
+
+        $this->artisan('vehicles:clear-mismatched-nice --apply')->assertSuccessful();
+        $bad->refresh();
+        $this->assertNull($bad->nice_raw);
+        $this->assertNull($bad->nice_spec_control_no, '그 원본에서 온 제원번호는 비운다');
+        $this->assertNull($bad->nice_spec_cylinders);
+        $this->assertSame('수기로 고친 형식', $bad->nice_spec_form_name, '사람이 고친 값은 둔다');
+        $this->assertSame('A011-00048-0140-1414', $ok->fresh()->nice_spec_control_no, '맞는 차는 그대로');
+        $this->assertNotNull($ok->fresh()->nice_raw);
+        $this->assertDatabaseHas('audit_logs', ['auditable_id' => $bad->id, 'action' => 'nice_mismatch_cleared', 'column_name' => 'nice_raw']);
+
+        $this->artisan('vehicles:clear-mismatched-nice --apply')->expectsOutputToContain('다른 차 NICE 원본 0대');
+    }
 }

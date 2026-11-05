@@ -60,6 +60,13 @@ return [
         'is_deposit_purchase' => '보증금으로 매입',
         'nice_reg_owner_name' => '소유자',
         'nice_reg_owner_rrn' => '주민(법인)등록번호',
+        'nice_raw' => 'NICE 조회 원본',
+        'nice_spec_control_no' => '제원관리번호',
+        'nice_spec_form_name' => '형식',
+        'nice_spec_max_power' => '최대출력',
+        'nice_spec_cylinders' => '기통수',
+        'nice_inspection_start' => '검사 시작일',
+        'nice_inspection_end' => '검사 종료일',
 
         // 비용 9개
         'cost_deregistration' => '말소비',
@@ -495,6 +502,7 @@ return [
 
     // ─── audit_logs.action 한글 ─────────────────────────────────────────
     'actions' => [
+        'nice_mismatch_cleared' => '다른 차 NICE 원본 정리',
         'dev_user_switch' => '사용자 전환(로컬)',
         'created' => '생성',
         'updated' => '수정',
