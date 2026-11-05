@@ -187,6 +187,38 @@ class CostStatementImportTest extends TestCase
         $this->assertCount(2, $c->get('costImportParsed')['matched']);  // 요약행 오파싱 없음
     }
 
+    /**
+     * 현대글로비스 2026-09분~ 서식(jin 2026-11-05) — 1행 머리글 · F 차량번호 · L 합계(부가세 포함) · 맨 끝 「합 계」 줄.
+     * 번호 뒤에 차종이 붙은 칸(`35보9567벤츠`)·대괄호(`[08모5171]`)도 꺼내 읽는다 — 통째 일치였을 땐 그 줄이 조용히 빠졌다.
+     */
+    public function test_glovis_layout_reads_total_column_and_tolerates_text_around_the_plate(): void
+    {
+        $this->actingAs($this->admin());
+        $this->makeVehicle('168소6394');
+        $this->makeVehicle('35보9567');
+        $this->makeVehicle('08모5171');
+
+        // A순번 B접수일 C접수자 D출발 E도착 F차량번호 G비고 H탁송료 I실비 J공급가 K부가세 L합계
+        $rows = [['순번', '접수일', '접수자', '출발지', '도착지', '차량번호', '비고', '탁송료', '실비', '공급가', 'VAT', '합계']];
+        $rows[] = [1, '2026-09-01', '싼카1', '인천', '시흥', '168소6394', '', 30000, 0, 30000, 3000, 33000];
+        $rows[] = [2, '2026-09-02', '싼카1', '서울', '시흥', '35보9567벤츠', '', 45000, 0, 45000, 4500, 49500];
+        $rows[] = [3, '2026-09-03', '싼카1', '서울', '시흥', '[08모5171]  ', '주유', 30000, 10000, 40000, 4000, 44000];
+        $rows[] = [4, '2026-09-04', '싼카1', '서울', '시흥', '1234가56789', '', 1000, 0, 1000, 100, 1100];   // 번호 아님
+        $rows[] = ['합 계', '', '', '', '', '', '', 106000, 10000, 116000, 11600, 127600];
+
+        $c = Volt::test('erp.vehicles.index')
+            ->call('openCostImport')
+            ->set('costImportColumn', 'cost_towing')
+            ->set('costImportCompany', 'glovis')
+            ->set('costImportFile', $this->uploadXlsx($rows));
+
+        $amounts = collect($c->get('costImportParsed')['matched'])->pluck('amount', 'number');
+        $this->assertSame(33000, (int) $amounts['168소6394'], 'L 합계(부가세 포함)');
+        $this->assertSame(49500, (int) $amounts['35보9567'], '번호 뒤 차종이 붙어도 읽는다');
+        $this->assertSame(44000, (int) $amounts['08모5171'], '대괄호·공백도');
+        $this->assertCount(3, $c->get('costImportParsed')['matched'], '합계 줄·숫자에 붙은 가짜 번호 없음');
+    }
+
     /** 좌표 파서 회사는 붙여넣기 금지(422) — 셀 위치 고정이라 xlsx 전용. */
     public function test_coordinate_company_rejects_paste(): void
     {

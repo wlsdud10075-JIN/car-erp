@@ -896,11 +896,14 @@ new #[Layout('components.layouts.app')] class extends Component {
             $sheet = $this->loadCostStatementSheet();
             $highest = $sheet->getHighestRow();
             for ($r = $layout['start']; $r <= $highest; $r++) {
-                // 차량번호 — 앞뒤·내부 공백 제거 후 정규식 검증(합계행·빈행·헤더 skip).
-                $plate = preg_replace('/\s+/u', '', (string) $sheet->getCell($layout['plate'].$r)->getCalculatedValue());
-                if (! preg_match('/^\d{2,3}[가-힣]\d{4}$/u', $plate)) {
+                // 차량번호 — 공백 제거 후 칸 안에서 번호 모양을 **찾아 꺼낸다**(합계행·빈행·헤더 skip).
+                //   🔀 2026-11-05 — 통째 일치에서 추출로: 글로비스 명세서에 `[08모5171]`(8월분)·`35보9567벤츠`(9월분)처럼
+                //   번호 앞뒤에 글자가 붙어 와서 그 줄이 조용히 빠졌다(9월분 2줄 187,000원).
+                $cellText = preg_replace('/\s+/u', '', (string) $sheet->getCell($layout['plate'].$r)->getCalculatedValue());
+                if (! preg_match('/(?<!\d)\d{2,3}[가-힣]\d{4}(?!\d)/u', $cellText, $plateMatch)) {   // 숫자에 이어 붙은 건 번호가 아니다
                     continue;
                 }
+                $plate = $plateMatch[0];
                 // 금액 = 성분열 합(구천육 F+G, 현대A1 I+J) — 총액 정의를 코드에 명시, 계산엔진 의존 제거.
                 $amount = 0;
                 foreach ($layout['amount'] as $col) {
