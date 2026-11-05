@@ -198,19 +198,31 @@ class AlimtalkRecipients
         return ($raw === null || $raw === '') ? $default : max(0, (int) $raw);
     }
 
-    /** 경매 차량 말소 재촉 최소 경과일 기본값 (jin 2026-11-05 «경매·경매장 차량은 7일 이후에»). */
-    public const AUCTION_DEREG_DEFAULT = 7;
-
     /**
-     * 🔨 경매 차량(구입처에 「경매」) 말소 재촉은 매입 완납 후 이 날부터 — 역할별 단계 일수보다 작으면 이 날까지 기다린다(회사별).
-     * 경매장 차는 말소를 경매장이 처리해 늦게 오므로(jin) 일찍 재촉하면 헛알림이 된다. 목록·대시보드 「말소 필요」는 그대로(jin «알림톡만»).
-     * 안내 화면 말소 재촉 카드의 숫자칸이 바꾼다(§8 #60 — 화면에 보이는 규칙). 비우면 기본값.
+     * 🔨 경매 차량(구입처에 「경매」) 단계별 일수 기본값 (jin 2026-11-05 «영업/관리 10일, 업무관리자/대표 12일 — 지금처럼 개별로»).
+     * 받을 역할(체크)은 일반 차와 같고 **날짜만** 따로다. 경매장 차는 말소를 경매장이 처리해 늦게 온다(일찍 재촉하면 헛알림).
+     * 목록·대시보드 「말소 필요」는 그대로(jin «알림톡만»).
      */
-    public static function auctionDeregistrationDays(): int
-    {
-        $raw = Setting::get('alimtalk_dereg_auction_days_'.Setting::companyTemplateSet());
+    public const AUCTION_ESCALATION_DEFAULTS = [
+        'erp_deregistration_reminder' => ['영업' => 10, '관리' => 10, 'manager' => 12, 'admin' => 12],
+    ];
 
-        return ($raw === null || $raw === '') ? self::AUCTION_DEREG_DEFAULT : max(0, (int) $raw);
+    /** 경매 차량 일수를 따로 두는 알림인가 (안내 화면 「🔨 경매 차량」 줄 노출 조건). */
+    public static function supportsAuctionEscalation(string $code): bool
+    {
+        return isset(self::AUCTION_ESCALATION_DEFAULTS[$code]);
+    }
+
+    /** 경매 차량의 그 역할 시작 경과일 (회사별). 비우면 기본값 — escalationDays 와 같은 규칙. */
+    public static function auctionEscalationDays(string $code, string $group): int
+    {
+        $default = (int) (self::AUCTION_ESCALATION_DEFAULTS[$code][$group] ?? self::escalationDays($code, $group));
+        if (! self::supportsAuctionEscalation($code)) {
+            return self::escalationDays($code, $group);
+        }
+        $raw = Setting::get("alimtalk_escalate_auction_{$code}_{$group}_".Setting::companyTemplateSet());
+
+        return ($raw === null || $raw === '') ? $default : max(0, (int) $raw);
     }
 
     /** 이 알림이 차량 스코프형인가. */

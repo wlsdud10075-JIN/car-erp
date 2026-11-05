@@ -221,22 +221,27 @@ class AlimtalkTriggerTest extends TestCase
     }
 
     /**
-     * 🔨 경매 차량(구입처에 「경매」) = 완납 후 최소 7일(기본, 안내 화면에서 회사별) — jin 2026-11-05.
-     * 같은 날 완납한 일반 차는 D+2 그대로 간다. 안내 화면 숫자를 바꾸면 그 날로.
+     * 🔨 경매 차량(구입처에 「경매」) = 역할별 날짜를 따로 — 기본 영업·관리 10 · 업무관리자·최고관리자 12 (jin 2026-11-05).
+     * 같은 날 완납한 일반 차는 D+2 그대로 간다. 안내 화면 경매 줄 숫자를 바꾸면 그 날로.
      */
     public function test_deregistration_waits_longer_for_auction_vehicles(): void
     {
+        $this->assertSame(10, AlimtalkRecipients::auctionEscalationDays('erp_deregistration_reminder', '영업'));
+        $this->assertSame(10, AlimtalkRecipients::auctionEscalationDays('erp_deregistration_reminder', '관리'));
+        $this->assertSame(12, AlimtalkRecipients::auctionEscalationDays('erp_deregistration_reminder', 'manager'));
+        $this->assertSame(12, AlimtalkRecipients::auctionEscalationDays('erp_deregistration_reminder', 'admin'));
+
         $this->enableAlimtalk(['erp_deregistration_reminder']);
         $sm = Salesman::create(['name' => '박영업', 'phone' => '010-5555-3333', 'is_active' => true]);
-        $this->paidVehicle($sm, '33다3456', 6, ['purchase_from' => '경매장-AJ셀카']);
-        $this->paidVehicle($sm, '44라4567', 6);   // 일반 차
+        $this->paidVehicle($sm, '33다3456', 9, ['purchase_from' => '경매장-AJ셀카']);
+        $this->paidVehicle($sm, '44라4567', 9);   // 일반 차
 
         $this->artisan('alimtalk:deregistration')->assertSuccessful();
         Http::assertSent(fn ($req) => str_contains($req->data()[0]['msg'] ?? '', '44라4567')
-            && ! str_contains($req->data()[0]['msg'] ?? '', '33다3456'));   // 경매 차는 6일째라 아직
+            && ! str_contains($req->data()[0]['msg'] ?? '', '33다3456'));   // 경매 차는 9일째라 아직(영업 10)
 
-        // 안내 화면에서 5일로 낮추면 6일째 경매 차도 간다
-        Setting::updateOrCreate(['key' => 'alimtalk_dereg_auction_days_'.Setting::companyTemplateSet()], ['value' => '5', 'type' => 'string']);
+        // 안내 화면 경매 줄 영업 칸을 8일로 낮추면 9일째 경매 차도 간다
+        Setting::updateOrCreate(['key' => 'alimtalk_escalate_auction_erp_deregistration_reminder_영업_'.Setting::companyTemplateSet()], ['value' => '8', 'type' => 'string']);
         AlimtalkLog::query()->delete();   // 하루 1회 막음 해제
         $this->artisan('alimtalk:deregistration')->assertSuccessful();
         Http::assertSent(fn ($req) => str_contains($req->data()[0]['msg'] ?? '', '33다3456'));
@@ -449,19 +454,22 @@ class AlimtalkTriggerTest extends TestCase
             '비우면 기본값으로 돌아간다');
     }
 
-    /** 🔨 경매 최소 일수 = 안내 화면 말소 재촉 카드 숫자칸 · 같은 [저장] · 비우면 7. */
+    /** 🔨 경매 차량 역할별 날짜 = 안내 화면 말소 재촉 카드 「🔨 경매 차량」 줄 · 같은 [저장] · 비우면 기본(10·10·12·12). */
     public function test_auction_days_are_saved_from_the_catalog_card(): void
     {
         $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
         $c = Volt::test('admin.alimtalk-catalog.index')
             ->assertSeeHtml('data-auction-dereg-days')
-            ->assertSet('auctionDeregDays', '7')
-            ->set('auctionDeregDays', '10')
+            ->assertSet('escalateAuction.erp_deregistration_reminder.영업', '10')
+            ->assertSet('escalateAuction.erp_deregistration_reminder.admin', '12')
+            ->set('escalateAuction.erp_deregistration_reminder.admin', '15')
             ->call('saveRoles', 'erp_deregistration_reminder');
-        $this->assertSame(10, AlimtalkRecipients::auctionDeregistrationDays());
+        $this->assertSame(15, AlimtalkRecipients::auctionEscalationDays('erp_deregistration_reminder', 'admin'));
+        $this->assertSame(4, AlimtalkRecipients::escalationDays('erp_deregistration_reminder', 'admin'), '일반 차 날짜는 그대로');
 
-        $c->set('auctionDeregDays', '')->call('saveRoles', 'erp_deregistration_reminder')->assertSet('auctionDeregDays', '7');
-        $this->assertSame(7, AlimtalkRecipients::auctionDeregistrationDays(), '비우면 기본값');
+        $c->set('escalateAuction.erp_deregistration_reminder.admin', '')->call('saveRoles', 'erp_deregistration_reminder')
+            ->assertSet('escalateAuction.erp_deregistration_reminder.admin', '12');
+        $this->assertSame(12, AlimtalkRecipients::auctionEscalationDays('erp_deregistration_reminder', 'admin'), '비우면 기본값');
     }
 
     public function test_settle_pending_hook_notifies_managers_on_created(): void
