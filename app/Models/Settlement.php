@@ -416,6 +416,17 @@ class Settlement extends Model
             ->orWhereDoesntHave('salesman', fn ($q2) => $q2->immediateLeavers()));
     }
 
+    /**
+     * 🚪 퇴사 정산 배치로 이미 나간 정산 빼기 (jin 2026-11-05 «정산처리에서 이승훈은 없어져야») — 정산관리 목록·담당자 카드가
+     * 귀속월로 묶어 보여 주므로, 퇴사 정산으로 지급 끝난 건이 「이번 달 월정산에 또 나갈 사람」처럼 보였다.
+     * 이력은 사내직원 월정산 「퇴사자 정산」 칸·퇴사자 표에 남는다. 담당자를 골라 보면(필터) 다시 보인다 — 2차 마감용.
+     */
+    public function scopeNotInLeaverBatch($query)
+    {
+        return $query->where(fn ($q) => $q->whereNull('payout_batch_id')
+            ->orWhereDoesntHave('payoutBatch', fn ($b) => $b->where('kind', SettlementPayoutBatch::KIND_LEAVER)));
+    }
+
     /** SQL 스코프 — 지급보류(confirmed·미배치·**예외 없음**·차량 미수 캐시>0). 대시보드 카운트/필터·목록 표시용. */
     public function scopePayoutHeldByUnpaid($query)
     {
