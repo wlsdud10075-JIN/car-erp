@@ -262,5 +262,15 @@ class AlimtalkCatalogTest extends TestCase
 
         $c->set('roles.erp_payout_done', [])->call('saveRoles', 'erp_payout_done');
         $this->assertFalse(AlimtalkRecipients::wantsApprovalLine('erp_payout_done'), '다 풀면 제출자만');
+
+        // 🔀 2026-11-05 — 재무·관리는 펼쳐서 사람을 고른다(인원 피커). 표 밖 역할의 사람은 버려진다.
+        $fin = User::factory()->create(['permission' => 'user', 'role' => '재무', 'phone' => '010-7000-0001', 'email_verified_at' => now()]);
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'phone' => '010-7000-0002', 'email_verified_at' => now()]);
+        $c = Volt::actingAs($super)->test('admin.alimtalk-catalog.index')
+            ->assertSeeHtml("toggleMemberAt('role:erp_payout_done', '재무', {$fin->id})")
+            ->set('roles.erp_payout_done', ['approval_line', 'user:'.$fin->id, 'user:'.$sales->id])
+            ->call('saveRoles', 'erp_payout_done');
+        $this->assertSame('approval_line,user:'.$fin->id, Setting::get("alimtalk_roles_erp_payout_done_{$set}"));
+        $this->assertSame(['01070000001'], array_map(fn ($p) => preg_replace('/\D/', '', $p), AlimtalkRecipients::forBroadcast('erp_payout_done')));
     }
 }

@@ -341,8 +341,11 @@ class AlimtalkSignalRoutingTest extends TestCase
             '개별 지정인데 계정 없는 영업담당자까지 받는다 — 고른 적 없는 사람에게 나간다');
     }
 
-    /** 단계별 확대가 붙은 알림(말소 재촉)은 역할 체크박스 그대로 — jin 2026-09-12 «말소재촉은 냅둬». */
-    public function test_the_escalating_notification_keeps_the_plain_checkboxes(): void
+    /**
+     * 말소 재촉도 인원 피커 + 역할 줄마다 날짜칸 — 🔀 jin 2026-11-05 «역할별 인원 리스트·선택이 안 되는 게 있다» → 「바꾼다」
+     * (구 09-12 «말소재촉은 냅둬» = 체크박스만). 개별로 고른 사람은 **그 사람 역할의 날짜**로 받는다(scopedForTiered).
+     */
+    public function test_the_escalating_notification_uses_the_people_picker_with_day_boxes(): void
     {
         $this->assertTrue(AlimtalkRecipients::supportsEscalation('erp_deregistration_reminder'));
 
@@ -351,13 +354,9 @@ class AlimtalkSignalRoutingTest extends TestCase
 
         // ⚠️ 렌더된 화면 전체를 단언 인자로 넘기지 않는다 — 실패 시 그걸 통째로 찍느라
         //    테스트가 멈춘 것처럼 보인다(SKILLS §8 #93, 이 파일을 쓰면서 실제로 밟았다).
-        $this->assertFalse(
-            str_contains($html, "toggleGroupAt('role:erp_deregistration_reminder'"),
-            '말소 재촉에 인원 피커가 붙었다 — 단계별 확대 일수가 역할 단위라 개별 지정과 안 맞는다',
-        );
-        $this->assertTrue(
-            str_contains($html, 'escalate.erp_deregistration_reminder'),
-            '말소 재촉의 단계별 확대 숫자칸이 사라졌다',
-        );
+        $this->assertTrue(str_contains($html, "toggleGroupAt('role:erp_deregistration_reminder'"), '말소 재촉에 인원 피커가 없다');
+        $this->assertTrue(str_contains($html, 'escalate.erp_deregistration_reminder'), '말소 재촉의 단계별 확대 숫자칸이 사라졌다');
+        $this->assertTrue(str_contains($html, 'escalateAuction.erp_deregistration_reminder'), '경매 차량 날짜칸이 사라졌다');
+        $this->assertFalse(str_contains($html, "addNumberAt('role:erp_deregistration_reminder')"), '번호로는 담당 차를 못 가린다 — 번호칸 숨김');
     }
 }
