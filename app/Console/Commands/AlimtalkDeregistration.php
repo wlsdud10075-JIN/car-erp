@@ -87,9 +87,13 @@ class AlimtalkDeregistration extends Command
                 $rows,
                 function (string $group, Vehicle $v): bool {
                     $elapsed = $this->elapsedDays($v);
+                    $from = AlimtalkRecipients::escalationDays('erp_deregistration_reminder', $group);
+                    // 🔨 경매 차량은 최소 N일(기본 7, 안내 화면) — 단계 일수가 더 크면 그쪽(jin 2026-11-05).
+                    if ($v->isAuctionPurchase()) {
+                        $from = max($from, AlimtalkRecipients::auctionDeregistrationDays());
+                    }
 
-                    return $elapsed !== null
-                        && $elapsed >= AlimtalkRecipients::escalationDays('erp_deregistration_reminder', $group);
+                    return $elapsed !== null && $elapsed >= $from;
                 }
             );
             if (empty($targets)) {

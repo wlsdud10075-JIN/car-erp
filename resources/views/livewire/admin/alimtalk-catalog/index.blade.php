@@ -17,6 +17,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 단계별 확대 일수 [code][group] => 일 (jin 2026-09-07). 「체크 = 받을지 / 숫자 = 언제부터」. */
     public array $escalate = [];
 
+    /** 🔨 경매 차량 말소 재촉 최소 일수 (jin 2026-11-05) — 말소 재촉 카드 단계 일수 아래 한 줄, 같은 [저장]. 빈칸 = 기본 7. */
+    public string $auctionDeregDays = '';
+
     /** 시각 규칙형 알림별 규칙 행: code => [['to'=>,'days'=>[],'from'=>,'till'=>,'types'=>[]], ...]. */
     public array $timeRules = [];
 
@@ -48,6 +51,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->holidays = implode("
 ", AlimtalkRecipients::holidays());
         $this->holidayExpiresAt = (string) (Setting::get(KoreanHolidayService::expiresAtKey(), '') ?: '');
+        $this->auctionDeregDays = (string) AlimtalkRecipients::auctionDeregistrationDays();
     }
 
     public function isTimeRouted(string $code): bool
@@ -595,6 +599,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $this->escalate[$code][$g] = (string) AlimtalkRecipients::escalationDays($code, $g);
             }
         }
+        // 🔨 경매 차량 최소 일수 — 말소 재촉만. 같은 [저장]으로(한쪽만 눌러 어긋나지 않게).
+        if ($code === 'erp_deregistration_reminder') {
+            $raw = trim($this->auctionDeregDays);
+            Setting::updateOrCreate(
+                ['key' => 'alimtalk_dereg_auction_days_'.$set],
+                ['value' => $raw === '' ? '' : (string) max(0, (int) $raw), 'type' => 'string',
+                    'description' => '말소 재촉 — 경매 차량 최소 경과일 ('.$set.')'],
+            );
+            $this->auctionDeregDays = (string) AlimtalkRecipients::auctionDeregistrationDays();
+        }
         $this->roles[$code] = $selected;   // 정규화된 선택 반영 (recipientCount 는 메서드라 자동 재계산)
         $this->dispatch('notify', message: __('alimtalk_catalog.saved'), type: 'success');
     }
@@ -700,6 +714,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 {{ __('alimtalk_catalog.save') }}
                             </button>
                         </div>
+                        @if($code === 'erp_deregistration_reminder')
+                        {{-- 🔨 경매 차량 최소 일수 (jin 2026-11-05) — 구입처에 「경매」가 들어간 차는 위 단계 일수보다 이 날이 늦으면 이 날부터. 위 [저장]이 같이 저장. --}}
+                        <div class="mt-2 flex flex-wrap items-center gap-1 text-xs text-gray-600" data-auction-dereg-days>
+                            <span>🔨 {{ __('alimtalk_catalog.auction_dereg_label') }}</span>
+                            <span class="inline-flex items-center gap-1 text-gray-500">
+                                D+<input type="number" min="0" max="365" inputmode="numeric" wire:model="auctionDeregDays"
+                                    class="w-12 rounded border border-gray-300 px-1 py-0.5 text-center text-xs" />{{ __('alimtalk_catalog.escalate_unit') }}
+                            </span>
+                            <span class="basis-full text-[11px] text-gray-400">{{ __('alimtalk_catalog.auction_dereg_note') }}</span>
+                        </div>
+                        @endif
                         @else
                         {{-- 👤 받을 사람 — board 요청 시각 규칙과 **같은 조각**을 쓴다(jin 2026-09-12).
                              역할째 켜면 전원(새 사람 자동), 펼쳐서 개별로 고르면 고정 명단이다. --}}
