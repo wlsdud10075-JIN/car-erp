@@ -99,6 +99,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             'adjustments.salesman', 'adjustments.creator',
         ])
             ->when($this->domestic, fn ($q) => $q->domestic(), fn ($q) => $q->notDomestic())
+            // 🚪 퇴사 정산 카드는 맨 뒤 — 화면이 「퇴사자 정산」 접힌 칸으로 따로 묶는다(jin 2026-11-05 «사내직원 월정산에서 이승훈은 없어져야»).
+            ->orderByRaw("CASE WHEN kind = 'leaver' THEN 1 ELSE 0 END")
             ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
             ->orderByDesc('id')
             ->limit(60)
@@ -241,7 +243,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     </div>
 
     <div class="space-y-3">
+        @php
+            // 🚪 퇴사자 정산 (jin 2026-11-05) — 월정산 목록과 섞으면 같은 달에 「한 번 더 나온 것」처럼 보인다.
+            //    목록 맨 뒤(batches() 정렬)에서 접힌 칸으로 묶는다. 결재 중인 게 있으면 펼친 채로(결재자가 놓치지 않게).
+            $leaverList = $this->batches->filter(fn ($x) => $x->isLeaverBatch());
+            $leaverOpened = false;
+        @endphp
         @forelse($this->batches as $b)
+            @if($b->isLeaverBatch() && ! $leaverOpened)
+                @php $leaverOpened = true; @endphp
+                <details class="rounded-lg border border-gray-200 bg-gray-50 p-2" data-leaver-section
+                         @if($leaverList->contains(fn ($x) => $x->status === 'pending')) open @endif>
+                    <summary class="cursor-pointer select-none px-1 text-sm font-semibold text-gray-700">
+                        🚪 {{ __('payout_batch.leaver_section', ['n' => $leaverList->count()]) }}
+                    </summary>
+                    <div class="mt-2 space-y-3">
+            @endif
             @php
                 $statusBadge = ['pending' => 'badge-amber', 'approved' => 'badge-green', 'rejected' => 'badge-red', 'cancelled' => 'badge-gray'][$b->status] ?? 'badge-gray';
                 $canDecide = $b->canDecide(auth()->user());
@@ -439,6 +456,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         @empty
             <div class="py-12 text-center text-sm text-gray-400">{{ __('payout_batch.empty') }}</div>
         @endforelse
+        @if($leaverOpened)
+                    </div>
+                </details>
+        @endif
     </div>
 
     {{-- 🧾 내수직원 월정산 제출 (2026-11-03) — 달 고르기 → 사람별 카드(엑셀 항목 그대로) → 결재선 → 올리기. 지정자에게만.

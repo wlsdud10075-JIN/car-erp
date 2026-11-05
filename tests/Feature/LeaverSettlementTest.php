@@ -341,6 +341,32 @@ class LeaverSettlementTest extends TestCase
         Volt::test('erp.payout-batches.index')->assertSeeHtml('data-leaver-batch')->assertSee('퇴사 정산 · '.$leaver->name);
     }
 
+    /**
+     * 🚪 사내직원 월정산 화면 — 퇴사 정산 카드는 월정산 목록과 섞지 않고 맨 아래 「퇴사자 정산 (N건)」 접힌 칸에(jin 2026-11-05
+     * «사내직원 월정산에서 이승훈은 없어져야» — 같은 달 카드라 한 번 더 나온 것처럼 보였다). 결재 중이면 펼친 채로.
+     */
+    public function test_leaver_cards_sit_in_their_own_folded_section_below_the_monthly_list(): void
+    {
+        $manager = $this->user();
+        $this->user('admin');
+        $this->actingAs($manager);
+        $leaver = $this->freelancer();
+        $this->confirmed($leaver);
+        $batch = SettlementPayoutBatch::submitForLeaver($manager, $leaver);
+        $monthly = SettlementPayoutBatch::create(['month' => '2026-09', 'kind' => SettlementPayoutBatch::KIND_MONTH, 'status' => 'approved',
+            'submitter_id' => $manager->id, 'submitter_rank' => 2, 'total_payout' => 0, 'settlement_count' => 0, 'current_level' => 3]);
+
+        $html = Volt::test('erp.payout-batches.index')->html();
+        $section = strpos($html, 'data-leaver-section');
+        $this->assertNotFalse($section, '퇴사자 정산 칸이 없다');
+        $this->assertGreaterThan($section, strpos($html, 'data-leaver-batch'), '퇴사 카드가 퇴사자 정산 칸 안에 있어야');
+        $this->assertLessThan($section, strpos($html, $monthly->month), '월정산 카드는 그 위');
+        $this->assertMatchesRegularExpression('/data-leaver-section[^>]*\sopen/', $html, '결재 중이면 펼친 채로');
+
+        $batch->forceFill(['status' => 'approved'])->save();
+        $this->assertDoesNotMatchRegularExpression('/data-leaver-section[^>]*\sopen/', Volt::test('erp.payout-batches.index')->html(), '끝난 것만이면 접힘');
+    }
+
     // ── 💰 예치금 반환 (jin 2026-10-15 «퇴사자에 예치금이 있다면 그 예치금까지 다 포함되어서 최종금액으로») ──
 
     /** 모달이 보유액 전액을 「예치금 반환」 줄로 선입력 → 지급 총액엔 들어가고 회사이익엔 안 들어간다 → 최종 승인 때 보유액이 줄고 감사로그가 남는다. */

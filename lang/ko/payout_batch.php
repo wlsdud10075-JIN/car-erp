@@ -12,6 +12,7 @@ return [
     ],
     'count' => ':n건',
     'leaver_label' => '퇴사 정산 · :name',
+    'leaver_section' => '퇴사자 정산 (:n건)',
     'submitter' => '제출',
     'export' => '📄 엑셀',
     'next_level' => ':role 승인 차례',

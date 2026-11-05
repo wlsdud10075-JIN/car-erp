@@ -12,6 +12,7 @@ return [
     ],
     'count' => ':n items',
     'leaver_label' => 'Leaver payout · :name',
+    'leaver_section' => 'Leaver payouts (:n)',
     'submitter' => 'Submitter',
     'export' => '📄 Excel',
     'next_level' => 'Awaiting :role',
