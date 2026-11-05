@@ -3430,6 +3430,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when(in_array($this->taskFilter, \App\Models\Vehicle::STAGE_GAPS, true), fn ($q) => $q->stageGap($this->taskFilter))
             // 💰 미수금 (jin 2026-10-22) — B/L 필요 옆 토글. 기준 = Vehicle::scopeHasReceivable(채권관리 KPI 와 같음).
             ->when($this->taskFilter === 'receivable', fn ($q) => $q->hasReceivable())
+            // 🏷️ 바이어 미정 (jin 2026-11-05) — 목록 뱃지와 같은 칸(buyer_undecided). 바이어가 정해지면 저장 훅이 플래그를 내린다.
+            ->when($this->taskFilter === 'buyer_undecided', fn ($q) => $q->where('buyer_undecided', true))
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
             ->when($this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
@@ -8393,6 +8395,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     class="rounded-full px-2.5 py-0.5 text-xs transition
                            {{ $recvOn ? 'bg-rose-600 text-white shadow-sm font-semibold' : 'bg-rose-100 text-rose-700 hover:bg-rose-200 font-medium' }}">
                 {{ $recvOn ? '✓ ' : '' }}💰 {{ __('vehicle.filter_receivable') }}
+            </button>
+            {{-- 🏷️ 바이어 미정 (jin 2026-11-05) — 목록 뱃지 「바이어미정」 차만. 같은 토글 묶음(하나만 켜짐). --}}
+            @php $undecidedOn = $taskFilter === 'buyer_undecided'; @endphp
+            <button type="button" wire:click="toggleTask('buyer_undecided')" data-filter-buyer-undecided
+                    title="{{ __('vehicle.buyer_undecided_title') }}"
+                    class="rounded-full px-2.5 py-0.5 text-xs transition
+                           {{ $undecidedOn ? 'bg-rose-600 text-white shadow-sm font-semibold' : 'bg-rose-100 text-rose-700 hover:bg-rose-200 font-medium' }}">
+                {{ $undecidedOn ? '✓ ' : '' }}🏷️ {{ __('vehicle.buyer_undecided_badge') }}
             </button>
         </div>
 
