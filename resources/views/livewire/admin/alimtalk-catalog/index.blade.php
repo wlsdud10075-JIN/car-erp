@@ -576,8 +576,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             $t = trim((string) $raw);
             $uid = AlimtalkRecipients::userIdOf($t);
             // 선택지가 재정의된 알림(지급 결재 결과)은 **그 표의 키만** — 다른 역할 키가 번호로 둔갑해 저장되면 안 된다.
+            //   🔀 2026-11-05 — 그 표의 역할(재무·관리)에 속한 사람의 개별 지정(`user:{id}`)은 받는다(인원 목록 선택).
             $ok = AlimtalkRecipients::hasCustomGroups($code)
-                ? in_array($t, $valid, true)
+                ? (in_array($t, $valid, true)
+                    || ($uid !== null && collect($valid)->contains(fn ($g) => in_array($uid, array_column($this->groupMembers($g), 'id'), true))))
                 : (in_array($t, $valid, true)
                     || ($uid !== null && AlimtalkRecipients::userIsPickable($uid))
                     || ($uid === null && ! in_array($t, $valid, true) && AlimtalkRecipients::isValidTarget($t)));
@@ -685,67 +687,30 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <p class="mb-2 text-[11px] leading-relaxed text-gray-500">{{ __('alimtalk_catalog.escalate_note') }}</p>
                         @endif
                         @if(\App\Support\AlimtalkRecipients::hasCustomGroups($code))
-                        {{-- 🪜 지급 결재 결과(승인완료·반려, jin 2026-10-15) — 선택지가 「결재선 전원 / 재무 / 관리」뿐이라 피커 대신 체크박스.
-                             결재선 전원은 사용자 집합이 아니라 배치마다의 결재선이라 사람 수를 미리 셀 수 없다. --}}
                         <p class="mb-2 text-[11px] leading-relaxed text-gray-500">{{ __('alimtalk_catalog.payout_roles_note') }}</p>
-                        <div class="flex flex-wrap items-center gap-x-4 gap-y-2" data-payout-roles="{{ $code }}">
-                            @foreach(\App\Support\AlimtalkRecipients::groupsFor($code) as $gkey => $glabel)
-                                <label class="flex items-center gap-1.5 text-sm text-gray-700">
-                                    <input type="checkbox" value="{{ $gkey }}" wire:model="roles.{{ $code }}" class="h-4 w-4 rounded border-gray-300" />
-                                    {{ $glabel }}
-                                </label>
-                            @endforeach
-                            <button type="button" wire:click="saveRoles('{{ $code }}')" class="btn-primary ml-auto px-3 py-1 text-xs">
-                                {{ __('alimtalk_catalog.save') }}
-                            </button>
-                        </div>
-                        @elseif(\App\Support\AlimtalkRecipients::supportsEscalation($code))
-                        {{-- 🪜 단계별 확대가 붙은 알림(말소 재촉)은 **역할 체크박스 그대로** 둔다(jin 2026-09-12).
-                             일수가 역할 단위라, 사람을 개별로 고르면 「그 사람은 며칠째부터인가」가 빈칸이 된다. --}}
-                        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-                            @foreach($this->groups() as $gkey => $glabel)
-                                <label class="flex items-center gap-1.5 text-sm text-gray-700">
-                                    <input type="checkbox" value="{{ $gkey }}" wire:model="roles.{{ $code }}" class="h-4 w-4 rounded border-gray-300" />
-                                    {{ $glabel }}
-                                    {{-- 「체크 = 받을지 / 숫자 = 언제부터」. 일수를 코드에 박으면 화면에
-                                         안 보이는 규칙이 되어 「체크했는데 왜 안 와?」가 된다(§8 #60). --}}
-                                    <span class="ml-0.5 inline-flex items-center gap-1 text-xs text-gray-500">
-                                        D+<input type="number" min="0" max="365" inputmode="numeric"
-                                            wire:model="escalate.{{ $code }}.{{ $gkey }}"
-                                            class="w-12 rounded border border-gray-300 px-1 py-0.5 text-center text-xs" />{{ __('alimtalk_catalog.escalate_unit') }}
-                                    </span>
-                                </label>
-                            @endforeach
-                            <button type="button" wire:click="saveRoles('{{ $code }}')" class="btn-primary ml-auto px-3 py-1 text-xs">
-                                {{ __('alimtalk_catalog.save') }}
-                            </button>
-                        </div>
-                        @if(\App\Support\AlimtalkRecipients::supportsAuctionEscalation($code))
-                        {{-- 🔨 경매 차량 (jin 2026-11-05) — 구입처에 「경매」가 들어간 차는 이 줄의 날짜로. 받을 역할은 위 체크 그대로. 위 [저장]이 같이 저장. --}}
-                        <div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md bg-slate-50 px-2 py-1.5 text-sm text-gray-700" data-auction-dereg-days>
-                            <span class="text-xs font-medium text-gray-600">🔨 {{ __('alimtalk_catalog.auction_dereg_label') }}</span>
-                            @foreach($this->groups() as $gkey => $glabel)
-                                <span class="inline-flex items-center gap-1 text-xs text-gray-500">
-                                    {{ $glabel }} D+<input type="number" min="0" max="365" inputmode="numeric"
-                                        wire:model="escalateAuction.{{ $code }}.{{ $gkey }}"
-                                        class="w-12 rounded border border-gray-300 px-1 py-0.5 text-center text-xs" />{{ __('alimtalk_catalog.escalate_unit') }}
-                                </span>
-                            @endforeach
-                            <span class="basis-full text-[11px] text-gray-400">{{ __('alimtalk_catalog.auction_dereg_note') }}</span>
-                        </div>
                         @endif
-                        @else
+                        @if(\App\Support\AlimtalkRecipients::supportsAuctionEscalation($code))
+                        <p class="mb-2 text-[11px] leading-relaxed text-gray-500">🔨 {{ __('alimtalk_catalog.auction_dereg_note') }}</p>
+                        @endif
                         {{-- 👤 받을 사람 — board 요청 시각 규칙과 **같은 조각**을 쓴다(jin 2026-09-12).
-                             역할째 켜면 전원(새 사람 자동), 펼쳐서 개별로 고르면 고정 명단이다. --}}
+                             역할째 켜면 전원(새 사람 자동), 펼쳐서 개별로 고르면 고정 명단이다.
+                             🔀 2026-11-05 (jin «역할별 인원 리스트·선택이 안 되는 게 있다») — 체크박스만 쓰던 두 종류도 이 조각으로:
+                               · 지급 결재 결과(승인완료·반려) = 선택지 「결재선 전원 / 재무 / 관리」($groups) — 결재선 전원은 사람 목록 없이 체크 하나.
+                               · 말소 재촉(단계별 확대) = 역할 줄마다 날짜칸($daysCode). 사람을 개별로 골라도 그 사람 역할의 날짜(scopedForTiered).
+                                 번호 직접 추가는 숨긴다 — 번호로는 담당 차를 못 가려 차량 스코프형에선 못 받는다. --}}
+                        <div data-payout-roles="{{ \App\Support\AlimtalkRecipients::hasCustomGroups($code) ? $code : '' }}">
                         @include('livewire.admin.alimtalk-catalog._recipient-picker', [
                             'c' => $this, 'addr' => 'role:'.$code, 'salesOrphanNote' => true,
+                            'groups' => \App\Support\AlimtalkRecipients::groupsFor($code),
+                            'daysCode' => \App\Support\AlimtalkRecipients::supportsEscalation($code) ? $code : null,
+                            'noNumbers' => \App\Support\AlimtalkRecipients::hasCustomGroups($code) || \App\Support\AlimtalkRecipients::supportsEscalation($code),
                         ])
+                        </div>
                         <div class="mt-2 flex">
                             <button type="button" wire:click="saveRoles('{{ $code }}')" class="btn-primary ml-auto px-3 py-1 text-xs">
                                 {{ __('alimtalk_catalog.save') }}
                             </button>
                         </div>
-                        @endif
                         @if($autoExtra)
                             <div class="mt-2 text-xs text-gray-500">＋ {{ __('alimtalk_catalog.auto_prefix') }} <span class="font-medium text-gray-600">{{ $autoExtra }}</span> {{ __('alimtalk_catalog.auto_suffix') }}</div>
                         @endif
