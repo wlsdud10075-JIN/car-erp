@@ -270,6 +270,9 @@ class NiceEditableSpecFieldsTest extends TestCase
         $own = $this->vehicle(['vehicle_number' => '14서0587', 'nice_reg_vin' => 'WAUZZZ4M0GD056745', 'nice_raw' => ['resVehicleIdNo' => 'KNAAAAA111', 'resSpecControlNo' => 'A011-X', 'engineSpec' => '4/1998'],
             'nice_spec_control_no' => '0242-00073-0020-1316', 'nice_spec_cylinders' => 4]);
 
+        // 칸에 특수 공백이 섞인 같은 차대번호는 「같은 차」 — 정리 대상 아님(heymanerp 10러4700)
+        $nbsp = $this->vehicle(['vehicle_number' => '10러4700', 'nice_reg_vin' => "VF12RS01AJW930607\u{00A0}", 'nice_raw' => ['resVehicleIdNo' => 'VF12RS01AJW930607']]);
+
         $this->artisan('vehicles:clear-mismatched-nice')->expectsOutputToContain('dry-run · 다른 차 NICE 원본 2대')->assertSuccessful();
         $this->assertNotNull($bad->fresh()->nice_raw, 'dry-run 은 안 바꾼다');
 
@@ -286,5 +289,6 @@ class NiceEditableSpecFieldsTest extends TestCase
         $this->artisan('vehicles:clear-mismatched-nice --apply')->expectsOutputToContain('다른 차 NICE 원본 0대');
         $this->assertSame(4, (int) $own->fresh()->nice_spec_cylinders, '자기 제원번호인 차의 칸은 안 지운다');
         $this->assertNull($own->fresh()->nice_raw, '원본은 비운다');
+        $this->assertNotNull($nbsp->fresh()->nice_raw, '특수 공백만 다른 같은 차대번호는 그대로');
     }
 }

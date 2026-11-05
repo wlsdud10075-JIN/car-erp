@@ -6654,8 +6654,8 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // NICE 조회 원본 보존 — 이번에 조회한 경우에만 기입(편집 시 빈 niceRaw 가 기존 값을 덮어쓰지 않도록 조건부).
         //   🛡️ 원본 차대번호가 이 차 차대번호와 다르면 저장하지 않는다(2026-11-05) — 다른 차 원본이 섞여 들어오는 길을 한 번 더 막는다.
-        $rawVin = strtoupper(preg_replace('/\s+/', '', (string) ($this->niceRaw['resVehicleIdNo'] ?? '')));
-        $ownVin = strtoupper(preg_replace('/\s+/', '', (string) $this->nice_reg_vin));
+        $rawVin = preg_replace('/[^A-Z0-9]/', '', strtoupper((string) ($this->niceRaw['resVehicleIdNo'] ?? '')));   // 영문·숫자만(특수 공백 무시)
+        $ownVin = preg_replace('/[^A-Z0-9]/', '', strtoupper((string) $this->nice_reg_vin));
         if (! empty($this->niceRaw) && ($rawVin === '' || $ownVin === '' || $rawVin === $ownVin)) {
             $data['nice_raw'] = $this->niceRaw;
         }
