@@ -955,7 +955,7 @@ class Vehicle extends Model
     // 명세서 기입 — 대상비용별 거래처(서식) 목록. 회사마다 엑셀 서식이 달라 좌표 파서를 분기한다.
     //   탁송비: wika(기존 범용) / gucheonyuk / hyundai_a1  — 면허비: mutual(기존 xlsx n/1) / seongji(→선적요청 딥링크)
     public const COST_IMPORT_COMPANIES = [
-        'cost_towing' => ['wika', 'gucheonyuk', 'hyundai_a1', 'glovis'],
+        'cost_towing' => ['wika', 'gucheonyuk', 'hyundai_a1'],
         'cost_license' => ['mutual', 'seongji'],
         'cost_insurance' => ['daily'],
         'cost_carry' => ['dk_logis'],
@@ -975,10 +975,10 @@ class Vehicle extends Model
     //      같은 번호의 다른 차에 기입되는 사고를 막는다(데일리 보험료, jin 2026-10-01).
     public const TOWING_IMPORT_LAYOUTS = [
         'gucheonyuk' => ['start' => 2, 'plate' => 'J', 'amount' => ['F', 'G']],   // 탁송비 F + 주유 G = 총액
-        'hyundai_a1' => ['start' => 13, 'plate' => 'M', 'amount' => ['I', 'J']],  // 탁송 I + 추가 J = 총액
-        // 현대글로비스(구 현대A1) 2026-09분~ 서식(jin 2026-11-05): 시트 1개 「1.싼카」 · 1행 머리글 · F 차량번호 · L 합계(부가세 포함).
-        //   🔑 L(합계)을 쓰는 이유 = jin 2026-09-02 「합계가 맞다」(탁송비 칸에 부가세 포함으로 넣는다). 맨 끝 「합 계」 줄은 번호가 없어 skip.
-        'glovis' => ['start' => 2, 'plate' => 'F', 'amount' => ['L']],
+        // 현대A1(현대글로비스) — 🔀 2026-11-05 jin «이게 최종» 9월분 서식: 시트 1개 「1.싼카」 · 1행 머리글 · F 차량번호 · L 합계(부가세 포함).
+        //   🔑 L(합계) = jin 2026-09-02 「합계가 맞다」(탁송비 칸에 부가세 포함). 맨 끝 「합 계」 줄은 번호가 없어 skip.
+        //   구 서식(R13~ · M 차량번호 · I 탁송 + J 추가)은 폐기 — 그 파일을 올리면 0건이다.
+        'hyundai_a1' => ['start' => 2, 'plate' => 'F', 'amount' => ['L']],
         'daily' => ['start' => 2, 'plate' => 'B', 'vin' => 'C', 'amount' => ['G']],   // 데일리 가입이력조회: B 차량번호 · C 차대번호 · G 가입금액. 마지막 합계행은 번호가 비어 skip
         // 디케이로지스 거래명세서(캐리비, jin 2026-11-03): 13행 머리글 · F 「차대NO」 칸에 실제로는 **차량번호** · H 「비고」 = 공급가액×1.1(부가세 포함 — jin 「H열」).
         //   합계·회사정보 줄은 번호가 없어 skip. 같은 차가 두 줄이면 합산(applyCostRowsToPreview).

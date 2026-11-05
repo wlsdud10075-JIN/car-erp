@@ -161,37 +161,12 @@ class CostStatementImportTest extends TestCase
         $this->assertArrayNotHasKey('312로4687', $amounts->toArray());  // 비고 차번호꼴 오염 없음
     }
 
-    /** 현대A1 서식(R13~, 번호 M열, 금액 I+J) — 차종 숫자(Q5→5) 오파싱 차단 + 취소/재진행 2행 합산. */
-    public function test_hyundai_a1_layout_ignores_model_digits_and_sums_cancel_row(): void
-    {
-        $this->actingAs($this->admin());
-        $this->makeVehicle('303보2774');
-        $this->makeVehicle('64러4771');
-
-        $rows = array_fill(0, 12, array_fill(0, 14, ''));   // R1~R12 요약/헤더 (start=13이라 무시돼야)
-        $rows[0][1] = '싼카 탁송내역';
-        // A번호 B요청ID C요청일 D배정 E발주 F출발 G경유 H도착 I탁송 J추가 K합계 L내용 M차량번호 N차종
-        $rows[] = [1, '56681781054246', '2026-06-10', '2026-06-10', '싼카', '대구', '', '시흥', 125000, 60000, '=SUM(I13:J13)', '주유비', '303보2774', '아우디 Q5'];
-        $rows[] = [23, 'x', '2026-06-19', '2026-06-19', '싼카', '서울', '', '시흥', 0, 10000, '', '취소비', '64러4771', '폭스바겐'];
-        $rows[] = [26, 'y', '2026-06-19', '2026-06-19', '싼카', '서울', '', '시흥', 31000, 0, '', '', '64러4771', '폭스바겐'];
-
-        $c = Volt::test('erp.vehicles.index')
-            ->call('openCostImport')
-            ->set('costImportColumn', 'cost_towing')
-            ->set('costImportCompany', 'hyundai_a1')
-            ->set('costImportFile', $file = $this->uploadXlsx($rows));
-
-        $amounts = collect($c->get('costImportParsed')['matched'])->pluck('amount', 'number');
-        $this->assertSame(185000, (int) $amounts['303보2774']);   // I+J, 차종 'Q5'의 5 안 잡힘
-        $this->assertSame(41000, (int) $amounts['64러4771']);     // (0+10000) + (31000+0) 합산
-        $this->assertCount(2, $c->get('costImportParsed')['matched']);  // 요약행 오파싱 없음
-    }
-
     /**
-     * 현대글로비스 2026-09분~ 서식(jin 2026-11-05) — 1행 머리글 · F 차량번호 · L 합계(부가세 포함) · 맨 끝 「합 계」 줄.
+     * 현대A1(현대글로비스) 서식 — 🔀 2026-11-05 jin «이게 최종» 9월분: 1행 머리글 · F 차량번호 · L 합계(부가세 포함) · 맨 끝 「합 계」 줄.
      * 번호 뒤에 차종이 붙은 칸(`35보9567벤츠`)·대괄호(`[08모5171]`)도 꺼내 읽는다 — 통째 일치였을 땐 그 줄이 조용히 빠졌다.
+     * 같은 차 두 줄(재탁송)은 합산.
      */
-    public function test_glovis_layout_reads_total_column_and_tolerates_text_around_the_plate(): void
+    public function test_hyundai_a1_layout_reads_total_column_and_tolerates_text_around_the_plate(): void
     {
         $this->actingAs($this->admin());
         $this->makeVehicle('168소6394');
@@ -203,17 +178,18 @@ class CostStatementImportTest extends TestCase
         $rows[] = [1, '2026-09-01', '싼카1', '인천', '시흥', '168소6394', '', 30000, 0, 30000, 3000, 33000];
         $rows[] = [2, '2026-09-02', '싼카1', '서울', '시흥', '35보9567벤츠', '', 45000, 0, 45000, 4500, 49500];
         $rows[] = [3, '2026-09-03', '싼카1', '서울', '시흥', '[08모5171]  ', '주유', 30000, 10000, 40000, 4000, 44000];
-        $rows[] = [4, '2026-09-04', '싼카1', '서울', '시흥', '1234가56789', '', 1000, 0, 1000, 100, 1100];   // 번호 아님
-        $rows[] = ['합 계', '', '', '', '', '', '', 106000, 10000, 116000, 11600, 127600];
+        $rows[] = [4, '2026-09-20', '싼카1', '시흥', '인천', '168소6394', '재탁송', 10000, 0, 10000, 1000, 11000];
+        $rows[] = [5, '2026-09-04', '싼카1', '서울', '시흥', '1234가56789', '', 1000, 0, 1000, 100, 1100];   // 번호 아님
+        $rows[] = ['합 계', '', '', '', '', '', '', 116000, 10000, 126000, 12600, 138600];
 
         $c = Volt::test('erp.vehicles.index')
             ->call('openCostImport')
             ->set('costImportColumn', 'cost_towing')
-            ->set('costImportCompany', 'glovis')
+            ->set('costImportCompany', 'hyundai_a1')
             ->set('costImportFile', $this->uploadXlsx($rows));
 
         $amounts = collect($c->get('costImportParsed')['matched'])->pluck('amount', 'number');
-        $this->assertSame(33000, (int) $amounts['168소6394'], 'L 합계(부가세 포함)');
+        $this->assertSame(44000, (int) $amounts['168소6394'], 'L 합계(부가세 포함) · 두 줄 합산');
         $this->assertSame(49500, (int) $amounts['35보9567'], '번호 뒤 차종이 붙어도 읽는다');
         $this->assertSame(44000, (int) $amounts['08모5171'], '대괄호·공백도');
         $this->assertCount(3, $c->get('costImportParsed')['matched'], '합계 줄·숫자에 붙은 가짜 번호 없음');

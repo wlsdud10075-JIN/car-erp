@@ -1003,7 +1003,6 @@ return [
             'wika' => 'Wika',
             'gucheonyuk' => 'Gucheonyuk',
             'hyundai_a1' => 'Hyundai A1',
-            'glovis' => 'Hyundai Glovis (2026-09~)',
             'mutual' => 'Mutual',
             'seongji' => 'Seongji',
             'daily' => 'Daily',
