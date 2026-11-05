@@ -198,6 +198,21 @@ class AlimtalkRecipients
         return ($raw === null || $raw === '') ? $default : max(0, (int) $raw);
     }
 
+    /** 경매 차량 말소 재촉 최소 경과일 기본값 (jin 2026-11-05 «경매·경매장 차량은 7일 이후에»). */
+    public const AUCTION_DEREG_DEFAULT = 7;
+
+    /**
+     * 🔨 경매 차량(구입처에 「경매」) 말소 재촉은 매입 완납 후 이 날부터 — 역할별 단계 일수보다 작으면 이 날까지 기다린다(회사별).
+     * 경매장 차는 말소를 경매장이 처리해 늦게 오므로(jin) 일찍 재촉하면 헛알림이 된다. 목록·대시보드 「말소 필요」는 그대로(jin «알림톡만»).
+     * 안내 화면 말소 재촉 카드의 숫자칸이 바꾼다(§8 #60 — 화면에 보이는 규칙). 비우면 기본값.
+     */
+    public static function auctionDeregistrationDays(): int
+    {
+        $raw = Setting::get('alimtalk_dereg_auction_days_'.Setting::companyTemplateSet());
+
+        return ($raw === null || $raw === '') ? self::AUCTION_DEREG_DEFAULT : max(0, (int) $raw);
+    }
+
     /** 이 알림이 차량 스코프형인가. */
     public static function isScoped(string $code): bool
     {
