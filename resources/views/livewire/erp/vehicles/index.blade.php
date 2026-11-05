@@ -2701,6 +2701,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->all();
     }
 
+    /**
+     * 🏷️ 바이어 미정 차 수 — 지금 걸린 필터 안에서(board 요청 pill 과 같은 방식). 0 이면 토글이 안 뜬다(jin 2026-11-05).
+     * 작업 필터(taskFilter)는 빼고 센다 — 「미수금」이 켜져 있어도 바꿔 누를 수 있게.
+     */
+    #[Computed]
+    public function buyerUndecidedCount(): int
+    {
+        $task = $this->taskFilter;
+        $this->taskFilter = '';
+        try {
+            return (int) $this->filteredVehicleQuery(true, false)->where('vehicles.buyer_undecided', true)->count();
+        } finally {
+            $this->taskFilter = $task;
+        }
+    }
+
     public function updatedSalesmanId(): void
     {
         unset($this->vehicles);
@@ -8396,15 +8412,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                            {{ $recvOn ? 'bg-rose-600 text-white shadow-sm font-semibold' : 'bg-rose-100 text-rose-700 hover:bg-rose-200 font-medium' }}">
                 {{ $recvOn ? '✓ ' : '' }}💰 {{ __('vehicle.filter_receivable') }}
             </button>
-            {{-- 🏷️ 바이어 미정 (jin 2026-11-05) — 목록 뱃지 「바이어미정」 차만. 같은 토글 묶음(하나만 켜짐).
-                 색 = 목록 뱃지와 같은 slate(jin «뱃지 색과 동일시»). ⚠️ slate-200·600 은 이 버튼이 처음 써서 빌드가 있어야 먹는다(§8 #50 — 배포는 npm run build). --}}
-            @php $undecidedOn = $taskFilter === 'buyer_undecided'; @endphp
-            <button type="button" wire:click="toggleTask('buyer_undecided')" data-filter-buyer-undecided
-                    title="{{ __('vehicle.buyer_undecided_title') }}"
-                    class="rounded-full px-2.5 py-0.5 text-xs transition
-                           {{ $undecidedOn ? 'bg-slate-600 text-white shadow-sm font-semibold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium' }}">
-                {{ $undecidedOn ? '✓ ' : '' }}🏷️ {{ __('vehicle.buyer_undecided_badge') }}
-            </button>
         </div>
 
         {{-- 서류 발송(EMS·DHL) 필터 (jin 2026-08-31) — 진행상태·운항과 또 다른 축.
@@ -8443,9 +8450,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                 (뱃지 렌더와 같은 원칙: 열거하면 type 이 늘 때 **에러 없이 pill 만 안 뜬다**).
              ⚠️ 색은 뱃지와 같은 계열로 맞춘다. bg-blue-600·bg-purple-600 은 빌드된 app.css 에
                 있는 것을 확인하고 골랐다(없는 색을 쓰면 눌러도 회색이다 — SKILLS §8 #50). --}}
-        @php $brqCounts = $this->boardRequestCounts; @endphp
-        @if($brqCounts !== [])
+        @php
+            $brqCounts = $this->boardRequestCounts;
+            // 🏷️ 바이어 미정 (jin 2026-11-05 «있다가 없어지기도 하는 토글이라» 계약금·매입잔금 줄로) — 미정 차가 있을 때만(켜져 있으면 계속).
+            $undecidedOn = $taskFilter === 'buyer_undecided';
+            $undecidedCount = $this->buyerUndecidedCount;
+        @endphp
+        @if($brqCounts !== [] || $undecidedCount > 0 || $undecidedOn)
         <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3">
+            {{-- 색 = 목록 뱃지와 같은 slate(jin «뱃지 색과 동일시»). ⚠️ slate-200·600 은 이 버튼이 처음 써서 빌드가 있어야 먹는다(§8 #50 — 배포는 npm run build).
+                 켜고 끄는 건 「말소 필요」·「미수금」과 같은 작업 필터(taskFilter, 하나만 켜짐) — 자리만 이 줄이다. --}}
+            @if($undecidedCount > 0 || $undecidedOn)
+            <button type="button" wire:click="toggleTask('buyer_undecided')" data-filter-buyer-undecided
+                    title="{{ __('vehicle.buyer_undecided_title') }}"
+                    class="rounded-full px-2.5 py-0.5 text-xs transition
+                           {{ $undecidedOn ? 'bg-slate-600 text-white shadow-sm font-semibold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium' }}">
+                {{ $undecidedOn ? '✓ ' : '' }}🏷️ {{ __('vehicle.buyer_undecided_badge') }} ({{ number_format($undecidedCount) }})
+            </button>
+            @endif
             @foreach(\App\Models\BoardRequest::TYPE_META as $brqType => $brqMeta)
                 @continue(($brqCounts[$brqType] ?? 0) < 1)
                 @php
