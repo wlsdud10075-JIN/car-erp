@@ -342,6 +342,28 @@ class LeaverSettlementTest extends TestCase
     }
 
     /**
+     * 🚪 정산관리(정산처리) — 퇴사 정산으로 이미 나간 정산은 목록·담당자 카드에서 빠진다(jin 2026-11-05 «정산처리에서 이승훈은 없어져야»).
+     * 담당자를 골라 보면 다시 보인다(2차 마감 등 처리용).
+     */
+    public function test_settlements_paid_by_a_leaver_batch_leave_the_settlement_screen(): void
+    {
+        $manager = $this->user();
+        $this->user('admin');
+        $this->actingAs($manager);
+        $leaver = $this->freelancer();
+        $this->confirmed($leaver);
+        SettlementPayoutBatch::submitForLeaver($manager, $leaver);
+
+        $c = Volt::test('erp.settlements.index')->set('monthFilter', '2026-10');
+        $this->assertSame(0, $c->instance()->settlements->total(), '퇴사 정산으로 나간 건은 목록에서 빠진다');
+        $c->call('toggleSummaries');
+        $this->assertNotContains($leaver->id, array_map('intval', array_column($c->instance()->salesmanSummaries, 'salesman_id')));
+
+        $c->set('salesmanFilter', $leaver->id);
+        $this->assertSame(1, $c->instance()->settlements->total(), '담당자를 고르면 다시 보인다');
+    }
+
+    /**
      * 🚪 사내직원 월정산 화면 — 퇴사 정산 카드는 월정산 목록과 섞지 않고 맨 아래 「퇴사자 정산 (N건)」 접힌 칸에(jin 2026-11-05
      * «사내직원 월정산에서 이승훈은 없어져야» — 같은 달 카드라 한 번 더 나온 것처럼 보였다). 결재 중이면 펼친 채로.
      */

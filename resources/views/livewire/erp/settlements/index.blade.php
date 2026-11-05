@@ -223,6 +223,8 @@ new #[Layout('components.layouts.app')] class extends Component
             ->with(['vehicle.finalPayments', 'vehicle.purchaseBalancePayments', 'vehicle.receivableHistories', 'salesman', 'latestPayApproval.approver'])
             // 🚪 프리랜서 퇴사자의 미배치 정산은 「퇴사자 정산」 표 안에서만 확정·예외 처리한다(jin 2026-10-15) — 여기 섞이지 않는다.
             ->notReservedForLeaverBatch()
+            // 🚪 퇴사 정산으로 이미 나간 건도 빼다(jin 2026-11-05) — 담당자를 고르면 다시 보인다(2차 마감용).
+            ->when(! $this->salesmanFilter, fn ($q) => $q->notInLeaverBatch())
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
@@ -468,6 +470,7 @@ new #[Layout('components.layouts.app')] class extends Component
             //    싣고 나면 209쿼리 / 7.9초.
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
             ->notReservedForLeaverBatch()   // 🚪 퇴사자 미배치분은 퇴사자 표에서(2026-10-15)
+            ->when(! $this->salesmanFilter, fn ($q) => $q->notInLeaverBatch())   // 🚪 퇴사 정산으로 이미 나간 건도(2026-11-05)
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->secondaryFilter, fn ($q) => $q->secondaryFilter($this->secondaryFilter))
