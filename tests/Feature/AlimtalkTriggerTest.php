@@ -15,6 +15,7 @@ use App\Support\AlimtalkTemplates;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Livewire\Volt\Volt;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
 
@@ -241,6 +242,18 @@ class AlimtalkTriggerTest extends TestCase
         Http::assertSent(fn ($req) => str_contains($req->data()[0]['msg'] ?? '', '33다3456'));
     }
 
+    /** 담당자가 「정산 지급 대상 아님」(헤이맨 같은 자매 회사 계정)이면 말소 재촉 대상이 아니다 — jin 2026-11-05. */
+    public function test_deregistration_skips_payout_excluded_salesman(): void
+    {
+        $this->enableAlimtalk(['erp_deregistration_reminder']);
+        $sm = Salesman::create(['name' => '헤이맨', 'phone' => '010-5555-4444', 'is_active' => true, 'payout_excluded' => true]);
+        $this->paidVehicle($sm, '55마5678', 10);
+
+        $this->artisan('alimtalk:deregistration')->assertSuccessful();
+
+        $this->assertSame(0, AlimtalkLog::where('template_code', 'erp_deregistration_reminder')->count());
+    }
+
     public function test_deregistration_skips_within_grace_days(): void
     {
         // 완납 1일차 = 유예 안. 그 사람 차가 그것뿐이면 통째로 skip(빈 목록을 보내지 않는다).
@@ -439,8 +452,8 @@ class AlimtalkTriggerTest extends TestCase
     /** 🔨 경매 최소 일수 = 안내 화면 말소 재촉 카드 숫자칸 · 같은 [저장] · 비우면 7. */
     public function test_auction_days_are_saved_from_the_catalog_card(): void
     {
-        $this->actingAs(\App\Models\User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
-        $c = \Livewire\Volt\Volt::test('admin.alimtalk-catalog.index')
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+        $c = Volt::test('admin.alimtalk-catalog.index')
             ->assertSeeHtml('data-auction-dereg-days')
             ->assertSet('auctionDeregDays', '7')
             ->set('auctionDeregDays', '10')
