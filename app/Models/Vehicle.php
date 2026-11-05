@@ -1829,7 +1829,7 @@ class Vehicle extends Model
 
     /**
      * 경매로 산 차인가 — 매입 탭 구입처에 「경매」가 들어 있으면(「경매장-AJ셀카」 등, jin 2026-11-05 «경매 또는 경매장»).
-     * 말소 재촉 알림톡이 최소 일수를 따로 본다(AlimtalkRecipients::auctionDeregistrationDays). 자유 입력칸이라 글자로만 판정.
+     * 말소 재촉 알림톡이 역할별 날짜를 따로 본다(AlimtalkRecipients::auctionEscalationDays). 자유 입력칸이라 글자로만 판정.
      */
     public function isAuctionPurchase(): bool
     {
