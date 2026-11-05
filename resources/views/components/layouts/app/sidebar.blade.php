@@ -65,9 +65,11 @@
 
     // Phase 2 — 이 사용자 차례(current_level==rank, super=전체)인 월정산 지급 대기 건수.
     //   월정산 v3 — steps 모드(결재선)면 「그 칸의 사람」 차례. 판정은 scopeAwaitingDecisionBy 한 곳.
-    $pendingPayoutBatches = $user->canApprove()
+    $pendingPayoutBatches = $user->canEditPayroll()
         ? \App\Models\SettlementPayoutBatch::query()->notDomestic()->awaitingDecisionBy($user)->count()
         : 0;
+    // 🧾 사내직원 월정산(2026-11-05 «내수처럼») — 지정자 + 지금 차례인 결재자.
+    $showStaffPayouts = $user->canSeeStaffPayout() || $pendingPayoutBatches > 0;
     // 🧾 내수직원 월정산(2026-11-03) — 지정자 + 지금 차례인 결재자(지정 안 됐어도 자기 차례면 메뉴가 뜬다).
     $pendingDomesticPayouts = \App\Models\Setting::domesticPayoutEnabled()
         ? \App\Models\SettlementPayoutBatch::query()->domestic()->awaitingDecisionBy($user)->count()
@@ -286,10 +288,10 @@
                 ],
                 [
                     'label' => __('nav.menu.payout_batches'),
-                    'href' => $user->canApprove() ? route('erp.payout-batches.index') : '#',
+                    'href' => $showStaffPayouts ? route('erp.payout-batches.index') : '#',
                     'icon' => 'banknotes',
                     'active' => request()->routeIs('erp.payout-batches.*'),
-                    'show' => $user->canApprove(),
+                    'show' => $showStaffPayouts,
                     'badge' => $pendingPayoutBatches > 0 ? $pendingPayoutBatches : null,
                 ],
                 [

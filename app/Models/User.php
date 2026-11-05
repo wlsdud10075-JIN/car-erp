@@ -406,6 +406,24 @@ class User extends Authenticatable
      * 🧾 내수직원 월정산·사내직원관리 내수 탭을 볼 수 있나 (jin 2026-11-03) — 회사 토글이 켜져 있고,
      * 시스템관리자이거나 기능설정에서 지정된 관리 이상. 결재자(대표 등)는 지정 없이 알림톡 링크로 승인 화면을 본다.
      */
+    /**
+     * 🧾 사내직원 월정산 화면·메뉴·엑셀을 보나 (jin 2026-11-05 «내수처럼 지정한 사람만»).
+     * 시스템관리자 = 항상. 기능설정에 한 번도 저장 안 했으면 종전(canApprove — 관리 이상). 저장 뒤엔 체크한 사람만(후보 = 급여 입력 권한자, 재무 포함).
+     * 지정 안 된 결재자는 **자기 차례일 때만** — 호출부가 awaitingDecisionBy 를 함께 본다(내수와 같다).
+     */
+    public function canSeeStaffPayout(): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+        $ids = Setting::staffPayoutViewerIds();
+        if ($ids === null) {
+            return $this->canApprove();
+        }
+
+        return $this->canEditPayroll() && in_array((int) $this->id, $ids, true);
+    }
+
     public function canSeeDomesticPayout(): bool
     {
         if (! Setting::domesticPayoutEnabled()) {

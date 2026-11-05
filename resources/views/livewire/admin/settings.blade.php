@@ -1070,6 +1070,11 @@ new #[Layout('components.layouts.app')] class extends Component
                 ? array_map('strval', Setting::domesticPayoutViewerIds())
                 : ($saved === null ? $all : array_map('strval', $saved[$cat] ?? []));
         }
+        // 🧾 사내직원 월정산 볼 사람(jin 2026-11-05) — 저장 전엔 「종전 = 관리 이상(canApprove)」을 체크해 둔다(저장해도 지금과 같게).
+        $staff = Setting::staffPayoutViewerIds();
+        $this->payrollViewerMatrix['staff_payout'] = $staff === null
+            ? $this->payrollViewerCandidates->filter(fn ($u) => $u->canApprove())->pluck('id')->map(fn ($i) => (string) $i)->values()->all()
+            : array_map('strval', $staff);
     }
 
     public function savePayrollViewers(): void
@@ -1106,6 +1111,18 @@ new #[Layout('components.layouts.app')] class extends Component
                 'user_id' => auth()->id(), 'auditable_type' => Setting::class, 'auditable_id' => $d->id,
                 'action' => 'domestic_payout_viewers_changed', 'column_name' => 'domestic_payout_viewers',
                 'old_value' => json_encode($beforeDomestic), 'new_value' => json_encode($domestic), 'ip_address' => request()?->ip(),
+            ]);
+        }
+        $staff = array_values(array_intersect(array_map('intval', (array) ($this->payrollViewerMatrix['staff_payout'] ?? [])), $allowed));
+        sort($staff);
+        $beforeStaff = Setting::staffPayoutViewerIds();
+        if ($beforeStaff === null || $staff !== (function ($x) { sort($x); return $x; })($beforeStaff)) {
+            $sp = Setting::updateOrCreate(['key' => 'staff_payout_viewers'],
+                ['value' => json_encode($staff), 'type' => 'string', 'description' => '사내직원 월정산 볼 사람(user id)']);
+            \App\Models\AuditLog::create([
+                'user_id' => auth()->id(), 'auditable_type' => Setting::class, 'auditable_id' => $sp->id,
+                'action' => 'staff_payout_viewers_changed', 'column_name' => 'staff_payout_viewers',
+                'old_value' => $beforeStaff === null ? null : json_encode($beforeStaff), 'new_value' => json_encode($staff), 'ip_address' => request()?->ip(),
             ]);
         }
         Setting::flushRiskParamMemo();
@@ -1932,7 +1949,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
             {{-- 🔒 사내직원관리 공개 범위 (jin 2026-11-04) — 사람 × 칸 체크. 내수직원 = 탭 전체(내수직원 월정산 포함), 나머지 = 급여 항목.
                  사내직원관리에서만 숨긴다(월정산·결재 화면 무관). 처음엔 급여 칸 전원 체크(= 종전). 시스템관리자는 늘 본다. --}}
-            @php $pvCats = \App\Models\Salesman::PAYROLL_VIEW_CATEGORIES; if (! $domesticPayoutEnabled) { unset($pvCats['domestic']); } @endphp
+            @php $pvCats = \App\Models\Salesman::PAYROLL_VIEW_CATEGORIES; if (! $domesticPayoutEnabled) { unset($pvCats['domestic']); }
+                 // 🧾 사내직원 월정산 볼 사람(jin 2026-11-05) — 급여 칸이 아니라 메뉴 칸. 맨 앞에(내수직원과 나란히).
+                 $pvCats = ['staff_payout' => __('feature_settings.staff_payout_col')] + $pvCats; @endphp
             <div class="rounded-md border border-gray-100 px-3 py-2" data-payroll-viewers>
                 <div class="text-sm text-gray-700">{{ __('feature_settings.payroll_viewers') }}
                     <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.payroll_viewers_sub') }}</span>

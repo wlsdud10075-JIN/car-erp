@@ -147,8 +147,6 @@ Route::middleware(['auth', 'verified', 'sales'])->prefix('erp')->name('erp.')->g
 // 승인 큐 — canApprove() (super/admin/관리/업무관리자)
 Route::middleware(['auth', 'verified', 'approve'])->prefix('erp')->name('erp.')->group(function () {
     Volt::route('approvals', 'erp.approvals.index')->name('approvals.index');
-    // Phase 2 — 월배치 정산지급 승인큐 (제출자 [관리]/업무관리자 상태확인 + 승인자 결정)
-    Volt::route('payout-batches', 'erp.payout-batches.index')->name('payout-batches.index');
 });
 
 // 정산 — settlement role 이상
@@ -158,6 +156,9 @@ Route::middleware(['auth', 'verified', 'settlement'])->prefix('erp')->name('erp.
     // 🧾 내수직원 월정산 (2026-11-03) — 같은 화면, 내수 배치만 + 제출 칸. 볼 사람은 컴포넌트 mount 가 다시 좁힌다(지정자·자기 차례 결재자).
     //    🔀 11-04 approve → settlement 그룹 — 지정 후보에 재무가 들어왔다(jin «볼 사람은 시스템관리자가 설정»).
     Volt::route('domestic-payouts', 'erp.payout-batches.index')->name('domestic-payouts.index');
+    // Phase 2 — 월정산 지급 승인큐. 🔀 2026-11-05 approve → settlement 그룹 — 볼 사람을 기능설정에서 지정(재무 포함, jin «내수처럼»).
+    //   좁히기는 컴포넌트 mount(User::canSeeStaffPayout + 자기 차례 결재자).
+    Volt::route('payout-batches', 'erp.payout-batches.index')->name('payout-batches.index');
     Volt::route('settlements', 'erp.settlements.index')->name('settlements.index');
 
     // 정산 export (귀속월 기준·영업담당자별 시트) — 화면 필터 그대로 미러. 'export' 리터럴이라 충돌 없음.

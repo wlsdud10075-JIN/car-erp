@@ -35,6 +35,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->domestic = request()->routeIs('erp.domestic-payouts.*');
         if (! $this->domestic) {
+            // 🧾 사내직원 월정산 = 기능설정에서 지정한 사람(저장 전엔 관리 이상) + 지금 자기 차례인 결재자 (jin 2026-11-05 «내수처럼»)
+            $user = auth()->user();
+            abort_unless($user->canSeeStaffPayout() || SettlementPayoutBatch::query()->notDomestic()->awaitingDecisionBy($user)->exists(), 403);
+
             return;
         }
         $user = auth()->user();
