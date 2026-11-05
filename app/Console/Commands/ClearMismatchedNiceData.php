@@ -29,7 +29,8 @@ class ClearMismatchedNiceData extends Command
     public function handle(): int
     {
         $apply = (bool) $this->option('apply');
-        $norm = fn ($s) => strtoupper(preg_replace('/\s+/', '', (string) $s));
+        // 영문·숫자만 비교 — 칸에 특수 공백(NBSP 등)이 섞여 같은 차대번호가 「다름」으로 잡혔다(heymanerp 10러4700, 2026-11-05).
+        $norm = fn ($s) => preg_replace('/[^A-Z0-9]/', '', strtoupper((string) $s));
         $vehicles = 0;
         $cols = array_fill_keys(['nice_raw', 'nice_spec_control_no', 'nice_spec_form_name', 'nice_spec_max_power', 'nice_spec_cylinders', 'nice_inspection_start', 'nice_inspection_end'], 0);
 
