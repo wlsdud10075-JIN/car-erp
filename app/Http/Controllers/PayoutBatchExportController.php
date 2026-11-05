@@ -24,7 +24,8 @@ class PayoutBatchExportController extends Controller
             abort_unless(Setting::domesticPayoutEnabled()
                 && ($user->canSeeDomesticPayout() || SettlementPayoutBatch::query()->domestic()->awaitingDecisionBy($user)->exists()), 403);
         } else {
-            abort_unless($user->canApprove(), 403);
+            // 🧾 2026-11-05 — 화면과 같은 판정(지정자 + 자기 차례 결재자)
+            abort_unless($user->canSeeStaffPayout() || SettlementPayoutBatch::query()->notDomestic()->awaitingDecisionBy($user)->exists(), 403);
         }
 
         return $exporter->download($batch, $user, $request->ip());
