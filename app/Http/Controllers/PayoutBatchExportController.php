@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  * 월정산 화면 [엑셀] (jin 2026-11-04 (나)). 승인 링크 엑셀과 같은 파일(PayoutBatchExportService).
  *
  * 받을 수 있는 사람 = 그 화면을 볼 수 있는 사람과 같게 —
- *   사내직원 월정산·퇴사 정산 = `approve` 미들웨어와 같은 canApprove() (월정산 메뉴 라우트 그룹)
+ *   사내직원 월정산·퇴사 정산 = User::canSeeStaffPayout() (기능설정 지정자, 저장 전엔 관리 이상) 또는 자기 차례 결재자
  *   내수직원 월정산 = 회사 토글 ON + 지정자(canSeeDomesticPayout) 또는 지금 자기 차례 결재자 — 화면 mount 와 같은 판정.
  */
 class PayoutBatchExportController extends Controller
