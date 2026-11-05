@@ -1024,6 +1024,7 @@ return [
             'wika' => '위카',
             'gucheonyuk' => '구천육',
             'hyundai_a1' => '현대A1',
+            'glovis' => '현대글로비스(2026-09~)',
             'mutual' => '뮤추얼',
             'seongji' => '성지',
             'daily' => '데일리',
