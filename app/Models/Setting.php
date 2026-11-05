@@ -239,7 +239,6 @@ class Setting extends Model
         return array_map('intval', $map);
     }
 
-    /** 내수직원 월정산을 볼 수 있게 시스템관리자가 지정한 사용자 id 목록(기능설정). 시스템관리자는 지정 없이 본다. */
     /**
      * 사내직원 월정산 볼 사람(user id) — jin 2026-11-05 «내수처럼 지정한 사람만». null = 한 번도 저장 안 함 → 종전(관리 이상 전원).
      * 기능설정 공개 범위 표의 「사내직원 월정산」 칸이 쓴다.
@@ -255,6 +254,7 @@ class Setting extends Model
         return is_array($ids) ? array_values(array_unique(array_map('intval', $ids))) : null;
     }
 
+    /** 내수직원 월정산을 볼 수 있게 시스템관리자가 지정한 사용자 id 목록(기능설정). 시스템관리자는 지정 없이 본다. */
     public static function domesticPayoutViewerIds(): array
     {
         $raw = self::get('domestic_payout_viewers', '[]');
