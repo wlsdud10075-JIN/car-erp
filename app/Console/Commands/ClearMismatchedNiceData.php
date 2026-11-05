@@ -54,6 +54,12 @@ class ClearMismatchedNiceData extends Command
                     'nice_inspection_end' => $end,
                 ];
                 $changes = ['nice_raw' => null];
+                // 🔑 칸이 그 원본에서 왔다는 증거 = 제원관리번호가 그 원본 값과 같다(10-02 백필이 한 번에 채웠다).
+                //    다르면 그 차 자기 조회값이다 — 기통수 「4」처럼 우연히 같은 값을 지우지 않는다.
+                $cur = (string) $v->nice_spec_control_no;
+                if ($fromRaw['nice_spec_control_no'] === '' || $cur !== $fromRaw['nice_spec_control_no']) {
+                    $fromRaw = [];
+                }
                 foreach ($fromRaw as $col => $val) {
                     $cur = $v->{$col};
                     $cur = $cur instanceof \DateTimeInterface ? $cur->format('Y-m-d') : $cur;

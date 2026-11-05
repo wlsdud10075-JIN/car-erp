@@ -266,8 +266,11 @@ class NiceEditableSpecFieldsTest extends TestCase
             'nice_spec_control_no' => 'A011-00048-0140-1414', 'nice_spec_form_name' => '수기로 고친 형식', 'nice_spec_cylinders' => 3]);
         $ok = $this->vehicle(['vehicle_number' => '08오4540', 'nice_reg_vin' => 'KNAAAAA111', 'nice_raw' => $foreign,
             'nice_spec_control_no' => 'A011-00048-0140-1414']);
+        // 제원번호가 그 차 자기 값이면(원본만 남의 것) 다른 칸은 우연히 같아도 둔다 — 기통수 「4」 같은 것
+        $own = $this->vehicle(['vehicle_number' => '14서0587', 'nice_reg_vin' => 'WAUZZZ4M0GD056745', 'nice_raw' => ['resVehicleIdNo' => 'KNAAAAA111', 'resSpecControlNo' => 'A011-X', 'engineSpec' => '4/1998'],
+            'nice_spec_control_no' => '0242-00073-0020-1316', 'nice_spec_cylinders' => 4]);
 
-        $this->artisan('vehicles:clear-mismatched-nice')->expectsOutputToContain('dry-run · 다른 차 NICE 원본 1대')->assertSuccessful();
+        $this->artisan('vehicles:clear-mismatched-nice')->expectsOutputToContain('dry-run · 다른 차 NICE 원본 2대')->assertSuccessful();
         $this->assertNotNull($bad->fresh()->nice_raw, 'dry-run 은 안 바꾼다');
 
         $this->artisan('vehicles:clear-mismatched-nice --apply')->assertSuccessful();
@@ -281,5 +284,7 @@ class NiceEditableSpecFieldsTest extends TestCase
         $this->assertDatabaseHas('audit_logs', ['auditable_id' => $bad->id, 'action' => 'nice_mismatch_cleared', 'column_name' => 'nice_raw']);
 
         $this->artisan('vehicles:clear-mismatched-nice --apply')->expectsOutputToContain('다른 차 NICE 원본 0대');
+        $this->assertSame(4, (int) $own->fresh()->nice_spec_cylinders, '자기 제원번호인 차의 칸은 안 지운다');
+        $this->assertNull($own->fresh()->nice_raw, '원본은 비운다');
     }
 }
