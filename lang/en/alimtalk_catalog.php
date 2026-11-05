@@ -23,7 +23,7 @@ return [
     'scoped_note' => 'Checked roles do not all receive the same list. Managers, admins, clearance and finance see everything; a team lead sees their own team, a salesperson only their own vehicles.',
     'escalate_unit' => 'd+',
     'escalate_note' => 'The number is the age at which that role starts receiving an item. The checkbox decides who, the number decides when. Later stages also see the vehicles earlier stages already receive. Leave blank to restore the default.',
-    'auction_dereg_label' => 'Auction vehicles (supplier contains 「경매」) wait at least',
+    'auction_dereg_label' => 'Auction vehicles (supplier contains "auction") wait at least',
     'auction_dereg_note' => 'Days after full purchase payment before the deregistration reminder is sent. If a role’s day above is later, that day applies. The vehicle list 「Deregistration due」 is unchanged. Blank = 7.',
     'save' => 'Save',
     'saved' => 'Recipient roles saved.',

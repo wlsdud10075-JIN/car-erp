@@ -67,6 +67,9 @@ class AlimtalkDeregistration extends Command
                 // ④ 바이어 없음 = 일반재고(바이어 미정 투기매입) — 팔릴 때까지 말소를 서두를 이유가 없다(jin 2026-09-07).
                 //    재고 2분류의 「일반재고」가 정확히 이 상태다(scopeGeneralStock, SKILLS §14).
                 ->whereNotNull('buyer_id')
+                // ⑤ 담당자가 「정산 지급 대상 아님」(헤이맨 같은 자매 회사 계정) — 그쪽이 따로 처리한다(jin 2026-11-05).
+                //    담당자 없는 차는 그대로 대상(관리자 티어가 받는다).
+                ->whereDoesntHave('salesman', fn ($q) => $q->where('payout_excluded', true))
                 // ⚠️ warehouse_in_date(매입 완납일)가 purchaseBalancePayments 컬렉션을 읽는다 — eager load 필수.
                 //    AlimtalkSaleUnpaid 를 복제하면 이 줄이 빠진다(그쪽은 캐시 컬럼만 읽어 필요 없다).
                 ->with(['salesman', 'purchaseBalancePayments'])
