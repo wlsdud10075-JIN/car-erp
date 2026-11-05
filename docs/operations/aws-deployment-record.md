@@ -935,6 +935,16 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-05 (3)~(6) — master `1ecde6dd` → `7883b5f8` → `2bada98e` → `2feebfae` · 마이그 0 (jin «배포해줘», 17~18시 업무시간)
+
+- (3) `1ecde6dd` 정산관리 — 퇴사 정산 배치로 나간 정산은 목록·담당자 카드에서 제외(이승훈 #6). 런 41993629580 잡 5 success.
+- (4) `7883b5f8` 🚨 NICE 원본 섞임 — 차량 편집 열기가 직전 조회 원본(niceRaw)을 안 비워 다음에 저장한 차에 다른 차 NICE 원본이 들어갔다(01부5398 ← 모닝 A011-00048-0140-1414).
+  10-02 sync-nice-spec-columns 가 그 원본으로 빈 제원 6칸을 채워 서류에 다른 차 제원관리번호·원동기형식이 찍혔다. openEdit 비움 + 저장 가드(원본 차대번호 ≠ 이 차면 저장 안 함) + `vehicles:clear-mismatched-nice`. 런 41996799515 잡 5 success. (첫 push 는 jin 거절 — 확인 창 직전 안내가 영어였다.)
+- (5) `2bada98e` 정리 명령 보완(제원 칸은 제원관리번호까지 그 원본 값일 때만 — 기통수 「4」 우연 일치 보존) + 사내직원 월정산 볼 사람 지정(공개 범위 표 「사내직원 월정산」 칸, 저장 전 = 관리 이상, 라우트 settlement 그룹). 런 42000039159 — `deploy`(heymanerp) 잡이 drone-ssh 다운로드 GitHub 504 로 실패 → `--failed` 재실행 success.
+- (6) `2feebfae` 차대번호 비교 영문·숫자만(heymanerp 10러4700 칸 끝 NBSP) + 주석 자리. 런 42003671605 잡 5 success.
+- 🧹 **운영 데이터 정리 실행(jin 승인)**: `vehicles:clear-mismatched-nice --apply` — ssancarerp 원본 634 · 제원 칸 283 / heymanerp 128 · 106 / karabaerp 68 · 54. 재실행 0대 확인. 감사 `nice_mismatch_cleared`(ssancarerp 2,330행). 재조회는 실무자(jin «일괄 재조회 하지 말 것»).
+  판정 근거 = 원본 차대번호 ≠ 그 차 차대번호 칸, 원본 차대번호가 우리 DB 다른 차 것으로 확인 ssancarerp 633/634 · heymanerp 128/129 · karaba 68/68.
+
 ## 2026-11-05 (2) — master `7f6f168f` · 마이그 0 (jin «배포해줘» — 말소 재촉 경매·지급제외 · 알림톡 인원 선택 · 퇴사자 정산 칸, 16:44 업무시간)
 
 dev `430c9935`·`b8ae4997`·`e6885d83`·`8b6dd4e8`·`54cf7517` → master `ad6a5a78`~`7f6f168f`. push = `git push origin master` 단독 → YES/NO.
