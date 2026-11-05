@@ -82,4 +82,23 @@ class BuyerNewBadgeAndReceivableToggleTest extends TestCase
 
         $c->call('toggleTask', 'receivable')->assertSet('taskFilter', '');   // 다시 누르면 해제
     }
+
+    /** 🏷️ 바이어 미정 토글 (jin 2026-11-05) — 목록 뱃지 「바이어미정」 차만. 다시 누르면 해제. */
+    public function test_buyer_undecided_toggle_lists_only_badged_vehicles(): void
+    {
+        $mk = fn (string $no, bool $undecided) => Vehicle::create(['vehicle_number' => $no, 'sales_channel' => 'export',
+            'purchase_price' => 1_000_000, 'purchase_date' => now()->subMonth()->toDateString(), 'buyer_undecided' => $undecided]);
+        $mk('미정1', true);
+        $mk('정상1', false);
+        $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
+
+        $c = Volt::test('erp.vehicles.index')->assertSeeHtml('data-filter-buyer-undecided')
+            ->assertSee('정상1')   // 끄면 둘 다 보인다 — 아래 「안 보임」이 토글 때문임을 확인
+            ->call('toggleTask', 'buyer_undecided')->assertSet('taskFilter', 'buyer_undecided');
+        $html = $c->html();
+        $this->assertStringContainsString('미정1', $html);
+        $this->assertStringNotContainsString('정상1', $html);
+
+        $c->call('toggleTask', 'buyer_undecided')->assertSet('taskFilter', '');
+    }
 }
