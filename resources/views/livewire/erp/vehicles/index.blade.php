@@ -8396,12 +8396,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                            {{ $recvOn ? 'bg-rose-600 text-white shadow-sm font-semibold' : 'bg-rose-100 text-rose-700 hover:bg-rose-200 font-medium' }}">
                 {{ $recvOn ? '✓ ' : '' }}💰 {{ __('vehicle.filter_receivable') }}
             </button>
-            {{-- 🏷️ 바이어 미정 (jin 2026-11-05) — 목록 뱃지 「바이어미정」 차만. 같은 토글 묶음(하나만 켜짐). --}}
+            {{-- 🏷️ 바이어 미정 (jin 2026-11-05) — 목록 뱃지 「바이어미정」 차만. 같은 토글 묶음(하나만 켜짐).
+                 색 = 목록 뱃지와 같은 slate(jin «뱃지 색과 동일시»). ⚠️ slate-200·600 은 이 버튼이 처음 써서 빌드가 있어야 먹는다(§8 #50 — 배포는 npm run build). --}}
             @php $undecidedOn = $taskFilter === 'buyer_undecided'; @endphp
             <button type="button" wire:click="toggleTask('buyer_undecided')" data-filter-buyer-undecided
                     title="{{ __('vehicle.buyer_undecided_title') }}"
                     class="rounded-full px-2.5 py-0.5 text-xs transition
-                           {{ $undecidedOn ? 'bg-rose-600 text-white shadow-sm font-semibold' : 'bg-rose-100 text-rose-700 hover:bg-rose-200 font-medium' }}">
+                           {{ $undecidedOn ? 'bg-slate-600 text-white shadow-sm font-semibold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium' }}">
                 {{ $undecidedOn ? '✓ ' : '' }}🏷️ {{ __('vehicle.buyer_undecided_badge') }}
             </button>
         </div>
