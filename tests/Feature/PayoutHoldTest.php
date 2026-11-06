@@ -477,6 +477,7 @@ class PayoutHoldTest extends TestCase
         $batch->addExtraPayout($manager, $sm->id, 400_000, '대표 지시');
         PayoutHold::resolve($manager, $sm->id, 'paid', null, PayoutHold::KIND_EXTRA);   // 월정산 밖으로 바로 지급
         $this->assertSame(400_000, $batch->extraPaidOutsideTotal());
+        $batch->addExtraPayout($manager, $sm->id, 50_000, '하나 더');   // 열린 채로 둔다 → 최종 확정 때 이번 송금에 포함(지급 완료)
 
         // 확정 전 — 카드: 회사 순이익 반영값 = 박제 − 월정산 밖 추가 지급 · [최종 확정] 버튼 · 엑셀 제목 「확정 전」
         $c = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)
@@ -491,10 +492,14 @@ class PayoutHoldTest extends TestCase
         } catch (\DomainException) {
         }
         $c->call('finalizeBatch', $batch->id)->assertSeeHtml('data-finalized')->assertDontSeeHtml('data-finalize-button')
+            ->assertSee(__('payout_batch.hold.status_held_final'))->assertSee(__('payout_batch.hold.status_extra_paid'))->assertDontSee(__('payout_batch.hold.status.held'))
             ->assertDontSeeHtml('data-hold-button')->assertDontSeeHtml('data-extra-button')->assertDontSeeHtml('data-hold-cancel')->assertDontSeeHtml('data-extra-cancel');
         $batch->refresh();
         $this->assertNotNull($batch->finalized_at);
         $this->assertSame($manager->id, $batch->finalized_by);
+        $this->assertSame(0, PayoutHold::openBalanceFor($sm->id, PayoutHold::KIND_EXTRA), '열린 추가금은 이번 송금에 포함 → 지급 완료');
+        $this->assertSame(450_000, $batch->extraPaidOutsideTotal(), '400,000 + 50,000 모두 이 달 회사이익 차감');
+        $this->assertSame(600_000, PayoutHold::openBalanceFor($sm->id), '보류금은 그대로 남아 사내직원관리에서 처리');
         $this->assertDatabaseHas('audit_logs', ['action' => 'payout_finalized', 'auditable_id' => $batch->id]);
 
         // 잠금 — 보류·추가·취소 전부 거부, 상태·박제·총액은 그대로
@@ -517,15 +522,15 @@ class PayoutHoldTest extends TestCase
         $netCol = array_search('실제 송금', $hdr, true);
         $this->assertNotFalse($netCol);
         $personRow = collect($rows)->first(fn ($r) => ($r[3] ?? null) === $sm->name);
-        $this->assertSame(2_100_000 - 600_000 + 400_000, (int) $personRow[$netCol]);
+        $this->assertSame(2_100_000 - 600_000 + 450_000, (int) $personRow[$netCol]);
         $byLabel = collect($rows)->keyBy(2);
-        $this->assertSame(400_000, (int) $byLabel['추가 지급(월정산 밖, 회사이익 차감)'][6]);
-        $this->assertSame((int) $totals['company_net'] - 400_000, (int) $byLabel['회사 순이익(월정산 밖 추가 지급 반영)'][6]);
+        $this->assertSame(450_000, (int) $byLabel['추가 지급(월정산 밖, 회사이익 차감)'][6]);
+        $this->assertSame((int) $totals['company_net'] - 450_000, (int) $byLabel['회사 순이익(월정산 밖 추가 지급 반영)'][6]);
 
         // 승인 링크도 같은 숫자
         $ceo = User::where('approval_title', '대표')->first();
         $this->actingAs($ceo)->get($batch->approvalLinkFor($ceo))
-            ->assertOk()->assertSee('data-finalized', false)->assertSee(number_format((int) $totals['company_net'] - 400_000));
+            ->assertOk()->assertSee('data-finalized', false)->assertSee(number_format((int) $totals['company_net'] - 450_000));
     }
 
     /** @return array<int, array<int, mixed>> 「사람별 지급」 탭 */

@@ -743,13 +743,19 @@ class SettlementPayoutBatch extends Model
         if ($this->isFinalized()) {
             throw new \DomainException(__('payout_batch.hold.finalize_already'));
         }
-        $this->forceFill(['finalized_at' => now(), 'finalized_by' => $by->id])->save();
-        AuditLog::create([
-            'user_id' => $by->id, 'auditable_type' => self::class, 'auditable_id' => $this->id,
-            'action' => 'payout_finalized', 'column_name' => 'finalized_at',
-            'old_value' => null, 'new_value' => $this->month.' 월정산 #'.$this->id.' 최종 확정 — 보류 '.number_format(array_sum($this->heldAmountsBySalesman())).'원 · 추가 '.number_format(array_sum($this->extraAmountsBySalesman())).'원',
-            'ip_address' => request()?->ip(),
-        ]);
+        DB::transaction(function () use ($by) {
+            $this->forceFill(['finalized_at' => now(), 'finalized_by' => $by->id])->save();
+            // ➕ 이 달 추가금은 「실제 송금액」에 들어가 이번 송금으로 나간다 — 열린 줄(보류 중·대기)을 지급 완료로 닫는다(jin 11-06 «추가는 지급완료로»).
+            //    그래서 다음 월정산 줄로 또 가지 않고, (가) 월정산 밖 추가 지급으로 그 달 회사이익에서 빠진다. 보류 줄은 그대로(사내직원관리에서 처리).
+            PayoutHold::query()->where('payout_batch_id', $this->id)->ofKind(PayoutHold::KIND_EXTRA)->whereIn('status', PayoutHold::OPEN)
+                ->update(['status' => PayoutHold::RELEASED_PAID, 'released_by' => $by->id, 'released_at' => now()]);
+            AuditLog::create([
+                'user_id' => $by->id, 'auditable_type' => self::class, 'auditable_id' => $this->id,
+                'action' => 'payout_finalized', 'column_name' => 'finalized_at',
+                'old_value' => null, 'new_value' => $this->month.' 월정산 #'.$this->id.' 최종 확정 — 보류 '.number_format(array_sum($this->heldAmountsBySalesman())).'원 · 추가 '.number_format(array_sum($this->extraAmountsBySalesman())).'원(이번 송금에 포함)',
+                'ip_address' => request()?->ip(),
+            ]);
+        });
     }
 
     private function guardNotFinalized(): void
