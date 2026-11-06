@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\DomesticFeeStatement;
 use App\Models\PayoutHold;
 use App\Models\PayrollEntry;
@@ -227,5 +228,120 @@ class PayoutHoldTest extends TestCase
             $this->fail('퇴사 정산은 보류 대상이 아니다');
         } catch (\DomainException) {
         }
+    }
+
+    /** jin 2026-11-06 «330만 중 150만 지급·180만 보류» — 금액칸으로 일부만 보류하면 나머지는 이번 달 그대로 송금된다. */
+    public function test_partial_hold_from_the_card_leaves_the_rest_paid_and_rejects_bad_amounts(): void
+    {
+        [$batch, $sm, $manager] = $this->approvedBatch();   // 지급합계 2,100,000
+        $this->actingAs($manager);
+
+        $c = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)
+            ->call('startHold', $batch->id, $sm->id, '2,100,000')->assertSeeHtml('data-hold-form')->assertSet('holdAmount', '2,100,000');
+
+        // 초과 · 부호 다름 · 0 은 거부(보류 0건 그대로)
+        foreach (['2,500,000', '-100,000', '0'] as $bad) {
+            $c->set('holdAmount', $bad)->call('holdPerson', $batch->id, $sm->id);
+            $this->assertSame(0, PayoutHold::where('salesman_id', $sm->id)->count(), "잘못된 금액 {$bad} 은 거부");
+        }
+
+        $c->set('holdAmount', '1,800,000')->call('holdPerson', $batch->id, $sm->id)
+            ->assertSet('holdTarget', null)
+            ->assertSeeHtml('data-hold-net')
+            ->assertSee('⏸ 보류 ₩1,800,000')->assertSee('/ 2,100,000')
+            ->assertSeeHtml('data-hold-button');   // 남은 30만은 더 보류할 수 있다
+        $this->assertSame(1_800_000, PayoutHold::openBalanceFor($sm->id));
+        $this->assertSame([$sm->id => 1_800_000], $batch->heldAmountsBySalesman());
+
+        // 남은 몫보다 크면 거부, 남은 몫 그대로는 통과 → 두 줄 합이 전액
+        $c->call('startHold', $batch->id, $sm->id, '300,000')->set('holdAmount', '300,001')->call('holdPerson', $batch->id, $sm->id);
+        $this->assertSame(1, PayoutHold::where('salesman_id', $sm->id)->count());
+        $c->call('startHold', $batch->id, $sm->id, '300,000')->call('holdPerson', $batch->id, $sm->id)
+            ->assertDontSeeHtml('data-hold-button')->assertSee('⏸ 보류 ₩2,100,000');
+        $this->assertSame(2, PayoutHold::where('salesman_id', $sm->id)->count());
+        $this->assertSame(2_100_000, PayoutHold::openBalanceFor($sm->id));
+
+        // 엑셀 보류 열 = 두 줄의 합
+        $res = $this->get(route('erp.payout-batches.export', $batch));
+        $path = tempnam(sys_get_temp_dir(), 'hld').'.xlsx';
+        file_put_contents($path, $res->streamedContent());
+        $rows = IOFactory::load($path)->getSheetByName('사람별 지급')->toArray(null, true, false, false);
+        $holdCol = array_search('⏸ 보류(송금 제외)', $rows[0], true);
+        $personRow = collect($rows)->first(fn ($r) => ($r[1] ?? null) === $sm->name);
+        $this->assertSame(2_100_000, (int) $personRow[$holdCol]);
+
+        // 보류 취소는 그 사람의 held 줄 전부
+        $c->call('releaseHold', $batch->id, $sm->id);
+        $this->assertSame(0, PayoutHold::openBalanceFor($sm->id));
+        $this->assertSame(2, PayoutHold::where('salesman_id', $sm->id)->where('status', PayoutHold::CANCELLED)->count());
+    }
+
+    /** 10월 +200만 · 11월 −50만처럼 부호가 섞인 보류를 전액 처리하면 두 줄이 다 옮겨져야 한다(금액으로 걷으면 합이 맞는 지점에서 멈춰 줄이 남는다). */
+    public function test_full_resolve_moves_every_row_even_when_signs_are_mixed(): void
+    {
+        [$batch, $sm, $manager] = $this->approvedBatch();
+        $plus = $batch->holdPayout($manager, $sm->id);   // +2,100,000
+        $minus = PayoutHold::create(['salesman_id' => $sm->id, 'payout_batch_id' => $batch->id, 'month' => '2026-11', 'amount_krw' => -500_000,
+            'status' => PayoutHold::HELD, 'held_by' => $manager->id]);
+        $this->assertSame(1_600_000, PayoutHold::openBalanceFor($sm->id));
+
+        $this->assertSame(1_600_000, PayoutHold::resolve($manager, $sm->id, 'queue'));
+        $this->assertSame(PayoutHold::QUEUED, $plus->fresh()->status);
+        $this->assertSame(PayoutHold::QUEUED, $minus->fresh()->status, '음수 줄도 같이 옮겨진다');
+        $this->assertSame(2, PayoutHold::where('salesman_id', $sm->id)->count(), '줄을 쪼개지 않는다');
+        $this->assertSame(1_600_000, PayoutHold::openBalanceFor($sm->id));
+        $this->assertSame([1_600_000], array_column(SettlementPayoutBatch::heldReleaseLinesFor(), 'amount'));
+        $this->assertStringContainsString('2026-10월·2026-11월 지급보류분', AuditLog::where('action', 'payout_hold_queue')->latest('id')->first()->old_value);
+
+        // 일부(100만)는 부호 섞여도 합이 맞게 — 오래된 달(+210만)부터 쪼갠다
+        PayoutHold::resolve($manager, $sm->id, 'unqueue');
+        $this->assertSame(1_000_000, PayoutHold::resolve($manager, $sm->id, 'queue', 1_000_000));
+        $this->assertSame(1_000_000, (int) PayoutHold::where('salesman_id', $sm->id)->where('status', PayoutHold::QUEUED)->sum('amount_krw'));
+        $this->assertSame(600_000, (int) PayoutHold::where('salesman_id', $sm->id)->where('status', PayoutHold::HELD)->sum('amount_krw'));
+    }
+
+    /** jin 2026-11-06 «이월된 보류금에서도 나눠서» — 일부만 월정산 추가/지급하면 줄을 쪼개고 그 몫만 다음 월정산에 들어간다. */
+    public function test_partial_resolve_splits_the_row_and_only_that_part_reaches_the_next_batch(): void
+    {
+        [$batch, $sm, $manager] = $this->approvedBatch();
+        $hold = $batch->holdPayout($manager, $sm->id);   // 2,100,000 보류
+        $this->actingAs($manager);
+
+        // 150만만 월정산 추가 → queued 150만 + held 60만(원래 줄), 잔액은 그대로 210만
+        Volt::test('erp.salesmen.index')->call('openEdit', $sm->id)->assertSeeHtml('data-hold-amount')
+            ->set('holdResolveAmount', '1,500,000')->call('resolveHold', 'queue')->assertSet('holdResolveAmount', '');
+        $rows = PayoutHold::where('salesman_id', $sm->id)->orderBy('id')->get();
+        $this->assertCount(2, $rows);
+        $this->assertSame([PayoutHold::HELD, 600_000], [$rows[0]->status, (int) $rows[0]->amount_krw], '원래 줄엔 남는 몫');
+        $this->assertSame([PayoutHold::QUEUED, 1_500_000], [$rows[1]->status, (int) $rows[1]->amount_krw]);
+        $this->assertSame(2_100_000, PayoutHold::openBalanceFor($sm->id));
+        $this->assertSame([1_500_000], array_column(SettlementPayoutBatch::heldReleaseLinesFor(), 'amount'));
+
+        // 11월 제출 → 조정 줄 = 150만만, 60만은 보류 중으로 남는다
+        PayrollEntry::create(['salesman_id' => $sm->id, 'month' => '2026-11', 'label' => '기본급', 'amount' => 2_000_000, 'sort' => 1]);
+        $other = $this->employee(1_000_000, '2026-11');
+        $this->confirmed($other, '2026-11');
+        $next = SettlementPayoutBatch::submitForMonth($manager, '2026-11');
+        $adj = $next->adjustments()->where('kind', SettlementPayoutAdjustment::KIND_HELD_RELEASE)->first();
+        $this->assertSame(1_500_000, (int) $adj->amount);
+        $this->assertSame(PayoutHold::RELEASED_BATCH, $rows[1]->fresh()->status);
+        $this->assertSame(PayoutHold::HELD, $rows[0]->fresh()->status);
+        $this->assertSame(600_000, PayoutHold::openBalanceFor($sm->id));
+
+        // 남은 60만 중 20만만 월정산 밖 지급 → held 40만 + released_paid 20만. 잔액보다 크면 거부.
+        try {
+            PayoutHold::resolve($manager, $sm->id, 'paid', 700_000);
+            $this->fail('잔액 초과는 거부');
+        } catch (\DomainException) {
+        }
+        $this->assertSame(200_000, PayoutHold::resolve($manager, $sm->id, 'paid', 200_000));
+        $this->assertSame(400_000, PayoutHold::openBalanceFor($sm->id));
+        $this->assertSame(1, PayoutHold::where('salesman_id', $sm->id)->where('status', PayoutHold::RELEASED_PAID)->where('amount_krw', 200_000)->count());
+        $this->assertDatabaseHas('audit_logs', ['action' => 'payout_hold_paid', 'auditable_id' => $sm->id]);
+        $this->assertStringContainsString('(잔액 600,000원 중)', AuditLog::where('action', 'payout_hold_paid')->latest('id')->first()->old_value);
+
+        // 빈칸(전액) = 남은 40만 전부
+        Volt::test('erp.salesmen.index')->call('openEdit', $sm->id)->set('holdResolveAmount', '')->call('resolveHold', 'paid');
+        $this->assertSame(0, PayoutHold::openBalanceFor($sm->id));
     }
 }
