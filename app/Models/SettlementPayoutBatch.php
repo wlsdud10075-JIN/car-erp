@@ -672,17 +672,24 @@ class SettlementPayoutBatch extends Model
         return $lines;
     }
 
-    /** 이 배치(승인된 사내직원 월정산)에서 보류 중인 사람 → 보류 행. 취소된 것은 뺀다. */
+    /** 이 배치(승인된 사내직원 월정산)의 보류 줄 — 사람별 묶음(한 사람이 일부씩 여러 줄일 수 있다). 취소된 것은 뺀다. */
     public function holdsBySalesman(): Collection
     {
-        return PayoutHold::query()->where('payout_batch_id', $this->id)->where('status', '!=', PayoutHold::CANCELLED)->get()->keyBy('salesman_id');
+        return PayoutHold::query()->where('payout_batch_id', $this->id)->where('status', '!=', PayoutHold::CANCELLED)->orderBy('id')->get()->groupBy('salesman_id');
+    }
+
+    /** 이 배치에서 사람별 보류 합(취소 제외) — 카드 「실송금」·엑셀 「보류」 열. */
+    public function heldAmountsBySalesman(): array
+    {
+        return $this->holdsBySalesman()->map(fn ($rows) => (int) $rows->sum('amount_krw'))->all();
     }
 
     /**
-     * ⏸ 지급보류 (jin 2026-11-06) — 대표까지 승인된 사내직원 월정산에서 한 사람의 그 달 지급합계 전액(+/−)을 보류.
-     * 승인 박제·총액은 그대로 두고 보류 장부에만 남긴다(화면·엑셀이 「실송금 = 송금 총액 − 보류」로 겹쳐 보여 준다).
+     * ⏸ 지급보류 (jin 2026-11-06) — 대표까지 승인된 사내직원 월정산에서 한 사람의 그 달 지급합계(+/−)를 보류.
+     * `$amount` = 보류할 금액(null = 전액). 일부만 보류하면 나머지는 그대로 지급(jin «150만 지급·180만 보류»). 부호는 지급합계와 같아야 하고
+     * 이미 보류한 몫과 합쳐 지급합계를 넘을 수 없다. 승인 박제·총액은 그대로 — 보류 장부에만 남긴다(화면·엑셀이 「실송금」으로 겹쳐 표시).
      */
-    public function holdPayout(User $by, int $salesmanId, ?string $note = null): PayoutHold
+    public function holdPayout(User $by, int $salesmanId, ?int $amount = null, ?string $note = null): PayoutHold
     {
         if (! self::canEditAdjustments($by)) {
             throw new \DomainException(__('payout_batch.hold.forbidden'));
@@ -690,21 +697,28 @@ class SettlementPayoutBatch extends Model
         if ($this->kind !== self::KIND_MONTH || $this->status !== self::STATUS_APPROVED) {
             throw new \DomainException(__('payout_batch.hold.only_approved_month'));
         }
-        if ($this->holdsBySalesman()->has($salesmanId)) {
-            throw new \DomainException(__('payout_batch.hold.already'));
-        }
         $person = collect($this->breakdownForDisplay()['people'] ?? [])->firstWhere('salesman_id', $salesmanId);
         if (! $person) {
             throw new \DomainException(__('payout_batch.hold.not_in_batch'));
         }
-        if ((int) $person['payout'] === 0) {
+        $payout = (int) $person['payout'];
+        if ($payout === 0) {
             throw new \DomainException(__('payout_batch.hold.zero'));
         }
+        $already = (int) ($this->heldAmountsBySalesman()[$salesmanId] ?? 0);
+        $room = $payout - $already;   // 아직 보류 안 된 몫
+        if ($room === 0) {
+            throw new \DomainException(__('payout_batch.hold.already'));
+        }
+        $amount ??= $room;
+        if ($amount === 0 || ($amount <=> 0) !== ($payout <=> 0) || abs($amount) > abs($room)) {
+            throw new \DomainException(__('payout_batch.hold.amount_invalid', ['max' => number_format($room)]));
+        }
 
-        return DB::transaction(function () use ($by, $salesmanId, $person, $note) {
+        return DB::transaction(function () use ($by, $salesmanId, $amount, $note) {
             $hold = PayoutHold::create([
                 'salesman_id' => $salesmanId, 'payout_batch_id' => $this->id, 'month' => $this->month,
-                'amount_krw' => (int) $person['payout'], 'status' => PayoutHold::HELD, 'held_by' => $by->id,
+                'amount_krw' => $amount, 'status' => PayoutHold::HELD, 'held_by' => $by->id,
                 'note' => $note !== null && $note !== '' ? mb_substr($note, 0, 200) : null,
             ]);
             AuditLog::create([
@@ -724,15 +738,15 @@ class SettlementPayoutBatch extends Model
         if (! self::canEditAdjustments($by)) {
             throw new \DomainException(__('payout_batch.hold.forbidden'));
         }
-        $hold = PayoutHold::query()->where('payout_batch_id', $this->id)->where('salesman_id', $salesmanId)->where('status', PayoutHold::HELD)->first();
-        if (! $hold) {
+        $rows = PayoutHold::query()->where('payout_batch_id', $this->id)->where('salesman_id', $salesmanId)->where('status', PayoutHold::HELD)->get();
+        if ($rows->isEmpty()) {
             throw new \DomainException(__('payout_batch.hold.cannot_cancel'));
         }
-        $hold->update(['status' => PayoutHold::CANCELLED, 'released_by' => $by->id, 'released_at' => now()]);
+        PayoutHold::whereIn('id', $rows->pluck('id'))->update(['status' => PayoutHold::CANCELLED, 'released_by' => $by->id, 'released_at' => now()]);
         AuditLog::create([
             'user_id' => $by->id, 'auditable_type' => Salesman::class, 'auditable_id' => $salesmanId,
             'action' => 'payout_hold_cancelled', 'column_name' => 'payout_hold',
-            'old_value' => $this->month.' '.number_format($hold->amount_krw).'원', 'new_value' => null, 'ip_address' => request()?->ip(),
+            'old_value' => $this->month.' '.number_format((int) $rows->sum('amount_krw')).'원', 'new_value' => null, 'ip_address' => request()?->ip(),
         ]);
     }
 

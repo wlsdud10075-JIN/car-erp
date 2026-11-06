@@ -60,7 +60,7 @@ class PayoutBatchExportService
         $ss = $this->settlementExporter->build($settlements);   // 요약 · 담당자별 — 종전 엑셀 그대로
         // ⏸ 지급보류(2026-11-06) — 승인된 사내직원 월정산의 보류 장부를 「보류」 열·「실송금」 줄로 겹쳐 보여 준다(박제 무변경).
         $holds = $batch->kind === SettlementPayoutBatch::KIND_MONTH && $batch->status === SettlementPayoutBatch::STATUS_APPROVED
-            ? $batch->holdsBySalesman()->map(fn ($h) => (int) $h->amount_krw)->all() : [];
+            ? $batch->heldAmountsBySalesman() : [];
         $this->peopleSheet($ss->createSheet(0), $people, $bd['totals'] ?? [], (bool) ($bd['domestic_split'] ?? false), $holds);
         $this->payrollItemsSheet($ss->createSheet(1), $people);
         $ss->setActiveSheetIndex(0);

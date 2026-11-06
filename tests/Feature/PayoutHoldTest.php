@@ -90,7 +90,7 @@ class PayoutHoldTest extends TestCase
         } catch (\DomainException) {
         }
 
-        $hold = $batch->holdPayout($manager, $sm->id, '확인 뒤 지급');
+        $hold = $batch->holdPayout($manager, $sm->id, null, '확인 뒤 지급');
         $this->assertSame(PayoutHold::HELD, $hold->status);
         $this->assertSame($expected, $hold->amount_krw);
         $this->assertSame($expected, PayoutHold::openBalanceFor($sm->id));
