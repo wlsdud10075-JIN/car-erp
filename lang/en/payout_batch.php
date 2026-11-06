@@ -138,6 +138,8 @@ return [
         'finalize_done' => 'Finalized. Download the Excel and hand it to finance.',
         'finalize_already' => 'This batch is already finalized.',
         'finalized' => 'This batch is finalized — holds/extras can no longer be written or cancelled.',
+        'status_held_final' => 'Held (applied)',
+        'status_extra_paid' => 'Paid',
         'confirm' => "Hold :amount of :name's payout? It leaves the transfer and stays as a held balance on the Staff page.",
         'amount_label' => 'Amount to hold',
         'amount_hint' => 'Defaults to the full amount. Hold part of it and the rest is paid this month as usual (max :max).',

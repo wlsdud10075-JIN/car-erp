@@ -546,11 +546,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <div class="-mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-md border border-t-0 border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]" data-hold-row="{{ $sid }}">
                             @if($hs)
                                 <span class="rounded bg-slate-600 px-1.5 py-0.5 font-semibold text-white">⏸ {{ __('payout_batch.hold.badge') }} ₩{{ number_format($heldHere) }}@if($heldHere !== $payout) <span class="font-normal opacity-80">/ {{ number_format($payout) }}</span>@endif</span>
-                                <span class="text-gray-500">{{ $hs->map(fn ($x) => __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
+                                <span class="text-gray-500">{{ $hs->map(fn ($x) => $finalized && $x->status === \App\Models\PayoutHold::HELD ? __('payout_batch.hold.status_held_final') : __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
                             @endif
                             @if($es)
                                 <span class="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800" data-extra-badge="{{ $sid }}">➕ {{ __('payout_batch.hold.extra_badge') }} {{ $extraHere < 0 ? '−' : '+' }}₩{{ number_format(abs($extraHere)) }}</span>
-                                <span class="text-gray-500">{{ $es->map(fn ($x) => __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
+                                <span class="text-gray-500">{{ $es->map(fn ($x) => $x->status === \App\Models\PayoutHold::RELEASED_PAID ? __('payout_batch.hold.status_extra_paid') : __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
                             @endif
                             @if($canHold)
                                 @if($open)
