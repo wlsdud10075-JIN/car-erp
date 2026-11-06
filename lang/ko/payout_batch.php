@@ -144,6 +144,7 @@ return [
         'finalize_already' => '이미 최종 확정된 월정산입니다.',
         'finalized' => '최종 확정된 월정산입니다 — 보류·추가를 더 적거나 취소할 수 없습니다.',
         'status_held_final' => '보류 반영',
+        'final_net_pill' => '실제 송금 ₩:amount',
         'status_extra_paid' => '지급 완료',
         'confirm' => ':name 님의 :amount원을 보류할까요? 송금에서 빠지고 사내직원관리에 보류금으로 남습니다.',
         'amount_label' => '보류 금액',

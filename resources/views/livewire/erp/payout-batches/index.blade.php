@@ -362,7 +362,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @if($b->isDomesticBatch())<span class="badge badge-green" data-domestic-batch>{{ __('payout_batch.domestic.badge') }}</span>@endif
                         @if($b->isLeaverBatch())<span class="badge badge-purple" data-leaver-batch>{{ __('payout_batch.leaver_label', ['name' => $b->salesman?->name ?? '-']) }}</span>@endif
                         <span class="badge {{ $statusBadge }}">{{ __('payout_batch.status.'.$b->status) }}</span>
-                        @if($b->isFinalized())<span class="badge badge-blue" data-finalized title="{{ __('payout_batch.hold.finalize_hint') }}">✅ {{ __('payout_batch.hold.finalize_badge', ['date' => $b->finalized_at?->format('m/d'), 'name' => $b->finalizedBy?->name ?? '']) }}</span>@endif
+                        @if($b->isFinalized())<span class="badge badge-blue" data-finalized title="{{ __('payout_batch.hold.finalize_hint') }}">✅ {{ __('payout_batch.hold.finalize_badge', ['date' => $b->finalized_at?->format('m/d'), 'name' => $b->finalizedBy?->name ?? '']) }}</span>
+                        @php $finalNet = (int) ($b->breakdownForDisplay()['totals']['transfer_total'] ?? 0) - array_sum($b->heldAmountsBySalesman()) + array_sum($b->extraAmountsBySalesman()); @endphp
+                        <span class="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800" data-final-net title="{{ __('payout_batch.hold.net_label', ['n' => count($b->heldAmountsBySalesman()), 'm' => count($b->extraAmountsBySalesman())]) }}">{{ __('payout_batch.hold.final_net_pill', ['amount' => number_format($finalNet)]) }}</span>@endif
                         <span class="pill-count">{{ $b->isDomesticBatch() ? __('payout_batch.domestic.people', ['n' => $b->settlement_count]) : __('payout_batch.count', ['n' => $b->settlement_count]) }}</span>
                         <span class="text-sm font-medium text-primary-text">₩{{ number_format($b->total_payout) }}</span>
                     </button>
@@ -570,17 +572,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @else
                                     {{-- 같은 자리 토글 — 적은 게 있으면 「취소」(아직 월정산에 안 들어간 줄만), 없으면 「기입」. 금액을 고치려면 취소 → 다시 기입. --}}
                                     @if($holdOpen)
-                                    <button type="button" wire:click="releaseHold({{ $b->id }}, {{ $sid }})" wire:confirm="{{ __('payout_batch.hold.cancel_confirm', ['name' => $person['name']]) }}"
+                                    {{-- wire:key — 같은 자리를 다른 버튼으로 바꾸므로 morph 가 요소를 재사용해 옛 wire:confirm 이 남지 않게(jin 11-06 «취소 뒤 다시 누르면 취소할까요?») --}}
+                                    <button type="button" wire:key="hold-cancel-{{ $b->id }}-{{ $sid }}" wire:click="releaseHold({{ $b->id }}, {{ $sid }})" wire:confirm="{{ __('payout_batch.hold.cancel_confirm', ['name' => $person['name']]) }}"
                                             data-hold-cancel class="rounded-md border border-slate-400 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">⏸ {{ __('payout_batch.hold.cancel') }}</button>
                                     @elseif($payout !== 0 && $heldHere !== $payout)
-                                    <button type="button" wire:click="startHold({{ $b->id }}, {{ $sid }}, '{{ number_format($room) }}')"
+                                    <button type="button" wire:key="hold-start-{{ $b->id }}-{{ $sid }}" wire:click="startHold({{ $b->id }}, {{ $sid }}, '{{ number_format($room) }}')"
                                             data-hold-button class="rounded-md bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm">⏸ {{ __('payout_batch.hold.button') }}</button>
                                     @endif
                                     @if($extraOpen)
-                                    <button type="button" wire:click="releaseHold({{ $b->id }}, {{ $sid }}, 'extra')" wire:confirm="{{ __('payout_batch.hold.extra_cancel_confirm', ['name' => $person['name']]) }}"
+                                    <button type="button" wire:key="extra-cancel-{{ $b->id }}-{{ $sid }}" wire:click="releaseHold({{ $b->id }}, {{ $sid }}, 'extra')" wire:confirm="{{ __('payout_batch.hold.extra_cancel_confirm', ['name' => $person['name']]) }}"
                                             data-extra-cancel class="rounded-md border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 shadow-sm">➕ {{ __('payout_batch.hold.extra_cancel') }}</button>
                                     @else
-                                    <button type="button" wire:click="startHold({{ $b->id }}, {{ $sid }}, '', 'extra')"
+                                    <button type="button" wire:key="extra-start-{{ $b->id }}-{{ $sid }}" wire:click="startHold({{ $b->id }}, {{ $sid }}, '', 'extra')"
                                             data-extra-button class="rounded-md border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 shadow-sm">➕ {{ __('payout_batch.hold.extra_button') }}</button>
                                     @endif
                                 @endif
