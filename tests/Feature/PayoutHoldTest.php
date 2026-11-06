@@ -14,9 +14,11 @@ use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\Payout\BatchPayoutBreakdown;
+use App\Services\Payout\PayoutBatchExportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use Tests\TestCase;
 
 /**
@@ -231,6 +233,20 @@ class PayoutHoldTest extends TestCase
             $this->fail('퇴사 정산은 보류 대상이 아니다');
         } catch (\DomainException) {
         }
+        // 퇴사 정산 엑셀 — 급여 항목 탭에 사람이 0명(프리랜서만)이어도 열린다
+        $res = $this->get(route('erp.payout-batches.export', $lb));
+        $res->assertOk();
+        $lp = tempnam(sys_get_temp_dir(), 'lvr').'.xlsx';
+        file_put_contents($lp, $res->streamedContent());
+        $lss = IOFactory::load($lp);
+        $this->assertSame('퇴사 정산 2026년 10월 사람별 지급 내역', $lss->getSheetByName('사람별 지급')->getCell('B1')->getValue());
+        // 프리랜서만 있는 배치 — 급여 항목 탭에 사람 0명이어도 깨지지 않는다(묶음 없음 → 바로 합계 줄)
+        $svc = app(PayoutBatchExportService::class);
+        $m = new \ReflectionMethod($svc, 'payrollItemsSheet');
+        $empty = new Spreadsheet;
+        $m->invoke($svc, $empty->getActiveSheet(), [['type' => 'freelance', 'name' => '프리', 'type_label' => '프리랜서']], '퇴사 정산 2026년 10월 급여 항목', '2026-10');
+        $this->assertSame('합계', $empty->getActiveSheet()->getCell('B5')->getValue());
+        $this->assertSame(0, $empty->getActiveSheet()->getCell('E5')->getValue());
     }
 
     /** jin 2026-11-06 «330만 중 150만 지급·180만 보류» — 금액칸으로 일부만 보류하면 나머지는 이번 달 그대로 송금된다. */
