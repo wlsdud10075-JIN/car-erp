@@ -270,7 +270,7 @@ class PayoutHoldTest extends TestCase
             ->assertSet('holdTarget', null)
             ->assertSeeHtml('data-hold-net')
             ->assertSee('⏸ 보류 ₩1,800,000')->assertSee('/ 2,100,000')
-            ->assertSeeHtml('data-hold-button');   // 남은 30만은 더 보류할 수 있다
+            ->assertSeeHtml('data-hold-cancel')->assertDontSeeHtml('data-hold-button');   // 같은 자리 버튼이 「보류 취소」로(jin 11-06). 남은 몫은 모델로는 더 보류 가능
         $this->assertSame(1_800_000, PayoutHold::openBalanceFor($sm->id));
         $this->assertSame([$sm->id => 1_800_000], $batch->heldAmountsBySalesman());
 
@@ -279,7 +279,10 @@ class PayoutHoldTest extends TestCase
         $this->assertSame(1, PayoutHold::where('salesman_id', $sm->id)->count());
         $c->call('startHold', $batch->id, $sm->id, '300,000')->set('holdNote', '나머지')->call('holdPerson', $batch->id, $sm->id)
             ->assertDontSeeHtml('data-hold-button')->assertSee('⏸ 보류 ₩2,100,000');
-        $this->assertSame(2, PayoutHold::where('salesman_id', $sm->id)->count());
+        // 「다음 월정산 대기」로 넘어간 줄도 아직 제출 전이면 취소된다
+        PayoutHold::resolve($manager, $sm->id, 'queue', 300_000);
+        $c->call('toggle', $batch->id)->call('toggle', $batch->id)->assertSeeHtml('data-hold-cancel');
+        $this->assertSame(3, PayoutHold::where('salesman_id', $sm->id)->count(), '보류 2줄 + 쪼개진 대기 줄');
         $this->assertSame(2_100_000, PayoutHold::openBalanceFor($sm->id));
 
         // 엑셀 보류 열 = 두 줄의 합
@@ -294,7 +297,7 @@ class PayoutHoldTest extends TestCase
         // 보류 취소는 그 사람의 held 줄 전부
         $c->call('releaseHold', $batch->id, $sm->id);
         $this->assertSame(0, PayoutHold::openBalanceFor($sm->id));
-        $this->assertSame(2, PayoutHold::where('salesman_id', $sm->id)->where('status', PayoutHold::CANCELLED)->count());
+        $this->assertSame(3, PayoutHold::where('salesman_id', $sm->id)->where('status', PayoutHold::CANCELLED)->count(), '보류 중 2줄 + 쪼개진 대기 줄까지 전부 취소');
     }
 
     /** 10월 +200만 · 11월 −50만처럼 부호가 섞인 보류를 전액 처리하면 두 줄이 다 옮겨져야 한다(금액으로 걷으면 합이 맞는 지점에서 멈춰 줄이 남는다). */
@@ -451,12 +454,88 @@ class PayoutHoldTest extends TestCase
         $byLabel = collect($rows)->keyBy(2);
         $this->assertSame($transfer - 300_000 + 400_000, (int) $byLabel['실송금(보류·추가 반영)'][6]);
 
-        // 추가 취소(아직 처리 전 줄만) — 기록 표엔 취소로 남는다
-        PayoutHold::resolve($manager, $sm->id, 'unqueue', null, PayoutHold::KIND_EXTRA);
-        Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->call('releaseHold', $batch->id, $sm->id, 'extra');
+        // 추가 취소 — 같은 자리 [➕ 추가 취소] 버튼. 「추가 대기」 줄도 제출 전이면 함께 취소. 기록 표엔 취소로 남는다
+        Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->assertSeeHtml('data-extra-cancel')->assertDontSeeHtml('data-extra-button')
+            ->call('releaseHold', $batch->id, $sm->id, 'extra')->assertSeeHtml('data-extra-button');
         $this->assertSame(0, PayoutHold::openBalanceFor($sm->id, PayoutHold::KIND_EXTRA));
         $this->assertSame(300_000, PayoutHold::openBalanceFor($sm->id), '보류는 그대로');
         Volt::test('erp.salesmen.index')->call('openEdit', $sm->id)->assertSeeHtml('data-hold-ledger')->assertSee(__('payout_batch.hold.status.cancelled'));
         $this->assertDatabaseHas('audit_logs', ['action' => 'payout_extra_cancelled', 'auditable_id' => $sm->id]);
+    }
+
+    /**
+     * ✅ 월정산 최종 확정 (jin 2026-11-06 «최종 확정 버튼으로 한 번에 종료») — 장부 잠금 + 확정본 엑셀(실제 송금 열·도장).
+     * (가) 「지급(월정산 밖)」으로 준 추가금은 그 달 회사이익에서 빠진다(카드 합계 띠·엑셀 요약·승인 링크).
+     */
+    public function test_finalize_locks_the_ledger_and_the_excel_becomes_the_final_copy(): void
+    {
+        [$batch, $sm, $manager] = $this->approvedBatch();   // 지급합계 2,100,000
+        $totals = $batch->breakdownForDisplay()['totals'];
+        $this->actingAs($manager);
+
+        $batch->holdPayout($manager, $sm->id, 600_000, '확인 뒤');
+        $batch->addExtraPayout($manager, $sm->id, 400_000, '대표 지시');
+        PayoutHold::resolve($manager, $sm->id, 'paid', null, PayoutHold::KIND_EXTRA);   // 월정산 밖으로 바로 지급
+        $this->assertSame(400_000, $batch->extraPaidOutsideTotal());
+
+        // 확정 전 — 카드: 회사 순이익 반영값 = 박제 − 월정산 밖 추가 지급 · [최종 확정] 버튼 · 엑셀 제목 「확정 전」
+        $c = Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)
+            ->assertSeeHtml('data-finalize-button')->assertSeeHtml('data-company-net-final')
+            ->assertSee(number_format(abs((int) $totals['company_net'] - 400_000)))->assertDontSeeHtml('data-finalized');
+        $rows = $this->peopleRows($batch);
+        $this->assertStringContainsString('(확정 전', (string) $rows[0][1]);
+
+        try {
+            $batch->finalize($this->user('user', '재무'));
+            $this->fail('재무는 확정 권한이 없다');
+        } catch (\DomainException) {
+        }
+        $c->call('finalizeBatch', $batch->id)->assertSeeHtml('data-finalized')->assertDontSeeHtml('data-finalize-button')
+            ->assertDontSeeHtml('data-hold-button')->assertDontSeeHtml('data-extra-button')->assertDontSeeHtml('data-hold-cancel')->assertDontSeeHtml('data-extra-cancel');
+        $batch->refresh();
+        $this->assertNotNull($batch->finalized_at);
+        $this->assertSame($manager->id, $batch->finalized_by);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'payout_finalized', 'auditable_id' => $batch->id]);
+
+        // 잠금 — 보류·추가·취소 전부 거부, 상태·박제·총액은 그대로
+        foreach ([fn () => $batch->holdPayout($manager, $sm->id, 100_000, 'x'), fn () => $batch->addExtraPayout($manager, $sm->id, 100_000, 'x'),
+            fn () => $batch->cancelHold($manager, $sm->id), fn () => $batch->finalize($manager)] as $blocked) {
+            try {
+                $blocked();
+                $this->fail('최종 확정 뒤엔 장부를 못 건드린다');
+            } catch (\DomainException) {
+            }
+        }
+        $this->assertSame(SettlementPayoutBatch::STATUS_APPROVED, $batch->status);
+        // 이미 사내직원관리로 넘어간 보류금 처리는 그대로 된다
+        $this->assertSame(600_000, PayoutHold::resolve($manager, $sm->id, 'queue'));
+
+        // 확정본 엑셀 — 제목 도장 · 「실제 송금」 열 = 지급합계 − 보류 + 추가 · 회사 순이익(월정산 밖 추가 지급 반영)
+        $rows = $this->peopleRows($batch);
+        $this->assertStringContainsString('최종 확정 '.now()->format('Y-m-d'), (string) $rows[0][1]);
+        $hdr = $rows[3];
+        $netCol = array_search('실제 송금', $hdr, true);
+        $this->assertNotFalse($netCol);
+        $personRow = collect($rows)->first(fn ($r) => ($r[3] ?? null) === $sm->name);
+        $this->assertSame(2_100_000 - 600_000 + 400_000, (int) $personRow[$netCol]);
+        $byLabel = collect($rows)->keyBy(2);
+        $this->assertSame(400_000, (int) $byLabel['추가 지급(월정산 밖, 회사이익 차감)'][6]);
+        $this->assertSame((int) $totals['company_net'] - 400_000, (int) $byLabel['회사 순이익(월정산 밖 추가 지급 반영)'][6]);
+
+        // 승인 링크도 같은 숫자
+        $ceo = User::where('approval_title', '대표')->first();
+        $this->actingAs($ceo)->get($batch->approvalLinkFor($ceo))
+            ->assertOk()->assertSee('data-finalized', false)->assertSee(number_format((int) $totals['company_net'] - 400_000));
+    }
+
+    /** @return array<int, array<int, mixed>> 「사람별 지급」 탭 */
+    private function peopleRows(SettlementPayoutBatch $batch): array
+    {
+        $res = $this->get(route('erp.payout-batches.export', $batch));
+        $res->assertOk();
+        $path = tempnam(sys_get_temp_dir(), 'fin').'.xlsx';
+        file_put_contents($path, $res->streamedContent());
+
+        return IOFactory::load($path)->getSheetByName('사람별 지급')->toArray(null, true, false, false);
     }
 }

@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\FinalPayment;
+use App\Models\PayoutHold;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutAdjustment;
@@ -198,6 +199,26 @@ class AdminDashboardCompanyProfitTest extends TestCase
         $after = $this->companyProfit($admin);
 
         $this->assertSame($before - 500_000, $after['company_net'], '조정이 회사이익에 안 잡혔다');
+        $this->assertSame($after['margin_sum'] - $after['company_net'], $after['payout_sum'], '지급총액과 회사이익이 서로 안 맞는다');
+    }
+
+    /** ➕ 「지급(월정산 밖)」으로 준 추가금(jin 2026-11-06 (가)) — 조정 줄이 없어도 그 달 회사이익에서 빠지고 지급총액에 들어간다. */
+    public function test_extra_paid_outside_the_batch_reduces_company_profit(): void
+    {
+        $admin = User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]);
+        $a = Salesman::create(['name' => 'A', 'is_active' => true, 'type' => 'freelance']);
+
+        $st = $this->settle($this->usdVehicle(1000), $a, 'ratio');
+        $adj = $this->adjust($st, $a, 0);   // 배치만 만든다(조정 0원)
+        $before = $this->companyProfit($admin)['company_net'];
+
+        PayoutHold::create(['salesman_id' => $a->id, 'payout_batch_id' => $adj->batch_id, 'kind' => 'extra', 'month' => '2026-05',
+            'amount_krw' => 300_000, 'status' => 'released_paid', 'note' => '대표 지시']);
+        PayoutHold::create(['salesman_id' => $a->id, 'payout_batch_id' => $adj->batch_id, 'kind' => 'extra', 'month' => '2026-05',
+            'amount_krw' => 900_000, 'status' => 'queued', 'note' => '아직 안 나감']);   // 다음 월정산 줄로 갈 몫 — 여기선 안 뺀다
+        $after = $this->companyProfit($admin);
+
+        $this->assertSame($before - 300_000, $after['company_net'], '월정산 밖 추가 지급이 회사이익에 안 잡혔다');
         $this->assertSame($after['margin_sum'] - $after['company_net'], $after['payout_sum'], '지급총액과 회사이익이 서로 안 맞는다');
     }
 

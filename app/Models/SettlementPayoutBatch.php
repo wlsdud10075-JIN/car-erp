@@ -40,7 +40,7 @@ class SettlementPayoutBatch extends Model
         // 🚪 종류(월정산/퇴사 정산) + 퇴사 배치의 그 한 사람 (jin 2026-10-15). 마이그레이션 2026_10_15_000002 주석 참조.
         'kind', 'salesman_id',
         'breakdown_snapshot',
-        'total_payout', 'settlement_count', 'submitted_at', 'decided_at', 'reject_reason',
+        'total_payout', 'settlement_count', 'submitted_at', 'decided_at', 'reject_reason', 'finalized_at', 'finalized_by',
         // 2026-10-07 jin — 승인요청 마지막 발송 시각(재전송 연타 방지 · 발송 결과 표시). 마이그레이션 주석 참조.
         'request_notified_at',
     ];
@@ -48,6 +48,7 @@ class SettlementPayoutBatch extends Model
     protected $casts = [
         'submitted_at' => 'datetime',
         'decided_at' => 'datetime',
+        'finalized_at' => 'datetime',
         'request_notified_at' => 'datetime',
         'breakdown_snapshot' => 'array',
     ];
@@ -715,6 +716,71 @@ class SettlementPayoutBatch extends Model
             && PayoutHold::query()->where('payout_batch_id', $this->id)->where('status', '!=', PayoutHold::CANCELLED)->exists();
     }
 
+    public function finalizedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'finalized_by');
+    }
+
+    /** ✅ 최종 확정됐나 — 보류·추가 장부가 잠긴 상태. */
+    public function isFinalized(): bool
+    {
+        return $this->finalized_at !== null;
+    }
+
+    /**
+     * ✅ 월정산 최종 확정 (jin 2026-11-06 «월정산 최종 확정 버튼을 넣고 한 번에 종료») — 대표 승인 뒤 보류·추가를 다 적은 상태를 잠근다.
+     * 권한 = 제출자·최고관리자. 승인된 사내직원 월정산만. 이후 이 배치엔 보류·추가·취소를 더 못 적는다(이미 사내직원관리로 넘어간
+     * 보류금·추가금 처리는 그대로). 엑셀은 확정본(사람별 실제 송금 열·도장)으로 나간다. 상태(approved)·박제·총액은 그대로.
+     */
+    public function finalize(User $by): void
+    {
+        if (! self::canEditAdjustments($by)) {
+            throw new \DomainException(__('payout_batch.hold.forbidden'));
+        }
+        if ($this->kind !== self::KIND_MONTH || $this->status !== self::STATUS_APPROVED) {
+            throw new \DomainException(__('payout_batch.hold.only_approved_month'));
+        }
+        if ($this->isFinalized()) {
+            throw new \DomainException(__('payout_batch.hold.finalize_already'));
+        }
+        $this->forceFill(['finalized_at' => now(), 'finalized_by' => $by->id])->save();
+        AuditLog::create([
+            'user_id' => $by->id, 'auditable_type' => self::class, 'auditable_id' => $this->id,
+            'action' => 'payout_finalized', 'column_name' => 'finalized_at',
+            'old_value' => null, 'new_value' => $this->month.' 월정산 #'.$this->id.' 최종 확정 — 보류 '.number_format(array_sum($this->heldAmountsBySalesman())).'원 · 추가 '.number_format(array_sum($this->extraAmountsBySalesman())).'원',
+            'ip_address' => request()?->ip(),
+        ]);
+    }
+
+    private function guardNotFinalized(): void
+    {
+        if ($this->isFinalized()) {
+            throw new \DomainException(__('payout_batch.hold.finalized'));
+        }
+    }
+
+    /**
+     * ➕ 이 배치에서 「지급(월정산 밖)」으로 나간 추가금 합 — (가) jin 2026-11-06: 그 달 회사이익에서 뺀다
+     * (카드 합계 띠·엑셀 요약·관리자 대시보드·월결산 알림톡 네 곳이 같이 본다). 다음 월정산 줄로 간 추가금은 그 달 extra_release 가 맡는다.
+     */
+    public function extraPaidOutsideTotal(): int
+    {
+        return (int) PayoutHold::query()->where('payout_batch_id', $this->id)->ofKind(PayoutHold::KIND_EXTRA)
+            ->where('status', PayoutHold::RELEASED_PAID)->sum('amount_krw');
+    }
+
+    /** 여러 배치의 「월정산 밖 추가 지급」 — `[salesman_id => 합]`. 대시보드·월결산이 쓴다. */
+    public static function extraPaidOutsideBySalesman(array $batchIds, ?array $salesmanIds = null): array
+    {
+        if ($batchIds === []) {
+            return [];
+        }
+
+        return PayoutHold::query()->whereIn('payout_batch_id', $batchIds)->ofKind(PayoutHold::KIND_EXTRA)->where('status', PayoutHold::RELEASED_PAID)
+            ->when($salesmanIds !== null, fn ($q) => $q->whereIn('salesman_id', $salesmanIds))
+            ->selectRaw('salesman_id, SUM(amount_krw) t')->groupBy('salesman_id')->pluck('t', 'salesman_id')->map(fn ($v) => (int) $v)->all();
+    }
+
     /**
      * ⏸ 지급보류 (jin 2026-11-06) — 대표까지 승인된 사내직원 월정산에서 한 사람의 그 달 지급합계(+/−)를 보류.
      * `$amount` = 보류할 금액(null = 전액). 일부만 보류하면 나머지는 그대로 지급(jin «150만 지급·180만 보류»). 부호는 지급합계와 같아야 하고
@@ -728,6 +794,7 @@ class SettlementPayoutBatch extends Model
         if ($this->kind !== self::KIND_MONTH || $this->status !== self::STATUS_APPROVED) {
             throw new \DomainException(__('payout_batch.hold.only_approved_month'));
         }
+        $this->guardNotFinalized();
         $person = collect($this->breakdownForDisplay()['people'] ?? [])->firstWhere('salesman_id', $salesmanId);
         if (! $person) {
             throw new \DomainException(__('payout_batch.hold.not_in_batch'));
@@ -776,6 +843,7 @@ class SettlementPayoutBatch extends Model
         if ($this->kind !== self::KIND_MONTH || $this->status !== self::STATUS_APPROVED) {
             throw new \DomainException(__('payout_batch.hold.only_approved_month'));
         }
+        $this->guardNotFinalized();
         if (! collect($this->breakdownForDisplay()['people'] ?? [])->contains(fn ($p) => (int) $p['salesman_id'] === $salesmanId)) {
             throw new \DomainException(__('payout_batch.hold.not_in_batch'));
         }
@@ -800,13 +868,14 @@ class SettlementPayoutBatch extends Model
         });
     }
 
-    /** 보류 취소 — 아직 처리(지급·월정산 추가) 전인 것만. 그 달 지급에 그대로 남는다. */
+    /** 보류·추가 취소 — 아직 월정산에 안 들어가고 지급도 안 된 줄(보류 중·다음 월정산 대기) 전부(jin 11-06 «잘못 기입해서 다시 다른 금액으로»). */
     public function cancelHold(User $by, int $salesmanId, string $kind = PayoutHold::KIND_HOLD): void
     {
         if (! self::canEditAdjustments($by)) {
             throw new \DomainException(__('payout_batch.hold.forbidden'));
         }
-        $rows = PayoutHold::query()->where('payout_batch_id', $this->id)->where('salesman_id', $salesmanId)->ofKind($kind)->where('status', PayoutHold::HELD)->get();
+        $this->guardNotFinalized();
+        $rows = PayoutHold::query()->where('payout_batch_id', $this->id)->where('salesman_id', $salesmanId)->ofKind($kind)->whereIn('status', PayoutHold::OPEN)->get();
         if ($rows->isEmpty()) {
             throw new \DomainException(__('payout_batch.hold.cannot_cancel'));
         }

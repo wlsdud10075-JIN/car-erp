@@ -64,8 +64,13 @@ class PayoutBatchExportService
         $ledgerOn = $batch->kind === SettlementPayoutBatch::KIND_MONTH && $batch->status === SettlementPayoutBatch::STATUS_APPROVED;
         $holds = $ledgerOn ? $batch->heldAmountsBySalesman() : [];
         $extras = $ledgerOn ? $batch->extraAmountsBySalesman() : [];   // ➕ 지급추가(송금에 더함)
+        $extraPaidOutside = $ledgerOn ? $batch->extraPaidOutsideTotal() : 0;   // (가) 월정산 밖 추가 지급 = 그 달 회사이익 차감
+        // ✅ 최종 확정(jin 2026-11-06) — 확정본은 제목에 도장 + 사람별 「실제 송금」 열. 확정 전 승인 배치는 「확정 전」 표시(숫자가 바뀔 수 있다).
+        $stamp = $batch->isFinalized()
+            ? ' — 최종 확정 '.$batch->finalized_at?->format('Y-m-d').' '.($batch->finalizedBy?->name ?? '')
+            : ($ledgerOn ? ' (확정 전 — 보류·추가가 바뀔 수 있음)' : '');
         $this->peopleSheet($ss->createSheet(0), $people, $bd['totals'] ?? [], (bool) ($bd['domestic_split'] ?? false), $holds, $extras,
-            $this->titleFor($batch, '사람별 지급 내역'), (string) $batch->month);
+            $this->titleFor($batch, '사람별 지급 내역').$stamp, (string) $batch->month, $ledgerOn, $extraPaidOutside);
         $this->payrollItemsSheet($ss->createSheet(1), $people, $this->titleFor($batch, '급여 항목'), (string) $batch->month);
         $ss->setActiveSheetIndex(0);
 
@@ -119,7 +124,7 @@ class PayoutBatchExportService
      * 소계(유형색 배경) · 합계(EDEDED, 위아래 굵은 선) · 요약(라벨 C:F 병합 / 값 G, 수식) · 각주.
      * 「지급보류분」·「⏸ 보류」 열은 그 배치에 보류가 있을 때만 끼운다(보통 달은 jin 파일과 글자 단위로 같다).
      */
-    private function peopleSheet(Worksheet $sheet, array $people, array $totals, bool $domesticSplit, array $holds, array $extras, string $title, string $month): void
+    private function peopleSheet(Worksheet $sheet, array $people, array $totals, bool $domesticSplit, array $holds, array $extras, string $title, string $month, bool $ledgerOn = false, int $extraPaidOutside = 0): void
     {
         $sheet->setTitle('사람별 지급');
         $hasHeld = collect($people)->contains(fn ($p) => (int) ($p['adj_held'] ?? 0) !== 0);
@@ -142,6 +147,9 @@ class PayoutBatchExportService
         }
         if ($extras !== []) {
             $cols[] = ['➕ 추가(송금 더함)', '__extra', 14];
+        }
+        if ($ledgerOn) {   // 승인된 월정산은 사람별 실제 송금(지급합계 − 보류 + 추가) — 재무가 이 열로 송금한다
+            $cols[] = ['실제 송금', '__net', 14.89];
         }
         $cols = [...$cols, ['총마진', 'total_margin', 13], ['발송비', 'shipping', 9], ['회사이익', 'company_contribution', 13]];
 
@@ -179,6 +187,9 @@ class PayoutBatchExportService
                         if (isset($extras[(int) ($p['salesman_id'] ?? 0)])) {
                             $sheet->setCellValue($cell, $extras[(int) $p['salesman_id']]);
                         }
+                    } elseif ($key === '__net') {
+                        $sid = (int) ($p['salesman_id'] ?? 0);
+                        $sheet->setCellValue($cell, (int) ($p['payout'] ?? 0) - (int) ($holds[$sid] ?? 0) + (int) ($extras[$sid] ?? 0));
                     } elseif ($key === 'name') {
                         $sheet->setCellValueExplicit($cell, (string) ($p[$key] ?? ''), DataType::TYPE_STRING);
                     } elseif (($p[$key] ?? null) !== null) {
@@ -237,7 +248,7 @@ class PayoutBatchExportService
         $sheet->getStyle("{$firstNum}5:{$last}{$totalRow}")->getAlignment()->setHorizontal('right');
         $sheet->getStyle("C5:C{$bodyEnd}")->getAlignment()->setHorizontal('center');
         $sheet->getStyle("D5:D{$bodyEnd}")->getAlignment()->setHorizontal('left');
-        $pay = $letter['payout'];
+        $pay = $letter['__net'] ?? $letter['payout'];   // 확정본은 「실제 송금」 열을 강조
         foreach ($subtotalRows as $k => $sr) {
             $from = $k === 0 ? 5 : $subtotalRows[$k - 1] + 1;
             if ($from <= $sr - 1) {
@@ -245,6 +256,7 @@ class PayoutBatchExportService
                 $this->fill($sheet, "{$pay}{$from}:{$pay}".($sr - 1), self::HILITE);
             }
         }
+        $pay = $letter['payout'];
 
         // 요약 — 라벨 C:F 병합 / 값 G, 화면 「합계」 칸과 같은 식을 수식으로(jin 이 셀을 고치면 아래가 따라온다)
         $r = $totalRow + 2;
@@ -284,7 +296,11 @@ class PayoutBatchExportService
         }
         $laborRow = $put('공통 인건비 (검차·업무관리·관리·재무)', $laborTerms === [] ? 0 : '='.ltrim(implode('+', $laborTerms), '+'));
         $domRow = $domesticSplit ? $put('내수직원 총 회사수익', (int) ($totals['domestic_profit'] ?? 0)) : null;
-        $put('회사 순이익', "=G{$contribRow}-G{$laborRow}".($domRow ? "+G{$domRow}" : ''), true);
+        $netRow = $put('회사 순이익', "=G{$contribRow}-G{$laborRow}".($domRow ? "+G{$domRow}" : ''), $extraPaidOutside === 0);
+        if ($extraPaidOutside !== 0) {   // (가) 월정산 밖으로 준 추가금은 그 달 회사이익에서 뺀다
+            $extraPaidRow = $put('추가 지급(월정산 밖, 회사이익 차감)', $extraPaidOutside);
+            $put('회사 순이익(월정산 밖 추가 지급 반영)', "=G{$netRow}-G{$extraPaidRow}", true);
+        }
         $this->grid($sheet, "C{$summaryStart}:G".($r - 1));
         $this->numberFormat($sheet, "G{$summaryStart}:G".($r - 1), self::MONEY_FMT);
         if ($domesticSplit) {

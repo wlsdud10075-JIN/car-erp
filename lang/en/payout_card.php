@@ -92,6 +92,7 @@ return [
         'vehicles' => 'Vehicles sold',
         'equiv_sum' => 'Freelance-equivalent total',
         'net_after_hold' => 'Actual transfer (held/extra applied)',
+        'company_net_after_extra' => 'After extra paid outside batch :extra',
         'transfer_total' => 'Transfer total (incl. payroll)',
         'settlement_total' => 'Settlement + adjustments (approved amount)',
         'external_total' => 'Of transfer: Heyman settlement (outside profit)',
