@@ -114,7 +114,8 @@ return [
     'hold' => [
         'button' => 'Hold payout',
         'badge' => 'Held',
-        'net_label' => 'Net transfer — :n held excluded',
+        'net_label' => '⚠ Actual transfer (:n held excluded)',
+        'net_hint' => 'Transfer total :total − held :held = :net. Transfer this amount; held amounts are handled in Staff management.',
         'confirm' => "Hold :amount of :name's payout? It leaves the transfer and stays as a held balance on the Staff page.",
         'amount_label' => 'Amount to hold',
         'amount_hint' => 'Defaults to the full amount. Hold part of it and the rest is paid this month as usual (max :max).',

@@ -82,7 +82,12 @@
              아래는 통장에서 나갈 돈을 한 번에 보기 위한 참고치다. --}}
         {{-- 🧾 월정산 v3 — 급여까지 포함한 송금 총액과 급여 차감 후 회사 순이익. 승인하는 숫자는 위 「지급 총액」 그대로. --}}
         @if(isset($v3) && ! $batch->isDomesticBatch())
-        <div class="row"><span class="k">송금 총액 (급여 포함)</span><span class="v">{{ number_format($v3['totals']['transfer_total']) }}원</span></div>
+        @php $heldSum = ($batch->kind === \App\Models\SettlementPayoutBatch::KIND_MONTH && $batch->status === \App\Models\SettlementPayoutBatch::STATUS_APPROVED) ? $batch->heldAmountsBySalesman() : []; @endphp
+        <div class="row"><span class="k">송금 총액 (급여 포함)</span><span class="v" @if($heldSum !== []) style="text-decoration:line-through;color:#6b7280;" @endif>{{ number_format($v3['totals']['transfer_total']) }}원</span></div>
+        @if($heldSum !== [])
+        {{-- ⏸ 지급보류(2026-11-06) — 승인 뒤 보류가 있으면 송금 총액만 보고 송금하지 않게 실제 송금액을 크게 --}}
+        <div class="row" data-hold-net style="background:#fffbeb;border:2px solid #fcd34d;border-radius:6px;padding:6px 8px;font-weight:700;color:#92400e;"><span class="k">⚠ 실제 송금액 (보류 {{ count($heldSum) }}명 제외)</span><span class="v" style="font-size:1.1em;">{{ number_format((int) $v3['totals']['transfer_total'] - array_sum($heldSum)) }}원</span></div>
+        @endif
         <div class="row"><span class="k">회사 순이익 (급여 차감 후)</span><span class="v {{ $v3['totals']['company_net'] < 0 ? 'loss' : '' }}">{{ number_format($v3['totals']['company_net']) }}원</span></div>
         @endif
     </div>

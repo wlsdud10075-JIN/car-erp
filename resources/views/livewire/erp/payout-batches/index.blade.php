@@ -463,20 +463,24 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endforeach
                     </div>
                     @endif
-                    @unless($b->isDomesticBatch())
-                    <x-payout.totals :totals="$bd['totals']" :settlement-total="(int) $b->total_payout" />
-                    @endunless
                     @php
                         // ⏸ 지급보류(jin 2026-11-06) — 대표까지 승인된 사내직원 월정산만. 박제·총액은 그대로, 보류 장부를 겹쳐 보여 준다.
                         $holdable = $b->kind === \App\Models\SettlementPayoutBatch::KIND_MONTH && $b->status === 'approved';
                         $holds = $holdable ? $b->holdsBySalesman() : collect();
                         $canHold = $holdable && \App\Models\SettlementPayoutBatch::canEditAdjustments(auth()->user());
+                        $heldSum = (int) $holds->flatten()->sum('amount_krw');
                     @endphp
+                    @unless($b->isDomesticBatch())
+                    <x-payout.totals :totals="$bd['totals']" :settlement-total="(int) $b->total_payout" :held-total="$heldSum" />
+                    @endunless
                     @if($holds->isNotEmpty())
-                    <div class="flex flex-wrap items-baseline justify-between gap-x-3 rounded-md bg-slate-100 px-2.5 py-1.5 text-xs" data-hold-net>
-                        @php $heldSum = (int) $holds->flatten()->sum('amount_krw'); @endphp
-                        <span class="text-slate-700">⏸ {{ __('payout_batch.hold.net_label', ['n' => $holds->count()]) }}</span>
-                        <span class="font-mono text-slate-800">{{ number_format((int) ($bd['totals']['transfer_total'] ?? 0)) }} − {{ number_format($heldSum) }} = <b>{{ number_format((int) ($bd['totals']['transfer_total'] ?? 0) - $heldSum) }}</b></span>
+                    {{-- 실제 송금액 — 송금 총액만 보고 송금하지 않게 크게(jin 11-06). 숫자는 합계 띠의 송금 총액 − 보류 합. --}}
+                    <div class="rounded-md border-2 border-amber-300 bg-amber-50 px-3 py-2" data-hold-net>
+                        <div class="flex flex-wrap items-baseline justify-between gap-x-3">
+                            <span class="text-sm font-bold text-amber-800">{{ __('payout_batch.hold.net_label', ['n' => $holds->count()]) }}</span>
+                            <span class="font-mono text-lg font-bold text-amber-900">₩{{ number_format((int) ($bd['totals']['transfer_total'] ?? 0) - $heldSum) }}</span>
+                        </div>
+                        <div class="mt-0.5 text-[11px] text-amber-700">{{ __('payout_batch.hold.net_hint', ['total' => number_format((int) ($bd['totals']['transfer_total'] ?? 0)), 'held' => number_format($heldSum), 'net' => number_format((int) ($bd['totals']['transfer_total'] ?? 0) - $heldSum)]) }}</div>
                     </div>
                     @endif
                     @foreach($bd['people'] as $person)
@@ -501,13 +505,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                                         <input type="text" inputmode="numeric" data-money data-money-signed wire:model="holdAmount" wire:key="hold-amount-{{ $b->id }}-{{ $person['salesman_id'] }}"
                                                class="input-base h-9 w-32 text-right font-mono text-[11px] sm:h-7" title="{{ __('payout_batch.hold.amount_hint', ['max' => number_format($room)]) }}">
                                         <button type="button" wire:click="holdPerson({{ $b->id }}, {{ $person['salesman_id'] }})" data-hold-ok
-                                                class="rounded bg-slate-700 px-2.5 py-1 font-semibold text-white hover:bg-slate-800">⏸ {{ __('payout_batch.hold.ok') }}</button>
+                                                class="rounded bg-slate-600 px-2.5 py-1 font-semibold text-white">⏸ {{ __('payout_batch.hold.ok') }}</button>
                                         <button type="button" wire:click="cancelHoldDraft" class="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-100">{{ __('payout_batch.hold.cancel_draft') }}</button>
                                     </span>
                                     <span class="basis-full text-right text-[10px] text-gray-400">{{ __('payout_batch.hold.amount_hint', ['max' => number_format($room)]) }}</span>
                                 @else
                                     <button type="button" wire:click="startHold({{ $b->id }}, {{ $person['salesman_id'] }}, '{{ number_format($room) }}')"
-                                            data-hold-button class="rounded-md bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800">⏸ {{ __('payout_batch.hold.button') }}</button>
+                                            data-hold-button class="rounded-md bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm">⏸ {{ __('payout_batch.hold.button') }}</button>
                                 @endif
                             @endif
                         </div>
