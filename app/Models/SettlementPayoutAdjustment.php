@@ -24,7 +24,7 @@ class SettlementPayoutAdjustment extends Model
      *   held_release ⏸ 지급보류분 (jin 2026-11-06) — 앞 달에 보류했던 금액을 이번 월정산에 넣는 줄. 사유 「2026-10월 지급보류분」.
      *             예치금 반환처럼 송금엔 들어가고 **회사이익엔 안 들어간다**(원래 달에 이미 비용으로 잡혔다). payout_holds 와 짝.
      */
-    public const KINDS = ['manual', 'carryover', 'loss', 'incentive', 'deposit', 'held_release'];
+    public const KINDS = ['manual', 'carryover', 'loss', 'incentive', 'deposit', 'held_release', 'extra_release'];
 
     public const KIND_MANUAL = 'manual';
 
@@ -37,6 +37,9 @@ class SettlementPayoutAdjustment extends Model
     public const KIND_DEPOSIT = 'deposit';
 
     public const KIND_HELD_RELEASE = 'held_release';
+
+    /** ➕ 앞 달 지급추가분(jin 2026-11-06) — 송금에도 회사이익 차감에도 들어간다(수동 조정과 같은 자리, 사유는 「○월 지급추가분」). */
+    public const KIND_EXTRA_RELEASE = 'extra_release';
 
     protected $casts = [
         'amount' => 'integer',

@@ -507,41 +507,63 @@ new #[Layout('components.layouts.app')] class extends Component {
     public array $payrollCustom = [];
     public bool $payrollEntered = false;   // 그 달에 저장된 행이 하나라도 있나(「입력 전」 안내)
 
-    /** ⏸ 사람별 열린 보류금(held·queued 합) — 뱃지용 한 쿼리. */
+    /** ⏸➕ 사람별 열린 보류금·추가금 — 뱃지용 한 쿼리. `[salesman_id => ['hold' => int, 'extra' => int]]`. */
     #[Computed]
     public function holdBalances(): array
     {
-        return \App\Models\PayoutHold::query()->open()->selectRaw('salesman_id, SUM(amount_krw) as t')->groupBy('salesman_id')
-            ->pluck('t', 'salesman_id')->map(fn ($v) => (int) $v)->all();
+        return \App\Models\PayoutHold::openBalances();
     }
 
-    /** 편집 중인 사람의 열린 보류 줄 — 패널 표. */
+    /** 편집 중인 사람의 열린 보류 줄. */
     #[Computed]
     public function openHolds()
     {
         return $this->editingId
-            ? \App\Models\PayoutHold::query()->open()->where('salesman_id', $this->editingId)->orderBy('month')->get()
+            ? \App\Models\PayoutHold::query()->open()->ofKind(\App\Models\PayoutHold::KIND_HOLD)->where('salesman_id', $this->editingId)->orderBy('month')->get()
             : collect();
     }
 
-    /** 보류금 처리 금액칸 — 비우면 전액, 일부면 오래된 달부터 그만큼만(jin 2026-11-06 «이월된 보류금에서도 나눠서»). */
+    /** 편집 중인 사람의 열린 추가 줄. */
+    #[Computed]
+    public function openExtras()
+    {
+        return $this->editingId
+            ? \App\Models\PayoutHold::query()->open()->ofKind(\App\Models\PayoutHold::KIND_EXTRA)->where('salesman_id', $this->editingId)->orderBy('month')->get()
+            : collect();
+    }
+
+    /** 편집 중인 사람의 보류·추가 기록 전부(처리 끝·취소 포함, 최근 먼저) — 「⏸ 보류 · ➕ 추가 기록」 표. */
+    #[Computed]
+    public function holdLedger()
+    {
+        return $this->editingId
+            ? \App\Models\PayoutHold::query()->where('salesman_id', $this->editingId)->with(['heldBy', 'releasedBatch'])->orderByDesc('id')->get()
+            : collect();
+    }
+
+    /** 처리 금액칸(종류별) — 비우면 전액, 일부면 오래된 달부터 그만큼만(jin 2026-11-06 «이월된 보류금에서도 나눠서»). */
     public string $holdResolveAmount = '';
 
-    /** 보류금 처리 — paid(월정산 밖 지급) / queue(다음 월정산 추가) / unqueue(추가 취소). 금액은 holdResolveAmount(빈칸 = 전액). 판정·줄 쪼개기는 모델 한 곳. */
-    public function resolveHold(string $action): void
+    public string $extraResolveAmount = '';
+
+    /** 보류금·추가금 처리 — paid(월정산 밖 지급) / queue(다음 월정산 추가) / unqueue(추가 취소). 판정·줄 쪼개기는 모델 한 곳. */
+    public function resolveHold(string $action, string $kind = 'hold'): void
     {
         if (! $this->editingId) {
             return;
         }
+        $kind = $kind === \App\Models\PayoutHold::KIND_EXTRA ? \App\Models\PayoutHold::KIND_EXTRA : \App\Models\PayoutHold::KIND_HOLD;
+        $raw = $kind === \App\Models\PayoutHold::KIND_EXTRA ? $this->extraResolveAmount : $this->holdResolveAmount;
         try {
-            \App\Models\PayoutHold::resolve(auth()->user(), $this->editingId, $action, \App\Models\PayoutHold::parseAmount($this->holdResolveAmount));
+            \App\Models\PayoutHold::resolve(auth()->user(), $this->editingId, $action, \App\Models\PayoutHold::parseAmount($raw), $kind);
         } catch (\DomainException $e) {
             $this->dispatch('notify', message: $e->getMessage(), type: 'error');
 
             return;
         }
         $this->holdResolveAmount = '';
-        unset($this->holdBalances, $this->openHolds);
+        $this->extraResolveAmount = '';
+        unset($this->holdBalances, $this->openHolds, $this->openExtras, $this->holdLedger);
         $this->dispatch('notify', message: __('salesman.hold.done_'.$action), type: 'success');
     }
 
@@ -1258,9 +1280,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="badge {{ $co > 0 ? 'badge-green' : 'badge-red' }} ml-1.5 text-[10px]"
                           title="{{ __('salesman.carryover_badge') }}">{{ $co > 0 ? '+' : '−' }}₩{{ number_format(abs($co)) }}</span>
                     @endif
-                    @php $hb = $this->holdBalances[$sm->id] ?? 0; @endphp
+                    @php $hb = $this->holdBalances[$sm->id]['hold'] ?? 0; $eb = $this->holdBalances[$sm->id]['extra'] ?? 0; @endphp
                     @if($hb !== 0)
                     <span class="badge badge-gray ml-1.5 text-[10px]" data-hold-badge="{{ $sm->id }}" title="{{ __('salesman.hold.badge') }}">⏸ {{ $hb > 0 ? '+' : '−' }}₩{{ number_format(abs($hb)) }}</span>
+                    @endif
+                    @if($eb !== 0)
+                    <span class="badge badge-amber ml-1.5 text-[10px]" data-extra-badge="{{ $sm->id }}" title="{{ __('salesman.hold.extra_badge') }}">➕ {{ $eb > 0 ? '+' : '−' }}₩{{ number_format(abs($eb)) }}</span>
                     @endif
                 </td>
                 <td class="py-3 pr-4">
@@ -1314,9 +1339,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if($co != 0)
                     <span class="badge {{ $co > 0 ? 'badge-green' : 'badge-red' }} text-[10px]">{{ $co > 0 ? '+' : '−' }}₩{{ number_format(abs($co)) }}</span>
                     @endif
-                    @php $hb = $this->holdBalances[$sm->id] ?? 0; @endphp
+                    @php $hb = $this->holdBalances[$sm->id]['hold'] ?? 0; $eb = $this->holdBalances[$sm->id]['extra'] ?? 0; @endphp
                     @if($hb !== 0)
                     <span class="badge badge-gray text-[10px]" data-hold-badge="{{ $sm->id }}" title="{{ __('salesman.hold.badge') }}">⏸ {{ $hb > 0 ? '+' : '−' }}₩{{ number_format(abs($hb)) }}</span>
+                    @endif
+                    @if($eb !== 0)
+                    <span class="badge badge-amber text-[10px]" data-extra-badge="{{ $sm->id }}" title="{{ __('salesman.hold.extra_badge') }}">➕ {{ $eb > 0 ? '+' : '−' }}₩{{ number_format(abs($eb)) }}</span>
                     @endif
                 </div>
                 <div class="text-xs text-gray-500">{{ $sm->phone ?? '' }}{{ $sm->email ? ' · '.$sm->email : '' }}</div>
@@ -1512,40 +1540,80 @@ new #[Layout('components.layouts.app')] class extends Component {
                 패널을 열거나 귀속월을 바꿔 값이 서버에서 채워지면 아무도 안 쳐서 「₩0」에 머물렀다.
                 지금은 $wire 상태(payrollItems·payrollCustom)를 읽는다 — deferred 라도 치는 즉시 클라이언트 상태가 바뀌고,
                 서버가 월을 바꿔 채워도 바뀌므로 둘 다 자동으로 다시 센다. --}}
-        {{-- ⏸ 지급보류금 (jin 2026-11-06) — 승인된 월정산에서 보류한 금액(+/−). 전액을 「지급」(월정산 밖) 또는 「월정산 추가」(다음 제출 때 줄로). --}}
-        @if($this->openHolds->isNotEmpty())
-        @php $holdTotal = (int) $this->openHolds->sum('amount_krw'); $queued = $this->openHolds->where('status', \App\Models\PayoutHold::QUEUED)->isNotEmpty(); $canHold = \App\Models\SettlementPayoutBatch::canEditAdjustments(auth()->user()); @endphp
+        {{-- ⏸ 보류 · ➕ 추가 기록 (jin 2026-11-06) — 승인된 월정산 뒤 적은 보류·추가. 종류별 열린 잔액 + 처리(지급/월정산 추가) + 전체 기록 표. --}}
+        @if($this->holdLedger->isNotEmpty())
+        @php $canHold = \App\Models\SettlementPayoutBatch::canEditAdjustments(auth()->user()); @endphp
         <div class="rounded-lg border border-slate-300 bg-slate-50 p-3" data-hold-panel>
             <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-semibold text-gray-800">⏸ {{ __('salesman.hold.title') }}</span>
-                <span class="font-mono text-sm font-bold {{ $holdTotal < 0 ? 'text-rose-600' : 'text-gray-900' }}">{{ $holdTotal < 0 ? '−' : '+' }}₩{{ number_format(abs($holdTotal)) }}</span>
+                <span class="text-sm font-semibold text-gray-800">{{ __('salesman.hold.ledger_title') }}</span>
+                <span class="text-[11px] text-gray-500">{{ __('salesman.hold.ledger_hint') }}</span>
             </div>
-            <div class="mt-1.5 space-y-0.5">
-                @foreach($this->openHolds as $h)
-                <div class="flex justify-between text-[11px]" data-hold-line="{{ $h->id }}">
-                    <span class="text-gray-600">{{ $h->month }}월 · {{ __('payout_batch.hold.status.'.$h->status) }}{{ $h->note ? ' · '.$h->note : '' }}</span>
-                    <span class="font-mono {{ $h->amount_krw < 0 ? 'text-rose-600' : 'text-gray-800' }}">{{ $h->amount_krw < 0 ? '−' : '+' }}{{ number_format(abs($h->amount_krw)) }}</span>
+            @foreach([[\App\Models\PayoutHold::KIND_HOLD, $this->openHolds, 'holdResolveAmount'], [\App\Models\PayoutHold::KIND_EXTRA, $this->openExtras, 'extraResolveAmount']] as [$kind, $rows, $field])
+            @if($rows->isNotEmpty())
+            @php $total = (int) $rows->sum('amount_krw'); $queued = $rows->where('status', \App\Models\PayoutHold::QUEUED)->isNotEmpty(); $isExtra = $kind === \App\Models\PayoutHold::KIND_EXTRA; @endphp
+            <div class="mt-2 rounded border {{ $isExtra ? 'border-amber-300 bg-amber-50' : 'border-slate-300 bg-white' }} p-2" data-hold-block="{{ $kind }}">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-xs font-semibold text-gray-800">{{ $isExtra ? '➕ '.__('salesman.hold.extra_title') : '⏸ '.__('salesman.hold.title') }}</span>
+                    <span class="font-mono text-sm font-bold {{ $total < 0 ? 'text-rose-600' : 'text-gray-900' }}">{{ $total < 0 ? '−' : '+' }}₩{{ number_format(abs($total)) }}</span>
                 </div>
-                @endforeach
-            </div>
-            <p class="mt-1.5 text-[11px] leading-relaxed text-gray-500">{{ $queued ? __('salesman.hold.hint_queued') : __('salesman.hold.hint') }} {{ __('salesman.hold.amount_hint') }}</p>
-            @if($canHold)
-            <div class="mt-2 flex flex-wrap items-center justify-end gap-2">
-                <label class="flex items-center gap-1.5 text-[11px] text-gray-600" data-hold-amount>
-                    <span>{{ __('salesman.hold.amount_label') }}</span>
-                    <input type="text" inputmode="numeric" data-money data-money-signed wire:model="holdResolveAmount" wire:key="hold-resolve-{{ $this->editingId }}"
-                           placeholder="{{ number_format($holdTotal) }}" title="{{ __('salesman.hold.amount_hint') }}"
-                           class="input-base h-9 w-32 text-right font-mono text-xs sm:h-7">
-                </label>
-                @if($queued)
-                <button type="button" wire:click="resolveHold('unqueue')" class="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-100">{{ __('salesman.hold.unqueue') }}</button>
-                @else
-                <button type="button" wire:click="resolveHold('queue')" data-hold-queue class="rounded border border-slate-400 bg-white px-2.5 py-1 text-xs text-slate-800 hover:bg-slate-100">{{ __('salesman.hold.queue') }}</button>
+                <div class="mt-1 space-y-0.5">
+                    @foreach($rows as $h)
+                    <div class="flex justify-between gap-2 text-[11px]" data-hold-line="{{ $h->id }}">
+                        <span class="text-gray-600">{{ $h->month }}월 · {{ __('payout_batch.hold.status.'.$h->status) }}{{ $h->note ? ' · '.$h->note : '' }}</span>
+                        <span class="shrink-0 font-mono {{ $h->amount_krw < 0 ? 'text-rose-600' : 'text-gray-800' }}">{{ $h->amount_krw < 0 ? '−' : '+' }}{{ number_format(abs($h->amount_krw)) }}</span>
+                    </div>
+                    @endforeach
+                </div>
+                <p class="mt-1 text-[11px] leading-relaxed text-gray-500">{{ $isExtra ? __('salesman.hold.extra_hint') : ($queued ? __('salesman.hold.hint_queued') : __('salesman.hold.hint')) }} {{ __('salesman.hold.amount_hint') }}</p>
+                @if($canHold)
+                <div class="mt-2 flex flex-wrap items-center justify-end gap-2">
+                    <label class="flex items-center gap-1.5 text-[11px] text-gray-600" data-{{ $kind }}-amount>
+                        <span>{{ __('salesman.hold.amount_label') }}</span>
+                        <input type="text" inputmode="numeric" data-money data-money-signed wire:model="{{ $field }}" wire:key="{{ $kind }}-resolve-{{ $this->editingId }}"
+                               placeholder="{{ number_format($total) }}" title="{{ __('salesman.hold.amount_hint') }}"
+                               class="input-base h-9 w-32 text-right font-mono text-xs sm:h-7">
+                    </label>
+                    @if($queued)
+                    <button type="button" wire:click="resolveHold('unqueue', '{{ $kind }}')" class="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-100">{{ __('salesman.hold.unqueue') }}</button>
+                    @else
+                    <button type="button" wire:click="resolveHold('queue', '{{ $kind }}')" data-{{ $kind }}-queue class="rounded border border-slate-400 bg-white px-2.5 py-1 text-xs text-slate-800 hover:bg-slate-100">{{ __('salesman.hold.queue') }}</button>
+                    @endif
+                    <button type="button" wire:click="resolveHold('paid', '{{ $kind }}')" wire:confirm="{{ __('salesman.hold.paid_confirm', ['amount' => number_format($total)]) }}" data-{{ $kind }}-paid
+                            class="btn-primary px-2.5 py-1 text-xs">{{ __('salesman.hold.paid') }}</button>
+                </div>
                 @endif
-                <button type="button" wire:click="resolveHold('paid')" wire:confirm="{{ __('salesman.hold.paid_confirm', ['amount' => number_format($holdTotal)]) }}" data-hold-paid
-                        class="btn-primary px-2.5 py-1 text-xs">{{ __('salesman.hold.paid') }}</button>
             </div>
             @endif
+            @endforeach
+            {{-- 기록 표 — 끝난 것·취소도 남긴다 --}}
+            <div class="mt-2 overflow-x-auto">
+                <table class="w-full text-[11px]" data-hold-ledger>
+                    <thead>
+                        <tr class="text-left text-[10px] uppercase text-gray-500">
+                            <th class="py-1 pr-2">{{ __('salesman.hold.ledger_col_date') }}</th>
+                            <th class="py-1 pr-2">{{ __('salesman.hold.ledger_col_kind') }}</th>
+                            <th class="py-1 pr-2">{{ __('salesman.hold.ledger_col_batch') }}</th>
+                            <th class="py-1 pr-2 text-right">{{ __('salesman.hold.ledger_col_amount') }}</th>
+                            <th class="py-1 pr-2">{{ __('salesman.hold.ledger_col_note') }}</th>
+                            <th class="py-1 pr-2">{{ __('salesman.hold.ledger_col_status') }}</th>
+                            <th class="py-1">{{ __('salesman.hold.ledger_col_by') }}</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        @foreach($this->holdLedger as $h)
+                        <tr class="{{ $h->status === \App\Models\PayoutHold::CANCELLED ? 'text-gray-400 line-through' : 'text-gray-700' }}" data-ledger-row="{{ $h->id }}">
+                            <td class="whitespace-nowrap py-1 pr-2">{{ $h->created_at?->format('m-d') }}</td>
+                            <td class="whitespace-nowrap py-1 pr-2">{{ __($h->isExtra() ? 'salesman.hold.ledger_kind_extra' : 'salesman.hold.ledger_kind_hold') }}</td>
+                            <td class="whitespace-nowrap py-1 pr-2">{{ $h->month }}</td>
+                            <td class="whitespace-nowrap py-1 pr-2 text-right font-mono {{ $h->amount_krw < 0 ? 'text-rose-600' : '' }}">{{ $h->amount_krw < 0 ? '−' : '+' }}{{ number_format(abs($h->amount_krw)) }}</td>
+                            <td class="py-1 pr-2">{{ $h->note }}</td>
+                            <td class="whitespace-nowrap py-1 pr-2">{{ __('payout_batch.hold.status.'.$h->status) }}@if($h->releasedBatch) <span class="text-gray-400">({{ __('salesman.hold.ledger_released_in', ['month' => $h->releasedBatch->month]) }})</span>@endif</td>
+                            <td class="whitespace-nowrap py-1">{{ $h->heldBy?->name }}</td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
         </div>
         @endif
 
