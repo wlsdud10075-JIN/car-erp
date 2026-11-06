@@ -99,6 +99,7 @@ return [
         'vehicles' => '총 판매 차량',
         'equiv_sum' => '프리랜서 환산 합계',
         'transfer_total' => '송금 총액 (급여 포함)',
+        'net_after_hold' => '⚠ 실제 송금액 (보류 제외)',
         'settlement_total' => '정산·조정 총액 (승인 금액)',
         'external_total' => '송금 중 헤이맨 정산금(회사이익 밖)',
         'pension_total' => '송금 중 퇴직연금 적립',
