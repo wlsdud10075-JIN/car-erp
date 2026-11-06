@@ -368,7 +368,7 @@ class BuyerAccountScreenTest extends TestCase
             BuyerCashReceipt::create([
                 'buyer_id' => $buyer->id, 'currency' => 'EUR',
                 'received_date' => '2026-09-'.str_pad((string) $i, 2, '0', STR_PAD_LEFT),
-                'amount' => 100 + $i, 'note' => 'R'.$i,
+                'amount' => 100 + $i, 'note' => 'RCPT-'.str_pad((string) $i, 2, '0', STR_PAD_LEFT),   // 하이픈 — Livewire 무작위 id(영숫자)에 「R3」 가 섞여 헛실패하던 것(CI 11-06)
             ]);
         }
 
@@ -376,9 +376,9 @@ class BuyerAccountScreenTest extends TestCase
             ->set('buyerId', (string) $buyer->id);
 
         // 기본은 10건까지 — 최근 입금부터.
-        $c->assertSee('R14')->assertDontSee('R3');
+        $c->assertSee('RCPT-14')->assertDontSee('RCPT-03');
 
-        $c->call('showMoreUsage')->assertSee('R3');
+        $c->call('showMoreUsage')->assertSee('RCPT-03');
 
         // 🚨 **화면에서 자르는 것만으로는 부족하다** — 그러면 전부 읽고 나서 버리는 것이라
         //    느려지는 원인은 그대로다. 읽는 쿼리 자체에 상한이 걸려야 한다.
