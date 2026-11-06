@@ -69,11 +69,17 @@ class PayoutBatchExportTest extends TestCase
         $titles = array_map(fn ($w) => $w->getTitle(), $ss->getAllSheets());
         $this->assertSame(['사람별 지급', '급여 항목', '요약'], array_slice($titles, 0, 3));
 
+        // jin 2026-11-06 수정본 형식 — B1 제목·B2 부제·4행 머리(B열부터)·구분 세로 병합·소계·합계·요약(수식)
         $people = $ss->getSheetByName('사람별 지급')->toArray(null, true, false, false);
-        $byName = collect($people)->keyBy(1);
-        $pay = array_search('지급합계(송금)', $people[0], true);   // 열 번호를 박지 않는다 — 열이 늘면(지급보류분) 깨진다
+        $this->assertSame('2026년 10월 사람별 지급 내역', $people[0][1]);
+        $this->assertSame('귀속월 2026-10 · 단위: 원', $people[1][1]);
+        $hdr = $people[3];
+        $this->assertSame(['구분', 'No.', '이름', '정산 건수', '급여', '정산금', '헤이맨 정산금', '인센티브', '조정', '이월', '예치금 반환',
+            '퇴직연금 몫(따로)', '지급합계(송금)', '총마진', '발송비', '회사이익'], array_slice($hdr, 1), '보류가 없는 달은 jin 파일과 같은 17열');
+        $byName = collect($people)->keyBy(3);
+        $pay = array_search('지급합계(송금)', $hdr, true);   // 열 번호를 박지 않는다 — 보류 달엔 열이 끼어든다
         $this->assertSame(2_740_000, (int) $byName['최검차'][$pay], '검차직원도 사람별 지급에 — 지급합계 = 급여');
-        $this->assertSame(100_000, (int) $byName['김영업'][5], '사내직원 정산금');
+        $this->assertSame(100_000, (int) $byName['김영업'][array_search('정산금', $hdr, true)], '사내직원 정산금');
         $bd = $batch->breakdownForDisplay();
         $this->assertSame(
             array_sum(array_column($bd['people'], 'payout')),
@@ -81,21 +87,41 @@ class PayoutBatchExportTest extends TestCase
             '엑셀 지급합계 = 화면 카드 합'
         );
 
-        // 유형별 묶음 — 머리줄 · 소계 · 합계(= 소계들의 합)
-        $col0 = array_column($people, 0);
-        $this->assertContains('■ 사내직원 (1명)', $col0);
-        $this->assertContains('■ 검차직원 (1명)', $col0);
-        $this->assertSame(2_740_000, (int) $byName['검차직원 소계'][$pay]);
-        $this->assertSame(2_840_000, (int) $byName['합계'][$pay], '합계 = 소계들의 합');
+        // 유형별 묶음 — B열 구분(병합 첫 칸) · C열 소계 · 합계(= 소계들의 합) · 묶음 사이 빈 줄 없음
+        $colB = array_column($people, 1);
+        $colC = array_column($people, 2);
+        $this->assertContains('사내직원', $colB);
+        $this->assertContains('검차직원', $colB);
+        $this->assertNotContains('■ 사내직원 (1명)', array_column($people, 0), '머리줄은 없다');
+        $bySub = collect($people)->keyBy(2);
+        $this->assertSame(2_740_000, (int) $bySub['검차직원 소계'][$pay]);
+        $totalRow = collect($people)->first(fn ($r) => ($r[1] ?? null) === '합계');
+        $this->assertSame(2_840_000, (int) $totalRow[$pay], '합계 = 소계들의 합');
+        $iSub = array_search('사내직원 소계', $colC, true);
+        $this->assertSame('검차직원', $colB[$iSub + 1], '소계 바로 다음 줄이 다음 묶음');
+        // 요약 — 라벨 C / 값 G, 수식이 화면 totals 와 같다
+        $byLabel = collect($people)->keyBy(2);
+        $this->assertSame((int) $bd['totals']['transfer_total'], (int) $byLabel['송금 총액 (퇴직연금 몫 포함)'][6]);
+        $this->assertSame((int) $bd['totals']['contribution_sum'], (int) $byLabel['회사 기여 합'][6]);
+        $this->assertSame((int) $bd['totals']['common_labor'], (int) $byLabel['공통 인건비 (검차·업무관리·관리·재무)'][6]);
+        $this->assertSame((int) $bd['totals']['company_net'], (int) $byLabel['회사 순이익'][6]);
+        $sheet = $ss->getSheetByName('사람별 지급');
+        $this->assertStringStartsWith('=', (string) $sheet->getCell('G'.(array_search('회사 순이익', array_column($people, 2), true) + 1))->getValue(), '요약은 수식');
+        $this->assertSame('305496', $sheet->getStyle('B4')->getFill()->getStartColor()->getRGB());
+        $this->assertSame('E5', $sheet->getFreezePane());
 
-        // 급여 항목 = 사람마다 카드(이름·유형 → 항목·금액 → 합계). 급여가 없는 사람은 「급여 미입력」.
+        // 급여 항목 = 한 사람 한 줄(구분·No.·이름·항목 열·합계·비고). 급여가 없는 사람은 비고 「급여 미입력」. 프리랜서 없음.
         $items = $ss->getSheetByName('급여 항목')->toArray(null, true, false, false);
-        $flat = array_merge(...$items);
-        $this->assertContains('최검차 · 검차직원', $flat);
-        $this->assertContains('김영업 · 사내직원', $flat);
-        $this->assertContains('급여 미입력', $flat);
-        $card = collect($items)->first(fn ($r) => in_array('기본급', $r, true));
-        $this->assertSame(2_740_000, (int) $card[array_search('기본급', $card, true) + 1]);
+        $this->assertSame('2026년 10월 급여 항목', $items[0][1]);
+        $ih = $items[3];
+        $this->assertSame(['구분', 'No.', '이름', '기본급', '합계', '비고'], array_slice($ih, 1), '그 달에 값 있는 항목 열만');
+        $iname = collect($items)->keyBy(3);
+        $this->assertSame(2_740_000, (int) $iname['최검차'][array_search('기본급', $ih, true)]);
+        $this->assertSame(2_740_000, (int) $iname['최검차'][array_search('합계', $ih, true)]);
+        $this->assertSame('급여 미입력', $iname['김영업'][array_search('비고', $ih, true)]);
+        $itotal = collect($items)->first(fn ($r) => ($r[1] ?? null) === '합계');
+        $this->assertSame((int) $totalRow[array_search('급여', $hdr, true)], (int) $itotal[array_search('합계', $ih, true)], '급여 항목 합계 = 사람별 지급 급여 합');
+        $this->assertNotContains('최검차 · 검차직원', array_merge(...$items), '카드형은 폐기');
 
         $this->assertDatabaseHas('export_logs', ['user_id' => $manager->id, 'target' => 'settlements', 'scope' => 'payout_batch']);
     }
