@@ -154,7 +154,8 @@ final class BatchPayoutBreakdown
             $totalMargin += (int) $r['total_margin'];
             $equivSum += (int) ($r['equiv_total'] ?? 0);
             if (in_array($r['type'], Salesman::PAYROLL_ONLY_TYPES, true)) {   // 검차직원·직원 = 공통 인건비
-                $commonLabor += (int) $r['payout'];
+                // ⏸ 앞 달 지급보류분은 원래 달 인건비에 이미 들어갔다 — 송금엔 넣되 이번 달 인건비엔 다시 안 넣는다(2026-11-06).
+                $commonLabor += (int) $r['payout'] - (int) ($r['adj_held'] ?? 0);
             } elseif ($r['company_contribution'] !== null) {
                 $contributionSum += (int) $r['company_contribution'];
             }

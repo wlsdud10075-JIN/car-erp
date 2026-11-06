@@ -61,6 +61,7 @@ return [
         'nice_reg_owner_name' => '소유자',
         'nice_reg_owner_rrn' => '주민(법인)등록번호',
         'nice_raw' => 'NICE 조회 원본',
+        'payout_hold' => '지급보류금',
         'nice_spec_control_no' => '제원관리번호',
         'nice_spec_form_name' => '형식',
         'nice_spec_max_power' => '최대출력',
@@ -504,6 +505,11 @@ return [
     // ─── audit_logs.action 한글 ─────────────────────────────────────────
     'actions' => [
         'nice_mismatch_cleared' => '다른 차 NICE 원본 정리',
+        'payout_held' => '지급보류',   // 2026-11-06 월정산
+        'payout_hold_cancelled' => '지급보류 취소',
+        'payout_hold_paid' => '보류금 지급(월정산 밖)',
+        'payout_hold_queue' => '보류금 월정산 추가',
+        'payout_hold_unqueue' => '보류금 월정산 추가 취소',
         'created' => '생성',
         'updated' => '수정',
         'deleted' => '삭제',

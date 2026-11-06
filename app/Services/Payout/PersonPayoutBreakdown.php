@@ -110,6 +110,9 @@ final class PersonPayoutBreakdown
         $adjManual = $adjOf(SettlementPayoutAdjustment::KIND_MANUAL) + $adjOf(SettlementPayoutAdjustment::KIND_LOSS);
         // 💰 예치금 반환(퇴사 정산) — 송금엔 들어가고(payout) 회사이익(company_contribution)·이익배수에선 뺀다. 그 사람 돈이다.
         $adjDeposit = $adjOf(SettlementPayoutAdjustment::KIND_DEPOSIT);
+        // ⏸ 지급보류분(2026-11-06) — 앞 달 보류금을 이번에 지급. 예치금 반환과 같은 자리(송금엔 들어가고 회사이익·연금 기준엔 안 들어간다 —
+        //    원래 달에 이미 비용으로 잡혔다). 카드엔 따로 한 줄(adj_held).
+        $adjHeld = $adjOf(SettlementPayoutAdjustment::KIND_HELD_RELEASE);
 
         $vehicles = $settlements->map(fn (Settlement $s) => [
             'id' => $s->id,
@@ -131,7 +134,7 @@ final class PersonPayoutBreakdown
             'count' => $settlements->count(), 'vehicles' => $vehicles,
             'payroll' => $type === 'freelance' ? null : $payrollTotal,
             'payroll_items' => $type === 'freelance' ? [] : ($payrollItems ?? []),   // 기입된 항목만(행 없는 항목은 안 실린다)
-            'incentive' => $incentive, 'adj_manual' => $adjManual, 'adj_carry' => $adjCarry, 'adj_deposit' => $adjDeposit,
+            'incentive' => $incentive, 'adj_manual' => $adjManual, 'adj_carry' => $adjCarry, 'adj_deposit' => $adjDeposit, 'adj_held' => $adjHeld,
             'deposit' => $type === 'freelance' ? $sm->deposit_krw : null,   // 보유액 표시(월정산에선 지급액 무관 · 퇴사 정산은 adj_deposit 줄로 반환)
             'tier' => (bool) $sm->per_unit_tier_enabled,
             'margin_rate' => Settlement::marginRateOf($settlements),   // Σ총마진 ÷ Σ판매금원화 — 월정산·승인 두 화면이 같은 식
@@ -149,14 +152,14 @@ final class PersonPayoutBreakdown
         if (in_array($type, Salesman::PAYROLL_ONLY_TYPES, true)) {   // 검차직원·직원 = 급여만
             return $base + [
                 'equiv_sale_rate' => null, 'fx_primary' => null, 'carry' => null, 'fx_secondary' => null, 'equiv_total' => null,
-                'settlement_pay' => 0, 'payout' => $payroll + $incentive + $adjManual + $adjDeposit,
+                'settlement_pay' => 0, 'payout' => $payroll + $incentive + $adjManual + $adjDeposit + $adjHeld,
                 'total_margin' => 0, 'shipping' => 0, 'company_contribution' => null,
                 'margin_after_pay' => null, 'excess_ratio' => null,
             ];
         }
 
         if (Setting::isKaraba()) {
-            $payout = (int) $settlements->sum(fn (Settlement $s) => (int) $s->actual_payout) + $adjManual + $adjCarry + $incentive + $payroll + $adjDeposit + $heymanPay;
+            $payout = (int) $settlements->sum(fn (Settlement $s) => (int) $s->actual_payout) + $adjManual + $adjCarry + $incentive + $payroll + $adjDeposit + $adjHeld + $heymanPay;
 
             return $base + [
                 'unsupported' => true,
@@ -182,7 +185,7 @@ final class PersonPayoutBreakdown
             $equivTotal = $equivEffective + $carryIn + $adjCarry + $adjManual;   // = Σactual_payout + Σ조정(예치금 반환 제외) (닫힘)
             $payoutCost = $equivTotal + $incentive;            // 회사가 부담하는 지급
             $pension = $pensionOn ? self::pensionOf($payoutCost + $heymanPay) : 0;
-            $payout = $payoutCost + $heymanPay - $pension + $adjDeposit;   // 실제 송금 = 거기에 헤이맨 몫·예치금 반환, 연금 몫은 따로
+            $payout = $payoutCost + $heymanPay - $pension + $adjDeposit + $adjHeld;   // 실제 송금 = 거기에 헤이맨 몫·예치금 반환, 연금 몫은 따로
 
             return array_replace($base, ['pension' => $pension, 'payout_cost' => $payoutCost]) + [
                 'equiv_sale_rate' => $equivSaleRate, 'fx_primary' => $fxPrimary, 'carry' => $carry, 'fx_secondary' => $closedFx,
@@ -199,7 +202,7 @@ final class PersonPayoutBreakdown
         $payoutCost = $payroll + $settlementPay + $adjManual + $adjCarry + $incentive;   // 회사가 부담하는 지급(판매수당 뺀 급여 — 위)
         $settleSide = $settlementPay + $heymanPay + $adjManual + $adjCarry + $incentive;  // 급여대장 「판매수당」에 실리는 몫(1/12 전)
         $pension = $pensionOn ? self::pensionOf($payroll + $settleSide) : 0;
-        $payout = $payoutCost + $heymanPay - $pension + $adjDeposit;                     // 그 사람 통장으로 가는 송금(헤이맨 몫 포함 · 연금 몫 제외)
+        $payout = $payoutCost + $heymanPay - $pension + $adjDeposit + $adjHeld;          // 그 사람 통장으로 가는 송금(헤이맨 몫 포함 · 연금 몫 제외)
         $marginAfterPay = $equivTotal - $payoutCost;
         $expected = $settleSide - $pension;
 

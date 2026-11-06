@@ -21,8 +21,10 @@ class SettlementPayoutAdjustment extends Model
      *   incentive 추가 인센티브 — 사람당 N건, 결재 중 수정 가능, 카드·결재 내역에 따로 표시
      *   deposit   🚪 퇴사 정산의 예치금 반환 (jin 2026-10-15 «예치금까지 다 포함되어서 최종금액으로») — 모달이 보유액 전액을 선입력,
      *             지급 총액엔 들어가고 **회사이익엔 안 들어간다**(그 사람 돈을 돌려주는 것). 최종 승인 때 `salesmen.deposit_krw` 를 그만큼 줄인다.
+     *   held_release ⏸ 지급보류분 (jin 2026-11-06) — 앞 달에 보류했던 금액을 이번 월정산에 넣는 줄. 사유 「2026-10월 지급보류분」.
+     *             예치금 반환처럼 송금엔 들어가고 **회사이익엔 안 들어간다**(원래 달에 이미 비용으로 잡혔다). payout_holds 와 짝.
      */
-    public const KINDS = ['manual', 'carryover', 'loss', 'incentive', 'deposit'];
+    public const KINDS = ['manual', 'carryover', 'loss', 'incentive', 'deposit', 'held_release'];
 
     public const KIND_MANUAL = 'manual';
 
@@ -33,6 +35,8 @@ class SettlementPayoutAdjustment extends Model
     public const KIND_INCENTIVE = 'incentive';
 
     public const KIND_DEPOSIT = 'deposit';
+
+    public const KIND_HELD_RELEASE = 'held_release';
 
     protected $casts = [
         'amount' => 'integer',

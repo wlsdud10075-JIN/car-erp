@@ -58,7 +58,10 @@ class PayoutBatchExportService
             ->orderBy('salesman_id')->orderBy('id')
             ->get();
         $ss = $this->settlementExporter->build($settlements);   // 요약 · 담당자별 — 종전 엑셀 그대로
-        $this->peopleSheet($ss->createSheet(0), $people, $bd['totals'] ?? [], (bool) ($bd['domestic_split'] ?? false));
+        // ⏸ 지급보류(2026-11-06) — 승인된 사내직원 월정산의 보류 장부를 「보류」 열·「실송금」 줄로 겹쳐 보여 준다(박제 무변경).
+        $holds = $batch->kind === SettlementPayoutBatch::KIND_MONTH && $batch->status === SettlementPayoutBatch::STATUS_APPROVED
+            ? $batch->holdsBySalesman()->map(fn ($h) => (int) $h->amount_krw)->all() : [];
+        $this->peopleSheet($ss->createSheet(0), $people, $bd['totals'] ?? [], (bool) ($bd['domestic_split'] ?? false), $holds);
         $this->payrollItemsSheet($ss->createSheet(1), $people);
         $ss->setActiveSheetIndex(0);
 
@@ -98,14 +101,14 @@ class PayoutBatchExportService
     }
 
     /** 사람별 지급 — 카드 한 장 = 한 줄. */
-    private function peopleSheet(Worksheet $sheet, array $people, array $totals, bool $domesticSplit): void
+    private function peopleSheet(Worksheet $sheet, array $people, array $totals, bool $domesticSplit, array $holds = []): void
     {
         $sheet->setTitle('사람별 지급');
         $cols = [
             ['No.', null], ['이름', 'name'], ['유형', 'type_label'], ['정산 건수', 'count'],
             ['급여', 'payroll'], ['정산금', 'settlement_pay'], ['헤이맨 정산금', 'heyman_pay'],
-            ['인센티브', 'incentive'], ['조정', 'adj_manual'], ['이월', 'adj_carry'], ['예치금 반환', 'adj_deposit'],
-            ['퇴직연금 몫(따로)', 'pension'], ['지급합계(송금)', 'payout'],
+            ['인센티브', 'incentive'], ['조정', 'adj_manual'], ['이월', 'adj_carry'], ['예치금 반환', 'adj_deposit'], ['지급보류분', 'adj_held'],
+            ['퇴직연금 몫(따로)', 'pension'], ['지급합계(송금)', 'payout'], ['⏸ 보류(송금 제외)', '__hold'],
             ['총마진', 'total_margin'], ['발송비', 'shipping'], ['회사이익', 'company_contribution'],
         ];
         $last = Coordinate::stringFromColumnIndex(count($cols));
@@ -125,6 +128,10 @@ class PayoutBatchExportService
                     $cell = Coordinate::stringFromColumnIndex($c + 1).$row;
                     if ($key === null) {
                         $sheet->setCellValue($cell, $i + 1);
+                    } elseif ($key === '__hold') {
+                        if (isset($holds[(int) ($p['salesman_id'] ?? 0)])) {
+                            $sheet->setCellValue($cell, $holds[(int) $p['salesman_id']]);
+                        }
                     } elseif (in_array($key, ['name', 'type_label'], true)) {
                         $sheet->setCellValueExplicit($cell, (string) ($p[$key] ?? ''), DataType::TYPE_STRING);
                     } elseif (($p[$key] ?? null) !== null) {
@@ -157,6 +164,12 @@ class PayoutBatchExportService
         // 화면 「합계」 칸과 같은 숫자 — 회사 순이익 = 기여 합 − 공통 인건비(검차·관리) + 내수 총 회사수익
         $summary = [
             ['송금 총액(퇴직연금 몫 포함)', $totals['transfer_total'] ?? null],
+        ];
+        if ($holds !== []) {   // ⏸ 보류를 뺀 실송금 — 화면 「실송금」 줄과 같은 식
+            $summary[] = ['⏸ 보류 합(송금 제외)', array_sum($holds)];
+            $summary[] = ['실송금(보류 제외)', (int) ($totals['transfer_total'] ?? 0) - array_sum($holds)];
+        }
+        $summary = [...$summary,
             ['회사 기여 합', $totals['contribution_sum'] ?? null],
             ['공통 인건비(검차·관리)', $totals['common_labor'] ?? null],
         ];

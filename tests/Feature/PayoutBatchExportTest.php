@@ -71,12 +71,13 @@ class PayoutBatchExportTest extends TestCase
 
         $people = $ss->getSheetByName('사람별 지급')->toArray(null, true, false, false);
         $byName = collect($people)->keyBy(1);
-        $this->assertSame(2_740_000, (int) $byName['최검차'][12], '검차직원도 사람별 지급에 — 지급합계 = 급여');
+        $pay = array_search('지급합계(송금)', $people[0], true);   // 열 번호를 박지 않는다 — 열이 늘면(지급보류분) 깨진다
+        $this->assertSame(2_740_000, (int) $byName['최검차'][$pay], '검차직원도 사람별 지급에 — 지급합계 = 급여');
         $this->assertSame(100_000, (int) $byName['김영업'][5], '사내직원 정산금');
         $bd = $batch->breakdownForDisplay();
         $this->assertSame(
             array_sum(array_column($bd['people'], 'payout')),
-            (int) $byName['김영업'][12] + (int) $byName['최검차'][12],
+            (int) $byName['김영업'][$pay] + (int) $byName['최검차'][$pay],
             '엑셀 지급합계 = 화면 카드 합'
         );
 
@@ -84,8 +85,8 @@ class PayoutBatchExportTest extends TestCase
         $col0 = array_column($people, 0);
         $this->assertContains('■ 사내직원 (1명)', $col0);
         $this->assertContains('■ 검차직원 (1명)', $col0);
-        $this->assertSame(2_740_000, (int) $byName['검차직원 소계'][12]);
-        $this->assertSame(2_840_000, (int) $byName['합계'][12], '합계 = 소계들의 합');
+        $this->assertSame(2_740_000, (int) $byName['검차직원 소계'][$pay]);
+        $this->assertSame(2_840_000, (int) $byName['합계'][$pay], '합계 = 소계들의 합');
 
         // 급여 항목 = 사람마다 카드(이름·유형 → 항목·금액 → 합계). 급여가 없는 사람은 「급여 미입력」.
         $items = $ss->getSheetByName('급여 항목')->toArray(null, true, false, false);

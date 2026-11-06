@@ -212,7 +212,8 @@ class AlimtalkMonthlyClosing extends Command
         $adjustments = (int) $adjQ()->sum('amount');
         // 🚪 예치금 반환(kind=deposit)은 그 사람 돈을 돌려주는 것 — 지급총액엔 들어가고 회사이익엔 안 들어간다
         //    (SettlementPayoutAdjustment::KIND_DEPOSIT 주석, jin 2026-10-15). 2026-10-19 전엔 여기서 같이 빼고 있었다.
-        $depositReturns = (int) $adjQ()->where('kind', SettlementPayoutAdjustment::KIND_DEPOSIT)->sum('amount');
+        //    ⏸ 지급보류분(held_release, 2026-11-06)도 같다 — 원래 달 회사이익에서 이미 빠졌다.
+        $depositReturns = (int) $adjQ()->whereIn('kind', [SettlementPayoutAdjustment::KIND_DEPOSIT, SettlementPayoutAdjustment::KIND_HELD_RELEASE])->sum('amount');
         $companyProfit -= $payroll + ($adjustments - $depositReturns);
         $companyProfit += BatchPayoutBreakdown::domesticProfitForMonth($month);
         // 💴 지급총액 = 정산 실지급 + 급여 + 월정산 조정 (jin 2026-10-19 — 대표가 「총마진 − 지급총액」으로 맞춰 볼 수 있게).
