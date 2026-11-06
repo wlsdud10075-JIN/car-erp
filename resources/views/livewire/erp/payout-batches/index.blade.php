@@ -483,7 +483,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <x-payout.person-card :person="$person" mode="batch" :changed="$changed[$person['salesman_id']] ?? []" />
                     @if($holdable && (int) ($person['payout'] ?? 0) !== 0)
                         @php $hs = $holds->get($person['salesman_id']); $heldHere = $hs ? (int) $hs->sum('amount_krw') : 0; @endphp
-                        <div class="-mt-1 flex flex-wrap items-center justify-end gap-2 px-1 text-[11px]" data-hold-row="{{ $person['salesman_id'] }}">
+                        <div class="-mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-md border border-t-0 border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]" data-hold-row="{{ $person['salesman_id'] }}">
                             @if($hs)
                                 <span class="rounded bg-slate-600 px-1.5 py-0.5 font-semibold text-white">⏸ {{ __('payout_batch.hold.badge') }} ₩{{ number_format($heldHere) }}@if($heldHere !== (int) $person['payout']) <span class="font-normal opacity-80">/ {{ number_format((int) $person['payout']) }}</span>@endif</span>
                                 <span class="text-gray-500">{{ $hs->map(fn ($x) => __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
@@ -507,7 +507,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     <span class="basis-full text-right text-[10px] text-gray-400">{{ __('payout_batch.hold.amount_hint', ['max' => number_format($room)]) }}</span>
                                 @else
                                     <button type="button" wire:click="startHold({{ $b->id }}, {{ $person['salesman_id'] }}, '{{ number_format($room) }}')"
-                                            data-hold-button class="rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-slate-700 hover:bg-slate-100">⏸ {{ __('payout_batch.hold.button') }}</button>
+                                            data-hold-button class="rounded-md bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-slate-800">⏸ {{ __('payout_batch.hold.button') }}</button>
                                 @endif
                             @endif
                         </div>
