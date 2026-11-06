@@ -524,19 +524,23 @@ new #[Layout('components.layouts.app')] class extends Component {
             : collect();
     }
 
-    /** 보류금 처리 — paid(월정산 밖 지급) / queue(다음 월정산 추가) / unqueue(추가 취소). 전액(jin 2026-11-06). 판정은 모델 한 곳. */
+    /** 보류금 처리 금액칸 — 비우면 전액, 일부면 오래된 달부터 그만큼만(jin 2026-11-06 «이월된 보류금에서도 나눠서»). */
+    public string $holdResolveAmount = '';
+
+    /** 보류금 처리 — paid(월정산 밖 지급) / queue(다음 월정산 추가) / unqueue(추가 취소). 금액은 holdResolveAmount(빈칸 = 전액). 판정·줄 쪼개기는 모델 한 곳. */
     public function resolveHold(string $action): void
     {
         if (! $this->editingId) {
             return;
         }
         try {
-            \App\Models\PayoutHold::resolve(auth()->user(), $this->editingId, $action);
+            \App\Models\PayoutHold::resolve(auth()->user(), $this->editingId, $action, \App\Models\PayoutHold::parseAmount($this->holdResolveAmount));
         } catch (\DomainException $e) {
             $this->dispatch('notify', message: $e->getMessage(), type: 'error');
 
             return;
         }
+        $this->holdResolveAmount = '';
         unset($this->holdBalances, $this->openHolds);
         $this->dispatch('notify', message: __('salesman.hold.done_'.$action), type: 'success');
     }
@@ -1524,9 +1528,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </div>
                 @endforeach
             </div>
-            <p class="mt-1.5 text-[11px] leading-relaxed text-gray-500">{{ $queued ? __('salesman.hold.hint_queued') : __('salesman.hold.hint') }}</p>
+            <p class="mt-1.5 text-[11px] leading-relaxed text-gray-500">{{ $queued ? __('salesman.hold.hint_queued') : __('salesman.hold.hint') }} {{ __('salesman.hold.amount_hint') }}</p>
             @if($canHold)
-            <div class="mt-2 flex flex-wrap justify-end gap-2">
+            <div class="mt-2 flex flex-wrap items-center justify-end gap-2">
+                <label class="flex items-center gap-1.5 text-[11px] text-gray-600" data-hold-amount>
+                    <span>{{ __('salesman.hold.amount_label') }}</span>
+                    <input type="text" inputmode="numeric" data-money data-money-signed wire:model="holdResolveAmount" wire:key="hold-resolve-{{ $this->editingId }}"
+                           placeholder="{{ number_format($holdTotal) }}" title="{{ __('salesman.hold.amount_hint') }}"
+                           class="input-base h-9 w-32 text-right font-mono text-xs sm:h-7">
+                </label>
                 @if($queued)
                 <button type="button" wire:click="resolveHold('unqueue')" class="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-100">{{ __('salesman.hold.unqueue') }}</button>
                 @else

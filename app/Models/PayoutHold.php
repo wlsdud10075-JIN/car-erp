@@ -92,6 +92,15 @@ class PayoutHold extends Model
             $moveAttrs = $to === self::RELEASED_PAID
                 ? ['status' => $to, 'released_by' => $by->id, 'released_at' => now()]
                 : ['status' => $to];
+            // 전액이면 줄을 전부 옮긴다 — 부호가 섞인 사람(10월 +, 11월 −)을 금액으로 걷으면 합이 맞는 지점에서 멈춰 줄이 남는다.
+            if ($amount === $total) {
+                foreach ($rows as $row) {
+                    $row->update($moveAttrs);
+                }
+                self::audit($by, $salesmanId, $auditAction, $rows, $to, $amount, $total);
+
+                return $amount;
+            }
             $remaining = $amount;
             $moved = [];
             foreach ($rows as $row) {
@@ -113,15 +122,20 @@ class PayoutHold extends Model
                 ] + $moveAttrs);
                 $remaining = 0;
             }
-            AuditLog::create([
-                'user_id' => $by->id, 'auditable_type' => Salesman::class, 'auditable_id' => $salesmanId,
-                'action' => $auditAction, 'column_name' => 'payout_hold',
-                'old_value' => self::reasonFor($moved).' '.number_format($amount).'원'.($amount !== $total ? ' (잔액 '.number_format($total).'원 중)' : ''),
-                'new_value' => $to, 'ip_address' => request()?->ip(),
-            ]);
+            self::audit($by, $salesmanId, $auditAction, $moved, $to, $amount, $total);
 
             return $amount;
         });
+    }
+
+    private static function audit(User $by, int $salesmanId, string $action, iterable $moved, string $to, int $amount, int $total): void
+    {
+        AuditLog::create([
+            'user_id' => $by->id, 'auditable_type' => Salesman::class, 'auditable_id' => $salesmanId,
+            'action' => $action, 'column_name' => 'payout_hold',
+            'old_value' => self::reasonFor($moved).' '.number_format($amount).'원'.($amount !== $total ? ' (잔액 '.number_format($total).'원 중)' : ''),
+            'new_value' => $to, 'ip_address' => request()?->ip(),
+        ]);
     }
 
     /** 화면 금액칸 → 정수(빈칸·숫자 외 문자 제거, 맨 앞 − 유지). 빈칸이면 null(= 전액). */

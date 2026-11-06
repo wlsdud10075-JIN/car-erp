@@ -176,16 +176,42 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: $this->incentiveNotice, type: 'success');
     }
 
-    /** ⏸ 지급보류 (jin 2026-11-06) — 승인된 사내직원 월정산에서 한 사람 전액. 권한·상태 판정은 모델(holdPayout) 한 곳. */
+    /** ⏸ 지급보류 금액칸(jin 2026-11-06 «150만 지급·180만 보류») — 열린 사람·배치와 입력 금액. 🚫 메서드 이름과 겹치지 말 것(§8 #32). */
+    public ?int $holdBatch = null;
+
+    public ?int $holdTarget = null;
+
+    public string $holdAmount = '';
+
+    /** 금액칸 열기 — 기본값 = 아직 보류 안 된 몫(전액). */
+    public function startHold(int $batchId, int $salesmanId, string $default = ''): void
+    {
+        $this->holdBatch = $batchId;
+        $this->holdTarget = $salesmanId;
+        $this->holdAmount = $default;
+    }
+
+    public function cancelHoldDraft(): void
+    {
+        $this->holdBatch = null;
+        $this->holdTarget = null;
+        $this->holdAmount = '';
+    }
+
+    /** ⏸ 지급보류 — 승인된 사내직원 월정산에서 한 사람. 금액칸이 그 사람에게 열려 있으면 그 금액(일부 가능), 아니면 남은 몫 전액. 권한·상태·금액 판정은 모델(holdPayout) 한 곳. */
     public function holdPerson(int $batchId, int $salesmanId): void
     {
+        $amount = ($this->holdBatch === $batchId && $this->holdTarget === $salesmanId)
+            ? \App\Models\PayoutHold::parseAmount($this->holdAmount)
+            : null;
         try {
-            SettlementPayoutBatch::findOrFail($batchId)->holdPayout(auth()->user(), $salesmanId);
+            SettlementPayoutBatch::findOrFail($batchId)->holdPayout(auth()->user(), $salesmanId, $amount);
         } catch (\DomainException $e) {
             $this->dispatch('notify', message: $e->getMessage(), type: 'error');
 
             return;
         }
+        $this->cancelHoldDraft();
         unset($this->batches);
         $this->dispatch('notify', message: __('payout_batch.hold.done'), type: 'success');
     }
@@ -467,8 +493,22 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endif
                             @endif
                             @if($canHold && $heldHere !== (int) $person['payout'])
-                                <button type="button" wire:click="holdPerson({{ $b->id }}, {{ $person['salesman_id'] }})" wire:confirm="{{ __('payout_batch.hold.confirm', ['name' => $person['name'], 'amount' => number_format((int) $person['payout'])]) }}"
-                                        data-hold-button class="rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-slate-700 hover:bg-slate-100">⏸ {{ __('payout_batch.hold.button') }}</button>
+                                @php $room = (int) $person['payout'] - $heldHere; @endphp
+                                @if($this->holdBatch === $b->id && $this->holdTarget === (int) $person['salesman_id'])
+                                    {{-- 금액칸 — 기본 전액(남은 몫). 일부만 적으면 나머지는 이번 달 그대로 지급(jin 11-06). 음수 지급합계면 음수로. --}}
+                                    <span class="inline-flex flex-wrap items-center justify-end gap-1.5" data-hold-form>
+                                        <label class="text-gray-500">{{ __('payout_batch.hold.amount_label') }}</label>
+                                        <input type="text" inputmode="numeric" data-money data-money-signed wire:model="holdAmount" wire:key="hold-amount-{{ $b->id }}-{{ $person['salesman_id'] }}"
+                                               class="input-base h-9 w-32 text-right font-mono text-[11px] sm:h-7" title="{{ __('payout_batch.hold.amount_hint', ['max' => number_format($room)]) }}">
+                                        <button type="button" wire:click="holdPerson({{ $b->id }}, {{ $person['salesman_id'] }})" data-hold-ok
+                                                class="rounded bg-slate-700 px-2.5 py-1 font-semibold text-white hover:bg-slate-800">⏸ {{ __('payout_batch.hold.ok') }}</button>
+                                        <button type="button" wire:click="cancelHoldDraft" class="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-100">{{ __('payout_batch.hold.cancel_draft') }}</button>
+                                    </span>
+                                    <span class="basis-full text-right text-[10px] text-gray-400">{{ __('payout_batch.hold.amount_hint', ['max' => number_format($room)]) }}</span>
+                                @else
+                                    <button type="button" wire:click="startHold({{ $b->id }}, {{ $person['salesman_id'] }}, '{{ number_format($room) }}')"
+                                            data-hold-button class="rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-slate-700 hover:bg-slate-100">⏸ {{ __('payout_batch.hold.button') }}</button>
+                                @endif
                             @endif
                         </div>
                     @endif
