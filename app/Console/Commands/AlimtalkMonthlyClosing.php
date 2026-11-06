@@ -216,9 +216,13 @@ class AlimtalkMonthlyClosing extends Command
         $depositReturns = (int) $adjQ()->whereIn('kind', [SettlementPayoutAdjustment::KIND_DEPOSIT, SettlementPayoutAdjustment::KIND_HELD_RELEASE])->sum('amount');
         $companyProfit -= $payroll + ($adjustments - $depositReturns);
         $companyProfit += BatchPayoutBreakdown::domesticProfitForMonth($month);
+        // ➕ 「지급(월정산 밖)」으로 나간 추가금(jin 2026-11-06 (가)) — 그 달 승인 월정산의 장부에서. 회사이익에서 빼고 지급총액에 더한다.
+        $extraPaidOutside = (int) array_sum(SettlementPayoutBatch::extraPaidOutsideBySalesman(
+            SettlementPayoutBatch::query()->where('month', $month)->where('status', 'approved')->pluck('id')->all()));
+        $companyProfit -= $extraPaidOutside;
         // 💴 지급총액 = 정산 실지급 + 급여 + 월정산 조정 (jin 2026-10-19 — 대표가 「총마진 − 지급총액」으로 맞춰 볼 수 있게).
         //    급여가 없는 회사(heymanerp)는 종전과 같다. 발송비는 실지급에서 이미 빠져 있어 별도 항이 남는다.
-        $totalPayout += $payroll + $adjustments + $externalPay;
+        $totalPayout += $payroll + $adjustments + $externalPay + $extraPaidOutside;
 
         $perSalesman = $settlements->groupBy(fn (Settlement $s) => $s->salesman?->name ?? '미지정')
             ->map(fn ($g) => (int) $g->sum(fn (Settlement $s) => (int) $s->actual_payout))

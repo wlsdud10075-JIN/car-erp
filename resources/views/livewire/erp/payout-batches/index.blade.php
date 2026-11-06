@@ -230,6 +230,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: __($extra ? 'payout_batch.hold.extra_done' : 'payout_batch.hold.done'), type: 'success');
     }
 
+    /** ✅ 월정산 최종 확정 — 보류·추가 장부 잠금 + 확정본(jin 2026-11-06). 판정은 모델(finalize) 한 곳. */
+    public function finalizeBatch(int $batchId): void
+    {
+        try {
+            SettlementPayoutBatch::findOrFail($batchId)->finalize(auth()->user());
+        } catch (\DomainException $e) {
+            $this->dispatch('notify', message: $e->getMessage(), type: 'error');
+
+            return;
+        }
+        $this->cancelHoldDraft();
+        unset($this->batches);
+        $this->dispatch('notify', message: __('payout_batch.hold.finalize_done'), type: 'success');
+    }
+
     /** 보류·추가 취소 — 아직 처리 전(held)인 것만. 🚫 이름을 hold* 프로퍼티와 겹치지 말 것(§8 #32). */
     public function releaseHold(int $batchId, int $salesmanId, string $kind = 'hold'): void
     {
@@ -347,6 +362,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @if($b->isDomesticBatch())<span class="badge badge-green" data-domestic-batch>{{ __('payout_batch.domestic.badge') }}</span>@endif
                         @if($b->isLeaverBatch())<span class="badge badge-purple" data-leaver-batch>{{ __('payout_batch.leaver_label', ['name' => $b->salesman?->name ?? '-']) }}</span>@endif
                         <span class="badge {{ $statusBadge }}">{{ __('payout_batch.status.'.$b->status) }}</span>
+                        @if($b->isFinalized())<span class="badge badge-blue" data-finalized title="{{ __('payout_batch.hold.finalize_hint') }}">✅ {{ __('payout_batch.hold.finalize_badge', ['date' => $b->finalized_at?->format('m/d'), 'name' => $b->finalizedBy?->name ?? '']) }}</span>@endif
                         <span class="pill-count">{{ $b->isDomesticBatch() ? __('payout_batch.domestic.people', ['n' => $b->settlement_count]) : __('payout_batch.count', ['n' => $b->settlement_count]) }}</span>
                         <span class="text-sm font-medium text-primary-text">₩{{ number_format($b->total_payout) }}</span>
                     </button>
@@ -482,14 +498,26 @@ new #[Layout('components.layouts.app')] class extends Component {
                         $holdable = $b->kind === \App\Models\SettlementPayoutBatch::KIND_MONTH && $b->status === 'approved';
                         $holds = $holdable ? $b->holdsBySalesman() : collect();
                         $extras = $holdable ? $b->extrasBySalesman() : collect();   // ➕ 지급추가(대표가 정해 기안자가 기입)
-                        $canHold = $holdable && \App\Models\SettlementPayoutBatch::canEditAdjustments(auth()->user());
+                        $finalized = $b->isFinalized();
+                        $canEditLedger = $holdable && \App\Models\SettlementPayoutBatch::canEditAdjustments(auth()->user());
+                        $canHold = $canEditLedger && ! $finalized;   // ✅ 최종 확정 뒤엔 장부 잠금
                         $heldSum = (int) $holds->flatten()->sum('amount_krw');
                         $extraSum = (int) $extras->flatten()->sum('amount_krw');
+                        $extraPaidOutside = $holdable ? $b->extraPaidOutsideTotal() : 0;   // (가) 월정산 밖 추가 지급 = 그 달 회사이익 차감
                         $netTransfer = (int) ($bd['totals']['transfer_total'] ?? 0) - $heldSum + $extraSum;
                     @endphp
                     @unless($b->isDomesticBatch())
-                    <x-payout.totals :totals="$bd['totals']" :settlement-total="(int) $b->total_payout" :held-total="$heldSum" :extra-total="$extraSum" />
+                    <x-payout.totals :totals="$bd['totals']" :settlement-total="(int) $b->total_payout" :held-total="$heldSum" :extra-total="$extraSum" :extra-paid-outside="$extraPaidOutside" />
                     @endunless
+                    @if($holdable && $canEditLedger)
+                    <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border {{ $finalized ? 'border-blue-200 bg-blue-50' : 'border-dashed border-blue-300 bg-white' }} px-2.5 py-1.5 text-[11px]" data-finalize-row>
+                        <span class="text-gray-600">{{ $finalized ? __('payout_batch.hold.finalized_line', ['date' => $b->finalized_at?->format('Y-m-d H:i'), 'name' => $b->finalizedBy?->name ?? '']) : __('payout_batch.hold.finalize_hint') }}</span>
+                        @unless($finalized)
+                        <button type="button" wire:click="finalizeBatch({{ $b->id }})" wire:confirm="{{ __('payout_batch.hold.finalize_confirm', ['net' => number_format($netTransfer)]) }}"
+                                data-finalize-button class="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm">✅ {{ __('payout_batch.hold.finalize_button') }}</button>
+                        @endunless
+                    </div>
+                    @endif
                     @if($holds->isNotEmpty() || $extras->isNotEmpty())
                     {{-- 실제 송금액 — 송금 총액만 보고 송금하지 않게 크게(jin 11-06). 숫자는 합계 띠의 송금 총액 − 보류 합 + 추가 합. --}}
                     <div class="rounded-md border-2 border-amber-300 bg-amber-50 px-3 py-2" data-hold-net>
@@ -510,24 +538,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                             $room = $payout - $heldHere;
                             $open = $this->holdBatch === $b->id && $this->holdTarget === $sid;
                             $isExtra = $open && $this->holdKind === \App\Models\PayoutHold::KIND_EXTRA;
+                            // 아직 월정산에 안 들어간 줄이 있으면 같은 자리 버튼이 「취소」로 바뀐다(jin 11-06 «자리 안 차지하게»)
+                            $holdOpen = $hs && $hs->whereIn('status', \App\Models\PayoutHold::OPEN)->isNotEmpty();
+                            $extraOpen = $es && $es->whereIn('status', \App\Models\PayoutHold::OPEN)->isNotEmpty();
                         @endphp
                         @if($hs || $es || $canHold)
                         <div class="-mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-md border border-t-0 border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]" data-hold-row="{{ $sid }}">
                             @if($hs)
                                 <span class="rounded bg-slate-600 px-1.5 py-0.5 font-semibold text-white">⏸ {{ __('payout_batch.hold.badge') }} ₩{{ number_format($heldHere) }}@if($heldHere !== $payout) <span class="font-normal opacity-80">/ {{ number_format($payout) }}</span>@endif</span>
                                 <span class="text-gray-500">{{ $hs->map(fn ($x) => __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
-                                @if($canHold && $hs->contains('status', \App\Models\PayoutHold::HELD))
-                                <button type="button" wire:click="releaseHold({{ $b->id }}, {{ $sid }})" wire:confirm="{{ __('payout_batch.hold.cancel_confirm', ['name' => $person['name']]) }}"
-                                        class="rounded border border-gray-300 px-2 py-0.5 text-gray-600 hover:bg-gray-100">{{ __('payout_batch.hold.cancel') }}</button>
-                                @endif
                             @endif
                             @if($es)
                                 <span class="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800" data-extra-badge="{{ $sid }}">➕ {{ __('payout_batch.hold.extra_badge') }} {{ $extraHere < 0 ? '−' : '+' }}₩{{ number_format(abs($extraHere)) }}</span>
                                 <span class="text-gray-500">{{ $es->map(fn ($x) => __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
-                                @if($canHold && $es->contains('status', \App\Models\PayoutHold::HELD))
-                                <button type="button" wire:click="releaseHold({{ $b->id }}, {{ $sid }}, 'extra')" wire:confirm="{{ __('payout_batch.hold.extra_cancel_confirm', ['name' => $person['name']]) }}"
-                                        class="rounded border border-gray-300 px-2 py-0.5 text-gray-600 hover:bg-gray-100">{{ __('payout_batch.hold.extra_cancel') }}</button>
-                                @endif
                             @endif
                             @if($canHold)
                                 @if($open)
@@ -545,12 +568,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                                     </span>
                                     <span class="basis-full text-right text-[10px] text-gray-400">{{ $isExtra ? __('payout_batch.hold.extra_amount_hint') : __('payout_batch.hold.amount_hint', ['max' => number_format($room)]) }}</span>
                                 @else
-                                    @if($payout !== 0 && $heldHere !== $payout)
+                                    {{-- 같은 자리 토글 — 적은 게 있으면 「취소」(아직 월정산에 안 들어간 줄만), 없으면 「기입」. 금액을 고치려면 취소 → 다시 기입. --}}
+                                    @if($holdOpen)
+                                    <button type="button" wire:click="releaseHold({{ $b->id }}, {{ $sid }})" wire:confirm="{{ __('payout_batch.hold.cancel_confirm', ['name' => $person['name']]) }}"
+                                            data-hold-cancel class="rounded-md border border-slate-400 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm">⏸ {{ __('payout_batch.hold.cancel') }}</button>
+                                    @elseif($payout !== 0 && $heldHere !== $payout)
                                     <button type="button" wire:click="startHold({{ $b->id }}, {{ $sid }}, '{{ number_format($room) }}')"
                                             data-hold-button class="rounded-md bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm">⏸ {{ __('payout_batch.hold.button') }}</button>
                                     @endif
+                                    @if($extraOpen)
+                                    <button type="button" wire:click="releaseHold({{ $b->id }}, {{ $sid }}, 'extra')" wire:confirm="{{ __('payout_batch.hold.extra_cancel_confirm', ['name' => $person['name']]) }}"
+                                            data-extra-cancel class="rounded-md border border-amber-400 bg-white px-3 py-1.5 text-xs font-semibold text-amber-800 shadow-sm">➕ {{ __('payout_batch.hold.extra_cancel') }}</button>
+                                    @else
                                     <button type="button" wire:click="startHold({{ $b->id }}, {{ $sid }}, '', 'extra')"
                                             data-extra-button class="rounded-md border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 shadow-sm">➕ {{ __('payout_batch.hold.extra_button') }}</button>
+                                    @endif
                                 @endif
                             @endif
                         </div>

@@ -5,6 +5,7 @@ use App\Models\ForwardingCompany;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutAdjustment;
+use App\Models\SettlementPayoutBatch;
 use App\Models\Vehicle;
 use App\Services\CapitalStatusService;
 use Illuminate\Support\Facades\Cache;
@@ -751,6 +752,18 @@ new #[Layout('components.layouts.app')] class extends Component
                         $byPerson[$id]['adjust'] += $amount;   // 인센티브·수기·이월 — 이익배수는 이걸 빼기 **전**으로 본다
                     }
                 });
+            // ➕ 「지급(월정산 밖)」으로 나간 추가금(jin 2026-11-06 (가)) — 조정 줄이 없으므로 장부에서 직접. 그 달 회사이익에서 뺀다.
+            //    (다음 월정산 줄로 간 추가금은 그 배치의 extra_release 조정으로 위에서 이미 잡힌다.)
+            foreach (SettlementPayoutBatch::extraPaidOutsideBySalesman(array_keys($batchIds), $ids) as $id => $amount) {
+                $payoutSum += $amount;
+                $companyNet -= $amount;
+                if (! isset($byPerson[$id])) {
+                    $byPerson[$id] = ['contribution' => 0, 'count' => 0, 'payout' => 0, 'payroll' => 0, 'adjust' => 0, 'employee' => false];
+                }
+                $byPerson[$id]['contribution'] -= $amount;
+                $byPerson[$id]['payout'] += $amount;
+                $byPerson[$id]['adjust'] += $amount;
+            }
         }
 
         // 💴 급여(월정산 v3, jin 2026-10-08) — 이 기간에 지급된 배치의 귀속월 급여를 뺀다.

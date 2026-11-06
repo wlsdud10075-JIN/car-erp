@@ -1,12 +1,21 @@
 {{-- 🧾 월정산 합계 띠 (월정산 v3) — 회사 순이익(급여 차감 후) · 총 판매 · 환산 합계 · 송금 총액. 숫자는 BatchPayoutBreakdown totals. --}}
-@props(['totals', 'settlementTotal' => null, 'heldTotal' => 0, 'extraTotal' => 0])
-@php $t = $totals; $net = (int) $t['company_net']; @endphp
+@props(['totals', 'settlementTotal' => null, 'heldTotal' => 0, 'extraTotal' => 0, 'extraPaidOutside' => 0])
+@php $t = $totals; $net = (int) $t['company_net']; $netFinal = $net - (int) $extraPaidOutside; @endphp
 <div class="rounded-md bg-gray-50 px-2.5 py-2" data-payout-totals>
     <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        @if((int) $extraPaidOutside !== 0)
+        {{-- ➕ 월정산 밖으로 준 추가금(jin 2026-11-06 (가)) — 그 달 회사이익에서 뺀다. 박제 숫자는 줄 긋고 반영값을 크게. --}}
+        <div class="rounded border {{ $netFinal < 0 ? 'border-red-200 bg-red-50' : 'border-violet-200 bg-violet-50' }} px-2 py-1.5" data-company-net-cell>
+            <div class="text-[10px] text-gray-500">{{ __('payout_card.totals.company_net') }} <span class="font-mono line-through" data-company-net>{{ $net < 0 ? '−' : '' }}₩{{ number_format(abs($net)) }}</span></div>
+            <div class="text-[10px] font-bold text-violet-700">{{ __('payout_card.totals.company_net_after_extra', ['extra' => number_format((int) $extraPaidOutside)]) }}</div>
+            <div class="font-mono text-sm font-bold {{ $netFinal < 0 ? 'text-red-700' : 'text-primary-text' }}" data-company-net-final>{{ $netFinal < 0 ? '−' : '' }}₩{{ number_format(abs($netFinal)) }}</div>
+        </div>
+        @else
         <div class="rounded border {{ $net < 0 ? 'border-red-200 bg-red-50' : 'border-violet-200 bg-violet-50' }} px-2 py-1.5">
             <div class="text-[10px] text-gray-500">{{ __('payout_card.totals.company_net') }}</div>
             <div class="font-mono text-sm font-bold {{ $net < 0 ? 'text-red-700' : 'text-primary-text' }}" data-company-net>{{ $net < 0 ? '−' : '' }}₩{{ number_format(abs($net)) }}</div>
         </div>
+        @endif
         <div class="rounded border border-gray-200 bg-white px-2 py-1.5">
             <div class="text-[10px] text-gray-500">{{ __('payout_card.totals.vehicles') }}</div>
             <div class="font-mono text-sm font-bold text-gray-800">{{ number_format($t['vehicles']) }}</div>
