@@ -139,6 +139,7 @@ return [
         'finalize_already' => 'This batch is already finalized.',
         'finalized' => 'This batch is finalized — holds/extras can no longer be written or cancelled.',
         'status_held_final' => 'Held (applied)',
+        'final_net_pill' => 'Actual transfer ₩:amount',
         'status_extra_paid' => 'Paid',
         'confirm' => "Hold :amount of :name's payout? It leaves the transfer and stays as a held balance on the Staff page.",
         'amount_label' => 'Amount to hold',
