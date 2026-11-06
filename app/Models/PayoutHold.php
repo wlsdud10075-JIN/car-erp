@@ -57,12 +57,16 @@ class PayoutHold extends Model
     }
 
     /**
-     * 사내직원관리에서 보류금 처리 (jin 2026-11-06, 전액만) — 권한 = 월정산 제출자 + 최고관리자(SettlementPayoutBatch::canEditAdjustments).
-     *   paid    = 월정산 밖에서 지급함 → released_paid(보류금 0)
+     * 사내직원관리에서 보류금 처리 (jin 2026-11-06) — 권한 = 월정산 제출자 + 최고관리자(SettlementPayoutBatch::canEditAdjustments).
+     *   paid    = 월정산 밖에서 지급함 → released_paid(보류금에서 빠짐)
      *   queue   = 다음 월정산에 추가 → queued(제출 때 「2026-10월 지급보류분」 줄)
      *   unqueue = 추가 취소 → held
+     * `$amount` = 처리할 금액(null·전액이면 전부). 일부면 오래된 달부터 채우고 마지막 줄을 **쪼갠다**(남는 몫은 원래 상태로 남는 새 줄)
+     * — jin «150만 지급하고 180만 보류하고, 이월된 보류금에서도 나눠서». 부호는 잔액과 같아야 하고 잔액을 넘을 수 없다.
+     *
+     * @return int 옮긴 금액
      */
-    public static function resolve(User $by, int $salesmanId, string $action): int
+    public static function resolve(User $by, int $salesmanId, string $action, ?int $amount = null): int
     {
         if (! SettlementPayoutBatch::canEditAdjustments($by)) {
             throw new \DomainException(__('payout_batch.hold.forbidden'));
@@ -74,24 +78,62 @@ class PayoutHold extends Model
             'unqueue' => [[self::QUEUED], self::HELD, 'payout_hold_unqueue'],
             default => throw new \DomainException('알 수 없는 처리입니다.'),
         };
-        $rows = self::query()->where('salesman_id', $salesmanId)->whereIn('status', $from)->get();
+        $rows = self::query()->where('salesman_id', $salesmanId)->whereIn('status', $from)->orderBy('month')->orderBy('id')->get();
         if ($rows->isEmpty()) {
             throw new \DomainException(__('payout_batch.hold.nothing'));
         }
+        $total = (int) $rows->sum('amount_krw');
+        $amount ??= $total;
+        if ($amount === 0 || ($amount <=> 0) !== ($total <=> 0) || abs($amount) > abs($total)) {
+            throw new \DomainException(__('payout_batch.hold.amount_invalid', ['max' => number_format($total)]));
+        }
 
-        return DB::transaction(function () use ($by, $salesmanId, $rows, $to, $auditAction) {
-            self::whereIn('id', $rows->pluck('id'))->update($to === self::RELEASED_PAID
+        return DB::transaction(function () use ($by, $salesmanId, $rows, $to, $auditAction, $amount, $total) {
+            $moveAttrs = $to === self::RELEASED_PAID
                 ? ['status' => $to, 'released_by' => $by->id, 'released_at' => now()]
-                : ['status' => $to]);
+                : ['status' => $to];
+            $remaining = $amount;
+            $moved = [];
+            foreach ($rows as $row) {
+                if ($remaining === 0) {
+                    break;
+                }
+                if (abs((int) $row->amount_krw) <= abs($remaining)) {   // 줄 통째
+                    $row->update($moveAttrs);
+                    $remaining -= (int) $row->amount_krw;
+                    $moved[] = $row;
+
+                    continue;
+                }
+                // 줄 쪼개기 — 옮기는 몫은 새 줄(같은 배치·달), 남는 몫은 이 줄에 그대로(원래 상태)
+                $row->update(['amount_krw' => (int) $row->amount_krw - $remaining]);
+                $moved[] = self::create([
+                    'salesman_id' => $row->salesman_id, 'payout_batch_id' => $row->payout_batch_id, 'month' => $row->month,
+                    'amount_krw' => $remaining, 'held_by' => $row->held_by, 'note' => $row->note,
+                ] + $moveAttrs);
+                $remaining = 0;
+            }
             AuditLog::create([
                 'user_id' => $by->id, 'auditable_type' => Salesman::class, 'auditable_id' => $salesmanId,
                 'action' => $auditAction, 'column_name' => 'payout_hold',
-                'old_value' => self::reasonFor($rows).' '.number_format((int) $rows->sum('amount_krw')).'원', 'new_value' => $to,
-                'ip_address' => request()?->ip(),
+                'old_value' => self::reasonFor($moved).' '.number_format($amount).'원'.($amount !== $total ? ' (잔액 '.number_format($total).'원 중)' : ''),
+                'new_value' => $to, 'ip_address' => request()?->ip(),
             ]);
 
-            return $rows->count();
+            return $amount;
         });
+    }
+
+    /** 화면 금액칸 → 정수(빈칸·숫자 외 문자 제거, 맨 앞 − 유지). 빈칸이면 null(= 전액). */
+    public static function parseAmount(?string $raw): ?int
+    {
+        $raw = trim((string) $raw);
+        if ($raw === '') {
+            return null;
+        }
+        $digits = preg_replace('/[^0-9]/', '', $raw);
+
+        return $digits === '' ? null : (int) ((str_starts_with($raw, '-') || str_starts_with($raw, '−') ? '-' : '').$digits);
     }
 
     /** 「2026-10월·2026-11월 지급보류분」 — 월정산 추가 줄의 사유. */

@@ -448,23 +448,25 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endphp
                     @if($holds->isNotEmpty())
                     <div class="flex flex-wrap items-baseline justify-between gap-x-3 rounded-md bg-slate-100 px-2.5 py-1.5 text-xs" data-hold-net>
+                        @php $heldSum = (int) $holds->flatten()->sum('amount_krw'); @endphp
                         <span class="text-slate-700">⏸ {{ __('payout_batch.hold.net_label', ['n' => $holds->count()]) }}</span>
-                        <span class="font-mono text-slate-800">{{ number_format((int) ($bd['totals']['transfer_total'] ?? 0)) }} − {{ number_format((int) $holds->sum('amount_krw')) }} = <b>{{ number_format((int) ($bd['totals']['transfer_total'] ?? 0) - (int) $holds->sum('amount_krw')) }}</b></span>
+                        <span class="font-mono text-slate-800">{{ number_format((int) ($bd['totals']['transfer_total'] ?? 0)) }} − {{ number_format($heldSum) }} = <b>{{ number_format((int) ($bd['totals']['transfer_total'] ?? 0) - $heldSum) }}</b></span>
                     </div>
                     @endif
                     @foreach($bd['people'] as $person)
                     <x-payout.person-card :person="$person" mode="batch" :changed="$changed[$person['salesman_id']] ?? []" />
                     @if($holdable && (int) ($person['payout'] ?? 0) !== 0)
-                        @php $h = $holds->get($person['salesman_id']); @endphp
+                        @php $hs = $holds->get($person['salesman_id']); $heldHere = $hs ? (int) $hs->sum('amount_krw') : 0; @endphp
                         <div class="-mt-1 flex flex-wrap items-center justify-end gap-2 px-1 text-[11px]" data-hold-row="{{ $person['salesman_id'] }}">
-                            @if($h)
-                                <span class="rounded bg-slate-600 px-1.5 py-0.5 font-semibold text-white">⏸ {{ __('payout_batch.hold.badge') }} ₩{{ number_format($h->amount_krw) }}</span>
-                                <span class="text-gray-500">{{ __('payout_batch.hold.status.'.$h->status) }}</span>
-                                @if($canHold && $h->status === \App\Models\PayoutHold::HELD)
+                            @if($hs)
+                                <span class="rounded bg-slate-600 px-1.5 py-0.5 font-semibold text-white">⏸ {{ __('payout_batch.hold.badge') }} ₩{{ number_format($heldHere) }}@if($heldHere !== (int) $person['payout']) <span class="font-normal opacity-80">/ {{ number_format((int) $person['payout']) }}</span>@endif</span>
+                                <span class="text-gray-500">{{ $hs->map(fn ($x) => __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
+                                @if($canHold && $hs->contains('status', \App\Models\PayoutHold::HELD))
                                 <button type="button" wire:click="releaseHold({{ $b->id }}, {{ $person['salesman_id'] }})" wire:confirm="{{ __('payout_batch.hold.cancel_confirm', ['name' => $person['name']]) }}"
                                         class="rounded border border-gray-300 px-2 py-0.5 text-gray-600 hover:bg-gray-100">{{ __('payout_batch.hold.cancel') }}</button>
                                 @endif
-                            @elseif($canHold)
+                            @endif
+                            @if($canHold && $heldHere !== (int) $person['payout'])
                                 <button type="button" wire:click="holdPerson({{ $b->id }}, {{ $person['salesman_id'] }})" wire:confirm="{{ __('payout_batch.hold.confirm', ['name' => $person['name'], 'amount' => number_format((int) $person['payout'])]) }}"
                                         data-hold-button class="rounded border border-slate-300 bg-slate-50 px-2 py-0.5 text-slate-700 hover:bg-slate-100">⏸ {{ __('payout_batch.hold.button') }}</button>
                             @endif
