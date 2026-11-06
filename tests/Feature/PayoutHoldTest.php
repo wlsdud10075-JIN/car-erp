@@ -207,12 +207,15 @@ class PayoutHoldTest extends TestCase
         $path = tempnam(sys_get_temp_dir(), 'hld').'.xlsx';
         file_put_contents($path, $res->streamedContent());
         $rows = IOFactory::load($path)->getSheetByName('사람별 지급')->toArray(null, true, false, false);
-        $this->assertContains('⏸ 보류(송금 제외)', $rows[0]);
+        $this->assertContains('⏸ 보류(송금 제외)', $rows[3], '보류가 있는 달만 열이 끼어든다(4행 머리)');
         $flat = array_merge(...$rows);
         $this->assertContains('실송금(보류 제외)', $flat);
-        $holdCol = array_search('⏸ 보류(송금 제외)', $rows[0], true);
-        $personRow = collect($rows)->first(fn ($r) => ($r[1] ?? null) === $sm->name);
+        $holdCol = array_search('⏸ 보류(송금 제외)', $rows[3], true);
+        $personRow = collect($rows)->first(fn ($r) => ($r[3] ?? null) === $sm->name);
         $this->assertSame(2_100_000, (int) $personRow[$holdCol]);
+        $byLabel = collect($rows)->keyBy(2);
+        $this->assertSame(2_100_000, (int) $byLabel['⏸ 보류 합(송금 제외)'][6]);
+        $this->assertSame((int) $byLabel['송금 총액 (퇴직연금 몫 포함)'][6] - 2_100_000, (int) $byLabel['실송금(보류 제외)'][6]);
 
         // 퇴사 정산·결재 중 카드에는 보류 버튼이 없다
         $leaver = Salesman::create(['name' => '프리퇴사', 'type' => 'freelance', 'is_active' => false, 'left_at' => '2026-10-12']);
@@ -266,8 +269,8 @@ class PayoutHoldTest extends TestCase
         $path = tempnam(sys_get_temp_dir(), 'hld').'.xlsx';
         file_put_contents($path, $res->streamedContent());
         $rows = IOFactory::load($path)->getSheetByName('사람별 지급')->toArray(null, true, false, false);
-        $holdCol = array_search('⏸ 보류(송금 제외)', $rows[0], true);
-        $personRow = collect($rows)->first(fn ($r) => ($r[1] ?? null) === $sm->name);
+        $holdCol = array_search('⏸ 보류(송금 제외)', $rows[3], true);
+        $personRow = collect($rows)->first(fn ($r) => ($r[3] ?? null) === $sm->name);
         $this->assertSame(2_100_000, (int) $personRow[$holdCol]);
 
         // 보류 취소는 그 사람의 held 줄 전부
