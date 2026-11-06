@@ -1,5 +1,5 @@
 {{-- 🧾 월정산 합계 띠 (월정산 v3) — 회사 순이익(급여 차감 후) · 총 판매 · 환산 합계 · 송금 총액. 숫자는 BatchPayoutBreakdown totals. --}}
-@props(['totals', 'settlementTotal' => null, 'heldTotal' => 0])
+@props(['totals', 'settlementTotal' => null, 'heldTotal' => 0, 'extraTotal' => 0])
 @php $t = $totals; $net = (int) $t['company_net']; @endphp
 <div class="rounded-md bg-gray-50 px-2.5 py-2" data-payout-totals>
     <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -15,12 +15,12 @@
             <div class="text-[10px] text-gray-500">{{ __('payout_card.totals.equiv_sum') }}</div>
             <div class="font-mono text-sm font-bold text-gray-800">₩{{ number_format($t['equiv_sum']) }}</div>
         </div>
-        @if((int) $heldTotal !== 0)
-        {{-- ⏸ 보류가 있으면 송금 총액은 줄 긋고 실제 송금액을 크게(jin 2026-11-06 «송금총액만 보고 재무가 처리할 수도») --}}
+        @if((int) $heldTotal !== 0 || (int) $extraTotal !== 0)
+        {{-- ⏸ 보류·➕ 추가가 있으면 송금 총액은 줄 긋고 실제 송금액(− 보류 + 추가)을 크게(jin 2026-11-06 «송금총액만 보고 재무가 처리할 수도») --}}
         <div class="rounded border-2 border-amber-300 bg-amber-50 px-2 py-1.5" data-transfer-cell-held>
             <div class="text-[10px] text-gray-500">{{ __('payout_card.totals.transfer_total') }} <span class="font-mono line-through" data-transfer-total>₩{{ number_format($t['transfer_total']) }}</span></div>
             <div class="text-[10px] font-bold text-amber-800">{{ __('payout_card.totals.net_after_hold') }}</div>
-            <div class="font-mono text-base font-bold text-amber-900" data-transfer-net>₩{{ number_format((int) $t['transfer_total'] - (int) $heldTotal) }}</div>
+            <div class="font-mono text-base font-bold text-amber-900" data-transfer-net>₩{{ number_format((int) $t['transfer_total'] - (int) $heldTotal + (int) $extraTotal) }}</div>
         </div>
         @else
         <div class="rounded border border-gray-200 bg-white px-2 py-1.5">

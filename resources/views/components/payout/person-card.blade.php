@@ -104,6 +104,10 @@
             @if(($p['adj_held'] ?? 0) !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-held><span class="text-gray-500">{{ __('payout_card.adj_held') }}</span><span class="font-mono">{{ $signed($p['adj_held']) }}</span></div>
             @endif
+            {{-- ➕ 앞 달 지급추가분(2026-11-06) — 송금·회사이익 차감 둘 다(수동 조정과 같은 자리). 옛 박제엔 키가 없다. --}}
+            @if(($p['adj_extra'] ?? 0) !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-extra><span class="text-gray-500">{{ __('payout_card.adj_extra') }}</span><span class="font-mono">{{ $signed($p['adj_extra']) }}</span></div>
+            @endif
             <div class="flex justify-between border-t border-gray-100 px-2 py-1 text-xs font-bold"><span>{{ __('payout_card.payout') }}</span><span class="font-mono">{{ $fmt($p['payout']) }}</span></div>
         </div>
         <div class="rounded border border-gray-100">
@@ -165,6 +169,10 @@
             @if(($p['adj_held'] ?? 0) !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-held><span class="text-gray-500">{{ __('payout_card.adj_held') }}</span><span class="font-mono">{{ $signed($p['adj_held']) }}</span></div>
             @endif
+            {{-- ➕ 앞 달 지급추가분(2026-11-06) — 송금·회사이익 차감 둘 다(수동 조정과 같은 자리). 옛 박제엔 키가 없다. --}}
+            @if(($p['adj_extra'] ?? 0) !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-extra><span class="text-gray-500">{{ __('payout_card.adj_extra') }}</span><span class="font-mono">{{ $signed($p['adj_extra']) }}</span></div>
+            @endif
             @if($heyman !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('heyman') }}" data-heyman-pay title="{{ __('payout_card.heyman_pay_hint') }}"><span class="text-gray-500">{{ __('payout_card.heyman_pay') }}</span><span class="font-mono">{{ $signed($heyman) }}</span></div>
             @endif
@@ -221,6 +229,10 @@
             {{-- ⏸ 앞 달 지급보류분(2026-11-06) — 송금엔 들어가고 회사이익엔 안 들어간다(원래 달에 이미 잡힘). 옛 박제엔 키가 없다. --}}
             @if(($p['adj_held'] ?? 0) !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-held><span class="text-gray-500">{{ __('payout_card.adj_held') }}</span><span class="font-mono">{{ $signed($p['adj_held']) }}</span></div>
+            @endif
+            {{-- ➕ 앞 달 지급추가분(2026-11-06) — 송금·회사이익 차감 둘 다(수동 조정과 같은 자리). 옛 박제엔 키가 없다. --}}
+            @if(($p['adj_extra'] ?? 0) !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-extra><span class="text-gray-500">{{ __('payout_card.adj_extra') }}</span><span class="font-mono">{{ $signed($p['adj_extra']) }}</span></div>
             @endif
             @if($heyman !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('heyman') }}" data-heyman-pay title="{{ __('payout_card.heyman_pay_hint') }}"><span class="text-gray-500">{{ __('payout_card.heyman_pay') }}</span><span class="font-mono">{{ $signed($heyman) }}</span></div>

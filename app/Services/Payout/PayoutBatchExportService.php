@@ -61,9 +61,10 @@ class PayoutBatchExportService
             ->get();
         $ss = $this->settlementExporter->build($settlements);   // 요약 · 담당자별 — 종전 엑셀 그대로
         // ⏸ 지급보류(2026-11-06) — 승인된 사내직원 월정산의 보류 장부를 「보류」 열·「실송금」 줄로 겹쳐 보여 준다(박제 무변경).
-        $holds = $batch->kind === SettlementPayoutBatch::KIND_MONTH && $batch->status === SettlementPayoutBatch::STATUS_APPROVED
-            ? $batch->heldAmountsBySalesman() : [];
-        $this->peopleSheet($ss->createSheet(0), $people, $bd['totals'] ?? [], (bool) ($bd['domestic_split'] ?? false), $holds,
+        $ledgerOn = $batch->kind === SettlementPayoutBatch::KIND_MONTH && $batch->status === SettlementPayoutBatch::STATUS_APPROVED;
+        $holds = $ledgerOn ? $batch->heldAmountsBySalesman() : [];
+        $extras = $ledgerOn ? $batch->extraAmountsBySalesman() : [];   // ➕ 지급추가(송금에 더함)
+        $this->peopleSheet($ss->createSheet(0), $people, $bd['totals'] ?? [], (bool) ($bd['domestic_split'] ?? false), $holds, $extras,
             $this->titleFor($batch, '사람별 지급 내역'), (string) $batch->month);
         $this->payrollItemsSheet($ss->createSheet(1), $people, $this->titleFor($batch, '급여 항목'), (string) $batch->month);
         $ss->setActiveSheetIndex(0);
@@ -118,10 +119,11 @@ class PayoutBatchExportService
      * 소계(유형색 배경) · 합계(EDEDED, 위아래 굵은 선) · 요약(라벨 C:F 병합 / 값 G, 수식) · 각주.
      * 「지급보류분」·「⏸ 보류」 열은 그 배치에 보류가 있을 때만 끼운다(보통 달은 jin 파일과 글자 단위로 같다).
      */
-    private function peopleSheet(Worksheet $sheet, array $people, array $totals, bool $domesticSplit, array $holds, string $title, string $month): void
+    private function peopleSheet(Worksheet $sheet, array $people, array $totals, bool $domesticSplit, array $holds, array $extras, string $title, string $month): void
     {
         $sheet->setTitle('사람별 지급');
         $hasHeld = collect($people)->contains(fn ($p) => (int) ($p['adj_held'] ?? 0) !== 0);
+        $hasExtra = collect($people)->contains(fn ($p) => (int) ($p['adj_extra'] ?? 0) !== 0);
         $cols = [
             ['구분', '__type', 10.66], ['No.', '__no', 5], ['이름', 'name', 14], ['정산 건수', 'count', 7.66],
             ['급여', 'payroll', 12], ['정산금', 'settlement_pay', null], ['헤이맨 정산금', 'heyman_pay', 10.55],
@@ -130,10 +132,16 @@ class PayoutBatchExportService
         if ($hasHeld) {
             $cols[] = ['지급보류분', 'adj_held', 11];
         }
+        if ($hasExtra) {
+            $cols[] = ['지급추가분', 'adj_extra', 11];
+        }
         $cols[] = ['퇴직연금 몫(따로)', 'pension', null];
         $cols[] = ['지급합계(송금)', 'payout', 14.89];
         if ($holds !== []) {
             $cols[] = ['⏸ 보류(송금 제외)', '__hold', 14];
+        }
+        if ($extras !== []) {
+            $cols[] = ['➕ 추가(송금 더함)', '__extra', 14];
         }
         $cols = [...$cols, ['총마진', 'total_margin', 13], ['발송비', 'shipping', 9], ['회사이익', 'company_contribution', 13]];
 
@@ -166,6 +174,10 @@ class PayoutBatchExportService
                     } elseif ($key === '__hold') {
                         if (isset($holds[(int) ($p['salesman_id'] ?? 0)])) {
                             $sheet->setCellValue($cell, $holds[(int) $p['salesman_id']]);
+                        }
+                    } elseif ($key === '__extra') {
+                        if (isset($extras[(int) ($p['salesman_id'] ?? 0)])) {
+                            $sheet->setCellValue($cell, $extras[(int) $p['salesman_id']]);
                         }
                     } elseif ($key === 'name') {
                         $sheet->setCellValueExplicit($cell, (string) ($p[$key] ?? ''), DataType::TYPE_STRING);
@@ -252,9 +264,17 @@ class PayoutBatchExportService
         };
         $summaryStart = $r;
         $transferRow = $put('송금 총액 (퇴직연금 몫 포함)', "={$pay}{$totalRow}+{$letter['pension']}{$totalRow}");
-        if ($holds !== []) {   // ⏸ 보류를 뺀 실송금 — 화면 「실송금」 줄과 같은 식
-            $holdRow = $put('⏸ 보류 합(송금 제외)', "={$letter['__hold']}{$totalRow}");
-            $put('실송금(보류 제외)', "=G{$transferRow}-G{$holdRow}");
+        if ($holds !== [] || $extras !== []) {   // ⏸ 보류를 빼고 ➕ 추가를 더한 실송금 — 화면 「실제 송금액」과 같은 식
+            $net = "=G{$transferRow}";
+            if ($holds !== []) {
+                $holdRow = $put('⏸ 보류 합(송금 제외)', "={$letter['__hold']}{$totalRow}");
+                $net .= "-G{$holdRow}";
+            }
+            if ($extras !== []) {
+                $extraRow = $put('➕ 추가 합(송금 더함)', "={$letter['__extra']}{$totalRow}");
+                $net .= "+G{$extraRow}";
+            }
+            $put('실송금(보류·추가 반영)', $net);
         }
         $contribRow = $put('회사 기여 합', "={$letter['company_contribution']}{$totalRow}");
         // 공통 인건비 = 급여만 유형 소계의 지급합계 − (있으면) 그 묶음의 앞 달 지급보류분(원래 달 인건비에 이미 들어갔다, BatchPayoutBreakdown::commonLabor)

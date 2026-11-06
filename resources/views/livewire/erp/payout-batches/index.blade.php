@@ -176,36 +176,50 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->dispatch('notify', message: $this->incentiveNotice, type: 'success');
     }
 
-    /** ⏸ 지급보류 금액칸(jin 2026-11-06 «150만 지급·180만 보류») — 열린 사람·배치와 입력 금액. 🚫 메서드 이름과 겹치지 말 것(§8 #32). */
+    /** ⏸ 지급보류 · ➕ 지급추가 입력칸(jin 2026-11-06) — 열린 사람·배치·종류와 금액·사유. 🚫 메서드 이름과 겹치지 말 것(§8 #32). */
     public ?int $holdBatch = null;
 
     public ?int $holdTarget = null;
 
+    public string $holdKind = 'hold';
+
     public string $holdAmount = '';
 
-    /** 금액칸 열기 — 기본값 = 아직 보류 안 된 몫(전액). */
-    public function startHold(int $batchId, int $salesmanId, string $default = ''): void
+    public string $holdNote = '';
+
+    /** 입력칸 열기 — 보류는 기본값 = 아직 보류 안 된 몫(전액), 추가는 빈칸. 사유는 매번 새로. */
+    public function startHold(int $batchId, int $salesmanId, string $default = '', string $kind = 'hold'): void
     {
         $this->holdBatch = $batchId;
         $this->holdTarget = $salesmanId;
+        $this->holdKind = in_array($kind, \App\Models\PayoutHold::KINDS, true) ? $kind : 'hold';
         $this->holdAmount = $default;
+        $this->holdNote = '';
     }
 
     public function cancelHoldDraft(): void
     {
         $this->holdBatch = null;
         $this->holdTarget = null;
+        $this->holdKind = 'hold';
         $this->holdAmount = '';
+        $this->holdNote = '';
     }
 
-    /** ⏸ 지급보류 — 승인된 사내직원 월정산에서 한 사람. 금액칸이 그 사람에게 열려 있으면 그 금액(일부 가능), 아니면 남은 몫 전액. 권한·상태·금액 판정은 모델(holdPayout) 한 곳. */
+    /**
+     * ⏸ 지급보류 / ➕ 지급추가 기입 — 승인된 사내직원 월정산에서 한 사람. 입력칸이 그 사람에게 열려 있으면 그 종류·금액·사유,
+     * 아니면 보류 전액(사유는 holdNote). 권한·상태·금액·사유 판정은 모델(holdPayout / addExtraPayout) 한 곳.
+     */
     public function holdPerson(int $batchId, int $salesmanId): void
     {
-        $amount = ($this->holdBatch === $batchId && $this->holdTarget === $salesmanId)
-            ? \App\Models\PayoutHold::parseAmount($this->holdAmount)
-            : null;
+        $open = $this->holdBatch === $batchId && $this->holdTarget === $salesmanId;
+        $amount = $open ? \App\Models\PayoutHold::parseAmount($this->holdAmount) : null;
+        $extra = $open && $this->holdKind === \App\Models\PayoutHold::KIND_EXTRA;
         try {
-            SettlementPayoutBatch::findOrFail($batchId)->holdPayout(auth()->user(), $salesmanId, $amount);
+            $batch = SettlementPayoutBatch::findOrFail($batchId);
+            $extra
+                ? $batch->addExtraPayout(auth()->user(), $salesmanId, $amount, $this->holdNote)
+                : $batch->holdPayout(auth()->user(), $salesmanId, $amount, $this->holdNote);
         } catch (\DomainException $e) {
             $this->dispatch('notify', message: $e->getMessage(), type: 'error');
 
@@ -213,21 +227,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $this->cancelHoldDraft();
         unset($this->batches);
-        $this->dispatch('notify', message: __('payout_batch.hold.done'), type: 'success');
+        $this->dispatch('notify', message: __($extra ? 'payout_batch.hold.extra_done' : 'payout_batch.hold.done'), type: 'success');
     }
 
-    /** 보류 취소 — 아직 처리 전(held)인 것만. 🚫 이름을 hold* 프로퍼티와 겹치지 말 것(§8 #32). */
-    public function releaseHold(int $batchId, int $salesmanId): void
+    /** 보류·추가 취소 — 아직 처리 전(held)인 것만. 🚫 이름을 hold* 프로퍼티와 겹치지 말 것(§8 #32). */
+    public function releaseHold(int $batchId, int $salesmanId, string $kind = 'hold'): void
     {
         try {
-            SettlementPayoutBatch::findOrFail($batchId)->cancelHold(auth()->user(), $salesmanId);
+            SettlementPayoutBatch::findOrFail($batchId)->cancelHold(auth()->user(), $salesmanId, $kind);
         } catch (\DomainException $e) {
             $this->dispatch('notify', message: $e->getMessage(), type: 'error');
 
             return;
         }
         unset($this->batches);
-        $this->dispatch('notify', message: __('payout_batch.hold.cancelled'), type: 'success');
+        $this->dispatch('notify', message: __($kind === 'extra' ? 'payout_batch.hold.extra_cancelled' : 'payout_batch.hold.cancelled'), type: 'success');
     }
 
     public function approve(int $id): void
@@ -467,54 +481,80 @@ new #[Layout('components.layouts.app')] class extends Component {
                         // ⏸ 지급보류(jin 2026-11-06) — 대표까지 승인된 사내직원 월정산만. 박제·총액은 그대로, 보류 장부를 겹쳐 보여 준다.
                         $holdable = $b->kind === \App\Models\SettlementPayoutBatch::KIND_MONTH && $b->status === 'approved';
                         $holds = $holdable ? $b->holdsBySalesman() : collect();
+                        $extras = $holdable ? $b->extrasBySalesman() : collect();   // ➕ 지급추가(대표가 정해 기안자가 기입)
                         $canHold = $holdable && \App\Models\SettlementPayoutBatch::canEditAdjustments(auth()->user());
                         $heldSum = (int) $holds->flatten()->sum('amount_krw');
+                        $extraSum = (int) $extras->flatten()->sum('amount_krw');
+                        $netTransfer = (int) ($bd['totals']['transfer_total'] ?? 0) - $heldSum + $extraSum;
                     @endphp
                     @unless($b->isDomesticBatch())
-                    <x-payout.totals :totals="$bd['totals']" :settlement-total="(int) $b->total_payout" :held-total="$heldSum" />
+                    <x-payout.totals :totals="$bd['totals']" :settlement-total="(int) $b->total_payout" :held-total="$heldSum" :extra-total="$extraSum" />
                     @endunless
-                    @if($holds->isNotEmpty())
-                    {{-- 실제 송금액 — 송금 총액만 보고 송금하지 않게 크게(jin 11-06). 숫자는 합계 띠의 송금 총액 − 보류 합. --}}
+                    @if($holds->isNotEmpty() || $extras->isNotEmpty())
+                    {{-- 실제 송금액 — 송금 총액만 보고 송금하지 않게 크게(jin 11-06). 숫자는 합계 띠의 송금 총액 − 보류 합 + 추가 합. --}}
                     <div class="rounded-md border-2 border-amber-300 bg-amber-50 px-3 py-2" data-hold-net>
                         <div class="flex flex-wrap items-baseline justify-between gap-x-3">
-                            <span class="text-sm font-bold text-amber-800">{{ __('payout_batch.hold.net_label', ['n' => $holds->count()]) }}</span>
-                            <span class="font-mono text-lg font-bold text-amber-900">₩{{ number_format((int) ($bd['totals']['transfer_total'] ?? 0) - $heldSum) }}</span>
+                            <span class="text-sm font-bold text-amber-800">{{ __('payout_batch.hold.net_label', ['n' => $holds->count(), 'm' => $extras->count()]) }}</span>
+                            <span class="font-mono text-lg font-bold text-amber-900">₩{{ number_format($netTransfer) }}</span>
                         </div>
-                        <div class="mt-0.5 text-[11px] text-amber-700">{{ __('payout_batch.hold.net_hint', ['total' => number_format((int) ($bd['totals']['transfer_total'] ?? 0)), 'held' => number_format($heldSum), 'net' => number_format((int) ($bd['totals']['transfer_total'] ?? 0) - $heldSum)]) }}</div>
+                        <div class="mt-0.5 text-[11px] text-amber-700">{{ __('payout_batch.hold.net_hint', ['total' => number_format((int) ($bd['totals']['transfer_total'] ?? 0)), 'held' => number_format($heldSum), 'extra' => number_format($extraSum), 'net' => number_format($netTransfer)]) }}</div>
                     </div>
                     @endif
                     @foreach($bd['people'] as $person)
                     <x-payout.person-card :person="$person" mode="batch" :changed="$changed[$person['salesman_id']] ?? []" />
-                    @if($holdable && (int) ($person['payout'] ?? 0) !== 0)
-                        @php $hs = $holds->get($person['salesman_id']); $heldHere = $hs ? (int) $hs->sum('amount_krw') : 0; @endphp
-                        <div class="-mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-md border border-t-0 border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]" data-hold-row="{{ $person['salesman_id'] }}">
+                    @if($holdable)
+                        @php
+                            $sid = (int) $person['salesman_id']; $payout = (int) ($person['payout'] ?? 0);
+                            $hs = $holds->get($sid); $heldHere = $hs ? (int) $hs->sum('amount_krw') : 0;
+                            $es = $extras->get($sid); $extraHere = $es ? (int) $es->sum('amount_krw') : 0;
+                            $room = $payout - $heldHere;
+                            $open = $this->holdBatch === $b->id && $this->holdTarget === $sid;
+                            $isExtra = $open && $this->holdKind === \App\Models\PayoutHold::KIND_EXTRA;
+                        @endphp
+                        @if($hs || $es || $canHold)
+                        <div class="-mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-md border border-t-0 border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]" data-hold-row="{{ $sid }}">
                             @if($hs)
-                                <span class="rounded bg-slate-600 px-1.5 py-0.5 font-semibold text-white">⏸ {{ __('payout_batch.hold.badge') }} ₩{{ number_format($heldHere) }}@if($heldHere !== (int) $person['payout']) <span class="font-normal opacity-80">/ {{ number_format((int) $person['payout']) }}</span>@endif</span>
+                                <span class="rounded bg-slate-600 px-1.5 py-0.5 font-semibold text-white">⏸ {{ __('payout_batch.hold.badge') }} ₩{{ number_format($heldHere) }}@if($heldHere !== $payout) <span class="font-normal opacity-80">/ {{ number_format($payout) }}</span>@endif</span>
                                 <span class="text-gray-500">{{ $hs->map(fn ($x) => __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
                                 @if($canHold && $hs->contains('status', \App\Models\PayoutHold::HELD))
-                                <button type="button" wire:click="releaseHold({{ $b->id }}, {{ $person['salesman_id'] }})" wire:confirm="{{ __('payout_batch.hold.cancel_confirm', ['name' => $person['name']]) }}"
+                                <button type="button" wire:click="releaseHold({{ $b->id }}, {{ $sid }})" wire:confirm="{{ __('payout_batch.hold.cancel_confirm', ['name' => $person['name']]) }}"
                                         class="rounded border border-gray-300 px-2 py-0.5 text-gray-600 hover:bg-gray-100">{{ __('payout_batch.hold.cancel') }}</button>
                                 @endif
                             @endif
-                            @if($canHold && $heldHere !== (int) $person['payout'])
-                                @php $room = (int) $person['payout'] - $heldHere; @endphp
-                                @if($this->holdBatch === $b->id && $this->holdTarget === (int) $person['salesman_id'])
-                                    {{-- 금액칸 — 기본 전액(남은 몫). 일부만 적으면 나머지는 이번 달 그대로 지급(jin 11-06). 음수 지급합계면 음수로. --}}
-                                    <span class="inline-flex flex-wrap items-center justify-end gap-1.5" data-hold-form>
-                                        <label class="text-gray-500">{{ __('payout_batch.hold.amount_label') }}</label>
-                                        <input type="text" inputmode="numeric" data-money data-money-signed wire:model="holdAmount" wire:key="hold-amount-{{ $b->id }}-{{ $person['salesman_id'] }}"
-                                               class="input-base h-9 w-32 text-right font-mono text-[11px] sm:h-7" title="{{ __('payout_batch.hold.amount_hint', ['max' => number_format($room)]) }}">
-                                        <button type="button" wire:click="holdPerson({{ $b->id }}, {{ $person['salesman_id'] }})" data-hold-ok
-                                                class="rounded bg-slate-600 px-2.5 py-1 font-semibold text-white">⏸ {{ __('payout_batch.hold.ok') }}</button>
+                            @if($es)
+                                <span class="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800" data-extra-badge="{{ $sid }}">➕ {{ __('payout_batch.hold.extra_badge') }} {{ $extraHere < 0 ? '−' : '+' }}₩{{ number_format(abs($extraHere)) }}</span>
+                                <span class="text-gray-500">{{ $es->map(fn ($x) => __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
+                                @if($canHold && $es->contains('status', \App\Models\PayoutHold::HELD))
+                                <button type="button" wire:click="releaseHold({{ $b->id }}, {{ $sid }}, 'extra')" wire:confirm="{{ __('payout_batch.hold.extra_cancel_confirm', ['name' => $person['name']]) }}"
+                                        class="rounded border border-gray-300 px-2 py-0.5 text-gray-600 hover:bg-gray-100">{{ __('payout_batch.hold.extra_cancel') }}</button>
+                                @endif
+                            @endif
+                            @if($canHold)
+                                @if($open)
+                                    {{-- 입력칸 — 보류: 기본 전액(남은 몫), 일부면 나머지는 그대로 지급 / 추가: 대표가 정한 금액(+/−). 사유는 둘 다 필수(jin 11-06). --}}
+                                    <span class="inline-flex flex-wrap items-center justify-end gap-1.5" data-hold-form="{{ $this->holdKind }}">
+                                        <label class="text-gray-500">{{ __($isExtra ? 'payout_batch.hold.extra_amount_label' : 'payout_batch.hold.amount_label') }}</label>
+                                        <input type="text" inputmode="numeric" data-money data-money-signed wire:model="holdAmount" wire:key="hold-amount-{{ $b->id }}-{{ $sid }}"
+                                               class="input-base h-9 w-32 text-right font-mono text-[11px] sm:h-7">
+                                        <label class="text-gray-500">{{ __('payout_batch.hold.note_label') }}</label>
+                                        <input type="text" wire:model="holdNote" wire:key="hold-note-{{ $b->id }}-{{ $sid }}" maxlength="200" placeholder="{{ __('payout_batch.hold.note_hint') }}"
+                                               class="input-base h-9 w-56 text-[11px] sm:h-7" data-hold-note>
+                                        <button type="button" wire:click="holdPerson({{ $b->id }}, {{ $sid }})" data-hold-ok
+                                                class="rounded {{ $isExtra ? 'bg-amber-600' : 'bg-slate-600' }} px-2.5 py-1 font-semibold text-white">{{ $isExtra ? '➕ '.__('payout_batch.hold.extra_ok') : '⏸ '.__('payout_batch.hold.ok') }}</button>
                                         <button type="button" wire:click="cancelHoldDraft" class="rounded border border-gray-300 px-2 py-1 text-gray-600 hover:bg-gray-100">{{ __('payout_batch.hold.cancel_draft') }}</button>
                                     </span>
-                                    <span class="basis-full text-right text-[10px] text-gray-400">{{ __('payout_batch.hold.amount_hint', ['max' => number_format($room)]) }}</span>
+                                    <span class="basis-full text-right text-[10px] text-gray-400">{{ $isExtra ? __('payout_batch.hold.extra_amount_hint') : __('payout_batch.hold.amount_hint', ['max' => number_format($room)]) }}</span>
                                 @else
-                                    <button type="button" wire:click="startHold({{ $b->id }}, {{ $person['salesman_id'] }}, '{{ number_format($room) }}')"
+                                    @if($payout !== 0 && $heldHere !== $payout)
+                                    <button type="button" wire:click="startHold({{ $b->id }}, {{ $sid }}, '{{ number_format($room) }}')"
                                             data-hold-button class="rounded-md bg-slate-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm">⏸ {{ __('payout_batch.hold.button') }}</button>
+                                    @endif
+                                    <button type="button" wire:click="startHold({{ $b->id }}, {{ $sid }}, '', 'extra')"
+                                            data-extra-button class="rounded-md border border-amber-300 bg-amber-100 px-3 py-1.5 text-xs font-semibold text-amber-800 shadow-sm">➕ {{ __('payout_batch.hold.extra_button') }}</button>
                                 @endif
                             @endif
                         </div>
+                        @endif
                     @endif
                     @endforeach
                     <x-payout.domestic-fee-total :total="$bd['domestic_fee_total'] ?? null" :compact="$bd['domestic_split'] ?? false" :status="$bd['domestic_batch_status'] ?? null" />
