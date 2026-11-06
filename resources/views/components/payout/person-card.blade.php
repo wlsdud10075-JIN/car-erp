@@ -101,6 +101,9 @@
             @if($p['incentive'] !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('incentive') }}"><span class="text-gray-500">{{ __('payout_card.incentive') }}</span><span class="font-mono">{{ $signed($p['incentive']) }}</span></div>
             @endif
+            @if(($p['adj_held'] ?? 0) !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-held><span class="text-gray-500">{{ __('payout_card.adj_held') }}</span><span class="font-mono">{{ $signed($p['adj_held']) }}</span></div>
+            @endif
             <div class="flex justify-between border-t border-gray-100 px-2 py-1 text-xs font-bold"><span>{{ __('payout_card.payout') }}</span><span class="font-mono">{{ $fmt($p['payout']) }}</span></div>
         </div>
         <div class="rounded border border-gray-100">
@@ -158,6 +161,10 @@
             @if(($p['adj_deposit'] ?? 0) !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-deposit><span class="text-gray-500">{{ __('payout_card.adj_deposit') }}</span><span class="font-mono">{{ $signed($p['adj_deposit']) }}</span></div>
             @endif
+            {{-- ⏸ 앞 달 지급보류분(2026-11-06) — 송금엔 들어가고 회사이익엔 안 들어간다(원래 달에 이미 잡힘). 옛 박제엔 키가 없다. --}}
+            @if(($p['adj_held'] ?? 0) !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-held><span class="text-gray-500">{{ __('payout_card.adj_held') }}</span><span class="font-mono">{{ $signed($p['adj_held']) }}</span></div>
+            @endif
             @if($heyman !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('heyman') }}" data-heyman-pay title="{{ __('payout_card.heyman_pay_hint') }}"><span class="text-gray-500">{{ __('payout_card.heyman_pay') }}</span><span class="font-mono">{{ $signed($heyman) }}</span></div>
             @endif
@@ -210,6 +217,10 @@
             {{-- 💰 퇴사 정산의 예치금 반환 — 송금엔 들어가고 회사이익엔 안 들어간다(그 사람 돈). 옛 박제엔 키가 없다. --}}
             @if(($p['adj_deposit'] ?? 0) !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-deposit><span class="text-gray-500">{{ __('payout_card.adj_deposit') }}</span><span class="font-mono">{{ $signed($p['adj_deposit']) }}</span></div>
+            @endif
+            {{-- ⏸ 앞 달 지급보류분(2026-11-06) — 송금엔 들어가고 회사이익엔 안 들어간다(원래 달에 이미 잡힘). 옛 박제엔 키가 없다. --}}
+            @if(($p['adj_held'] ?? 0) !== 0)
+            <div class="flex justify-between px-2 py-1 text-[11px]" data-adj-held><span class="text-gray-500">{{ __('payout_card.adj_held') }}</span><span class="font-mono">{{ $signed($p['adj_held']) }}</span></div>
             @endif
             @if($heyman !== 0)
             <div class="flex justify-between px-2 py-1 text-[11px]{{ $chg('heyman') }}" data-heyman-pay title="{{ __('payout_card.heyman_pay_hint') }}"><span class="text-gray-500">{{ __('payout_card.heyman_pay') }}</span><span class="font-mono">{{ $signed($heyman) }}</span></div>

@@ -733,7 +733,8 @@ new #[Layout('components.layouts.app')] class extends Component
         if ($batchIds !== []) {
             SettlementPayoutAdjustment::query()
                 ->whereIn('batch_id', array_keys($batchIds))
-                ->where('kind', '!=', SettlementPayoutAdjustment::KIND_DEPOSIT)
+                // ⏸ 지급보류분(held_release)도 뺀다 — 원래 달에 이미 지급·인건비로 잡혔다(2026-11-06).
+                ->whereNotIn('kind', [SettlementPayoutAdjustment::KIND_DEPOSIT, SettlementPayoutAdjustment::KIND_HELD_RELEASE])
                 ->when($ids !== null, fn ($q) => $q->whereIn('salesman_id', $ids))
                 ->get(['salesman_id', 'amount'])
                 ->each(function (SettlementPayoutAdjustment $adj) use (&$companyNet, &$payoutSum, &$byPerson) {

@@ -45,6 +45,7 @@ return [
     'incentive' => 'Extra incentive',
     'incentive_preview' => 'entered on submission',
     'adj_deposit' => 'Deposit refund (leaver payout)',
+    'adj_held' => 'Held payout (earlier month)',
     'deposit' => 'Deposit held',
     'deposit_hint' => 'display only',
     'deposit_returning' => 'drops by the refund line on approval',

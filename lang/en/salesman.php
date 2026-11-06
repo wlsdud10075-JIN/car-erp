@@ -188,4 +188,17 @@ return [
         'confirm' => 'Apply the :month Heyman payouts for the ticked rows?',
         'done' => 'Heyman payouts applied to :n people (:same unchanged)',
     ],
+    'hold' => [
+        'badge' => 'Held payout — held in an approved monthly settlement. Open the person to process it.',
+        'title' => 'Held payout',
+        'hint' => 'Amount held in an approved monthly settlement (+ to pay, − to collect). "Add to settlement" puts the full amount into the next monthly settlement as a "held payout" line; "Paid" records it as paid outside the settlement and zeroes it.',
+        'hint_queued' => 'Goes into the next monthly settlement as a "held payout" line in full. Can be cancelled until it is submitted.',
+        'queue' => 'Add to settlement',
+        'unqueue' => 'Cancel add',
+        'paid' => 'Paid (outside settlement)',
+        'paid_confirm' => 'Record the held :amount as paid outside the settlement and zero it? This cannot be undone.',
+        'done_queue' => 'Queued for the next monthly settlement.',
+        'done_unqueue' => 'Removed from the queue (back to held).',
+        'done_paid' => 'Recorded as paid. Held balance is now 0.',
+    ],
 ];

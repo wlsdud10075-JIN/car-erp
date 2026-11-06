@@ -50,6 +50,7 @@ return [
     'incentive' => '추가 인센티브',
     'incentive_preview' => '월정산 제출 때 입력',
     'adj_deposit' => '예치금 반환 (퇴사 정산)',
+    'adj_held' => '지급보류분 (앞 달)',
     'deposit' => '예치금 보유',
     'deposit_hint' => '지급액과 무관, 표시만',
     'deposit_returning' => '위 반환 줄만큼 승인 시 줄어듦',

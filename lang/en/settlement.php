@@ -49,6 +49,8 @@ return [
         'close_skipped' => ':count settlement(s) skipped',
         'close_waiting' => ':count awaiting-costs row(s) are not included — they become “2nd ready” once vehicle costs are entered after payout. Close a car with no extra costs from its row button.',
         'modal_carryover' => 'Unconsumed carryover (auto)',
+        'modal_held' => 'Held payouts (auto)',
+        'modal_held_hint' => 'Held balances queued on the Staff page are added in full. Not counted in company profit again (already booked in the original month).',
         'modal_carryover_hint' => 'Per-salesman balance of the delta fixed at 2nd close (FX + costs). Submitting turns it into an adjustment line and zeroes the balance; rejecting restores it. Amounts owed to the salesman (+) go in full; amounts owed back (−) are deducted only up to this month’s payout and the rest rolls to next month.',
         'carryover_reason' => 'Unconsumed carryover (2nd-close delta :amount KRW)',
         'carryover_partial' => '— deducted up to this month’s payout; remaining :rest KRW next month',

@@ -645,6 +645,98 @@ class SettlementPayoutBatch extends Model
     }
 
     /**
+     * ⏸ 지급보류분 줄 — 사내직원관리에서 「월정산 추가」한(queued) 보류를 사람당 한 줄로 (jin 2026-11-06).
+     * carryoverLinesFor 와 같은 자리·같은 규칙: 퇴사 배치는 그 사람만, 월정산은 즉시 정산 퇴사자를 건너뛴다. 금액은 전액(+/−, jin «전액만»).
+     *
+     * @return array<int, array{salesman_id:int, name:string, amount:int, reason:string, hold_ids:list<int>}>
+     */
+    public static function heldReleaseLinesFor(?Salesman $only = null): array
+    {
+        $holds = PayoutHold::query()->where('status', PayoutHold::QUEUED)
+            ->when($only, fn ($q) => $q->where('salesman_id', $only->id))
+            ->with('salesman')->orderBy('month')->get()->groupBy('salesman_id');
+
+        $lines = [];
+        foreach ($holds as $salesmanId => $rows) {
+            $sm = $rows->first()->salesman;
+            if (! $sm || (! $only && $sm->settlesImmediatelyOnLeave())) {
+                continue;
+            }
+            $lines[] = [
+                'salesman_id' => (int) $salesmanId, 'name' => (string) $sm->name,
+                'amount' => (int) $rows->sum('amount_krw'), 'reason' => PayoutHold::reasonFor($rows),
+                'hold_ids' => $rows->pluck('id')->map(fn ($i) => (int) $i)->all(),
+            ];
+        }
+
+        return $lines;
+    }
+
+    /** 이 배치(승인된 사내직원 월정산)에서 보류 중인 사람 → 보류 행. 취소된 것은 뺀다. */
+    public function holdsBySalesman(): Collection
+    {
+        return PayoutHold::query()->where('payout_batch_id', $this->id)->where('status', '!=', PayoutHold::CANCELLED)->get()->keyBy('salesman_id');
+    }
+
+    /**
+     * ⏸ 지급보류 (jin 2026-11-06) — 대표까지 승인된 사내직원 월정산에서 한 사람의 그 달 지급합계 전액(+/−)을 보류.
+     * 승인 박제·총액은 그대로 두고 보류 장부에만 남긴다(화면·엑셀이 「실송금 = 송금 총액 − 보류」로 겹쳐 보여 준다).
+     */
+    public function holdPayout(User $by, int $salesmanId, ?string $note = null): PayoutHold
+    {
+        if (! self::canEditAdjustments($by)) {
+            throw new \DomainException(__('payout_batch.hold.forbidden'));
+        }
+        if ($this->kind !== self::KIND_MONTH || $this->status !== self::STATUS_APPROVED) {
+            throw new \DomainException(__('payout_batch.hold.only_approved_month'));
+        }
+        if ($this->holdsBySalesman()->has($salesmanId)) {
+            throw new \DomainException(__('payout_batch.hold.already'));
+        }
+        $person = collect($this->breakdownForDisplay()['people'] ?? [])->firstWhere('salesman_id', $salesmanId);
+        if (! $person) {
+            throw new \DomainException(__('payout_batch.hold.not_in_batch'));
+        }
+        if ((int) $person['payout'] === 0) {
+            throw new \DomainException(__('payout_batch.hold.zero'));
+        }
+
+        return DB::transaction(function () use ($by, $salesmanId, $person, $note) {
+            $hold = PayoutHold::create([
+                'salesman_id' => $salesmanId, 'payout_batch_id' => $this->id, 'month' => $this->month,
+                'amount_krw' => (int) $person['payout'], 'status' => PayoutHold::HELD, 'held_by' => $by->id,
+                'note' => $note !== null && $note !== '' ? mb_substr($note, 0, 200) : null,
+            ]);
+            AuditLog::create([
+                'user_id' => $by->id, 'auditable_type' => Salesman::class, 'auditable_id' => $salesmanId,
+                'action' => 'payout_held', 'column_name' => 'payout_hold',
+                'old_value' => null, 'new_value' => $this->month.' 월정산 #'.$this->id.' '.number_format($hold->amount_krw).'원'.($hold->note ? ' · '.$hold->note : ''),
+                'ip_address' => request()?->ip(),
+            ]);
+
+            return $hold;
+        });
+    }
+
+    /** 보류 취소 — 아직 처리(지급·월정산 추가) 전인 것만. 그 달 지급에 그대로 남는다. */
+    public function cancelHold(User $by, int $salesmanId): void
+    {
+        if (! self::canEditAdjustments($by)) {
+            throw new \DomainException(__('payout_batch.hold.forbidden'));
+        }
+        $hold = PayoutHold::query()->where('payout_batch_id', $this->id)->where('salesman_id', $salesmanId)->where('status', PayoutHold::HELD)->first();
+        if (! $hold) {
+            throw new \DomainException(__('payout_batch.hold.cannot_cancel'));
+        }
+        $hold->update(['status' => PayoutHold::CANCELLED, 'released_by' => $by->id, 'released_at' => now()]);
+        AuditLog::create([
+            'user_id' => $by->id, 'auditable_type' => Salesman::class, 'auditable_id' => $salesmanId,
+            'action' => 'payout_hold_cancelled', 'column_name' => 'payout_hold',
+            'old_value' => $this->month.' '.number_format($hold->amount_krw).'원', 'new_value' => null, 'ip_address' => request()?->ip(),
+        ]);
+    }
+
+    /**
      * @param  array<string, int|null>  $line  결재선 title => user_id (steps 모드). 비면 종전 사다리.
      *                                         ⚠️ 하나라도 고르면 **대표가 있어야** 한다 — 최종 승인자가 없는 결재선은 영영 안 끝난다.
      */
@@ -804,6 +896,17 @@ class SettlementPayoutBatch extends Model
                     'salesman_id' => $line['salesman_id'], 'payout_batch_id' => $batch->id,
                     'amount_krw' => $line['amount'], 'direction' => $line['amount'] > 0 ? 'pay' : 'collect',
                     'cleared_by' => $submitter->id, 'note' => ($carryOnly ? '퇴사 정산 #' : '월정산 #').$batch->id.' 자동 흡수',
+                ]);
+            }
+
+            // ⏸ 지급보류분 줄(2026-11-06) — 이월과 같은 자리·같은 제외(내수직원 월정산은 안 가져간다). 반려되면 rejectBy 가 queued 로 되돌린다.
+            $heldLines = ($extra['kind'] ?? null) === self::KIND_DOMESTIC ? [] : self::heldReleaseLinesFor($carryOnly);
+            foreach ($heldLines as $line) {
+                if ($line['amount'] !== 0) {   // +/− 가 맞물려 0 이면 줄 없이 처리만(조정은 0원 줄을 안 받는다)
+                    $batch->addAdjustment($submitter, $line['salesman_id'], $line['amount'], $line['reason'], null, SettlementPayoutAdjustment::KIND_HELD_RELEASE);
+                }
+                PayoutHold::whereIn('id', $line['hold_ids'])->update([
+                    'status' => PayoutHold::RELEASED_BATCH, 'released_batch_id' => $batch->id,
                 ]);
             }
 
@@ -991,10 +1094,10 @@ class SettlementPayoutBatch extends Model
         }
     }
 
-    /** 이 배치의 예치금 반환 합 — 지급 총액엔 들어가지만 회사이익에선 뺀다(그 사람 돈). */
+    /** 이 배치의 예치금 반환 + 지급보류분 합 — 지급 총액엔 들어가지만 회사이익에선 뺀다(그 사람 돈 / 원래 달에 이미 잡힘, 2026-11-06). */
     public function depositReturnTotal(): int
     {
-        return (int) $this->adjustments()->where('kind', SettlementPayoutAdjustment::KIND_DEPOSIT)->sum('amount');
+        return (int) $this->adjustments()->whereIn('kind', [SettlementPayoutAdjustment::KIND_DEPOSIT, SettlementPayoutAdjustment::KIND_HELD_RELEASE])->sum('amount');
     }
 
     public function rejectBy(User $u, string $reason): void
@@ -1022,6 +1125,9 @@ class SettlementPayoutBatch extends Model
             // 💸 이 배치가 가져갔던 미청산 이월을 되돌린다 — 안 되돌리면 반려된 배치가 돈을 「처리한 것」이 되어
             //    다음 제출에서 그 이월이 안 나온다(조정 줄은 반려 배치의 역사로 남는다). (jin 2026-10-06)
             CarryoverClearance::where('payout_batch_id', $this->id)->delete();
+            // ⏸ 이 배치에 실렸던 지급보류분도 「월정산 추가 대기」로 되돌린다 — 안 되돌리면 반려된 배치가 그 돈을 먹는다(2026-11-06).
+            PayoutHold::where('released_batch_id', $this->id)->where('status', PayoutHold::RELEASED_BATCH)
+                ->update(['status' => PayoutHold::QUEUED, 'released_batch_id' => null]);
         });
 
         // 커밋 후 fire-and-forget — 제출자(+체크한 역할·결재선 전원)에게 반려 통보(사유 포함).

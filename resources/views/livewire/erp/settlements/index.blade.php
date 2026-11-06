@@ -1265,20 +1265,22 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         $sm = Salesman::find($this->leaverSalesmanId);
         if (! $sm) {
-            return ['name' => '', 'rows' => [], 'payout_sum' => 0, 'carryovers' => [], 'adj_sum' => 0, 'deposit_held' => 0, 'deposit_return' => 0, 'final' => 0];
+            return ['name' => '', 'rows' => [], 'payout_sum' => 0, 'carryovers' => [], 'held_releases' => [], 'adj_sum' => 0, 'deposit_held' => 0, 'deposit_return' => 0, 'final' => 0];
         }
         $ids = \App\Models\SettlementPayoutBatch::leaverEligibleSettlementIds($sm);
         $settlements = Settlement::whereIn('id', $ids)->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])->get();
         $carry = \App\Models\SettlementPayoutBatch::carryoverLinesFor($settlements, $sm);
+        $held = \App\Models\SettlementPayoutBatch::heldReleaseLinesFor($sm);   // ⏸ 그 사람의 지급보류분(월정산 추가 대기)
         $payoutSum = (int) $settlements->sum(fn ($s) => $s->actual_payout);
         $adjSum = (int) collect($this->leaverAdjustments)->sum('amount');
-        $carrySum = (int) collect($carry)->sum('amount');
+        $carrySum = (int) collect($carry)->sum('amount') + (int) collect($held)->sum('amount');
 
         return [
             'name' => (string) $sm->name,
             'rows' => $settlements->map(fn ($s) => ['plate' => $s->vehicle?->vehicle_number ?? '-', 'month' => $s->attributed_month?->format('Y-m') ?? '-', 'payout' => (int) $s->actual_payout])->values()->all(),
             'payout_sum' => $payoutSum,
             'carryovers' => $carry,
+            'held_releases' => $held,
             'adj_sum' => $adjSum,
             // 💰 예치금 — 보유액과 이번에 돌려줄 금액(deposit 줄 합). 둘이 다르면 모달이 경고한다(일부 반환·회사 귀속은 의도일 수 있어 막지는 않는다).
             'deposit_held' => (int) ($sm->deposit_krw ?? 0),
@@ -1444,6 +1446,8 @@ new #[Layout('components.layouts.app')] class extends Component
             'losses' => $losses,
             // 💸 미청산 이월 자동 줄 (jin 2026-10-06) — 제출이 부르는 **같은 함수**. 체크칸 없이 자동으로 들어간다.
             'carryovers' => \App\Models\SettlementPayoutBatch::carryoverLinesFor($settlements),
+            // ⏸ 앞 달 지급보류분(「월정산 추가」한 것, jin 2026-11-06) — 제출이 부르는 같은 함수. 자동으로 들어간다.
+            'held_releases' => \App\Models\SettlementPayoutBatch::heldReleaseLinesFor(),
             // 🧾 월정산 v3 — 급여 미입력 경고(제출은 막지 않는다, jin). 명부는 카드와 같은 BatchPayoutBreakdown 에서.
             'payroll_missing' => collect(\App\Services\Payout\BatchPayoutBreakdown::forMonthPreview($this->monthFilter, $settlements)['people'])
                 ->filter(fn ($p) => $p['type'] !== 'freelance' && $p['payroll'] === null)->pluck('name')->values()->all(),
@@ -1461,12 +1465,14 @@ new #[Layout('components.layouts.app')] class extends Component
             ->sum('sum');
         $adjSum = collect($this->submitAdjustments)->sum('amount');
         $carrySum = (int) collect($preview['carryovers'] ?? [])->sum('amount');
+        $heldSum = (int) collect($preview['held_releases'] ?? [])->sum('amount');
 
         return [
             'loss_sum' => (int) $lossSum,
             'adj_sum' => (int) $adjSum,
             'carry_sum' => $carrySum,
-            'final' => max(0, $preview['payout_sum'] - (int) $lossSum + (int) $adjSum + $carrySum),
+            'held_sum' => $heldSum,
+            'final' => max(0, $preview['payout_sum'] - (int) $lossSum + (int) $adjSum + $carrySum + $heldSum),
         ];
     }
 
@@ -2374,6 +2380,19 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
         @endif
 
+        @if(!empty($lp['held_releases']))
+        <div class="mt-3" data-held-lines>
+            <div class="section-header"><span class="section-dot bg-slate-500"></span>
+                <span class="section-title">{{ __('settlement.batch.modal_held') }}</span></div>
+            @foreach($lp['held_releases'] as $line)
+            <div class="mt-1 flex items-start gap-2 rounded px-1.5 py-1 text-xs">
+                <span class="flex-1 text-gray-400">{{ $line['reason'] }}</span>
+                <span class="font-mono {{ $line['amount'] < 0 ? 'text-rose-600' : 'text-emerald-600' }}">{{ $line['amount'] < 0 ? '−' : '+' }}{{ number_format(abs($line['amount'])) }}</span>
+            </div>
+            @endforeach
+        </div>
+        @endif
+
         <div class="mt-3">
             <div class="section-header"><span class="section-dot bg-indigo-500"></span>
                 <span class="section-title">{{ __('settlement.batch.modal_adjust') }}</span></div>
@@ -2593,6 +2612,26 @@ new #[Layout('components.layouts.app')] class extends Component
                 @endforeach
             </div>
             <p class="mt-1 text-[11px] text-gray-400">{{ __('settlement.batch.modal_carryover_hint') }}</p>
+        </div>
+        @endif
+
+        {{-- ⏸ 앞 달 지급보류분 (jin 2026-11-06) — 사내직원관리에서 「월정산 추가」한 사람의 보류금(+/−)이 한 줄로. 자동. --}}
+        @if(!empty($pv['held_releases']))
+        <div class="mt-3" data-held-lines>
+            <div class="section-header"><span class="section-dot bg-slate-500"></span>
+                <span class="section-title">{{ __('settlement.batch.modal_held') }}</span></div>
+            <div class="mt-1 space-y-1">
+                @foreach($pv['held_releases'] as $line)
+                <div wire:key="held-{{ $line['salesman_id'] }}" class="flex items-start gap-2 rounded px-1.5 py-1 text-xs">
+                    <span class="flex-1">
+                        <span class="font-medium text-gray-700">{{ $line['name'] }}</span>
+                        <span class="ml-1 text-gray-400">{{ $line['reason'] }}</span>
+                    </span>
+                    <span class="font-mono {{ $line['amount'] < 0 ? 'text-rose-600' : 'text-emerald-600' }}">{{ $line['amount'] < 0 ? '−' : '+' }}{{ number_format(abs($line['amount'])) }}</span>
+                </div>
+                @endforeach
+            </div>
+            <p class="mt-1 text-[11px] text-gray-400">{{ __('settlement.batch.modal_held_hint') }}</p>
         </div>
         @endif
 
