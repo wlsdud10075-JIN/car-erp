@@ -935,6 +935,15 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-09 (2) — master `8a19319f` · 마이그 0 (jin «테스트 통과하면 배포해줘», 13시대 업무시간 — board 전달분과 묶음)
+
+dev `9ec65c47`·`fd4cb4a7`·`5fe555cb`·`71ba531d` → master `66ebe9b5`~`8a19319f`(cherry-pick 4, 충돌 0).
+- 🐛 **드로어 「⏸ 보류 · ➕ 추가 기록」 칸이 프리랜서에겐 안 보였다** — 사내직원 급여 분기(`@elseif(employee…&& canEditPayroll)`) 안에 있었다. 유형 분기 밖으로. jin «뱃지는 잘 나오는데 드로어 클릭하면 상세내용에 안 나온다»(ssancarerp 손세훈·이용빈 보류 2건 처리 불가였음). 가드 `PayoutHoldTest::test_hold_panel_shows_in_the_drawer_for_freelancers_too`.
+- 📮 **포털 §13-7 — board 월정산 미러에 보류·추가 내역**(jin 결정: 사유 보냄 · 실송금 계산 없음 · board 는 월별 뱃지만): 배치별 `holds[]`/`extras[]`={month, amount_krw, status, note, released_at}(cancelled 만 제외) · `held_total`·`extra_total` · `adjustments[].kind`·`source_months[]` · `finalized_at` · 보류·추가만 있는 배치도 남김. board 는 dev 구현 완료(`f8e0b65`·`070da7f`), ERP 배포 뒤 jin 허락으로 master. ⚠️ CLAUDE.md 「board 는 heyman 만 연동」은 낡았다 — ssancarboard 도 읽는다.
+- 📝 **사내직원관리 「메모」 열** — 이메일 옆, `max-w-[200px] truncate` + title 전체, 폰 카드 `line-clamp-2`(호버 없음 §8 #98). 가드 `SalesmanMemoColumnTest`(렌더 + 빌드 CSS 클래스).
+- 🧩 **보류 구성** — jin «이용빈 1,321만 보류인데 추가 300만까지 뜨면 중복으로 보인다 → 최종 금액 하나만, 구성은 그 안에». 단일 출처 `SettlementPayoutBatch::holdCompositionFor`(보류가 지급합계를 넘은 만큼 = 흡수된 추가). 카드 ⏸ 뱃지 툴팁·보조문 「지급 X + 추가 Y」, ➕ 는 흡수 안 된 추가(`extra_outside`)만 · 사내직원관리 뱃지 `extra_shown`·드로어 구성 줄 · 포털 `held_payout_part/held_extra_part/extra_outside_total`. 숫자 무변경.
+- 확인: 로컬 병렬 3,701 pass · 런 42554351997 잡 5 success · 3사 SHA `8a19319f` · `/login` 200 ×3. 가이드·스펙 dev `e9d03a6f`·`32bd03ea`.
+
 ## 2026-11-09 — master `9a881fae` · 마이그 0 (jin «배포해줘», 11시대 업무시간 — ssancarerp 10월 월정산 마무리가 막혀 있어 즉시)
 
 dev `b1a1adaa` → master `9a881fae`(cherry-pick 1, `config/column_labels.php` 충돌 1건 = dev 전용 「사용자 전환(로컬)」 라벨 → 제외하고 해소).
