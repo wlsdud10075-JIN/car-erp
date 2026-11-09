@@ -329,6 +329,25 @@ class PayoutHoldTest extends TestCase
         }
     }
 
+    /** jin 2026-11-09 «뱃지는 잘 나오는데 드로어 클릭하면 상세내용에 안 나온다» — 보류 기록 칸이 사내직원 급여 분기 안에 있어 프리랜서 드로어엔 안 그려졌다. */
+    public function test_hold_panel_shows_in_the_drawer_for_freelancers_too(): void
+    {
+        $manager = $this->user();
+        $this->user('admin', '관리', '대표');
+        $free = Salesman::create(['name' => '프리'.++$this->n, 'type' => 'freelance', 'is_active' => true, 'settlement_ratio' => 50]);
+        $this->confirmed($free);
+        $batch = SettlementPayoutBatch::submitForMonth($manager, '2026-10');
+        $batch->forceFill(['status' => SettlementPayoutBatch::STATUS_APPROVED])->save();
+        $batch->fresh()->holdPayout($manager, $free->id, null, '마이너스 처리 뒤 보류');
+        $this->assertNotSame(0, PayoutHold::openBalanceFor($free->id));
+
+        $this->actingAs($manager);
+        Volt::test('erp.salesmen.index')->assertSeeHtml('data-hold-badge="'.$free->id.'"')
+            ->call('openEdit', $free->id)
+            ->assertSeeHtml('data-hold-panel')->assertSeeHtml('data-hold-block="hold"')
+            ->assertSeeHtml('data-hold-queue')->assertSeeHtml('data-hold-paid')->assertSee('마이너스 처리 뒤 보류');
+    }
+
     /** 10월 +200만 · 11월 −50만처럼 부호가 섞인 보류를 전액 처리하면 두 줄이 다 옮겨져야 한다(금액으로 걷으면 합이 맞는 지점에서 멈춰 줄이 남는다). */
     public function test_full_resolve_moves_every_row_even_when_signs_are_mixed(): void
     {
