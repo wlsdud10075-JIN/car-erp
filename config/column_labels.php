@@ -517,6 +517,7 @@ return [
         'payout_extra_queue' => '추가금 월정산 추가',
         'payout_extra_unqueue' => '추가금 월정산 추가 취소',
         'payout_finalized' => '월정산 최종 확정',
+        'payout_approval_reverted' => '월정산 대표 승인 되돌림',
         'dev_user_switch' => '사용자 전환(로컬)',
         'created' => '생성',
         'updated' => '수정',

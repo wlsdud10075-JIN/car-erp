@@ -300,6 +300,35 @@ class PayoutHoldTest extends TestCase
         $this->assertSame(3, PayoutHold::where('salesman_id', $sm->id)->where('status', PayoutHold::CANCELLED)->count(), '보류 중 2줄 + 쪼개진 대기 줄까지 전부 취소');
     }
 
+    /** jin 2026-11-09 «지급추가한 금액 포함하여 지급보류» — 보류 한도 = 지급합계 + 이 배치의 지급추가. 합산 전액이면 실제 송금 0. */
+    public function test_hold_limit_includes_the_extra_payout_of_the_same_batch(): void
+    {
+        [$batch, $sm, $manager] = $this->approvedBatch();   // 지급합계 2,100,000
+        $batch->addExtraPayout($manager, $sm->id, 500_000, '대표 승인 추가 인센티브');
+        $transfer = (int) $batch->breakdownForDisplay()['totals']['transfer_total'];
+
+        try {
+            $batch->holdPayout($manager, $sm->id, 2_600_001, '초과');
+            $this->fail('지급합계 + 추가를 넘는 보류는 거부');
+        } catch (\DomainException) {
+        }
+        $this->assertSame(0, PayoutHold::where('kind', PayoutHold::KIND_HOLD)->count());
+
+        // 기본(전액) = 2,600,000 — 카드 버튼이 넘기는 기본값도 같은 바탕
+        $this->actingAs($manager);
+        Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->assertSeeHtml("startHold({$batch->id}, {$sm->id}, '2,600,000')");
+        $hold = $batch->holdPayout($manager, $sm->id, null, '마이너스 처리 뒤 합산 보류');
+        $this->assertSame(2_600_000, (int) $hold->amount_krw);
+        $this->assertSame(2_600_000, PayoutHold::openBalanceFor($sm->id));
+        // 실제 송금액 = 송금 총액 − 보류 + 추가 = 그 사람 몫 0 → 화면 합계 띠
+        Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->assertSee(number_format($transfer - 2_600_000 + 500_000));
+        try {
+            $batch->holdPayout($manager, $sm->id, 1, '더');
+            $this->fail('이미 전액 보류');
+        } catch (\DomainException) {
+        }
+    }
+
     /** 10월 +200만 · 11월 −50만처럼 부호가 섞인 보류를 전액 처리하면 두 줄이 다 옮겨져야 한다(금액으로 걷으면 합이 맞는 지점에서 멈춰 줄이 남는다). */
     public function test_full_resolve_moves_every_row_even_when_signs_are_mixed(): void
     {

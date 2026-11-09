@@ -537,6 +537,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             $sid = (int) $person['salesman_id']; $payout = (int) ($person['payout'] ?? 0);
                             $hs = $holds->get($sid); $heldHere = $hs ? (int) $hs->sum('amount_krw') : 0;
                             $es = $extras->get($sid); $extraHere = $es ? (int) $es->sum('amount_krw') : 0;
+                            $payout = $b->holdBase($sid, $payout);   // 보류 바탕 = 지급합계 + 지급추가(2026-11-09, 모델과 같은 함수)
                             $room = $payout - $heldHere;
                             $open = $this->holdBatch === $b->id && $this->holdTarget === $sid;
                             $isExtra = $open && $this->holdKind === \App\Models\PayoutHold::KIND_EXTRA;

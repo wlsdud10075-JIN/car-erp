@@ -805,7 +805,9 @@ class SettlementPayoutBatch extends Model
         if (! $person) {
             throw new \DomainException(__('payout_batch.hold.not_in_batch'));
         }
-        $payout = (int) $person['payout'];
+        // 🔀 2026-11-09 (jin «지급추가한 금액 포함하여 지급보류») — 보류 한도 = 지급합계 + 이 배치의 지급추가(취소 제외).
+        //    실제 송금액 = 지급 − 보류 + 추가 이므로 둘을 합친 만큼 보류하면 송금 0 이 된다. 단일 출처 = holdBase().
+        $payout = $this->holdBase($salesmanId, (int) $person['payout']);
         if ($payout === 0) {
             throw new \DomainException(__('payout_batch.hold.zero'));
         }
@@ -834,6 +836,12 @@ class SettlementPayoutBatch extends Model
 
             return $hold;
         });
+    }
+
+    /** 보류할 수 있는 바탕 = 그 사람 지급합계 + 이 배치의 지급추가 합(취소 제외). 카드·모델이 같이 쓴다(2026-11-09). */
+    public function holdBase(int $salesmanId, int $payout): int
+    {
+        return $payout + (int) ($this->extraAmountsBySalesman()[$salesmanId] ?? 0);
     }
 
     /**
@@ -1139,6 +1147,12 @@ class SettlementPayoutBatch extends Model
 
         $becameFinal = false;
         DB::transaction(function () use ($u, $note, &$becameFinal) {
+            // 🔒 더블클릭 가드(2026-11-09) — 같은 승인이 두 번 들어오면 두 번째는 첫 번째 커밋을 기다렸다가 「이미 처리됨」으로 멈춘다.
+            //    11-06 ssancarerp #9 에서 대표 링크가 5초 사이 2번 처리돼 승인행 2·완료 알림톡 2통씩 나갔다(canDecide 는 트랜잭션 밖이라 못 막았다).
+            $fresh = self::query()->lockForUpdate()->find($this->id);
+            if (! $fresh || $fresh->status !== self::STATUS_PENDING || (int) $fresh->current_step !== (int) $this->current_step || (int) $fresh->current_level !== (int) $this->current_level) {
+                throw new \DomainException('이미 처리된 결재입니다.');
+            }
             $this->approvals()->create([
                 'approver_id' => $u->id, 'approver_rank' => $u->approvalRank(),
                 'action' => 'approved', 'note' => $note ?: null, 'created_at' => now(),
