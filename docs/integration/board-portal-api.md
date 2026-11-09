@@ -55,6 +55,7 @@ prefix `/api/internal/board`, 미들웨어 `[VerifyBoardReadHmac, throttle:board
 | `GET /purchases` | 매입 차 — `purchase_price`·비용9 합·매입일·매입 미지급(`PurchaseBalancePayment`) | |
 | `GET /sales` | 판매 차 — `sale_price`·`currency`·바이어 | |
 | `GET /inventory?category=` | 재고 5분류(`awaiting_payment`\|`general`\|`pre_ship`\|`shipped_out`\|`completed`) — `erp/inventory` 화면 미러. 🏁 **2026-10-20 B안(jin)**: `completed` = 거래완료 · 지금 운항중 아님(`scopeSailing('in_transit')` 과 같은 경계) · 매입취소 아님 — **출고일 무관**(`Vehicle::scopeInventoryCompleted`). `shipped_out` = **출고일 있음 또는 선적일 ≤ 오늘**(🔀 2026-10-29 jin (가) — `Vehicle::scopeLeftStock`, 재고 `inStock` 도 같은 경계로 좁아짐: 선적일 지난 차는 출고일 없이도 재고에서 빠진다) · `completed` 아님(운항중 거래완료는 여기 남는다, `scopeInventoryShippedOut`, NULL 안전). 둘 다 누적 집합이라 `limit`/`offset`·`total`, 정렬 `warehouse_out_date DESC`(NULL 뒤)·`id DESC`. 가드 = `BoardInventoryApiTest::test_completed_tab_and_shipped_out_split_per_plan_b` · `test_cancelled_deals_stay_out_of_the_completed_tab`. 곁다리 = 거래완료 출고일 자동 채움(선적일 → B/L 발행일 → 거래완료된 날, 매입취소 제외, `WarehouseOutAutofillTest`) | **scope 재사용**(조건 옮겨적기 금지 = §8 #44). `search=` 는 화면과 **같은 목록**을 훑는다: 차량번호·브랜드·차종·차대번호·수출신고번호·선박명·컨테이너번호 + **바이어명**(2026-08-12 추가). ⚠️바이어는 **행에 찍히는 `buyer_id`** 만 — 통관 바이어로 훑으면 A 로 표시된 행이 B 로 검색된다. 일반재고는 바이어가 없어 0건이 정상. 가드 = `BoardInventoryApiTest::test_search_columns_match_the_screen`(정적) |
+| `GET /payout-batches` | **13.** 월정산 미러 — 배치별 본인 정산·조정·**⏸ 보류·➕ 추가(13-7, 2026-11-09)** | 본인 스코프 · approved 만 |
 | `GET /settlements` | 정산 — `status`·`actual_payout`·**`margin_rate`(마진율, 2026-10-14 jin 승인 — null 은 판정 불가)**·`confirmed_at`·**`paid_at`(실제 지급일)** | **마진 raw 제외**(마진율 하나만 예외). `$s->settlement_amount` accessor 경유(환차·이월 분기). board 는 **`paid_at` 月 기준으로 정산 묶음**(예: 4월 일한 분 = 5/10 지급 → 5월). 일괄적재 과거분은 CK 배치로 paid_at 백데이트(`settlements:backdate-from-ck`), 이후 신규는 paid 전환 시점 자동 기록 |
 | `GET /by-buyer` | **바이어별 묶음** — `vehicle_count`·`sales_by_currency`(통화별 판매금액)·`payout_total_krw`(정산 실지급액 합="나에게 준 이득")·`payout_paid_krw`(paid 확정만)·**`savings_balances[]`({currency, balance, balance_krw} — 적립금 통화별 잔액, 2026-11 ③ ✅ 2026-10-29 구현. 행 없는 바이어 = `[]`. `balance_krw` = 적립 시점 환율 FIFO 합, 환율 없는 적립분이 섞이면 **null**)** | 바이어=**판매측**(`buyer_id`). **매입은 구입처 기준이라 바이어 무관 → 미포함**. payout=`actual_payout` accessor 합(환차·이월). 마진 raw 제외 |
 | `GET /buyers` | **드로어 드롭다운** — `{id, name, country, salesman_id, salesman_name, purchase_locked, purchase_lock{…}}` | **영업 본인 바이어만**(`buyers.salesman_id`=해소 영업) + `is_active`. 연락처·주소·메모 등 PII 금지. 매입 락 = **§4-0**. 🔓 **`scope=all`(2026-10-28 jin, e2e 시험용)** — `salesman_email` 이 **이 회사 ERP super 계정의 로그인 이메일**이면 전 활성 바이어(판정은 ERP `users.permission='super'`, board 의 role 주장만으로는 안 열림 → 그 외 전부 403). board 는 로그인 사용자가 super 일 때만 붙인다. `salesman_id`·`salesman_name` 은 본인 스코프에서도 늘 나간다(PII 아님) |
@@ -718,7 +719,12 @@ board 는 조정의 존재조차 모르므로 배치를 미러해야 숫자가 �
     "adjustments": [{"amount": -300000, "reason": "62두1461 5월 배치 환율오류 과지급 환수"}],
     "settlement_total": 1000000,
     "adjustment_total": -300000,
-    "net_payout": 700000             // ⭐ 이 사람이 이 배치로 실제 받은 금액
+    "net_payout": 700000,            // ⭐ 이 사람이 이 배치로 실제 받은 금액 — ⚠️ 보류·추가는 반영하지 않는다(13-7)
+    "holds":  [{"month": "2026-07", "amount_krw": 1800000, "status": "held", "note": "마이너스 처리 뒤 보류", "released_at": null}],   // 13-7
+    "extras": [{"month": "2026-07", "amount_krw": -100000, "status": "queued", "note": "과지급 회수", "released_at": null}],
+    "held_total": 1800000,
+    "extra_total": -100000,
+    "finalized_at": null             // 월정산 최종 확정 도장(날짜) — null 이면 보류·추가가 아직 바뀔 수 있다
   }],
   "unbatched_paid": [{"vehicle_number": "44라4444", "actual_payout": 800000, "margin_rate": null, "paid_at": "2026-06-15"}]
 }
@@ -756,6 +762,25 @@ board 는 조정의 존재조차 모르므로 배치를 미러해야 숫자가 �
 🔒 대신 **입력 화면에 「해당 영업담당자에게 그대로 보입니다」를 띄운다**
 (`settlement.batch.adjust_reason_visible`). 위험한 건 API 가 아니라 **쓰는 사람이 외부 노출을 모르는 것**
 이다(SKILLS §8 #60). 새 자유 입력 칸을 밖으로 내보낼 땐 **입력 자리에 그 사실을 적을 것**.
+
+### 13-7. ⏸ 지급보류 · ➕ 지급추가 미러 (jin 2026-11-09 결정 · ✅ ERP 구현 — `InternalPortalController::payoutBatches`, 가드 `BoardPayoutBatchApiTest::test_holds_*`·`test_batch_with_only_my_hold_rows_*`)
+
+> 배경 = ERP 사내직원 월정산의 ⏸ 지급보류 / ➕ 지급추가(2026-11-06, `payout_holds`). jin «board 쪽에도 그 인원에 대해 지급보류나 지급추가된 달에 대해서는 그 내역이 나왔으면» · «erp 쪽에서 사라지면 당연히 board 쪽에서도 없어지는 것».
+> board 쪽 경위 파일 = `meetings/handoff-carerp-settlement-batch-mirror.md`(이 절로 링크, 복사 ❌).
+
+- **배치마다** 본인(`salesman_id`) 줄만, **`cancelled` 만 제외**(처리 끝난 `released_*` 줄도 포함 — ERP 사내직원관리 뱃지·카드와 같은 집계). ERP 에서 취소하면 다음 응답부터 빠진다 — **board 는 저장하지 않고 매번 비춘다.**
+- `holds[]` / `extras[]` = `{month, amount_krw, status, note, released_at}`.
+  - `amount_krw` — **hold 는 그 사람 지급합계와 같은 부호의 「크기」**(보통 +, 환수 달이면 −; `SettlementPayoutBatch::holdPayout` 부호 검사) / **extra 는 +/− 서명값**. 🔀 **board 는 저장값 부호 그대로 그린다**(jin 11-09 «그대로 미러» — ERP 사내직원관리 뱃지와 동일. hold 를 − 로 뒤집지 않는다).
+  - `status` — `held`(보류 중) · `queued`(다음 월정산 추가 대기) · `released_batch`(다음 월정산에 반영됨) · `released_paid`(월정산 밖 지급 완료 / 최종 확정 때 닫힌 extra). 모르는 값은 원문 표시.
+  - `note` — 사유. **보낸다**(jin 11-09 «보내자» — 입력자는 영업에게 보이는 것을 안다, 입력칸 안내 불필요). `month` = 항상 소속 배치의 `month`(board 는 안 그려도 된다).
+  - `released_at` — 처리 날짜(`released_*` 일 때).
+- `held_total` · `extra_total` = 위 줄들의 합(취소 제외). **board 뱃지는 이 값을 그대로 쓴다**(재합산 ❌).
+- `adjustments[].kind`(manual·carryover·loss·incentive·deposit·held_release·extra_release — `string(16)` 컬럼이라 더 생길 수 있다, 모르는 값은 reason 만) · `adjustments[].source_months[]`(held_release/extra_release 만 — 그 줄이 반영한 원본 보류·추가의 귀속월, 여러 달이 한 줄로 합쳐질 수 있어 배열). board 는 받아도 **안 그린다**(jin «뱃지만») — 실어 보내는 건 무방.
+- `finalized_at` — 월정산 최종 확정 날짜(없으면 null).
+- 🚫 **ERP 는 「실제 송금액」을 계산해 주지 않고 `net_payout` 도 바꾸지 않는다**(jin (가)). §13 응답엔 급여 줄이 없어 board 가 `net_payout − held_total + extra_total` 을 계산하면 ERP 카드와 어긋난다 — board 는 계산하지 않는다(board 11-09 확인).
+- 「본인 행 없는 배치 제외」(13-4)에 **보류·추가도 본인 행으로 친다** — 정산 0건이고 보류만 있는 달도 배치가 남는다.
+- 흐름 주의(board): 보류가 `released_batch` 되면 M월 배치 `holds[]` 에 그대로 남고 M+1월 배치 `adjustments[]`(kind=held_release) 에 + 로 **두 번 보이는 게 정상**(시점이 다른 돈). 상계하지 않는다.
+- 운영 실측(2026-11-09): ssancarerp #9(2026-10) 에 hold 2(손세훈 −9,830,583 · 이용빈 +13,216,156) · extra 1(이용빈 +3,000,000 released_paid). heymanerp 0.
 
 ### 13-6. 구현 함정
 
