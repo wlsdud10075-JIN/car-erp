@@ -724,6 +724,9 @@ board 는 조정의 존재조차 모르므로 배치를 미러해야 숫자가 �
     "extras": [{"month": "2026-07", "amount_krw": -100000, "status": "queued", "note": "과지급 회수", "released_at": null}],
     "held_total": 1800000,
     "extra_total": -100000,
+    "held_payout_part": 1800000,     // 보류 구성(13-7) — 지급 몫
+    "held_extra_part": 0,            //              — 보류가 지급합계를 넘어 추가를 흡수한 몫
+    "extra_outside_total": -100000,  // 보류에 흡수되지 않은 추가 — ➕ 뱃지는 이 값으로(0 이면 ➕ 없음)
     "finalized_at": null             // 월정산 최종 확정 도장(날짜) — null 이면 보류·추가가 아직 바뀔 수 있다
   }],
   "unbatched_paid": [{"vehicle_number": "44라4444", "actual_payout": 800000, "margin_rate": null, "paid_at": "2026-06-15"}]
@@ -775,6 +778,9 @@ board 는 조정의 존재조차 모르므로 배치를 미러해야 숫자가 �
   - `note` — 사유. **보낸다**(jin 11-09 «보내자» — 입력자는 영업에게 보이는 것을 안다, 입력칸 안내 불필요). `month` = 항상 소속 배치의 `month`(board 는 안 그려도 된다).
   - `released_at` — 처리 날짜(`released_*` 일 때).
 - `held_total` · `extra_total` = 위 줄들의 합(취소 제외). **board 뱃지는 이 값을 그대로 쓴다**(재합산 ❌).
+- 🔀 **보류 구성(jin 2026-11-09 «보류 1,321만과 추가 300만이 따로 서면 중복으로 보인다 — 최종 금액 하나만, 구성은 그 안에»)** — 보류 한도가 「지급합계 + 추가」라 보류가 지급합계를 **넘은 만큼은 추가를 흡수**한 것이다(이용빈: 지급 10,216,156 + 추가 3,000,000 = 보류 13,216,156). 단일 출처 `SettlementPayoutBatch::holdCompositionFor`.
+  - `held_payout_part` + `held_extra_part` = `held_total`. `extra_outside_total` = `extra_total` − `held_extra_part`.
+  - **board 표시 규칙** = ⏸ 뱃지 하나(`held_total`) + `held_extra_part ≠ 0` 이면 툴팁/보조문 「지급 X + 추가 Y」. **➕ 뱃지는 `extra_outside_total` 이 0 이 아닐 때만** 그 값으로(`extra_total` ❌ — 이용빈처럼 전액 흡수면 ➕ 가 안 뜬다). ERP 월정산 카드·사내직원관리 뱃지도 같은 규칙.
 - `adjustments[].kind`(manual·carryover·loss·incentive·deposit·held_release·extra_release — `string(16)` 컬럼이라 더 생길 수 있다, 모르는 값은 reason 만) · `adjustments[].source_months[]`(held_release/extra_release 만 — 그 줄이 반영한 원본 보류·추가의 귀속월, 여러 달이 한 줄로 합쳐질 수 있어 배열). board 는 받아도 **안 그린다**(jin «뱃지만») — 실어 보내는 건 무방.
 - `finalized_at` — 월정산 최종 확정 날짜(없으면 null).
 - 🚫 **ERP 는 「실제 송금액」을 계산해 주지 않고 `net_payout` 도 바꾸지 않는다**(jin (가)). §13 응답엔 급여 줄이 없어 board 가 `net_payout − held_total + extra_total` 을 계산하면 ERP 카드와 어긋난다 — board 는 계산하지 않는다(board 11-09 확인).
