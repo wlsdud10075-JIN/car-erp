@@ -6,8 +6,10 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\Consignee;
+use App\Models\PayoutHold;
 use App\Models\SavingsStatus;
 use App\Models\Settlement;
+use App\Models\SettlementPayoutAdjustment;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -347,12 +349,26 @@ class InternalPortalController extends Controller
                 'settlements' => fn ($q) => $q->where('salesman_id', $sid)
                     ->with(['vehicle' => $withVehicle, 'salesman']),
                 'adjustments' => fn ($q) => $q->where('salesman_id', $sid),
+                // ⏸➕ 2026-11-09 (jin) — 이 배치에 적힌 본인 보류·추가 줄(취소 제외). board 포털 요약 월별 뱃지.
+                'holdLedger' => fn ($q) => $q->where('salesman_id', $sid)->where('status', '!=', PayoutHold::CANCELLED)->orderBy('id'),
+                // 「○월 지급보류분」 조정 줄의 원본 귀속월 — 본인 줄만(남의 보류 달이 섞이면 안 된다)
+                'releasedHolds' => fn ($q) => $q->where('salesman_id', $sid)->where('status', PayoutHold::RELEASED_BATCH),
             ])
             ->orderByDesc('month')
             ->get()
             ->map(function (SettlementPayoutBatch $b) {
                 $settlementTotal = (int) $b->settlements->sum(fn (Settlement $s) => $s->actual_payout);
                 $adjustmentTotal = (int) $b->adjustments->sum('amount');
+                $ledgerRow = fn (PayoutHold $h) => [
+                    'month' => $h->month,
+                    'amount_krw' => (int) $h->amount_krw,   // hold = 지급과 같은 부호의 크기(보통 +) / extra = +/− 서명값
+                    'status' => $h->status,                 // held | queued | released_batch | released_paid
+                    'note' => $h->note,                     // 사유 — jin 11-09 «보내자». 입력자는 영업에게 보이는 것을 안다
+                    'released_at' => $h->released_at?->toDateString(),
+                ];
+                $holds = $b->holdLedger->where('kind', PayoutHold::KIND_HOLD)->map($ledgerRow)->values();
+                $extras = $b->holdLedger->where('kind', PayoutHold::KIND_EXTRA)->map($ledgerRow)->values();
+                $sourceMonths = fn (string $kind) => $b->releasedHolds->where('kind', $kind)->pluck('month')->unique()->sort()->values()->all();
 
                 return [
                     'batch_id' => $b->id,
@@ -371,14 +387,26 @@ class InternalPortalController extends Controller
                         // 사유를 준다 — 안 주면 「조정 −729,250」만 떠서 설명 없이 깎인 것으로 보인다.
                         // 본인 조정이고 본인 차 얘기다. 입력 화면에 「영업에게 그대로 보인다」고 적어 뒀다.
                         'reason' => $a->reason,
+                        // 종류(2026-11-09) — manual·carryover·loss·incentive·deposit·held_release·extra_release. 문자열 컬럼이라 더 생길 수 있다.
+                        'kind' => $a->kind,
+                        // held_release / extra_release 만 — 그 줄이 어느 달 보류·추가를 반영한 것인지(여러 달이 한 줄로 합쳐질 수 있어 배열)
+                        'source_months' => in_array($a->kind, [SettlementPayoutAdjustment::KIND_HELD_RELEASE, SettlementPayoutAdjustment::KIND_EXTRA_RELEASE], true)
+                            ? $sourceMonths($a->kind === SettlementPayoutAdjustment::KIND_HELD_RELEASE ? PayoutHold::KIND_HOLD : PayoutHold::KIND_EXTRA)
+                            : [],
                     ])->values(),
                     'settlement_total' => $settlementTotal,
                     'adjustment_total' => $adjustmentTotal,
                     'net_payout' => $settlementTotal + $adjustmentTotal,
+                    // ⏸➕ 2026-11-09 — 이 배치에 적힌 본인 보류·추가(취소 제외). ERP 에서 취소하면 다음 응답부터 사라진다(board 는 저장하지 않는다).
+                    'holds' => $holds,
+                    'extras' => $extras,
+                    'held_total' => (int) $holds->sum('amount_krw'),
+                    'extra_total' => (int) $extras->sum('amount_krw'),
+                    'finalized_at' => $b->finalized_at?->toDateString(),   // 월정산 최종 확정 도장 — null 이면 보류·추가가 아직 바뀔 수 있다
                 ];
             })
-            // 본인 행이 하나도 없는 배치는 뺀다 — 목록에 0원짜리가 뜨면 "왜 0원이지"가 된다.
-            ->filter(fn (array $r) => $r['settlements']->isNotEmpty() || $r['adjustments']->isNotEmpty())
+            // 본인 행이 하나도 없는 배치는 뺀다 — 목록에 0원짜리가 뜨면 "왜 0원이지"가 된다. 보류·추가만 있는 사람은 남긴다(2026-11-09).
+            ->filter(fn (array $r) => $r['settlements']->isNotEmpty() || $r['adjustments']->isNotEmpty() || $r['holds']->isNotEmpty() || $r['extras']->isNotEmpty())
             ->values();
 
         $unbatched = Settlement::query()

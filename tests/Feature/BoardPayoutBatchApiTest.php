@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\PayoutHold;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\SettlementPayoutAdjustment;
@@ -274,6 +275,84 @@ class BoardPayoutBatchApiTest extends TestCase
     }
 
     // ── 인증·격리 회귀 ────────────────────────────────────────────────
+
+    // ── ⏸➕ 보류·추가 미러 (jin 2026-11-09 — 사유 보냄 · 실송금 계산 없음 · board 는 월별 뱃지만) ──
+
+    private function hold(SettlementPayoutBatch $b, Salesman $sm, string $kind, int $amount, string $status, string $note = '사유', ?SettlementPayoutBatch $released = null): PayoutHold
+    {
+        return PayoutHold::create([
+            'salesman_id' => $sm->id, 'payout_batch_id' => $b->id, 'kind' => $kind, 'month' => $b->month,
+            'amount_krw' => $amount, 'status' => $status, 'note' => $note, 'held_by' => $this->submitterId(),
+            'released_batch_id' => $released?->id, 'released_at' => str_starts_with($status, 'released_') ? now() : null,
+        ]);
+    }
+
+    public function test_holds_and_extras_are_mirrored_with_note_and_cancelled_rows_vanish(): void
+    {
+        $me = $this->salesman('me@t.test');
+        $other = $this->salesman('other@t.test');
+        $b = $this->batch('2026-10', 'approved');
+        $this->settlement($me, '11가1111', 2_100_000, $b);
+        $this->settlement($other, '99하9999', 1_000_000, $b);
+        $this->hold($b, $me, PayoutHold::KIND_HOLD, 1_800_000, PayoutHold::HELD, '마이너스 처리 뒤 보류');
+        $this->hold($b, $me, PayoutHold::KIND_HOLD, 300_000, PayoutHold::RELEASED_PAID, '나머지 지급');      // 처리 끝난 줄도 합에 들어간다(cancelled 만 제외)
+        $this->hold($b, $me, PayoutHold::KIND_EXTRA, -100_000, PayoutHold::QUEUED, '과지급 회수');
+        $this->hold($b, $me, PayoutHold::KIND_HOLD, 999_999, PayoutHold::CANCELLED, '잘못 적음');                // 취소 = 안 보인다
+        $this->hold($b, $other, PayoutHold::KIND_EXTRA, 3_000_000, PayoutHold::HELD, '남의 사유');                 // 남의 줄 = 안 보인다
+
+        $res = $this->signedGet(['salesman_email' => 'me@t.test'])->assertOk();
+        $row = $res->json('data.0');
+        $this->assertSame(2, count($row['holds']));
+        $this->assertSame(['month' => '2026-10', 'amount_krw' => 1_800_000, 'status' => 'held', 'note' => '마이너스 처리 뒤 보류', 'released_at' => null], $row['holds'][0]);
+        $this->assertSame('released_paid', $row['holds'][1]['status']);
+        $this->assertSame(now()->toDateString(), $row['holds'][1]['released_at']);
+        $this->assertSame(2_100_000, $row['held_total']);
+        $this->assertSame([['month' => '2026-10', 'amount_krw' => -100_000, 'status' => 'queued', 'note' => '과지급 회수', 'released_at' => null]], $row['extras']);
+        $this->assertSame(-100_000, $row['extra_total']);
+        $this->assertNull($row['finalized_at']);
+        // net_payout 은 그대로 — 실송금을 ERP 가 계산해 주지 않는다(jin (가))
+        $this->assertSame(2_100_000, $row['net_payout']);
+
+        $body = $res->getContent();
+        $this->assertStringNotContainsString('999999', $body, '취소된 줄이 나갔다');
+        $this->assertStringNotContainsString('남의 사유', $body);
+        $this->assertStringNotContainsString('3000000', $body, '남의 추가금이 나갔다');
+
+        // ERP 에서 취소하면 다음 응답부터 사라진다(board 는 저장하지 않는다)
+        PayoutHold::where('note', '마이너스 처리 뒤 보류')->update(['status' => PayoutHold::CANCELLED]);
+        $row = $this->signedGet(['salesman_email' => 'me@t.test'])->assertOk()->json('data.0');
+        $this->assertSame(1, count($row['holds']));
+        $this->assertSame(300_000, $row['held_total']);
+
+        // 최종 확정 도장
+        $b->forceFill(['finalized_at' => now()])->save();
+        $this->assertSame(now()->toDateString(), $this->signedGet(['salesman_email' => 'me@t.test'])->json('data.0.finalized_at'));
+    }
+
+    public function test_batch_with_only_my_hold_rows_is_kept_and_release_lines_carry_kind_and_source_months(): void
+    {
+        $me = $this->salesman('me@t.test');
+        $oct = $this->batch('2026-10', 'approved');
+        $nov = $this->batch('2026-11', 'approved');
+        // 10월엔 정산 0건이지만 (다른 달 정산이 합쳐진) 보류 한 줄만 있는 사람 — 배치가 남아야 한다
+        $this->hold($oct, $me, PayoutHold::KIND_HOLD, 500_000, PayoutHold::RELEASED_BATCH, '10월 보류', $nov);
+        $this->settlement($me, '22나2222', 700_000, $nov);
+        SettlementPayoutAdjustment::create(['batch_id' => $nov->id, 'salesman_id' => $me->id, 'amount' => 500_000, 'reason' => '2026-10월 지급보류분', 'kind' => SettlementPayoutAdjustment::KIND_HELD_RELEASE]);
+        SettlementPayoutAdjustment::create(['batch_id' => $nov->id, 'salesman_id' => $me->id, 'amount' => -50_000, 'reason' => '환수']);   // kind 기본 manual
+
+        $data = $this->signedGet(['salesman_email' => 'me@t.test'])->assertOk()->json('data');
+        $this->assertSame(['2026-11', '2026-10'], array_column($data, 'month'));
+        $octRow = $data[1];
+        $this->assertSame([], $octRow['settlements']);
+        $this->assertSame(500_000, $octRow['held_total']);
+        $this->assertSame('released_batch', $octRow['holds'][0]['status']);
+
+        $adj = collect($data[0]['adjustments'])->keyBy('kind');
+        $this->assertSame(['2026-10'], $adj['held_release']['source_months']);
+        $this->assertSame('2026-10월 지급보류분', $adj['held_release']['reason']);
+        $this->assertSame([], $adj['manual']['source_months']);
+        $this->assertSame(700_000 + 500_000 - 50_000, $data[0]['net_payout'], '보류 반영 줄은 종전대로 조정에 포함');
+    }
 
     public function test_unknown_or_inactive_salesman_forbidden(): void
     {

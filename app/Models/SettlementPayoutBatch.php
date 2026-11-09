@@ -716,6 +716,18 @@ class SettlementPayoutBatch extends Model
             && PayoutHold::query()->where('payout_batch_id', $this->id)->where('status', '!=', PayoutHold::CANCELLED)->exists();
     }
 
+    /** ⏸➕ 이 배치에 적힌 보류·추가 줄 전부(취소 포함 — 호출부가 거른다). 포털 미러(2026-11-09)가 본인 것만 eager load 한다. */
+    public function holdLedger(): HasMany
+    {
+        return $this->hasMany(PayoutHold::class, 'payout_batch_id');
+    }
+
+    /** 이 배치의 「○월 지급보류분·지급추가분」 조정 줄이 반영한 원본 보류·추가 줄(released_batch_id = 이 배치). */
+    public function releasedHolds(): HasMany
+    {
+        return $this->hasMany(PayoutHold::class, 'released_batch_id');
+    }
+
     public function finalizedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'finalized_by');
