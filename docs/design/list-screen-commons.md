@@ -83,6 +83,22 @@ protected function searchColumns(): array
 | 3상태 순환 | 차량관리 진행상태 pill(`cycleProgress`, SKILLS §9) | 회색 → 보라(이것만) → 빨강+취소선(제외) → 회색. 포함은 단일·제외는 다중 |
 | 켜기/끄기 하나 | 차량관리 미수만(`toggleUnpaidFilter`)·바이어미정 | 불리언 |
 
+**jin 이 말한 그 줄 = 차량관리 필터 띠**(jin 11-09 «전체/매입중~거래완료/운항중/도착예정/말소필요/선적필요/바이어미정/대표계약금/매입잔금/계약금») 를 위 네 동작에 대면:
+
+| 버튼 | 프로퍼티(축) | 동작 종류 | 조건 출처 | 메모 |
+|---|---|---|---|---|
+| 전체 | `progressFilter`·`excludeStatuses` 리셋 | 「전체」pill | — | 진행상태 축만 리셋(다른 축은 그대로) |
+| 매입중 ~ 거래완료 (10) | `progressFilter` + `excludeStatuses` | **3상태 순환** | `progress_status_cache` · 「매입중」만 `scopeProgressStage`(넓음) | 엑셀 내보내기 `exclude` 와 짝(SKILLS §9) |
+| 운항중 · 도착예정 | `sailingFilter` | **단일**(다시 누르면 해제) | `Vehicle::scopeSailing` | 진행상태와 직교 — 같이 걸린다 |
+| 말소필요 · 선적필요(· 통관필요 · B/L필요 · 미수금) | `taskFilter` | **단일**(하나만 켜짐) | `Vehicle::scopeAction`(단일 출처, §8 #44) | 🚫 조건을 선언에 옮겨 적지 않는다 — 스코프를 부른다 |
+| 바이어미정 | `taskFilter = 'buyer_undecided'` | **단일**(말소필요와 **같은 축**) | `buyer_undecided` 플래그 | 자리만 다른 줄, 축은 작업 필터 |
+| 계약금 · 매입잔금 · 대표계약금(· 대금확인) | `boardFilters[]` | **다중** | `BoardRequest::TYPE_META` | pill 은 **요청이 있는 종류만** 뜬다(건수 0 이면 숨김) |
+
+⇒ 전부 네 동작 안에 들어간다. 다만 이 띠가 가르쳐 주는 공용 요건이 셋 더 있다:
+1. **한 띠에 축이 여러 개**(진행상태·운항·작업·board 요청)이고 서로 직교해 **동시에 걸린다** — 컴포넌트는 축 단위로 그리고, 쿼리 조립은 축을 전부 AND 로 잇는다. 「전체」는 **그 축만** 리셋.
+2. **선택지 숨김 규칙** — board 요청처럼 「해당 건이 있는 종류만 보인다」 가 선언에 있어야 한다(`hide_when_zero`). 건수는 `counts` 로 같이 준다.
+3. **내보내기와 짝** — 진행상태 축은 엑셀 내보내기에 같은 파라미터로 전달된다. 공용 필터는 「현재 걸린 필터를 URL 파라미터 묶음으로 내놓는」 메서드(`filterQueryString()`)를 가져 내보내기·딥링크가 그걸 쓴다.
+
 **공용(트레이트 `ListFilters` + 컴포넌트 `<x-erp.filter-pills>`)이 가져가는 것**
 - 필터 값의 `#[Url]` 보존(주소창에 남아 새로고침·링크 공유), 바뀔 때 computed 캐시 unset + `resetPage()`
 - 네 가지 클릭 규칙의 상태 전이(단일/다중/3상태/불리언) — 지금 화면마다 손으로 쓴 `cycle…`/`toggle…` 메서드가 하나로 모인다
