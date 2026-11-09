@@ -72,6 +72,49 @@ protected function searchColumns(): array
 
 가드 = 「목록 화면에 `wire:model="search"` 가 있으면 `<x-erp.search-bar>` 를 거쳐야 한다」 정적 검사 + 기존 `SearchRequiresButtonTest` 유지.
 
+## 4-B. 토글형 필터(pill) — 진행상태·활성/비활성 같은 「누르면 걸리는 버튼」 (jin 11-09 «이런 것도 공용으로 가능한가?» → 가능)
+
+지금 화면들의 토글 필터는 **네 가지 동작**뿐이다(실측 2026-11-09). 공용 부품은 이 넷을 「동작 종류」로 갖고, 화면은 **키·선택지·SQL** 만 선언한다.
+
+| 동작 종류 | 지금 쓰는 곳 | 클릭 규칙 |
+|---|---|---|
+| 단일 선택 | 담당자 필터·바이어 B2B·정산상태 pill 등(`tab-pill` 7화면) | 하나만 켜짐, 다시 누르면 전체 |
+| 다중 선택 | 재고관리 보관위치(`toggleLocationFilter`, `__none` 포함) · 차량관리 발송 필터 | 누를 때마다 켜고 끔, 전부 끄면 전체 |
+| 3상태 순환 | 차량관리 진행상태 pill(`cycleProgress`, SKILLS §9) | 회색 → 보라(이것만) → 빨강+취소선(제외) → 회색. 포함은 단일·제외는 다중 |
+| 켜기/끄기 하나 | 차량관리 미수만(`toggleUnpaidFilter`)·바이어미정 | 불리언 |
+
+**공용(트레이트 `ListFilters` + 컴포넌트 `<x-erp.filter-pills>`)이 가져가는 것**
+- 필터 값의 `#[Url]` 보존(주소창에 남아 새로고침·링크 공유), 바뀔 때 computed 캐시 unset + `resetPage()`
+- 네 가지 클릭 규칙의 상태 전이(단일/다중/3상태/불리언) — 지금 화면마다 손으로 쓴 `cycle…`/`toggle…` 메서드가 하나로 모인다
+- pill 겉모양(켜짐·꺼짐·제외의 색, 취소선, 건수 뱃지 자리) — 차량관리 pill 과 같은 모양이 기준
+- 「전체」 pill = 그 필터 리셋
+- 쿼리 적용 `applyFilters($q)` — 선언을 읽어 `whereIn` / `whereNotIn` / 불리언 `where` 를 조립
+
+**화면이 선언하는 것**
+```php
+protected function filters(): array
+{
+    return [
+        'status'   => ['type' => 'single', 'column' => 'is_active',
+                       'options' => ['1' => __('common.active'), '0' => __('common.inactive')]],
+        'location' => ['type' => 'multi',  'column' => 'stock_location', 'options' => Vehicle::stockLocations(),
+                       'none' => '__none'],                       // 「미지정」 토큰(재고관리 규칙 그대로)
+        'progress' => ['type' => 'cycle',  'column' => 'progress_status_cache', 'options' => Vehicle::PROGRESS_STAGES,
+                       'apply' => fn ($q, $include, $exclude) => $q->progressStage($include)->notProgressStages($exclude)],
+        'unpaid'   => ['type' => 'bool',   'apply' => fn ($q) => $q->where('sale_unpaid_amount_krw_cache', '>', 0)],
+    ];
+}
+```
+- `column` 만 주면 공용이 `whereIn/whereNotIn/where` 를 만든다. SQL 이 컬럼 하나가 아니면(「매입중」은 미지급 잔금 전체 — `scopeProgressStage`) **`apply` 클로저**로 화면이 넘긴다. 🚫 스코프 조건을 선언에 옮겨 적지 말 것(§8 #44) — 스코프를 부른다.
+- 선택지는 **단일 출처**에서 가져온다(`Vehicle::stockLocations()` 처럼 회사별로 다른 목록도 포함, SKILLS §14 보관위치 규칙).
+- 건수 뱃지가 필요하면 `counts` 에 `[값 => 건수]` 를 주면 컴포넌트가 붙인다(대시보드 진행 단계 스트립은 **넓히지 않는다** — 그건 분포표, CLAUDE.md 「매입중만 필터에서 넓다」).
+
+**마크업** — `<x-erp.filter-pills name="progress" />` 한 줄. 컴포넌트가 선언의 options·type 을 읽어 pill 을 그리고 클릭을 공용 메서드(`pillClick('progress', '판매중')`)로 보낸다.
+
+**가드** — 「선언에 있는 필터 키만 URL 로 받는다」(밖의 값은 조용히 무시, §8 #26) · 「pill 의 값이 전부 options 안에 있다」 정적 검사. 차량관리 진행상태 pill 은 export 와 짝이라(`exclude` 파라미터를 엑셀에도 전달, SKILLS §9) 옮길 때 그 짝을 테스트로 묶는다.
+
+**착수 순서에 넣는 자리** — §6 ①(검색 트레이트) 바로 뒤에 「①-B 필터 트레이트 + pills 컴포넌트(반나절~하루)」. 기존 화면 교체는 ② 와 같이. 차량관리 진행상태 pill(3상태 + export 짝)은 ④ 와 같이 별도.
+
 ## 5. 새 화면의 모양 (착수 뒤 기대 결과)
 
 ```php
@@ -98,11 +141,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 | 단계 | 내용 | 예상 |
 |---|---|---|
 | ① 검색 트레이트 `ListSearch` + `applySearch` 선언 조립 · 단위 테스트(자기 컬럼·관계·빈 검색어·훅 오버라이드) | 반나절 |
-| ② 컴포넌트 2개(`search-bar`·`sort-th`) + 기존 화면 교체(바이어·컨사이니·재고·채권·사내직원·정산·재무처리·선적요청·포워딩) — 동작 무변경, 기존 테스트가 가드 | 하루 |
+| ①-B 필터 트레이트 `ListFilters` + `<x-erp.filter-pills>`(단일·다중·3상태·불리언 네 동작) · 단위 테스트 | 반나절~하루 |
+| ② 컴포넌트 3개(`search-bar`·`sort-th`·`filter-pills`) + 기존 화면 교체(바이어·컨사이니·재고·채권·사내직원·정산·재무처리·선적요청·포워딩) — 동작 무변경, 기존 테스트가 가드 | 하루 |
 | ③ 새 화면 stub(`stubs/erp-list.blade.php.stub` 또는 artisan 명령) + 정적 가드 2개(정렬 키 ↔ 버튼 · 검색칸 ↔ 컴포넌트) | 반나절 |
 | ④ 차량관리 자체 정렬 → 트레이트 이관(기본 정렬 created_at desc 유지, `VehicleSortableColumnsTest` 승계) | 하루(별도) |
 
-합 약 이틀 + 차량관리 하루. 배포는 ②가 끝날 때 한 번(화면 동작 무변경이라 위험 낮음), ④는 따로.
+합 약 이틀 반~사흘 + 차량관리 하루(정렬 이관 + 진행상태 pill 이관). 배포는 ②가 끝날 때 한 번(화면 동작 무변경이라 위험 낮음), ④는 따로.
 
 ## 7. 이후 「공통 기능 하나 더」가 생기면
 
