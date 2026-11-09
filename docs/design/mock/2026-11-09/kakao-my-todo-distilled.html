@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내 카톡 할 일 — distill</title>
+<style>
+  :root{
+    --bg:#f3f4f6; --paper:#fff; --t:#111827; --t2:#4b5563; --t3:#6b7280; --line:#e5e7eb;
+    --accent:#fee500; --accent-ink:#2b2200; --late:#b91c1c; --late-bg:#fef2f2; --ok:#065f46;
+  }
+  *{box-sizing:border-box}
+  html{color-scheme:light}
+  body{margin:0;font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;background:var(--bg);color:var(--t);font-size:14px;line-height:1.45;display:flex;justify-content:center;padding:32px 16px}
+  ::selection{background:#fff3a3}
+  .app{width:min(640px,100%);background:var(--paper);border-radius:12px;box-shadow:0 8px 28px rgba(17,24,39,.10);padding:0 0 8px}
+  button{font:inherit;cursor:pointer}
+  button:focus-visible{outline:2px solid #111827;outline-offset:2px}
+
+  /* 제목줄 — 제목 · 상태 한 줄 · 버튼 하나 */
+  header{display:flex;align-items:flex-start;gap:16px;padding:22px 24px 14px}
+  h1{margin:0;font-size:20px;font-weight:800;letter-spacing:-.01em}
+  .state{margin:4px 0 0;color:var(--t3);font-size:13px}
+  .state b{color:var(--t2);font-weight:600}
+  .state a{color:var(--t2);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+  .read{margin-left:auto;background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:11px 18px;font-weight:800;font-size:14px;white-space:nowrap;box-shadow:0 1px 0 rgba(0,0,0,.08)}
+  .read:hover{filter:brightness(.97)}
+
+  /* 묶음 — 카드 없음, 소제목 + 줄 */
+  section{padding:6px 24px 0}
+  section + section{margin-top:18px}
+  h2{margin:0 0 2px;font-size:13px;font-weight:700;color:var(--t2);display:flex;align-items:baseline;gap:8px}
+  h2 .n{font-variant-numeric:tabular-nums;color:var(--t)}
+  h2 .hint{font-weight:400;color:var(--t3)}
+  .row{display:flex;align-items:flex-start;gap:14px;padding:12px 0;border-top:1px solid var(--line)}
+  section .row:first-of-type{border-top:0}
+  .row .main{flex:1;min-width:0}
+  .what{font-size:14px;font-weight:600;margin:0}
+  .who{margin:3px 0 0;color:var(--t3);font-size:13px;font-variant-numeric:tabular-nums}
+  .who b{color:var(--t2);font-weight:600}
+  .who .late{color:var(--late);font-weight:700}
+  .who .acc{color:var(--t3)}
+  .raw{display:none;margin:6px 0 0;color:var(--t2);font-size:13px;white-space:pre-wrap;background:var(--bg);border-radius:8px;padding:8px 10px}
+  .row.open .raw{display:block}
+  .act{display:flex;gap:6px;align-items:center;padding-top:2px}
+  .done{background:var(--paper);border:1px solid #d1d5db;border-radius:8px;padding:6px 12px;font-weight:600;color:var(--t)}
+  .done:hover{background:#f9fafb}
+  .more{border:0;background:none;color:var(--t3);padding:6px 6px;border-radius:8px;line-height:1}
+  .more:hover{background:var(--bg);color:var(--t)}
+  .row.late .what::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--late);margin:0 8px 2px 0;vertical-align:middle}
+
+  /* 끝난 것 · 분류 못 함 — 접힘 */
+  .folded{padding:16px 24px 10px;color:var(--t3);font-size:13px;border-top:1px solid var(--line);margin-top:18px;display:flex;gap:18px;flex-wrap:wrap}
+  .folded a{color:var(--t2);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+  .folded b{color:var(--t);font-variant-numeric:tabular-nums}
+
+  /* 비교용 설명 패널 */
+  .legend{width:min(640px,100%);margin:20px auto 0;color:var(--t2);font-size:13px}
+  .legend h3{font-size:13px;margin:0 0 6px;color:var(--t3);font-weight:600}
+  .legend ul{margin:0;padding-left:18px}
+  .legend li{margin:3px 0}
+  .wrap{display:flex;flex-direction:column;align-items:center;width:100%}
+  @media (max-width:520px){header{flex-wrap:wrap}.read{margin-left:0;width:100%}.row{flex-wrap:wrap}.act{width:100%;justify-content:flex-end}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<main class="app" aria-label="내 카톡 할 일">
+  <header>
+    <div>
+      <h1>내 카톡 할 일</h1>
+      <p class="state">14:55 읽음 · 최근 7일 · <b>무사백-수출팀</b> 외 2곳 <a>방 선택</a></p>
+    </div>
+    <button class="read">지금 읽기</button>
+  </header>
+
+  <!-- ① 지금 할 일 — 상대가 나에게, 답·처리 안 함 -->
+  <section aria-labelledby="todo">
+    <h2 id="todo"><span class="n">4</span> 지금 할 일 <span class="hint">상대가 나에게</span></h2>
+
+    <div class="row late open">
+      <div class="main">
+        <p class="what">CALJA 미출항 차량 추가 송금증 올려 달라</p>
+        <p class="who"><b>박수정</b> · 09:46 · <span class="late">5시간 답 없음</span></p>
+        <div class="raw">CALJA 미출항 차량 입금율 42%입니다
+추가 송금증 올려주세요~</div>
+      </div>
+      <div class="act"><button class="done">해결</button><button class="more" aria-label="더 보기">⋯</button></div>
+    </div>
+
+    <div class="row late">
+      <div class="main">
+        <p class="what">오늘 매입건 진행하고 추가 송금 더 받기</p>
+        <p class="who"><b>최영숙</b> · 10:23 · <span class="late">4시간</span> · <span class="acc">「넵」만 보냄</span></p>
+      </div>
+      <div class="act"><button class="done">해결</button><button class="more" aria-label="더 보기">⋯</button></div>
+    </div>
+
+    <div class="row late">
+      <div class="main">
+        <p class="what">배차 OK — 입금 안 몰리게 30분 간격으로</p>
+        <p class="who"><b>박수정</b> · 10:25 · <span class="late">4시간</span> · <span class="acc">응답 없음</span></p>
+      </div>
+      <div class="act"><button class="done">해결</button><button class="more" aria-label="더 보기">⋯</button></div>
+    </div>
+
+    <div class="row">
+      <div class="main">
+        <p class="what">장주미 님 통장도 재발급 받아야 송금 가능</p>
+        <p class="who"><b>김희연</b> · 14:51 · 4분</p>
+      </div>
+      <div class="act"><button class="done">해결</button><button class="more" aria-label="더 보기">⋯</button></div>
+    </div>
+  </section>
+
+  <!-- ② 답 기다리는 중 — 내가 상대에게 -->
+  <section aria-labelledby="wait">
+    <h2 id="wait"><span class="n">2</span> 답 기다리는 중 <span class="hint">내가 상대에게</span></h2>
+
+    <div class="row">
+      <div class="main">
+        <p class="what">무사 재고 1,339만 계약금 100만 원 입금</p>
+        <p class="who">→ <b>재무</b> · 14:44 · 11분</p>
+      </div>
+      <div class="act"><button class="done">받았음</button><button class="more" aria-label="더 보기">⋯</button></div>
+    </div>
+
+    <div class="row late">
+      <div class="main">
+        <p class="what">1976/44 입금</p>
+        <p class="who">→ <b>재무</b> · 10:49 · <span class="late">4시간 답 없음</span></p>
+      </div>
+      <div class="act"><button class="done">받았음</button><button class="more" aria-label="더 보기">⋯</button></div>
+    </div>
+  </section>
+
+  <div class="folded">
+    <span><b>5</b> 오늘 끝난 것 <a>보기</a></span>
+    <span><b>1</b> 뜻을 못 정한 메시지 <a>정하기</a></span>
+    <span><b>15</b> 나와 무관 <a>방 전체</a></span>
+  </div>
+</main>
+
+<aside class="legend">
+  <h3>원본 대비 무엇을 걷어냈나</h3>
+  <ul>
+    <li>요약 카드 3개 → 없앰. 같은 숫자가 소제목에 있다.</li>
+    <li>탭 4개 → 한 화면에 두 묶음(지금 할 일 / 답 기다리는 중)으로 펼침. 끝난 것·못 정한 것·무관한 것은 아래 한 줄로 접음.</li>
+    <li>줄마다 있던 유형·금액·확신 뱃지 6종 → 없앰. 묶음 제목이 유형을 말해 주고, 늦은 것만 빨간 점 하나.</li>
+    <li>버튼 3개([해결][원문][무시]) → 하나([해결] 또는 [받았음]) + 「⋯」. 원문은 줄을 누르면 펼쳐진다(첫 줄이 펼친 예).</li>
+    <li>방 칩 줄 → 상태 한 줄 속 「무사백-수출팀 외 2곳 · 방 선택」.</li>
+    <li>아바타·이모지·색 6종 → 글자와 노란 버튼 하나, 빨강은 「늦음」에만.</li>
+    <li>세 탭 미리보기 패널 → 없앰(이 파일은 실제 창 하나 크기 그대로).</li>
+  </ul>
+</aside>
+</div>
+</body>
+</html>

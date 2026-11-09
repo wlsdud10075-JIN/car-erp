@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>카톡 할 일 모달 목업</title>
+<style>
+  :root{--p:#7c6fcd;--p-h:#6b5dbd;--p-light:#ece9f8;--p-text:#4c3fb1;--bg:#f5f6fa;--card:#fff;--line:#e5e7eb;--t:#1f2937;--t2:#5b6472;--red:#b91c1c;--red-bg:#fee2e2;--amber:#b45309;--amber-bg:#fef3c7;--green:#065f46;--green-bg:#d1fae5;--blue:#1d4ed8;--blue-bg:#dbeafe;--gray-bg:#f3f4f6}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;background:var(--bg);color:var(--t);font-size:13px}
+  /* 뒤에 깔린 ERP 화면 흉내 */
+  .erp{padding:16px 24px;opacity:.45;filter:blur(1px);pointer-events:none;height:100vh;overflow:hidden}
+  .erp h2{margin:0 0 12px;font-size:18px}
+  .erp .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+  .erp .c{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px;height:90px}
+  .topbar{display:flex;gap:10px;align-items:center;margin-bottom:14px}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;color:var(--t)}
+  .btn.primary{background:var(--p);border-color:var(--p);color:#fff;font-weight:600}
+  .btn.kakao{background:#fee500;border-color:#f2d800;color:#3c1e1e;font-weight:700}
+  .pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600}
+  .pill.red{background:var(--red-bg);color:var(--red)}
+  .pill.amber{background:var(--amber-bg);color:var(--amber)}
+  .pill.green{background:var(--green-bg);color:var(--green)}
+  .pill.blue{background:var(--blue-bg);color:var(--blue)}
+  .pill.gray{background:var(--gray-bg);color:var(--t2)}
+  .pill.purple{background:var(--p-light);color:var(--p-text)}
+  /* 모달 */
+  .backdrop{position:fixed;inset:0;background:rgba(17,24,39,.45);display:flex;align-items:flex-start;justify-content:center;padding:28px 16px;overflow:auto}
+  .modal{width:min(1040px,100%);background:var(--card);border-radius:14px;box-shadow:0 20px 60px rgba(0,0,0,.25);max-height:calc(100vh - 56px);display:flex;flex-direction:column}
+  .m-head{display:flex;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--line)}
+  .m-head h1{margin:0;font-size:18px;font-weight:700}
+  .m-head .sub{color:var(--t2);font-size:12px}
+  .m-head .x{margin-left:auto;border:0;background:none;font-size:20px;color:var(--t2);cursor:pointer}
+  .m-body{padding:14px 20px 20px;overflow:auto}
+  /* 요약 띠 */
+  .summary{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px}
+  .s{border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:#fff}
+  .s .l{font-size:11px;color:var(--t2)}
+  .s .v{font-size:26px;font-weight:800;margin-top:2px}
+  .s.red .v{color:var(--red)} .s.amber .v{color:var(--amber)} .s.green .v{color:var(--green)}
+  .s .d{font-size:11px;color:var(--t2);margin-top:2px}
+  /* 인원 띠 */
+  .people{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+  .person{border:1px solid var(--line);border-radius:999px;padding:5px 10px 5px 6px;display:flex;align-items:center;gap:6px;background:#fff;cursor:pointer}
+  .person .av{width:22px;height:22px;border-radius:50%;background:var(--p-light);color:var(--p-text);display:grid;place-items:center;font-size:11px;font-weight:700}
+  .person b{font-weight:600}
+  .person .n{color:var(--t2);font-size:11px}
+  .person.active{border-color:var(--p);background:var(--p-light)}
+  /* 탭 */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin-bottom:10px}
+  .tab{padding:8px 12px;border:0;background:none;cursor:pointer;color:var(--t2);font-size:13px;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.active{color:var(--p-text);border-bottom-color:var(--p);font-weight:700}
+  .tab .cnt{margin-left:4px;font-size:11px;background:var(--gray-bg);border-radius:999px;padding:0 6px}
+  .tab.active .cnt{background:var(--p);color:#fff}
+  /* 행 */
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;color:var(--t2);font-weight:600;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+  td{padding:9px 8px;border-bottom:1px solid #f1f2f4;vertical-align:top}
+  tr:hover td{background:#fafafa}
+  .msg{font-weight:500}
+  .msg .raw{display:block;color:var(--t2);font-size:11px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:420px}
+  .who{white-space:nowrap}
+  .who .arrow{color:var(--t2);margin:0 4px}
+  .age{color:var(--t2);white-space:nowrap;font-size:11px}
+  .age.old{color:var(--red);font-weight:600}
+  .acts{white-space:nowrap;text-align:right}
+  .acts .btn{padding:4px 8px;font-size:11px;margin-left:4px}
+  .conf{font-size:11px;color:var(--t2)}
+  .link{color:var(--p-text);text-decoration:underline;cursor:pointer}
+  .foot{display:flex;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid var(--line);color:var(--t2);font-size:11px}
+  .foot .right{margin-left:auto;display:flex;gap:8px}
+  /* 원문 드로어 */
+  .drawer{position:fixed;right:0;top:0;height:100vh;width:380px;background:#fff;box-shadow:-10px 0 40px rgba(0,0,0,.2);display:flex;flex-direction:column}
+  .drawer .dh{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .drawer .dh b{font-size:14px}
+  .drawer .dh .x{margin-left:auto;border:0;background:none;font-size:18px;color:var(--t2);cursor:pointer}
+  .chat{padding:12px 14px;overflow:auto;flex:1;background:#b2c7d9}
+  .bub{max-width:82%;border-radius:10px;padding:7px 10px;font-size:12px;margin:0 0 8px;background:#fff;position:relative;word-break:break-all;white-space:pre-wrap}
+  .bub.me{background:#fee500;margin-left:auto}
+  .bub .n{font-size:11px;color:#3f3f46;margin-bottom:2px}
+  .bub .tm{font-size:11px;color:#4a4a3a;margin-top:3px;text-align:right}
+  .bub.hl{outline:2px solid var(--red)}
+  .tagrow{display:flex;gap:6px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--line)}
+  .tagrow .pill{cursor:pointer}
+  .note{padding:10px 14px;font-size:11px;color:var(--t2);border-top:1px solid var(--line)}
+  @media (max-width:860px){.summary{grid-template-columns:repeat(2,1fr)}.drawer{display:none}.msg .raw{max-width:200px}}
+</style>
+</head>
+<body>
+
+<!-- 뒤에 깔린 ERP(업무 대시보드) 흉내 -->
+<div class="erp">
+  <div class="topbar"><h2 style="margin:0">업무 대시보드</h2><span class="pill purple">관리</span><span style="flex:1"></span><button class="btn kakao">💬 카톡 할 일 <span class="pill red" style="margin-left:4px">6</span></button></div>
+  <div class="cards"><div class="c"></div><div class="c"></div><div class="c"></div><div class="c"></div></div>
+  <div style="height:14px"></div>
+  <div class="cards"><div class="c" style="height:260px;grid-column:span 3"></div><div class="c" style="height:260px"></div></div>
+</div>
+
+<!-- 모달 -->
+<div class="backdrop">
+  <div class="modal">
+    <div class="m-head">
+      <span style="font-size:20px">💬</span>
+      <div>
+        <h1>카톡 할 일 <span class="sub">무사백-수출팀 · 오늘 09:46 ~ 14:51 · 메시지 46개</span></h1>
+        <div class="sub">마지막 수집 14:55 (5분마다) · 분류 = 규칙 + 사내 분류기 · <span class="link">읽는 방 설정</span></div>
+      </div>
+      <button class="x" title="닫기">✕</button>
+    </div>
+
+    <div class="m-body">
+      <!-- 요약 -->
+      <div class="summary">
+        <div class="s red"><div class="l">지금 처리할 것</div><div class="v">6</div><div class="d">요청·질문인데 답이 없음</div></div>
+        <div class="s amber"><div class="l">2시간 넘게 멈춘 것</div><div class="v">3</div><div class="d">계약금 입금 2 · 송금증 1</div></div>
+        <div class="s green"><div class="l">오늘 해결됨</div><div class="v">4</div><div class="d">승인 1 · 서류 1 · 질문답 2</div></div>
+        <div class="s"><div class="l">분류 안 됨</div><div class="v">1</div><div class="d">「726/44」 — 사람이 정해 주세요</div></div>
+      </div>
+
+      <!-- 인원 -->
+      <div class="people">
+        <div class="person active"><span class="av">전</span><b>전체</b><span class="n">미해결 6</span></div>
+        <div class="person"><span class="av">이</span><b>이다은</b><span class="n">요청 5 · 미해결 3 · 받은 요청 3</span></div>
+        <div class="person"><span class="av">박</span><b>박수정</b><span class="n">요청 2 · 미해결 1</span></div>
+        <div class="person"><span class="av">김</span><b>김희연</b><span class="n">요청 2 · 미해결 1</span></div>
+        <div class="person"><span class="av">최</span><b>최영숙</b><span class="n">요청 1 · 미해결 1</span></div>
+        <div class="person"><span class="av">무</span><b>무사백업무폰</b><span class="n">요청 1 · 미해결 1</span></div>
+        <div class="person"><span class="av">재</span><b>재무(수신)</b><span class="n">받은 요청 3 · 미해결 3</span></div>
+      </div>
+
+      <!-- 탭 -->
+      <div class="tabs">
+        <button class="tab active">지금 처리할 것 <span class="cnt">6</span></button>
+        <button class="tab">나에게 온 것 <span class="cnt">3</span></button>
+        <button class="tab">내가 요청한 것 <span class="cnt">2</span></button>
+        <button class="tab">해결됨 <span class="cnt">4</span></button>
+        <button class="tab">정보·첨부 <span class="cnt">26</span></button>
+        <button class="tab">전체 원문</button>
+      </div>
+
+      <table>
+        <thead><tr><th>유형</th><th>누가 → 누구</th><th>내용</th><th>차량/금액</th><th>경과</th><th></th></tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="pill red">요청</span></td>
+            <td class="who">무사백업무폰<span class="arrow">→</span>재무</td>
+            <td class="msg">47어5438(Koha) 계약금 50만원 입금 부탁<span class="raw">매입액 : 574만 / 바이어 : Koha / 계약금: 50만원 입금 부탁드립니다 / 판매가: 5680eur</span></td>
+            <td><span class="pill gray">47어5438</span> <span class="pill gray">₩500,000</span></td>
+            <td class="age old">4시간 14분</td>
+            <td class="acts"><button class="btn">원문</button><button class="btn">매입 탭 열기</button><button class="btn primary">해결</button></td>
+          </tr>
+          <tr>
+            <td><span class="pill red">요청</span></td>
+            <td class="who">이다은<span class="arrow">→</span>재무</td>
+            <td class="msg">무사 재고 1339만 계약금 100만원 입금 부탁<span class="raw">매입액 : 1339만 / 바이어 : 무사 재고 / 계약금: 100만원 입금 부탁드립니다 / 헤이딜러: 전장영 이사님 아이디</span></td>
+            <td><span class="pill gray">₩1,000,000</span></td>
+            <td class="age">2시간 11분</td>
+            <td class="acts"><button class="btn">원문</button><button class="btn">매입 탭 열기</button><button class="btn primary">해결</button></td>
+          </tr>
+          <tr>
+            <td><span class="pill red">요청</span></td>
+            <td class="who">박수정<span class="arrow">→</span>이다은</td>
+            <td class="msg">CALJA 미출항 차량 입금율 42% — 추가 송금증 올려주세요<span class="raw">CALJA 미출항 차량 입금율 42%입니다 / 추가 송금증 올려주세요~</span></td>
+            <td><span class="pill amber">입금율 42%</span></td>
+            <td class="age old">5시간 9분</td>
+            <td class="acts"><button class="btn">원문</button><button class="btn">채권관리</button><button class="btn primary">해결</button></td>
+          </tr>
+          <tr>
+            <td><span class="pill red">요청</span></td>
+            <td class="who">최영숙<span class="arrow">→</span>이다은</td>
+            <td class="msg">오늘 매입건은 진행하고 추가 송금 더 받아주세요<span class="raw">현재 미수금 회수가 잘 안되고 있습니다. 오늘 매입건은 진행하시고 추가 송금 더 받아주세요</span></td>
+            <td></td>
+            <td class="age old">4시간 32분</td>
+            <td class="acts"><button class="btn">원문</button><button class="btn primary">해결</button></td>
+          </tr>
+          <tr>
+            <td><span class="pill red">요청</span></td>
+            <td class="who">김희연<span class="arrow">→</span>이다은</td>
+            <td class="msg">장주미 통장도 재발급 받아야 송금 가능<span class="raw">@이다은 주임님! 아무래도 통장도 재발급을 받으셔야 할 것 같습니다! 확인해봤는데 통장까지 재발급 받으시면 송금이 가능할 것 같습니다...!</span></td>
+            <td></td>
+            <td class="age">4분</td>
+            <td class="acts"><button class="btn">원문</button><button class="btn primary">해결</button></td>
+          </tr>
+          <tr>
+            <td><span class="pill red">요청</span> <span class="conf">확신 낮음</span></td>
+            <td class="who">이다은<span class="arrow">→</span>재무</td>
+            <td class="msg">1976/44 입금 부탁<span class="raw">1976/44 입금 부탁 드립니다</span></td>
+            <td></td>
+            <td class="age old">4시간 6분</td>
+            <td class="acts"><button class="btn">원문</button><button class="btn">분류 수정</button><button class="btn primary">해결</button></td>
+          </tr>
+          <tr style="opacity:.75">
+            <td><span class="pill gray">?</span></td>
+            <td class="who">이다은</td>
+            <td class="msg">726/44<span class="raw">뜻을 못 정했습니다 — 눌러서 유형을 골라 주세요(다음부터 학습)</span></td>
+            <td></td>
+            <td class="age">3시간 14분</td>
+            <td class="acts"><button class="btn">원문</button><button class="btn">요청</button><button class="btn">정보</button><button class="btn">잡담</button></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top:14px;font-size:11px;color:var(--t2)">
+        해결됨 4건 (접힘) — 매입 승인(이다은→최영숙, 「오늘 매입건은 진행」으로 승인) · 7482 보험 증권(사진으로 회신) · 개명 신분증 질문(「재발급 받아 장주미로」) · 적성검사 만료 면허증(「다른 신분증」 답변) <span class="link">펼치기</span>
+      </div>
+    </div>
+
+    <div class="foot">
+      <span>「해결」은 사람이 누릅니다. 자동 판정은 <span class="pill green" style="font-size:11px">아마 해결</span> 로만 표시.</span>
+      <span>「분류 수정」 한 번 = 학습 1건 (주 1회 재학습)</span>
+      <div class="right"><button class="btn">엑셀</button><button class="btn">지금 다시 읽기</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- 원문 드로어 (「원문」을 눌렀을 때) -->
+<div class="drawer">
+  <div class="dh"><span>💬</span><b>무사백-수출팀</b><span class="pill gray">11/9 오전 10:38~10:49</span><button class="x">✕</button></div>
+  <div class="chat">
+    <div class="bub"><div class="n">무사백업무폰</div>(사진 6장)<div class="tm">오전 10:38</div></div>
+    <div class="bub hl"><div class="n">무사백업무폰</div>매입액 : 574만
+바이어 : Koha
+계약금: 50만원 입금 부탁드립니다
+판매가: 5680eur<div class="tm">오전 10:41</div></div>
+    <div class="bub"><div class="n">이다은</div>1976/44 입금 부탁 드립니다<div class="tm">오전 10:49</div></div>
+    <div class="bub"><div class="n">김희연 대리님</div>47어5438<div class="tm">오전 10:51</div></div>
+    <div class="bub"><div class="n">김희연 대리님</div>(사진)<div class="tm">오전 10:51</div></div>
+  </div>
+  <div class="tagrow">
+    <span style="font-size:11px;color:var(--t2);align-self:center">이 메시지 유형:</span>
+    <span class="pill red">요청 ✓</span><span class="pill blue">질문</span><span class="pill green">대답</span><span class="pill gray">확인</span><span class="pill gray">정보</span><span class="pill gray">잡담</span>
+  </div>
+  <div class="note">규칙이 뽑은 값 — 차량 47어5438(뒤 메시지에서 연결) · 계약금 ₩500,000 · 바이어 Koha · 판매가 €5,680. 「해결」 후보 = 뒤에 「입금 완료/송금 완료」 또는 ERP 매입 탭 계약금 행 저장.</div>
+</div>
+
+</body>
+</html>

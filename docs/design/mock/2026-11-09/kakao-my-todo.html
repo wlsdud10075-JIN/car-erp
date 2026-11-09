@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내 카톡 할 일 목업</title>
+<style>
+  :root{--p:#7c6fcd;--p-light:#ece9f8;--p-text:#4c3fb1;--bg:#eef0f5;--card:#fff;--line:#e5e7eb;--t:#1f2937;--t2:#5b6472;--red:#b91c1c;--red-bg:#fee2e2;--amber:#b45309;--amber-bg:#fef3c7;--green:#065f46;--green-bg:#d1fae5;--blue:#1d4ed8;--blue-bg:#dbeafe;--gray-bg:#f3f4f6;--kakao:#fee500}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;background:var(--bg);color:var(--t);font-size:13px;display:flex;justify-content:center;align-items:flex-start;min-height:100vh;padding:28px 16px}
+  .app{width:min(760px,100%);background:var(--card);border-radius:14px;box-shadow:0 12px 40px rgba(0,0,0,.14);overflow:hidden}
+  /* 제목줄 */
+  .head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+  .head .logo{width:32px;height:32px;border-radius:9px;background:var(--kakao);display:grid;place-items:center;font-size:18px}
+  .head h1{margin:0;font-size:18px;font-weight:800}
+  .head .sub{font-size:12px;color:var(--t2);margin-top:1px}
+  .head .right{margin-left:auto;display:flex;align-items:center;gap:8px}
+  .btn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;color:var(--t)}
+  .btn.read{background:var(--kakao);border-color:#f0d800;color:#3c1e1e;font-weight:800;font-size:13px;padding:9px 16px}
+  .btn.ghost{border-color:transparent;color:var(--t2)}
+  .pill{display:inline-block;border-radius:999px;padding:1px 8px;font-size:11px;font-weight:600;white-space:nowrap}
+  .pill.red{background:var(--red-bg);color:var(--red)} .pill.amber{background:var(--amber-bg);color:var(--amber)} .pill.green{background:var(--green-bg);color:var(--green)}
+  .pill.blue{background:var(--blue-bg);color:var(--blue)} .pill.gray{background:var(--gray-bg);color:var(--t2)} .pill.purple{background:var(--p-light);color:var(--p-text)}
+  /* 읽기 상태줄 */
+  .status{display:flex;align-items:center;gap:10px;padding:10px 18px;background:#fafafa;border-bottom:1px solid var(--line);font-size:12px;color:var(--t2);flex-wrap:wrap}
+  .status b{color:var(--t)}
+  .rooms{display:flex;gap:6px;flex-wrap:wrap}
+  .room{border:1px solid var(--line);border-radius:999px;padding:3px 10px;background:#fff;font-size:12px;display:flex;gap:6px;align-items:center}
+  .room .n{color:var(--t2);font-size:11px}
+  .room.on{border-color:var(--p);background:var(--p-light)}
+  /* 요약 */
+  .summary{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px 18px 0}
+  .s{border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+  .s .l{font-size:12px;color:var(--t2)} .s .v{font-size:26px;font-weight:800;margin-top:2px} .s .d{font-size:11px;color:var(--t2);margin-top:2px}
+  .s.red{border-color:#fecaca;background:#fff7f7} .s.red .v{color:var(--red)}
+  .s.amber{border-color:#fde68a;background:#fffbeb} .s.amber .v{color:var(--amber)}
+  .s.green .v{color:var(--green)}
+  /* 탭 */
+  .tabs{display:flex;gap:4px;border-bottom:1px solid var(--line);margin:14px 18px 0}
+  .tab{padding:9px 12px;border:0;background:none;cursor:pointer;color:var(--t2);font-size:13px;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab.active{color:var(--p-text);border-bottom-color:var(--p);font-weight:700}
+  .tab .cnt{margin-left:4px;font-size:11px;background:var(--gray-bg);border-radius:999px;padding:0 6px}
+  .tab.active .cnt{background:var(--p);color:#fff}
+  /* 목록 */
+  .list{padding:6px 18px 10px}
+  .item{display:grid;grid-template-columns:auto 1fr auto;gap:12px;padding:12px 10px;border-bottom:1px solid #f1f2f4;align-items:start}
+  .item:hover{background:#fafafa}
+  .av{width:34px;height:34px;border-radius:50%;background:var(--p-light);color:var(--p-text);display:grid;place-items:center;font-weight:800;font-size:13px}
+  .who{font-size:12px;color:var(--t2)} .who b{color:var(--t);font-weight:700}
+  .txt{font-size:14px;font-weight:600;margin:3px 0 4px}
+  .raw{font-size:12px;color:var(--t2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:480px}
+  .meta{display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap}
+  .age{font-size:11px;color:var(--t2)} .age.old{color:var(--red);font-weight:700}
+  .acts{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
+  .acts .btn{padding:5px 10px;font-size:12px}
+  .btn.done{background:var(--p);border-color:var(--p);color:#fff;font-weight:700}
+  .hidden-note{padding:10px 18px 18px;font-size:12px;color:var(--t2)}
+  .hidden-note .link{color:var(--p-text);text-decoration:underline;cursor:pointer}
+  /* 두 번째 패널: 다른 탭 미리보기 */
+  .preview{margin:22px 0 0;width:min(760px,100%)}
+  .preview h2{font-size:13px;color:var(--t2);font-weight:600;margin:0 0 8px 4px}
+  .mini{background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .mini .tabs{margin-top:0;padding:0 14px}
+  .mini .list{padding:4px 14px 8px}
+  .mini .item{padding:10px 8px}
+  .wrap{display:flex;flex-direction:column;align-items:center;width:100%}
+  @media (max-width:640px){.summary{grid-template-columns:1fr 1fr}.item{grid-template-columns:auto 1fr}.acts{grid-column:1/-1;flex-direction:row;justify-content:flex-end}.raw{max-width:100%;white-space:normal}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ① 메인 창 — 「할 일」 탭 -->
+<div class="app">
+  <div class="head">
+    <div class="logo">💬</div>
+    <div>
+      <h1>내 카톡 할 일</h1>
+      <div class="sub">내 시점 = <b>이다은</b> (예시) · 나 ↔ 상대 N명 대화에서 <b>내가 해야 할 것</b>만</div>
+    </div>
+    <div class="right">
+      <button class="btn ghost">⚙ 방 선택</button>
+      <button class="btn read">▶ 지금 읽기</button>
+    </div>
+  </div>
+
+  <div class="status">
+    <span>마지막 읽기 <b>14:55</b> · 범위 <b>최근 7일</b> · 새로 읽은 메시지 <b>46개</b> (12초)</span>
+    <span style="flex:1"></span>
+    <div class="rooms">
+      <span class="room on">무사백-수출팀 <span class="n">46</span></span>
+      <span class="room">조태신대표님 <span class="n">0</span></span>
+      <span class="room">헤이맨_이다은 <span class="n">3</span></span>
+      <span class="room" style="border-style:dashed;color:var(--t2)">+ 방 추가</span>
+    </div>
+  </div>
+
+  <div class="summary">
+    <div class="s red"><div class="l">할 일 — 상대가 나에게</div><div class="v">4</div><div class="d">답·처리 안 한 요청·질문</div></div>
+    <div class="s amber"><div class="l">기다리는 것 — 내가 상대에게</div><div class="v">2</div><div class="d">답 없음 · 1건은 4시간 경과</div></div>
+    <div class="s green"><div class="l">끝난 것 — 오늘</div><div class="v">5</div><div class="d">내가 답 3 · 상대가 답 2</div></div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active">할 일 <span class="cnt">4</span></button>
+    <button class="tab">기다리는 것 <span class="cnt">2</span></button>
+    <button class="tab">끝난 것 <span class="cnt">5</span></button>
+    <button class="tab" style="margin-left:auto">분류 못 함 <span class="cnt">1</span></button>
+  </div>
+
+  <div class="list">
+    <div class="item">
+      <div class="av">박</div>
+      <div>
+        <div class="who"><b>박수정</b> → 나 · 무사백-수출팀 · 09:46</div>
+        <div class="txt">CALJA 미출항 차량 추가 송금증 올려주세요</div>
+        <div class="raw">CALJA 미출항 차량 입금율 42%입니다 / 추가 송금증 올려주세요~</div>
+        <div class="meta"><span class="pill red">요청</span><span class="pill amber">입금율 42%</span><span class="age old">5시간 9분 답 없음</span></div>
+      </div>
+      <div class="acts"><button class="btn done">해결</button><button class="btn">원문</button><button class="btn ghost">무시</button></div>
+    </div>
+
+    <div class="item">
+      <div class="av">최</div>
+      <div>
+        <div class="who"><b>최영숙(팀장)</b> → 나 · 무사백-수출팀 · 10:23</div>
+        <div class="txt">오늘 매입건은 진행하고, 추가 송금 더 받아주세요</div>
+        <div class="raw">현재 미수금 회수가 잘 안되고 있습니다. 오늘 매입건은 진행하시고 추가 송금 더 받아주세요</div>
+        <div class="meta"><span class="pill red">요청</span><span class="pill gray">내가 「넵 알겠습니다」 — 접수만, 처리 미완</span><span class="age old">4시간 32분</span></div>
+      </div>
+      <div class="acts"><button class="btn done">해결</button><button class="btn">원문</button><button class="btn ghost">무시</button></div>
+    </div>
+
+    <div class="item">
+      <div class="av">박</div>
+      <div>
+        <div class="who"><b>박수정</b> → 나 · 무사백-수출팀 · 10:25</div>
+        <div class="txt">배차해도 됨 — 입금 안 몰리게 30분 간격으로</div>
+        <div class="raw">배차하셔도 됩니다 / 입금 몰리지 않게 30분 간격으로 배차해주세요</div>
+        <div class="meta"><span class="pill red">요청</span><span class="pill green">허락 포함</span><span class="age">4시간 30분 · 내 응답 없음</span></div>
+      </div>
+      <div class="acts"><button class="btn done">해결</button><button class="btn">원문</button><button class="btn ghost">무시</button></div>
+    </div>
+
+    <div class="item">
+      <div class="av">김</div>
+      <div>
+        <div class="who"><b>김희연 대리</b> → 나 · 무사백-수출팀 · 14:51</div>
+        <div class="txt">장주미 님 통장도 재발급 받아야 송금 가능</div>
+        <div class="raw">@이다은 주임님! 아무래도 통장도 재발급을 받으셔야 할 것 같습니다! 확인해봤는데 통장까지 재발급 받으시면 송금이 가능할 것 같습니다...!</div>
+        <div class="meta"><span class="pill red">요청</span><span class="pill gray">딜러에게 전달 필요</span><span class="age">4분</span></div>
+      </div>
+      <div class="acts"><button class="btn done">해결</button><button class="btn">원문</button><button class="btn ghost">무시</button></div>
+    </div>
+  </div>
+
+  <div class="hidden-note">이 방에서 나와 무관한 메시지 <b>15건</b>은 숨김(무사백업무폰 → 재무 계약금 50만 요청, 김희연 차량번호·서류 사진 등) · <span class="link">방 전체 보기</span></div>
+</div>
+
+<!-- ② 「기다리는 것」 탭 미리보기 -->
+<div class="preview">
+  <h2>같은 창 — 「기다리는 것」 탭을 눌렀을 때</h2>
+  <div class="mini">
+    <div class="tabs">
+      <button class="tab">할 일 <span class="cnt">4</span></button>
+      <button class="tab active">기다리는 것 <span class="cnt">2</span></button>
+      <button class="tab">끝난 것 <span class="cnt">5</span></button>
+      <button class="tab" style="margin-left:auto">분류 못 함 <span class="cnt">1</span></button>
+    </div>
+    <div class="list">
+      <div class="item">
+        <div class="av">나</div>
+        <div>
+          <div class="who">나 → <b>재무</b> · 무사백-수출팀 · 14:44</div>
+          <div class="txt">무사 재고(1339만) 계약금 100만원 입금 부탁</div>
+          <div class="raw">매입액 : 1339만 / 바이어 : 무사 재고 / 계약금: 100만원 입금 부탁드립니다 / 헤이딜러: 전장영 이사님 아이디</div>
+          <div class="meta"><span class="pill amber">내 요청</span><span class="pill gray">₩1,000,000</span><span class="age">11분 · 답 없음</span></div>
+        </div>
+        <div class="acts"><button class="btn done">받았음</button><button class="btn">원문</button><button class="btn">재촉 문구 복사</button></div>
+      </div>
+      <div class="item">
+        <div class="av">나</div>
+        <div>
+          <div class="who">나 → <b>재무</b> · 무사백-수출팀 · 10:49</div>
+          <div class="txt">1976/44 입금 부탁</div>
+          <div class="raw">1976/44 입금 부탁 드립니다</div>
+          <div class="meta"><span class="pill amber">내 요청</span><span class="pill gray">확신 낮음</span><span class="age old">4시간 6분 · 답 없음</span></div>
+        </div>
+        <div class="acts"><button class="btn done">받았음</button><button class="btn">원문</button><button class="btn">재촉 문구 복사</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ③ 「끝난 것」 탭 미리보기 -->
+<div class="preview">
+  <h2>같은 창 — 「끝난 것」 탭 (오늘, 접힘 기본)</h2>
+  <div class="mini">
+    <div class="tabs">
+      <button class="tab">할 일 <span class="cnt">4</span></button>
+      <button class="tab">기다리는 것 <span class="cnt">2</span></button>
+      <button class="tab active">끝난 것 <span class="cnt">5</span></button>
+      <button class="tab" style="margin-left:auto">분류 못 함 <span class="cnt">1</span></button>
+    </div>
+    <div class="list">
+      <div class="item"><div class="av">최</div><div><div class="who">나 → <b>최영숙</b> · 10:22 → 답 10:23</div><div class="txt">매입 승인 부탁 → <span style="color:var(--green)">「오늘 매입건은 진행」 승인</span></div><div class="meta"><span class="pill green">상대가 답</span><span class="age">1분 만에</span></div></div><div class="acts"><button class="btn">원문</button></div></div>
+      <div class="item"><div class="av">박</div><div><div class="who">나 → <b>박수정</b> · 10:29 → 답 10:29</div><div class="txt">7482 보험 증권 부탁 → <span style="color:var(--green)">사진으로 회신</span></div><div class="meta"><span class="pill green">상대가 답</span><span class="age">바로</span></div></div><div class="acts"><button class="btn">원문</button></div></div>
+      <div class="item"><div class="av">김</div><div><div class="who">나 → <b>김희연</b> · 14:34 → 답 14:39~14:45</div><div class="txt">장미실→장주미 개명, 입금해도 될까요? → <span style="color:var(--green)">신분증 확인 뒤 「장주미로 말소」</span></div><div class="meta"><span class="pill green">상대가 답</span><span class="pill blue">질문</span></div></div><div class="acts"><button class="btn">원문</button></div></div>
+      <div class="item"><div class="av">김</div><div><div class="who"><b>김희연</b> → 나 · 14:39 → 내 답 14:42</div><div class="txt">개명 전 신분증 사진 요청 → <span style="color:var(--green)">사진 보냄</span></div><div class="meta"><span class="pill green">내가 답</span></div></div><div class="acts"><button class="btn">원문</button></div></div>
+      <div class="item"><div class="av">김</div><div><div class="who"><b>김희연</b> → 나 · 14:44 → 내 답 14:45</div><div class="txt">적성검사 만료 면허증 말고 다른 신분증 필요 → <span style="color:var(--green)">「재발급 받아 장주미 신분증으로」</span></div><div class="meta"><span class="pill green">내가 답</span></div></div><div class="acts"><button class="btn">원문</button></div></div>
+    </div>
+    <div class="hidden-note">「분류 못 함」 1건 — 내가 쓴 「726/44」. 유형을 골라 주면 다음부터 같은 꼴은 자동.</div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

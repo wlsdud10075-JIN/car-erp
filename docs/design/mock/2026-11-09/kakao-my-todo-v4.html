@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>내 카톡 할 일 v4</title>
+<style>
+  :root{
+    --bg:#f3f4f6; --paper:#fff; --t:#111827; --t2:#4b5563; --t3:#6b7280; --line:#e5e7eb; --soft:#f9fafb;
+    --accent:#fee500; --accent-ink:#2b2200;
+    --miss:#b91c1c; --miss-bg:#fef2f2; --miss-line:#fecaca;
+    --now:#9a3412; --now-bg:#fff7ed;
+    --ok:#065f46; --ok-bg:#ecfdf5;
+    --warn:#92400e; --warn-bg:#fffbeb;
+  }
+  *{box-sizing:border-box}
+  html{color-scheme:light}
+  body{margin:0;font-family:"Pretendard","Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;background:var(--bg);color:var(--t);font-size:14px;line-height:1.45;display:flex;justify-content:center;padding:32px 16px}
+  ::selection{background:#fff3a3}
+  button{font:inherit;cursor:pointer}
+  button:focus-visible{outline:2px solid #111827;outline-offset:2px}
+  .app{width:min(700px,100%);background:var(--paper);border-radius:12px;box-shadow:0 8px 28px rgba(17,24,39,.10);padding-bottom:6px;position:relative}
+
+  header{display:flex;align-items:flex-start;gap:16px;padding:22px 24px 12px}
+  h1{margin:0;font-size:20px;font-weight:800;letter-spacing:-.01em}
+  .state{margin:4px 0 0;color:var(--t3);font-size:13px}
+  .state b{color:var(--t2);font-weight:600}
+  .state a{color:var(--t2);text-decoration:underline;text-underline-offset:3px;cursor:pointer}
+  .read{margin-left:auto;background:var(--accent);color:var(--accent-ink);border:0;border-radius:10px;padding:11px 18px;font-weight:800;font-size:14px;white-space:nowrap;box-shadow:0 1px 0 rgba(0,0,0,.08);transition:transform .15s ease}
+  .read:hover{filter:brightness(.97)} .read:active{transform:scale(.98)}
+  .read[disabled]{opacity:.6;cursor:progress}
+  .alert{margin:0 24px 6px;padding:8px 12px;border-radius:8px;background:var(--warn-bg);color:var(--warn);font-size:13px;display:flex;gap:8px;align-items:center}
+  .alert a{color:var(--warn);font-weight:700;text-decoration:underline;text-underline-offset:3px;cursor:pointer;margin-left:auto;white-space:nowrap}
+  .alert[hidden]{display:none}
+
+  section{padding:8px 24px 0}
+  section + section{margin-top:12px}
+  h2{margin:0 0 2px;font-size:13px;font-weight:700;color:var(--t2);display:flex;align-items:baseline;gap:8px;cursor:pointer;user-select:none}
+  h2 .n{font-variant-numeric:tabular-nums;color:var(--t);min-width:1.2em}
+  h2 .hint{font-weight:400;color:var(--t3)}
+  h2 .chev{margin-left:auto;color:var(--t3);font-size:12px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+  h2 .chev i{font-style:normal;display:inline-block;transition:transform .2s ease}
+  section.collapsed h2 .chev i{transform:rotate(-90deg)}
+  section.collapsed .rows{display:none}
+  section.miss h2,section.miss h2 .n{color:var(--miss)}
+  section.now h2,section.now h2 .n{color:var(--now)}
+  section.done h2 .n{color:var(--ok)}
+  .empty{color:var(--t3);font-size:13px;padding:8px 0 4px}
+
+  .row{display:flex;align-items:flex-start;gap:14px;padding:12px 0;border-top:1px solid var(--line);position:relative;animation:in .25s ease}
+  @keyframes in{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+  .rows .row:first-child{border-top:0}
+  section.miss .row{background:var(--miss-bg);margin:0 -12px;padding-left:12px;padding-right:12px;border-radius:8px;border-top:0}
+  section.miss .row + .row{margin-top:6px}
+  .main{flex:1;min-width:0;cursor:pointer}
+  .what{font-size:14px;font-weight:700;margin:0}
+  section.soft .what{font-weight:600}
+  .meta{margin:3px 0 0;color:var(--t3);font-size:13px;font-variant-numeric:tabular-nums}
+  .meta b{color:var(--t2);font-weight:600}
+  .why{display:inline-block;margin-top:5px;font-size:12px;font-weight:600;padding:1px 8px;border-radius:999px;background:var(--soft);color:var(--t2);border:1px solid var(--line)}
+  .why.miss{background:#fff;color:var(--miss);border-color:var(--miss-line)}
+  .why.now{background:var(--now-bg);color:var(--now);border-color:transparent}
+  .key{display:inline-block;margin:5px 0 0 4px;font-size:12px;color:var(--t2);font-variant-numeric:tabular-nums}
+  .key code{font-family:inherit;background:var(--soft);border:1px solid var(--line);border-radius:5px;padding:0 5px}
+  .raw{display:none;margin:8px 0 0;color:var(--t2);font-size:13px;white-space:pre-wrap;border-top:1px solid var(--line);padding:8px 0 0}
+  .raw .ctx{color:var(--t3)} .raw .me{color:var(--t)}
+  .raw .sub{margin-top:8px;display:flex;gap:6px;flex-wrap:wrap}
+  .raw .sub button{border:1px solid var(--line);background:var(--paper);border-radius:7px;padding:3px 9px;font-size:12px;color:var(--t2)}
+  .row.open .raw{display:block}
+  .act{display:flex;gap:6px;align-items:center;padding-top:2px;justify-content:flex-end;position:relative}
+  .b{background:var(--paper);border:1px solid #d1d5db;border-radius:8px;padding:6px 11px;font-weight:600;color:var(--t);white-space:nowrap}
+  .b:hover{background:var(--soft)}
+  .b.primary{border-color:#111827;background:#111827;color:#fff}
+  .more{border:0;background:none;color:var(--t3);padding:6px 8px;border-radius:8px;line-height:1;font-size:16px}
+  .more:hover,.more[aria-expanded="true"]{background:var(--soft);color:var(--t)}
+
+  /* 팝오버(미루기 · ⋯ 메뉴) */
+  .pop{position:absolute;right:0;top:40px;z-index:5;background:var(--paper);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px rgba(17,24,39,.16);padding:8px;width:250px;font-size:13px;animation:in .15s ease}
+  .pop .t{font-weight:700;margin:2px 6px 6px}
+  .pop button{display:block;width:100%;text-align:left;border:0;background:none;padding:7px 8px;border-radius:7px;color:var(--t)}
+  .pop button:hover{background:var(--soft)}
+  .pop button small{color:var(--t3);float:right}
+  .pop .sep{border-top:1px solid var(--line);margin:6px 0}
+  .pop input{width:100%;border:1px solid var(--line);border-radius:7px;padding:6px 8px;font:inherit;font-size:13px;margin-top:4px}
+  .pop .group{font-size:11px;color:var(--t3);margin:6px 8px 2px;text-transform:none}
+
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111827;color:#fff;padding:9px 14px;border-radius:9px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+  .toast.show{opacity:1}
+  .legend{width:min(700px,100%);margin:18px auto 0;color:var(--t2);font-size:13px}
+  .legend b{color:var(--t)}
+  .wrap{display:flex;flex-direction:column;align-items:center;width:100%}
+  @media (max-width:560px){header{flex-wrap:wrap}.read{margin-left:0;width:100%}.row{flex-wrap:wrap}.act{width:100%}.pop{right:0;left:0;width:auto}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<main class="app" aria-label="내 카톡 할 일">
+  <header>
+    <div>
+      <h1>내 카톡 할 일</h1>
+      <p class="state"><span id="readAt">14:55</span> 읽음 · 최근 7일 · <b>무사백-수출팀</b> 외 2곳 <a id="roomsLink">방 선택</a></p>
+    </div>
+    <button class="read" id="readBtn">지금 읽기</button>
+  </header>
+  <div class="alert" id="alert" role="status">확인 필요 <b id="unsureN">1</b> — 뜻을 못 정한 메시지가 있습니다. <a id="alertLink">지금 정하기</a></div>
+
+  <div id="sections"></div>
+</main>
+
+<aside class="legend">
+  <b>눌러 보세요</b> — 기본은 전부 접힘이라 건수만 보입니다. 묶음 제목(펼치기/접기) · 행 본문(원문·앞뒤 대화 펼치기) · [완료]/[응답 확인]/[지금 하기](끝난 것으로 이동) · [미루기](시점 선택 → 미뤄둔 일로 이동) · [⋯](숨은 기능 목록) · [지금 읽기](읽는 동작 흉내). 모든 행은 「주 버튼 1 + 미루기 + ⋯」 로 통일했습니다. 새로고침하면 처음 상태로 돌아옵니다.
+</aside>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// ── 데이터 (오늘 무사백-수출팀 실제 대화 기준, 시점 = 이다은) ──────────────────────
+const SECTIONS = [
+  {id:'miss', cls:'miss', title:'놓쳤을 가능성', hint:'카톡만으로는 끝났는지 알 수 없어 확인을 청합니다'},
+  {id:'now',  cls:'now',  title:'지금 할 일',     hint:'다른 사람·돈이 막혀 있는 것'},
+  {id:'today',cls:'soft', title:'오늘 안에',       hint:'막힌 사람은 없음'},
+  {id:'wait', cls:'',     title:'답 기다리는 중',  hint:'내가 상대에게'},
+  {id:'defer',cls:'soft', title:'미뤄둔 일',       hint:'정한 시점에 위로 올라옵니다'},
+  {id:'done', cls:'done', title:'오늘 끝난 것',    hint:'', collapsed:true},
+  {id:'unsure',cls:'',    title:'확인 필요',       hint:'뜻을 못 정한 메시지 — 유형을 골라 주세요', collapsed:true},
+  {id:'other',cls:'',     title:'나와 무관',       hint:'이 방에서 나와 관계없는 메시지', collapsed:true},
+];
+let items = [
+  {id:1, sec:'miss', dir:'in', what:'추가 송금 더 받기 — 실제로 받았는지 확인', who:'최영숙(팀장)', room:'무사백-수출팀', time:'10:23', why:'「넵 알겠습니다」로 접수만 함 · 처리 확인 안 됨 · 4시간', whyCls:'miss', key:'',
+   raw:[['ctx','이다은 10:22 · 팀장님, 현재 50%에 근접한 상태라 매입 승인 부탁드립니다. 딜러님께서 차량을 오늘 가져가셔야 합니다.'],['me','최영숙 10:23 · 현재 미수금 회수가 잘 안되고 있습니다. 오늘 매입건은 진행하시고 추가 송금 더 받아주세요'],['ctx','이다은 10:23 · 넵 알겠습니다']], erp:'채권관리에서 입금 확인'},
+  {id:2, sec:'miss', dir:'out', what:'1976/44 입금 요청 — 재무 응답 재확인', who:'재무', room:'무사백-수출팀', time:'10:49', why:'재확인 시점(12:00) 지남 · 응답 없음 · 4시간', whyCls:'miss', key:'뜻 불명확 <code>1976/44</code>',
+   raw:[['me','이다은 10:49 · 1976/44 입금 부탁 드립니다'],['ctx','(이후 재무 응답 없음)']]},
+  {id:3, sec:'now', dir:'in', what:'CALJA 추가 송금증 올리기', who:'박수정', room:'무사백-수출팀', time:'09:46 · 5시간 경과', why:'입금 진행 막힘', whyCls:'now', key:'입금율 <code>42%</code> · 선적 게이트 <code>60%</code>',
+   raw:[['me','박수정 09:46 · CALJA 미출항 차량 입금율 42%입니다\n추가 송금증 올려주세요~'],['ctx','이다은 09:48 · (사진)'],['ctx','이다은 09:49 · 선수금도 있으니까 매입 승인 부탁 드립니다'],['ctx','박수정 09:52 · 선수금 3,004유로 및 4,800유로 입금해도 46%입니다\n추가 입금해야 합니다 지금 미수가 많아요']], erp:'채권관리 열기'},
+  {id:4, sec:'now', dir:'in', what:'30분 간격으로 배차하기', who:'박수정', room:'무사백-수출팀', time:'10:25', why:'오늘 딜러 인수 · 시간 민감', whyCls:'now', key:'<code>47어5438</code> KIA STONIC', car:'47어5438',
+   raw:[['me','박수정 10:25 · 배차하셔도 됩니다 / 입금 몰리지 않게 30분 간격으로 배차해주세요']]},
+  {id:5, sec:'today', dir:'in', what:'장주미 님께 통장 재발급 안내 전달', who:'김희연', room:'무사백-수출팀', time:'14:51', why:'단순 전달 · 오늘 중', whyCls:'', key:'딜러 <code>장주미</code>(개명 전 장미실)',
+   raw:[['me','김희연 14:51 · @이다은 주임님! 아무래도 통장도 재발급을 받으셔야 할 것 같습니다! 확인해봤는데 통장까지 재발급 받으시면 송금이 가능할 것 같습니다...!']]},
+  {id:6, sec:'wait', dir:'out', what:'재무에 계약금 100만 원 입금 요청', who:'재무', room:'무사백-수출팀', time:'14:44 요청 · <b>16:00까지 기다림</b>', why:'재촉 전', whyCls:'', key:'매입 <code>1,339만</code> · 계약금 <code>₩1,000,000</code> · 무사 재고',
+   raw:[['me','이다은 14:44 · 매입액 : 1339만\n바이어 : 무사 재고\n계약금: 100만원 입금 부탁드립니다\n헤이딜러: 전장영 이사님 아이디']], erp:'매입 탭 계약금 행 확인'},
+  {id:7, sec:'defer', dir:'in', what:'7482 보험 증권 원본 수령 확인', who:'박수정', room:'무사백-수출팀', time:'10:29', why:'내일 10:00까지 미룸 · 사유: 우편 도착 대기', whyCls:'', key:'<code>371어7482</code>', car:'371어7482',
+   raw:[['ctx','이다은 10:29 · 7482 보험 증권 부탁 드립니다'],['me','박수정 10:29 · (사진)']]},
+  {id:8, sec:'done', dir:'out', what:'매입 승인 부탁 → 「오늘 매입건은 진행」 승인', who:'최영숙', room:'무사백-수출팀', time:'10:22 → 10:23', why:'상대가 답 · 1분 만에', whyCls:'', key:''},
+  {id:9, sec:'done', dir:'out', what:'장미실→장주미 개명, 입금해도 될까요? → 「재발급 받아 장주미로」', who:'김희연', room:'무사백-수출팀', time:'14:34 → 14:45', why:'상대가 답', whyCls:'', key:''},
+  {id:10, sec:'done', dir:'in', what:'개명 전 신분증 사진 요청 → 사진 보냄', who:'김희연', room:'무사백-수출팀', time:'14:39 → 14:42', why:'내가 답', whyCls:'', key:''},
+  {id:11, sec:'done', dir:'in', what:'적성검사 만료 면허증 → 「장주미 신분증으로」 답변', who:'김희연', room:'무사백-수출팀', time:'14:44 → 14:45', why:'내가 답', whyCls:'', key:''},
+  {id:12, sec:'unsure', dir:'me', what:'726/44', who:'나', room:'무사백-수출팀', time:'11:41', why:'유형을 고르면 다음부터 같은 꼴은 자동', whyCls:'', key:'', unsure:true,
+   raw:[['me','이다은 11:41 · 726/44']]},
+  {id:13, sec:'other', dir:'x', what:'무사백업무폰 → 재무 · 47어5438(Koha) 계약금 50만 입금 부탁', who:'무사백업무폰', room:'무사백-수출팀', time:'10:41', why:'', whyCls:'', key:''},
+  {id:14, sec:'other', dir:'x', what:'김희연 · 차량번호·서류 사진 9건', who:'김희연', room:'무사백-수출팀', time:'10:51~11:48', why:'', whyCls:'', key:''},
+  {id:15, sec:'other', dir:'x', what:'최영숙 · 「택배요」 + 사진 · 무사백업무폰 「넵 감사합니다」 외 4건', who:'', room:'무사백-수출팀', time:'13:26~14:03', why:'', whyCls:'', key:''},
+];
+// 기본은 전부 접힘(jin 11-09 «접혀 있으면 더 깔끔») — 제목의 건수만 보고 필요한 묶음을 펼친다
+const collapsed = Object.fromEntries(SECTIONS.map(s=>[s.id, true]));
+const openRows = new Set([1]);
+let popover = null;   // {itemId, kind}
+
+function esc(s){return s.replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._h);t._h=setTimeout(()=>t.classList.remove('show'),1800)}
+
+function primaryLabel(it){
+  if(it.sec==='defer') return '지금 하기';
+  if(it.sec==='unsure') return null;
+  if(it.sec==='done' || it.sec==='other') return null;
+  return it.dir==='out' ? '응답 확인' : '완료';
+}
+function whoLine(it){
+  if(it.dir==='out') return `나 → <b>${esc(it.who)}</b>`;
+  if(it.dir==='in') return `<b>${esc(it.who)}</b> → 나`;
+  if(it.dir==='me') return `<b>나</b>`;
+  return '';
+}
+function render(){
+  const root=document.getElementById('sections'); root.innerHTML='';
+  SECTIONS.forEach(S=>{
+    const list=items.filter(i=>i.sec===S.id);
+    const sec=document.createElement('section'); sec.className=`${S.cls}${collapsed[S.id]?' collapsed':''}`; sec.dataset.sec=S.id;
+    sec.innerHTML=`<h2><span class="n">${list.length}</span> ${S.title} <span class="hint">${S.hint}</span><span class="chev">${collapsed[S.id]?'펼치기':'접기'} <i>▾</i></span></h2><div class="rows"></div>`;
+    sec.querySelector('h2').onclick=()=>{collapsed[S.id]=!collapsed[S.id];render()};
+    const rows=sec.querySelector('.rows');
+    if(!list.length){rows.innerHTML=`<div class="empty">${S.id==='miss'?'놓친 것 없음 — 좋습니다.':S.id==='now'?'지금 막힌 일 없음.':'비어 있음'}</div>`}
+    list.forEach(it=>{
+      const row=document.createElement('div'); row.className=`row${openRows.has(it.id)?' open':''}`; row.dataset.id=it.id;
+      const pri=primaryLabel(it);
+      const rawHtml = it.raw ? `<div class="raw">${it.raw.map(([c,t])=>`<span class="${c}">${esc(t)}</span>`).join('\n')}<div class="sub">${it.erp?`<button data-a="erp">${esc(it.erp)}</button>`:''}<button data-a="fix">분류 수정</button><button data-a="notmine">내 일이 아님</button></div></div>` : '';
+      const acts = S.id==='unsure'
+        ? `<button class="b" data-a="type" data-t="요청">요청</button><button class="b" data-a="type" data-t="정보">정보</button><button class="b" data-a="type" data-t="잡담">잡담</button>`
+        : (S.id==='done'||S.id==='other') ? `<button class="more" data-a="menu" aria-label="더 보기" aria-haspopup="menu">⋯</button>`
+        : `<button class="b primary" data-a="primary">${pri}</button><button class="b" data-a="defer">미루기</button>${it.car?`<button class="b" data-a="car">차량 열기</button>`:''}<button class="more" data-a="menu" aria-label="더 보기" aria-haspopup="menu">⋯</button>`;
+      row.innerHTML=`<div class="main"><p class="what">${esc(it.what)}</p><p class="meta">${whoLine(it)}${whoLine(it)?' · ':''}${esc(it.room)} · ${it.time}</p>${it.why?`<span class="why ${it.whyCls}">${esc(it.why)}</span>`:''}${it.key?`<span class="key">${it.key}</span>`:''}${rawHtml}</div><div class="act">${acts}</div>`;
+      row.querySelector('.main').onclick=(e)=>{ if(e.target.closest('button')) return; openRows.has(it.id)?openRows.delete(it.id):openRows.add(it.id); render(); };
+      row.querySelectorAll('button').forEach(b=>b.onclick=(e)=>{e.stopPropagation();action(it,b.dataset.a,b,b.dataset.t)});
+      rows.appendChild(row);
+      if(popover && popover.itemId===it.id) row.querySelector('.act').appendChild(buildPop(it, popover.kind));
+    });
+    root.appendChild(sec);
+  });
+  const unsure=items.filter(i=>i.sec==='unsure').length;
+  document.getElementById('unsureN').textContent=unsure; document.getElementById('alert').hidden=unsure===0;
+}
+function move(it, sec, why, whyCls=''){ it.sec=sec; if(why!==undefined) it.why=why; it.whyCls=whyCls; popover=null; render(); }
+function action(it, a, btn, t){
+  if(a==='primary'){
+    if(it.sec==='defer'){ move(it,'now','미룸 해제 · 지금 처리','now'); toast('지금 할 일로 올렸습니다'); return; }
+    const label = it.dir==='out' ? '응답 확인' : '완료';
+    move(it,'done', (it.dir==='out'?'상대가 답 · ':'내가 처리 · ')+'방금'); collapsed.done=false; toast(label+' — 오늘 끝난 것으로 이동');
+  }
+  else if(a==='defer'||a==='menu'){ popover = (popover&&popover.itemId===it.id&&popover.kind===a)?null:{itemId:it.id,kind:a}; render(); }
+  else if(a==='car'){ toast(`ERP 차량관리에서 ${it.car} 편집 패널을 엽니다 (목업)`); }
+  else if(a==='erp'){ toast(`ERP: ${it.erp} (목업)`); }
+  else if(a==='fix'){ toast('유형 선택 창 (요청/질문/대답/확인/정보/잡담) — 수정 1건 = 학습 1건 (목업)'); }
+  else if(a==='notmine'){ move(it,'other',''); toast('「나와 무관」으로 보냈습니다'); }
+  else if(a==='type'){ if(t==='요청'){ move(it,'wait','내 요청으로 정함 · 16:30까지 기다림'); it.dir='out'; it.what='726/44 입금 요청'; it.who='재무'; } else { move(it, t==='정보'?'other':'other',''); } toast(`「${t}」으로 정했습니다 — 다음부터 같은 꼴은 자동`); }
+}
+function buildPop(it, kind){
+  const p=document.createElement('div'); p.className='pop'; p.setAttribute('role', kind==='menu'?'menu':'dialog');
+  if(kind==='defer'){
+    p.innerHTML=`<p class="t">언제 다시 보여줄까요?</p>
+      <button data-d="오늘 16:00까지 미룸">오늘 오후 <small>16:00</small></button>
+      <button data-d="내일 10:00까지 미룸">내일 오전 <small>10:00</small></button>
+      <button data-d="11/12 10:00까지 미룸">날짜 지정… <small>달력</small></button>
+      <div class="sep"></div>
+      <button data-d="상대가 답하면 다시 표시">상대가 답하면 <small>다음 읽기 때</small></button>
+      <button data-d="ERP 상태가 바뀌면 다시 표시">ERP 상태가 바뀌면 <small>매입 탭 저장 등</small></button>
+      <input placeholder="사유 (선택) — 예: 딜러 서류 대기" id="deferReason">`;
+    p.querySelectorAll('button').forEach(b=>b.onclick=(e)=>{e.stopPropagation(); const r=p.querySelector('#deferReason').value.trim(); move(it,'defer', b.dataset.d+(r?` · 사유: ${r}`:'')); collapsed.defer=false; toast('미뤄둔 일로 이동 — 정한 시점에 다시 올라옵니다');});
+    p.querySelector('input').onclick=e=>e.stopPropagation();
+  } else {
+    const isOut = it.dir==='out';
+    p.innerHTML=`<p class="t">더 보기</p>
+      <div class="group">보기</div>
+      <button data-m="raw">원문 · 앞뒤 대화 ${openRows.has(it.id)?'접기':'펼치기'}</button>
+      <button data-m="room">카톡에서 이 방 열기</button>
+      <div class="group">처리</div>
+      ${isOut?'<button data-m="nudge">지금 재촉 <small>문구 복사</small></button><button data-m="mine">내 할 일로 전환</button>':''}
+      ${it.car?`<button data-m="car">차량 열기 <small>${it.car}</small></button>`:''}
+      ${it.erp?`<button data-m="erp">${esc(it.erp)}</button>`:''}
+      <div class="group">분류</div>
+      <button data-m="fix">분류 수정 <small>학습 1건</small></button>
+      <button data-m="notmine">내 일이 아님</button>
+      <div class="sep"></div>
+      <button data-m="ignore">무시 <small>다시 안 보임</small></button>`;
+    p.querySelectorAll('button').forEach(b=>b.onclick=(e)=>{e.stopPropagation(); const m=b.dataset.m; popover=null;
+      if(m==='raw'){openRows.has(it.id)?openRows.delete(it.id):openRows.add(it.id); render();}
+      else if(m==='room'){render(); toast('카톡 PC 에서 무사백-수출팀 창을 앞으로 (목업)');}
+      else if(m==='nudge'){render(); toast('재촉 문구를 클립보드에 복사했습니다: "14:44 계약금 100만 원 입금 요청 드렸는데 확인 부탁드립니다" (목업)');}
+      else if(m==='mine'){it.dir='in'; move(it,'now','내 할 일로 전환','now'); toast('지금 할 일로 옮겼습니다');}
+      else if(m==='car'){render(); toast(`ERP 차량관리 ${it.car} (목업)`);}
+      else if(m==='erp'){render(); toast(`ERP: ${it.erp} (목업)`);}
+      else if(m==='fix'){render(); toast('유형 선택 창 (목업)');}
+      else if(m==='notmine'){move(it,'other',''); toast('「나와 무관」으로 보냈습니다');}
+      else if(m==='ignore'){items=items.filter(x=>x!==it); render(); toast('무시 — 이 메시지는 다시 안 보입니다');}
+    });
+  }
+  return p;
+}
+document.addEventListener('click',(e)=>{ if(popover && !e.target.closest('.pop') && !e.target.closest('[data-a="defer"],[data-a="menu"]')){popover=null;render();} });
+document.getElementById('readBtn').onclick=function(){
+  const b=this; b.disabled=true; let n=0; const rooms=['무사백-수출팀','조태신대표님','헤이맨_이다은'];
+  const tick=()=>{ if(n<rooms.length){ b.textContent=`읽는 중… ${rooms[n]}`; n++; setTimeout(tick,700);} else { b.textContent='지금 읽기'; b.disabled=false; const d=new Date(); document.getElementById('readAt').textContent=`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; toast('새 메시지 0개 — 바뀐 것 없음 (목업)'); } };
+  tick();
+};
+document.getElementById('roomsLink').onclick=()=>toast('방 선택: ☑ 무사백-수출팀 ☑ 조태신대표님 ☑ 헤이맨_이다은 ☐ 밥밥밥 … (목업)');
+document.getElementById('alertLink').onclick=()=>{collapsed.unsure=false; render(); document.querySelector('[data-sec="unsure"]').scrollIntoView({behavior:'smooth',block:'center'});};
+render();
+</script>
+</body>
+</html>
