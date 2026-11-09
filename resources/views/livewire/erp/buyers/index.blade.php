@@ -340,6 +340,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    /**
+     * 💳 목록 「적립금」 열 (jin 2026-11-09 «바이어명/담당자/국가/이메일 헤더에 적립금 헤더») — 이 페이지 바이어들의
+     * 통화별 최신 잔액을 한 번에 뽑는다(`SavingsLedger::balancesFor`, 쿼리 2개·N+1 ✗). 숫자는 적립금 탭·포털과 같은 함수.
+     *
+     * @return array<int, array<string, float>> buyer_id => [currency => balance]
+     */
+    #[Computed]
+    public function savingsBalances(): array
+    {
+        return app(\App\Services\SavingsLedger::class)->balancesFor($this->buyers->pluck('id')->all());
+    }
+
     #[Computed]
     public function buyers()
     {
@@ -1621,15 +1633,16 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium">{{ __('common.country') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
+                <th class="pb-2 pr-4 font-medium" data-savings-col>{{ __('buyer.col_savings') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
                 @if(Setting::b2bPartnersEnabled())<th class="pb-2 pr-4 font-medium">{{ __('buyer.col_b2b') }}</th>@endif
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
-            @php $gauges = $this->receivableGauges; @endphp
+            @php $gauges = $this->receivableGauges; $savingsAll = $this->savingsBalances; @endphp
             @forelse($this->buyers as $b)
-            @php $bg = $gauges[$b->id] ?? null; @endphp
+            @php $bg = $gauges[$b->id] ?? null; $sv = $savingsAll[$b->id] ?? []; @endphp
             {{-- 2026-07-08 — 바이어별 미수금 행 배경 게이지 (차량관리와 동일: app.js tr[data-ratio]). --}}
             <tr class="cursor-pointer {{ $bg ? '' : 'hover:bg-gray-50' }}" wire:click="openEdit({{ $b->id }})"
                 @if($bg)
@@ -1650,6 +1663,15 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-gray-500">{{ $b->country?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $b->contact_email ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $b->contact_phone ?? '-' }}</td>
+                {{-- 💳 적립금 — 통화별 잔액(양수 초록·음수 빨강). 0 인 통화는 안 적는다. 없으면 '-'. --}}
+                <td class="py-3 pr-4 text-xs tabular-nums" data-savings-cell>
+                    @php $svShown = array_filter($sv, fn ($v) => abs((float) $v) >= 0.005); @endphp
+                    @forelse($svShown as $cur => $bal)
+                        <div class="whitespace-nowrap {{ (float) $bal < 0 ? 'text-red-600' : 'text-emerald-700' }}"><span class="font-mono font-semibold">{{ $cur }}</span> {{ number_format((float) $bal, 2) }}</div>
+                    @empty
+                        <span class="text-gray-300">-</span>
+                    @endforelse
+                </td>
                 <td class="py-3 pr-4">
                     <span class="badge {{ $b->is_active ? 'badge-green' : 'badge-gray' }}">
                         {{ $b->is_active ? __('common.active') : __('common.inactive') }}
@@ -1672,7 +1694,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="{{ Setting::b2bPartnersEnabled() ? 8 : 7 }}" class="py-12 text-center text-sm text-gray-400">{{ __('buyer.empty') }}</td></tr>
+            <tr><td colspan="{{ Setting::b2bPartnersEnabled() ? 9 : 8 }}" class="py-12 text-center text-sm text-gray-400">{{ __('buyer.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -1685,6 +1707,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div>
             <div class="font-medium text-gray-800">{{ $b->name }}@if($b->isNewBuyer())<span class="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-buyer-new title="{{ __('buyer.new_badge_hint', ['date' => $b->created_at->format('Y-m-d')]) }}">{{ __('buyer.new_badge') }}</span>@endif</div>
             <div class="text-xs text-gray-500">{{ $b->country?->name ?? '' }} {{ $b->contact_email ? '· '.$b->contact_email : '' }}</div>
+            @php $svm = array_filter($this->savingsBalances[$b->id] ?? [], fn ($v) => abs((float) $v) >= 0.005); @endphp
+            @if($svm)
+            <div class="mt-0.5 text-[11px] tabular-nums" data-savings-card>💳
+                @foreach($svm as $cur => $bal)<span class="ml-1 whitespace-nowrap {{ (float) $bal < 0 ? 'text-red-600' : 'text-emerald-700' }}"><span class="font-mono font-semibold">{{ $cur }}</span> {{ number_format((float) $bal, 2) }}</span>@endforeach
+            </div>
+            @endif
             @if(Setting::b2bPartnersEnabled() && ($b->is_b2b_partner || ($b->dp_count ?? 0) > 0 || ($b->fd_count ?? 0) > 0))
             <div class="mt-0.5 text-[10px]">
                 @if($b->is_b2b_partner)<span class="badge badge-amber">{{ __('buyer.b2b_badge') }}</span>@endif
@@ -1728,27 +1756,6 @@ new #[Layout('components.layouts.app')] class extends Component {
             <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
     </div>
-
-    {{-- 💳 적립금 헤더 (jin 2026-11-09 «바이어 탭에서 적립금 바로 볼 수 있는 헤더») — 적립금 탭을 누르지 않아도
-         통화별 잔액이 바로 보인다. 숫자는 적립금 탭과 **같은 $balances/$balancesKrw**(SavingsLedger, loadSavings) — 따로 세지 않는다.
-         누르면 적립금 탭으로. 신규 등록(editingId 없음)엔 안 그린다. 가드 = BuyerSavingsHeaderTest --}}
-    @if($editingId)
-    <button type="button" @click="tab='savings'" data-savings-header
-            class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 border-b bg-emerald-50/60 px-5 py-2 text-left text-xs hover:bg-emerald-50">
-        <span class="font-semibold text-gray-700">💳 {{ __('buyer.savings.header_title') }}</span>
-        @forelse($balances as $cur => $bal)
-            @php $bal = (float) $bal; $k = $balancesKrw[$cur] ?? null; @endphp
-            <span class="inline-flex items-baseline gap-1 rounded-md border bg-white px-2 py-0.5 tabular-nums {{ $bal < 0 ? 'border-red-200 text-red-600' : ($bal > 0 ? 'border-emerald-200 text-emerald-700' : 'border-gray-200 text-gray-500') }}">
-                <span class="font-mono font-semibold">{{ $cur }}</span>
-                <span class="font-medium">{{ number_format($bal, 2) }}</span>
-                @if($k && ($k['krw'] > 0 || $k['unrated'] <= 0))<span class="text-[11px] text-gray-500">≈ {{ number_format($k['krw']) }}{{ __('buyer.savings.won') }}</span>@endif
-            </span>
-        @empty
-            <span class="text-gray-400">{{ __('buyer.savings.header_none') }}</span>
-        @endforelse
-        <span class="ml-auto text-[11px] text-gray-400">{{ __('buyer.savings.header_open') }} ›</span>
-    </button>
-    @endif
 
     {{-- 검증 에러 요약 (2026-07-09 jin — 저장 눌러도 반응 없어 보이던 문제: 실은 검증 실패라 상단에 노출) --}}
     @if($errors->any())

@@ -33,6 +33,7 @@ return [
         'confirm_btn' => '이관 후 삭제',
         'rebound' => '차량 :count대와 컨사이니 :consignees건을 「:target」으로 넘기고 삭제했습니다.',
     ],
+    'col_savings' => '적립금',   // 💳 목록 열 (2026-11-09)
     'col_name' => '바이어명',
 
     'tab' => [
@@ -176,10 +177,6 @@ return [
         'rate' => '적립 시 환율',
         'rate_note' => '(선택)',
         'won' => '원',
-        // 💳 패널 헤더 적립금 띠 (2026-11-09)
-        'header_title' => '적립금',
-        'header_none' => '적립금 없음',
-        'header_open' => '적립금 탭',
         'unrated_note' => '⚠ :amount :currency 는 적립 시 환율이 없어 원화 환산에서 빠졌습니다.',
         // 선입선출 안내 — "@1487 이게 환율인가?" (jin) → 환율임을 글자로 밝힌다.
         'next_out_line' => '다음 차감 → :date 적립분 남은 :amount (:rate)',

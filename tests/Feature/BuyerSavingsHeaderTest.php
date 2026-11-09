@@ -11,10 +11,10 @@ use Livewire\Volt\Volt;
 use Tests\TestCase;
 
 /**
- * 💳 바이어 편집 패널 헤더의 적립금 띠 (jin 2026-11-09 «바이어 탭에서 적립금 바로 볼 수 있는 헤더»).
+ * 💳 바이어 목록 「적립금」 열 (jin 2026-11-09 «바이어명/담당자/국가/이메일 헤더에 적립금 헤더를 만들어서 내용을 보게»).
  *
- * 적립금 탭을 누르지 않아도 통화별 잔액(+원화 병기)이 헤더에 보인다. 숫자는 적립금 탭과 같은
- * SavingsLedger 잔액 — 따로 세는 코드가 생기면 두 숫자가 갈린다(§8 #44). 신규 등록 패널엔 안 그린다.
+ * 목록 표에 통화별 적립금 잔액이 바로 보인다(패널을 열지 않아도). 숫자는 적립금 탭·포털과 같은
+ * SavingsLedger::balancesFor — 따로 세는 코드가 생기면 두 숫자가 갈린다(§8 #44). 0 인 통화는 안 적고, 없으면 '-'.
  */
 class BuyerSavingsHeaderTest extends TestCase
 {
@@ -27,53 +27,68 @@ class BuyerSavingsHeaderTest extends TestCase
         return User::factory()->create(['permission' => 'user', 'role' => '재무', 'email_verified_at' => now()]);
     }
 
-    private function buyer(): Buyer
+    private function buyer(string $name): Buyer
     {
         $s = Salesman::create(['name' => 'S'.++$this->n, 'is_active' => true]);
 
-        return Buyer::create(['name' => 'B'.$this->n, 'is_active' => true, 'salesman_id' => $s->id]);
+        return Buyer::create(['name' => $name, 'is_active' => true, 'salesman_id' => $s->id]);
     }
 
-    private function earn(Buyer $buyer, float $amount, string $currency, float $rate): void
+    private function txn(Buyer $buyer, string $type, float $amount, string $currency): void
     {
         $latest = SavingsStatus::where('buyer_id', $buyer->id)->where('currency', $currency)->orderByDesc('id')->first();
+        $delta = $type === 'USED' ? -$amount : $amount;
         SavingsStatus::create([
-            'buyer_id' => $buyer->id, 'currency' => $currency, 'exchange_rate' => $rate,
-            'transaction_type' => 'EARNED', 'savings' => $amount, 'balance' => (float) ($latest?->balance ?? 0) + $amount,
-            'note' => '테스트 적립',
+            'buyer_id' => $buyer->id, 'currency' => $currency, 'exchange_rate' => 1400,
+            'transaction_type' => $type, 'savings' => $type === 'USED' ? -$amount : $amount,
+            'balance' => (float) ($latest?->balance ?? 0) + $delta, 'note' => '테스트',
         ]);
     }
 
-    public function test_the_panel_header_shows_every_currency_balance_with_krw(): void
+    /** 표 행 안의 적립금 칸만 잘라낸다 — 다른 칸·패널에 같은 숫자가 있어도 헛통과하지 않게(§8 #107). */
+    private function savingsCellFor(string $html, string $buyerName): string
     {
-        $b = $this->buyer();
-        $this->earn($b, 300, 'EUR', 1400);
-        $this->earn($b, 120.5, 'USD', 1300);
+        $this->assertSame(1, preg_match('/<tr[^>]*>\s*<td[^>]*>'.preg_quote($buyerName, '/').'[\s\S]*?<td[^>]*data-savings-cell[^>]*>([\s\S]*?)<\/td>/u', $html, $m), "{$buyerName} 행의 적립금 칸이 없다");
 
-        $this->actingAs($this->finance());
-        $html = Volt::test('erp.buyers.index')->call('openEdit', $b->id)->html();
-
-        $this->assertSame(1, preg_match('/<button[^>]*data-savings-header[\s\S]*?<\/button>/u', $html, $m), '헤더 적립금 띠가 없다');
-        $strip = $m[0];
-        $this->assertStringContainsString('EUR', $strip);
-        $this->assertStringContainsString('300.00', $strip);
-        $this->assertStringContainsString('≈ 420,000원', $strip, '원화 병기(300×1400)가 없다');
-        $this->assertStringContainsString('USD', $strip);
-        $this->assertStringContainsString('120.50', $strip);
-        $this->assertStringContainsString('≈ 156,650원', $strip, '원화 병기(120.5×1300)가 없다');
-        $this->assertStringContainsString("tab='savings'", $strip, '누르면 적립금 탭으로 가야 한다');
+        return $m[1];
     }
 
-    public function test_a_buyer_without_savings_says_so_and_the_create_panel_has_no_strip(): void
+    public function test_the_list_has_a_savings_column_with_the_latest_balance_per_currency(): void
     {
-        $b = $this->buyer();
+        $rich = $this->buyer('SAVRICH');
+        $this->txn($rich, 'EARNED', 300, 'EUR');
+        $this->txn($rich, 'USED', 100, 'EUR');       // 최신 잔액 200 — 합이 아니라 마지막 balance
+        $this->txn($rich, 'EARNED', 120.5, 'USD');
+        $this->txn($rich, 'EARNED', 50, 'JPY');
+        $this->txn($rich, 'USED', 50, 'JPY');        // 0 → 안 적는다
+        $none = $this->buyer('SAVNONE');
+
         $this->actingAs($this->finance());
+        $html = Volt::test('erp.buyers.index')->html();
 
-        $html = Volt::test('erp.buyers.index')->call('openEdit', $b->id)->html();
-        $this->assertSame(1, preg_match('/<button[^>]*data-savings-header[\s\S]*?<\/button>/u', $html, $m));
-        $this->assertStringContainsString('적립금 없음', $m[0]);
+        $this->assertStringContainsString('data-savings-col', $html, '표 헤더에 적립금 열이 없다');
+        $this->assertStringContainsString('>적립금<', $html);
 
-        $create = Volt::test('erp.buyers.index')->call('openCreate')->html();
-        $this->assertStringNotContainsString('data-savings-header', $create, '신규 등록 패널엔 적립금 띠가 없어야 한다');
+        $cell = $this->savingsCellFor($html, 'SAVRICH');
+        $this->assertStringContainsString('EUR', $cell);
+        $this->assertStringContainsString('200.00', $cell);
+        $this->assertStringNotContainsString('300.00', $cell, '합계가 아니라 최신 잔액이어야 한다');
+        $this->assertStringContainsString('USD', $cell);
+        $this->assertStringContainsString('120.50', $cell);
+        $this->assertStringNotContainsString('JPY', $cell, '잔액 0 인 통화는 안 적는다');
+
+        $this->assertSame('-', trim(strip_tags($this->savingsCellFor($html, 'SAVNONE'))), '적립금 없는 바이어는 - 로 보인다');
+    }
+
+    public function test_a_negative_balance_is_shown_in_red(): void
+    {
+        $b = $this->buyer('SAVNEG');
+        $this->txn($b, 'USED', 40, 'EUR');   // -40
+
+        $this->actingAs($this->finance());
+        $cell = $this->savingsCellFor(Volt::test('erp.buyers.index')->html(), 'SAVNEG');
+
+        $this->assertStringContainsString('-40.00', $cell);
+        $this->assertStringContainsString('text-red-600', $cell);
     }
 }
