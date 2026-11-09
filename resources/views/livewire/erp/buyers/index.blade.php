@@ -1729,6 +1729,27 @@ new #[Layout('components.layouts.app')] class extends Component {
         </button>
     </div>
 
+    {{-- 💳 적립금 헤더 (jin 2026-11-09 «바이어 탭에서 적립금 바로 볼 수 있는 헤더») — 적립금 탭을 누르지 않아도
+         통화별 잔액이 바로 보인다. 숫자는 적립금 탭과 **같은 $balances/$balancesKrw**(SavingsLedger, loadSavings) — 따로 세지 않는다.
+         누르면 적립금 탭으로. 신규 등록(editingId 없음)엔 안 그린다. 가드 = BuyerSavingsHeaderTest --}}
+    @if($editingId)
+    <button type="button" @click="tab='savings'" data-savings-header
+            class="flex w-full flex-wrap items-center gap-x-3 gap-y-1 border-b bg-emerald-50/60 px-5 py-2 text-left text-xs hover:bg-emerald-50">
+        <span class="font-semibold text-gray-700">💳 {{ __('buyer.savings.header_title') }}</span>
+        @forelse($balances as $cur => $bal)
+            @php $bal = (float) $bal; $k = $balancesKrw[$cur] ?? null; @endphp
+            <span class="inline-flex items-baseline gap-1 rounded-md border bg-white px-2 py-0.5 tabular-nums {{ $bal < 0 ? 'border-red-200 text-red-600' : ($bal > 0 ? 'border-emerald-200 text-emerald-700' : 'border-gray-200 text-gray-500') }}">
+                <span class="font-mono font-semibold">{{ $cur }}</span>
+                <span class="font-medium">{{ number_format($bal, 2) }}</span>
+                @if($k && ($k['krw'] > 0 || $k['unrated'] <= 0))<span class="text-[11px] text-gray-500">≈ {{ number_format($k['krw']) }}{{ __('buyer.savings.won') }}</span>@endif
+            </span>
+        @empty
+            <span class="text-gray-400">{{ __('buyer.savings.header_none') }}</span>
+        @endforelse
+        <span class="ml-auto text-[11px] text-gray-400">{{ __('buyer.savings.header_open') }} ›</span>
+    </button>
+    @endif
+
     {{-- 검증 에러 요약 (2026-07-09 jin — 저장 눌러도 반응 없어 보이던 문제: 실은 검증 실패라 상단에 노출) --}}
     @if($errors->any())
     <div class="border-b border-red-200 bg-red-50 px-5 py-3">
