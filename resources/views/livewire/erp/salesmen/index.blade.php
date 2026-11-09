@@ -1266,6 +1266,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium">{{ __('salesman.col.account') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
+                {{-- 📝 메모 (jin 2026-11-09) — 드로어 메모를 목록에도. 길면 잘라 보여주고 title 로 전체(폰은 카드 쪽에서 2줄 clamp, §8 #98) --}}
+                <th class="pb-2 pr-4 font-medium">{{ __('common.memo') }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
@@ -1294,6 +1296,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->user?->name ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->phone ?? '-' }}</td>
                 <td class="py-3 pr-4 text-gray-500">{{ $sm->email ?? '-' }}</td>
+                <td class="max-w-[200px] truncate py-3 pr-4 text-xs text-gray-500" data-memo-cell="{{ $sm->id }}"@if(filled($sm->memo)) title="{{ $sm->memo }}"@endif>{{ $sm->memo }}</td>
                 <td class="py-3 pr-4">
                     @if($sm->hasLeft())
                     <span class="badge badge-gray" title="{{ $sm->settlesImmediatelyOnLeave() ? __('salesman.left_freelance_hint') : __('salesman.left_employee_hint') }}">{{ __('salesman.left_badge', ['date' => $sm->left_at->format('Y-m-d')]) }}</span>
@@ -1321,7 +1324,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="7" class="py-12 text-center text-sm text-gray-400">{{ __('salesman.empty') }}</td></tr>
+            <tr><td colspan="8" class="py-12 text-center text-sm text-gray-400">{{ __('salesman.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -1348,6 +1351,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @endif
                 </div>
                 <div class="text-xs text-gray-500">{{ $sm->phone ?? '' }}{{ $sm->email ? ' · '.$sm->email : '' }}</div>
+                @if(filled($sm->memo))
+                <div class="mt-0.5 line-clamp-2 break-all text-xs text-gray-400" data-memo-card="{{ $sm->id }}">{{ $sm->memo }}</div>
+                @endif
             </div>
             <div class="flex items-center gap-2">
                 <span class="badge {{ \App\Models\Salesman::typeBadgeClass($sm->type) }}">{{ $sm->type_label }}</span>
