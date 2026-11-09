@@ -14,7 +14,7 @@
 ## 0. 한 줄 요약
 
 **board** = 매입·검차·경매 **앞단** 앱(`C:\xampp\htdocs\board`, 별도 repo/DB/APP_KEY/배포, 포트 8002).
-매입 **확정 전** 워크플로우를 담당하고, 확정되면 **car-erp 재고로 전환**된다. 현재 **heyman 만 연동**.
+매입 **확정 전** 워크플로우를 담당하고, 확정되면 **car-erp 재고로 전환**된다. 연동 쌍 = **heymanboard↔heymanerp · ssancarboard(board.heymancar.com, 2026-06-27 LIVE)↔ssancarerp**(🔀 2026-11-09 정정 — 구 「heyman 만 연동」은 낡은 문장이었다. karaba board 는 추후 설치).
 
 ```
 board (앞단: 매입·검차·경매)  ──연동 B──▶  car-erp (재고·판매·통관·선적·정산)
