@@ -33,6 +33,7 @@ return [
         'confirm_btn' => 'Rebind & delete',
         'rebound' => 'Moved :count vehicle(s) and :consignees consignee(s) to ":target" and deleted the buyer.',
     ],
+    'col_savings' => 'Savings',   // list column (2026-11-09)
     'col_name' => 'Buyer Name',
 
     'tab' => [
@@ -174,10 +175,6 @@ return [
         'rate' => 'Rate at earning',
         'rate_note' => '(optional)',
         'won' => ' KRW',
-        // Savings strip in the panel header (2026-11-09)
-        'header_title' => 'Savings',
-        'header_none' => 'No savings',
-        'header_open' => 'Savings tab',
         'unrated_note' => '⚠ :amount :currency excluded from the KRW total (no rate recorded at earning).',
         'next_out_line' => 'Next out → :date batch, :amount left (:rate)',
         'rate_label' => 'rate :rate',
