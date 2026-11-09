@@ -128,6 +128,8 @@ return [
         'extra_badge' => '추가',
         'extra_ok' => '추가',
         'extra_amount_label' => '추가 금액',
+        'composition' => '지급 :payout + 추가 :extra',
+        'extra_in_hold' => '➕ 추가 :amount원은 보류에 포함',
         'extra_amount_hint' => '대표가 정한 추가 지급액(+/−). 다음 월정산 줄로 넣거나 월정산 밖에서 지급합니다. 지급되는 달의 회사이익에서 빠집니다.',
         'extra_zero' => '추가 금액을 적어 주세요(0 은 안 됩니다).',
         'extra_cancel' => '추가 취소',

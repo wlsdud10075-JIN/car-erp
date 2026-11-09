@@ -329,6 +329,38 @@ class PayoutHoldTest extends TestCase
         }
     }
 
+    /** jin 2026-11-09 «보류 1,321만과 추가 300만이 따로 서면 중복으로 보인다 — 최종 금액 하나만, 구성은 그 안에». 흡수된 추가는 ➕ 로 안 서고 ⏸ 구성에만. */
+    public function test_extra_absorbed_into_the_hold_shows_as_composition_not_as_a_second_badge(): void
+    {
+        [$batch, $sm, $manager] = $this->approvedBatch();   // 지급합계 2,100,000
+        $batch->addExtraPayout($manager, $sm->id, 500_000, '대표 승인 추가 인센티브');
+
+        // ① 보류가 지급합계 이하(1,000,000) — 추가는 흡수 안 됨 → ➕ 500,000 따로, 구성 줄 없음
+        $batch->holdPayout($manager, $sm->id, 1_000_000, '일부');
+        $this->assertSame(['held' => 1_000_000, 'held_payout' => 1_000_000, 'held_extra' => 0, 'extra' => 500_000, 'extra_outside' => 500_000], $batch->holdCompositionFor($sm->id));
+        $this->actingAs($manager);
+        Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)
+            ->assertSeeHtml('data-extra-badge="'.$sm->id.'"')->assertDontSeeHtml('data-hold-composition')->assertDontSeeHtml('data-extra-in-hold');
+        $this->assertSame(['hold' => 1_000_000, 'extra' => 500_000, 'extra_shown' => 500_000], PayoutHold::openBalances()[$sm->id]);
+
+        // ② 나머지까지 전부 보류(합 2,600,000 = 지급 + 추가) — 추가 500,000 은 보류에 흡수
+        $batch->holdPayout($manager, $sm->id, null, '합산 보류');
+        $comp = $batch->holdCompositionFor($sm->id);
+        $this->assertSame(['held' => 2_600_000, 'held_payout' => 2_100_000, 'held_extra' => 500_000, 'extra' => 500_000, 'extra_outside' => 0], $comp);
+        // 카드 — ⏸ 하나 + 구성 「지급 2,100,000 + 추가 500,000」, ➕ 뱃지 없음, 「추가 500,000원은 보류에 포함」
+        Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)
+            ->assertSeeHtml('data-hold-composition="'.$sm->id.'"')->assertSee('지급 2,100,000 + 추가 500,000')
+            ->assertDontSeeHtml('data-extra-badge="'.$sm->id.'"')->assertSeeHtml('data-extra-in-hold="'.$sm->id.'"');
+        // 사내직원관리 — ⏸ 뱃지만(➕ 는 흡수돼 0), 드로어는 ⏸ 블록에 구성 줄 · ➕ 블록 없음
+        $this->assertSame(['hold' => 2_600_000, 'extra' => 500_000, 'extra_shown' => 0], PayoutHold::openBalances()[$sm->id]);
+        Volt::test('erp.salesmen.index')->assertSeeHtml('data-hold-badge="'.$sm->id.'"')->assertDontSeeHtml('data-extra-badge="'.$sm->id.'"')
+            ->call('openEdit', $sm->id)->assertSeeHtml('data-hold-block="hold"')->assertSeeHtml('data-hold-composition="'.$sm->id.'"')
+            ->assertSee('지급 2,100,000 + 추가 500,000')->assertDontSeeHtml('data-hold-block="extra"');
+        // 숫자는 그대로 — 실제 송금 = 총액 − 2,600,000 + 500,000
+        $transfer = (int) $batch->breakdownForDisplay()['totals']['transfer_total'];
+        Volt::test('erp.payout-batches.index')->call('toggle', $batch->id)->assertSee(number_format($transfer - 2_600_000 + 500_000));
+    }
+
     /** jin 2026-11-09 «뱃지는 잘 나오는데 드로어 클릭하면 상세내용에 안 나온다» — 보류 기록 칸이 사내직원 급여 분기 안에 있어 프리랜서 드로어엔 안 그려졌다. */
     public function test_hold_panel_shows_in_the_drawer_for_freelancers_too(): void
     {

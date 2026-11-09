@@ -537,6 +537,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             $sid = (int) $person['salesman_id']; $payout = (int) ($person['payout'] ?? 0);
                             $hs = $holds->get($sid); $heldHere = $hs ? (int) $hs->sum('amount_krw') : 0;
                             $es = $extras->get($sid); $extraHere = $es ? (int) $es->sum('amount_krw') : 0;
+                            $comp = $b->holdCompositionFor($sid, $payout);   // 보류 구성 — 지급 몫 + 흡수된 추가 몫(jin 11-09 «중복으로 보인다»)
                             $payout = $b->holdBase($sid, $payout);   // 보류 바탕 = 지급합계 + 지급추가(2026-11-09, 모델과 같은 함수)
                             $room = $payout - $heldHere;
                             $open = $this->holdBatch === $b->id && $this->holdTarget === $sid;
@@ -548,12 +549,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @if($hs || $es || $canHold)
                         <div class="-mt-1 flex flex-wrap items-center justify-end gap-2 rounded-b-md border border-t-0 border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]" data-hold-row="{{ $sid }}">
                             @if($hs)
-                                <span class="rounded bg-slate-600 px-1.5 py-0.5 font-semibold text-white">⏸ {{ __('payout_batch.hold.badge') }} ₩{{ number_format($heldHere) }}@if($heldHere !== $payout) <span class="font-normal opacity-80">/ {{ number_format($payout) }}</span>@endif</span>
+                                <span class="rounded bg-slate-600 px-1.5 py-0.5 font-semibold text-white" @if($comp['held_extra'] !== 0) title="{{ __('payout_batch.hold.composition', ['payout' => number_format($comp['held_payout']), 'extra' => number_format($comp['held_extra'])]) }}" @endif>⏸ {{ __('payout_batch.hold.badge') }} ₩{{ number_format($heldHere) }}@if($heldHere !== $payout) <span class="font-normal opacity-80">/ {{ number_format($payout) }}</span>@endif</span>
+                                @if($comp['held_extra'] !== 0)
+                                <span class="text-gray-500" data-hold-composition="{{ $sid }}">{{ __('payout_batch.hold.composition', ['payout' => number_format($comp['held_payout']), 'extra' => number_format($comp['held_extra'])]) }}</span>
+                                @endif
                                 <span class="text-gray-500">{{ $hs->map(fn ($x) => $finalized && $x->status === \App\Models\PayoutHold::HELD ? __('payout_batch.hold.status_held_final') : __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
                             @endif
-                            @if($es)
-                                <span class="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800" data-extra-badge="{{ $sid }}">➕ {{ __('payout_batch.hold.extra_badge') }} {{ $extraHere < 0 ? '−' : '+' }}₩{{ number_format(abs($extraHere)) }}</span>
+                            @if($es && $comp['extra_outside'] !== 0)
+                                {{-- 보류에 흡수되지 않은 추가만 ➕ 로 — 흡수된 몫은 위 보류 구성에 들어 있다(jin 11-09) --}}
+                                <span class="rounded bg-amber-100 px-1.5 py-0.5 font-semibold text-amber-800" data-extra-badge="{{ $sid }}">➕ {{ __('payout_batch.hold.extra_badge') }} {{ $comp['extra_outside'] < 0 ? '−' : '+' }}₩{{ number_format(abs($comp['extra_outside'])) }}</span>
                                 <span class="text-gray-500">{{ $es->map(fn ($x) => $x->status === \App\Models\PayoutHold::RELEASED_PAID ? __('payout_batch.hold.status_extra_paid') : __('payout_batch.hold.status.'.$x->status))->unique()->implode(' · ') }}</span>
+                            @elseif($es)
+                                <span class="text-gray-500" data-extra-in-hold="{{ $sid }}">{{ __('payout_batch.hold.extra_in_hold', ['amount' => number_format(abs($comp['held_extra']))]) }}</span>
                             @endif
                             @if($canHold)
                                 @if($open)

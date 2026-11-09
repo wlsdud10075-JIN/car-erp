@@ -98,8 +98,48 @@ class PayoutHold extends Model
     {
         $out = [];
         foreach (self::query()->open()->selectRaw('salesman_id, kind, SUM(amount_krw) t')->groupBy('salesman_id', 'kind')->get() as $r) {
-            $out[(int) $r->salesman_id] ??= ['hold' => 0, 'extra' => 0];
+            $out[(int) $r->salesman_id] ??= ['hold' => 0, 'extra' => 0, 'extra_shown' => 0];
             $out[(int) $r->salesman_id][$r->kind] = (int) $r->t;
+        }
+        // ➕ 뱃지는 보류에 흡수된 몫을 뺀 값만(jin 11-09 «중복으로 보인다») — 흡수된 추가는 ⏸ 뱃지 구성에 들어 있다.
+        $absorbed = self::absorbedExtraBySalesman();
+        foreach ($out as $sid => &$row) {
+            $row['extra_shown'] = $row['extra'] - self::sameSignMin($absorbed[$sid] ?? 0, $row['extra']);
+        }
+        unset($row);
+
+        return $out;
+    }
+
+    /** 두 값이 같은 부호면 절댓값이 작은 쪽(부호 유지), 다르거나 0 이면 0 — 「흡수된 몫」 계산용. */
+    public static function sameSignMin(int $a, int $b): int
+    {
+        if ($a === 0 || $b === 0 || ($a <=> 0) !== ($b <=> 0)) {
+            return 0;
+        }
+
+        return $a > 0 ? min($a, $b) : max($a, $b);
+    }
+
+    /**
+     * 사람별 「보류에 흡수된 지급추가」 합 — 보류·추가가 같은 배치에 둘 다 적힌 사람만 센다(취소 제외).
+     * 계산은 `SettlementPayoutBatch::holdCompositionFor` 한 곳.
+     *
+     * @return array<int, int>
+     */
+    public static function absorbedExtraBySalesman(): array
+    {
+        $pairs = self::query()->where('status', '!=', self::CANCELLED)
+            ->selectRaw("payout_batch_id, salesman_id, SUM(CASE WHEN kind = 'extra' THEN 1 ELSE 0 END) e, SUM(CASE WHEN kind = 'hold' THEN 1 ELSE 0 END) h")
+            ->groupBy('payout_batch_id', 'salesman_id')->havingRaw('e > 0 AND h > 0')->get();
+        $out = [];
+        $batches = SettlementPayoutBatch::query()->whereIn('id', $pairs->pluck('payout_batch_id')->unique())->get()->keyBy('id');
+        foreach ($pairs as $p) {
+            $b = $batches->get((int) $p->payout_batch_id);
+            if (! $b) {
+                continue;
+            }
+            $out[(int) $p->salesman_id] = ($out[(int) $p->salesman_id] ?? 0) + $b->holdCompositionFor((int) $p->salesman_id)['held_extra'];
         }
 
         return $out;

@@ -329,6 +329,25 @@ class BoardPayoutBatchApiTest extends TestCase
         $this->assertSame(now()->toDateString(), $this->signedGet(['salesman_email' => 'me@t.test'])->json('data.0.finalized_at'));
     }
 
+    /** 보류 구성(jin 11-09) — 보류가 지급합계를 넘은 만큼은 추가를 흡수한 것. board 는 ⏸ 하나 + 구성, ➕ 는 extra_outside_total 만. */
+    public function test_hold_composition_fields_split_absorbed_extra_from_outside_extra(): void
+    {
+        $me = $this->salesman('me@t.test');
+        $b = $this->batch('2026-10', 'approved');
+        $this->settlement($me, '11가1111', 2_100_000, $b);
+        $this->hold($b, $me, PayoutHold::KIND_EXTRA, 500_000, PayoutHold::RELEASED_PAID, '추가');
+        $this->hold($b, $me, PayoutHold::KIND_HOLD, 2_600_000, PayoutHold::HELD, '합산 보류');   // 지급 2,100,000 + 추가 500,000 전부
+
+        $row = $this->signedGet(['salesman_email' => 'me@t.test'])->assertOk()->json('data.0');
+        $this->assertSame([2_600_000, 500_000], [$row['held_total'], $row['extra_total']]);
+        $this->assertSame([2_100_000, 500_000, 0], [$row['held_payout_part'], $row['held_extra_part'], $row['extra_outside_total']]);
+
+        // 보류가 지급합계 이하면 추가는 그대로 밖에 선다
+        PayoutHold::where('kind', PayoutHold::KIND_HOLD)->update(['amount_krw' => 1_000_000]);
+        $row = $this->signedGet(['salesman_email' => 'me@t.test'])->assertOk()->json('data.0');
+        $this->assertSame([1_000_000, 0, 500_000], [$row['held_payout_part'], $row['held_extra_part'], $row['extra_outside_total']]);
+    }
+
     public function test_batch_with_only_my_hold_rows_is_kept_and_release_lines_carry_kind_and_source_months(): void
     {
         $me = $this->salesman('me@t.test');

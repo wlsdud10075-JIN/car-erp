@@ -514,6 +514,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         return \App\Models\PayoutHold::openBalances();
     }
 
+    /** 편집 중인 사람의 보류에 흡수된 지급추가 합(jin 11-09 «중복으로 보인다») — 계산은 SettlementPayoutBatch::holdCompositionFor. */
+    #[Computed]
+    public function absorbedExtra(): int
+    {
+        return $this->editingId ? (int) (\App\Models\PayoutHold::absorbedExtraBySalesman()[$this->editingId] ?? 0) : 0;
+    }
+
     /** 편집 중인 사람의 열린 보류 줄. */
     #[Computed]
     public function openHolds()
@@ -1282,7 +1289,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <span class="badge {{ $co > 0 ? 'badge-green' : 'badge-red' }} ml-1.5 text-[10px]"
                           title="{{ __('salesman.carryover_badge') }}">{{ $co > 0 ? '+' : '−' }}₩{{ number_format(abs($co)) }}</span>
                     @endif
-                    @php $hb = $this->holdBalances[$sm->id]['hold'] ?? 0; $eb = $this->holdBalances[$sm->id]['extra'] ?? 0; @endphp
+                    @php $hb = $this->holdBalances[$sm->id]['hold'] ?? 0; $eb = $this->holdBalances[$sm->id]['extra_shown'] ?? 0; @endphp
                     @if($hb !== 0)
                     <span class="badge badge-gray ml-1.5 text-[10px]" data-hold-badge="{{ $sm->id }}" title="{{ __('salesman.hold.badge') }}">⏸ {{ $hb > 0 ? '+' : '−' }}₩{{ number_format(abs($hb)) }}</span>
                     @endif
@@ -1342,7 +1349,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @if($co != 0)
                     <span class="badge {{ $co > 0 ? 'badge-green' : 'badge-red' }} text-[10px]">{{ $co > 0 ? '+' : '−' }}₩{{ number_format(abs($co)) }}</span>
                     @endif
-                    @php $hb = $this->holdBalances[$sm->id]['hold'] ?? 0; $eb = $this->holdBalances[$sm->id]['extra'] ?? 0; @endphp
+                    @php $hb = $this->holdBalances[$sm->id]['hold'] ?? 0; $eb = $this->holdBalances[$sm->id]['extra_shown'] ?? 0; @endphp
                     @if($hb !== 0)
                     <span class="badge badge-gray text-[10px]" data-hold-badge="{{ $sm->id }}" title="{{ __('salesman.hold.badge') }}">⏸ {{ $hb > 0 ? '+' : '−' }}₩{{ number_format(abs($hb)) }}</span>
                     @endif
@@ -1507,13 +1514,21 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <span class="text-[11px] text-gray-500">{{ __('salesman.hold.ledger_hint') }}</span>
             </div>
             @foreach([[\App\Models\PayoutHold::KIND_HOLD, $this->openHolds, 'holdResolveAmount'], [\App\Models\PayoutHold::KIND_EXTRA, $this->openExtras, 'extraResolveAmount']] as [$kind, $rows, $field])
-            @if($rows->isNotEmpty())
-            @php $total = (int) $rows->sum('amount_krw'); $queued = $rows->where('status', \App\Models\PayoutHold::QUEUED)->isNotEmpty(); $isExtra = $kind === \App\Models\PayoutHold::KIND_EXTRA; @endphp
+            @php
+                $total = (int) $rows->sum('amount_krw'); $queued = $rows->where('status', \App\Models\PayoutHold::QUEUED)->isNotEmpty(); $isExtra = $kind === \App\Models\PayoutHold::KIND_EXTRA;
+                // 보류에 흡수된 추가는 ➕ 블록에서 빼고 ⏸ 블록 머리에 구성으로 적는다(jin 11-09 «최종 금액 하나만, 구성은 그 안에»)
+                $absorbed = $this->absorbedExtra;
+                if ($isExtra) { $total -= \App\Models\PayoutHold::sameSignMin($absorbed, $total); }
+            @endphp
+            @if($rows->isNotEmpty() && ! ($isExtra && $total === 0 && $absorbed !== 0))
             <div class="mt-2 rounded border {{ $isExtra ? 'border-amber-300 bg-amber-50' : 'border-slate-300 bg-white' }} p-2" data-hold-block="{{ $kind }}">
                 <div class="flex items-center justify-between gap-2">
                     <span class="text-xs font-semibold text-gray-800">{{ $isExtra ? '➕ '.__('salesman.hold.extra_title') : '⏸ '.__('salesman.hold.title') }}</span>
                     <span class="font-mono text-sm font-bold {{ $total < 0 ? 'text-rose-600' : 'text-gray-900' }}">{{ $total < 0 ? '−' : '+' }}₩{{ number_format(abs($total)) }}</span>
                 </div>
+                @if(! $isExtra && $absorbed !== 0)
+                <div class="mt-0.5 text-right text-[11px] text-gray-500" data-hold-composition="{{ $this->editingId }}">{{ __('salesman.hold.composition', ['payout' => number_format($total - $absorbed), 'extra' => number_format($absorbed)]) }}</div>
+                @endif
                 <div class="mt-1 space-y-0.5">
                     @foreach($rows as $h)
                     <div class="flex justify-between gap-2 text-[11px]" data-hold-line="{{ $h->id }}">
