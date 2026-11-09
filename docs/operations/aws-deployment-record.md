@@ -935,6 +935,15 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-09 — master `9a881fae` · 마이그 0 (jin «배포해줘», 11시대 업무시간 — ssancarerp 10월 월정산 마무리가 막혀 있어 즉시)
+
+dev `b1a1adaa` → master `9a881fae`(cherry-pick 1, `config/column_labels.php` 충돌 1건 = dev 전용 「사용자 전환(로컬)」 라벨 → 제외하고 해소).
+- ⏸ **지급보류 한도 = 지급합계 + 같은 배치 지급추가(취소 제외)** — jin «지급추가한 금액 포함하여 지급보류 하고싶은데 합산금액이 안 되더라». 단일 출처 `SettlementPayoutBatch::holdBase()`(모델 가드·카드 기본값·힌트·버튼 조건). 실송금 = 지급 − 보류 + 추가라 합산 전액 보류 = 송금 0. 가드 `PayoutHoldTest::test_hold_limit_includes_the_extra_payout_of_the_same_batch`(깨뜨리기 확인).
+- 🔒 **승인 더블클릭 잠금** — `approveBy` 트랜잭션 안 `lockForUpdate` + status/step 재확인. 배경 = 11-06 ssancarerp #9 대표 링크가 5초 사이 2번 처리돼 승인행 2·완료 알림톡 2통씩(canDecide 가 트랜잭션 밖).
+- 🏷️ 감사 라벨 `payout_approval_reverted`「월정산 대표 승인 되돌림」.
+- 🔁 **운영 조치(코드 아님, 배포 전 11-09 오전)** — ssancarerp 월정산 #9(2026-10, 497건 4,953만)를 jin 지시로 **대표 승인 전(상무 서명 직후)으로 되돌림**: 부트스트랩 스크립트 트랜잭션 1회 — 배치 pending·current_step 3·대표 step pending·대표 승인행 13·14 삭제·정산 497건 paid→confirmed(paid_at·2차 대기·박제·동결 비율/건당 NULL, 전부 지급 때 NULL 이었음을 감사 from_null 로 확인)·감사 995줄. 지급추가 300만 줄은 유지((나)). 이유 = 마이너스 조정을 결재 중에 추가하려고. 첫 두 시도는 `users.deleted_at`·`audit_logs.updated_at` 없는 칸으로 롤백(변경 0).
+- 확인: 로컬 병렬 3,694 pass · 런 42549237500 잡 5 success · 3사 SHA `9a881fae` · `/login` 200 ×3. 가이드 dev `a5ce5339`.
+
 ## 2026-11-06 (2) — master `8d121745` · 마이그 2(`payout_holds.kind` · `settlement_payout_batches.finalized_at/by`, 열 추가만) (jin «다 확인했어. 배포해줘», 15:40대 업무시간)
 
 dev `649be193`·`530f3fa1`·`9d108849`·`827c2021` → master `465ebddc`~`8d121745`. cherry-pick 때 `config/column_labels.php` 충돌 2건 = dev 전용 「사용자 전환(로컬)」 라벨 인접 → 그 줄만 빼고 해소(앞 배포와 같은 자리 — dev `c4a94fee` 가 살아 있는 동안 매번 난다).
