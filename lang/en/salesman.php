@@ -191,6 +191,7 @@ return [
     'hold' => [
         'badge' => 'Held payout — held in an approved monthly settlement. Open the person to process it.',
         'title' => 'Held payout',
+        'composition' => 'payout :payout + extra :extra',
         'extra_title' => 'Extra payout',
         'extra_hint' => 'Extra payout decided by the CEO after an approved batch (+ to pay, − to collect). "Add to batch" puts it into the next batch as an extra-payout line (deducted from that month\'s company profit); "Paid" records a payment outside the batch.',
         'extra_badge' => 'Extra payout — decided after an approved batch. Open the person to handle it.',

@@ -857,6 +857,24 @@ class SettlementPayoutBatch extends Model
     }
 
     /**
+     * ⏸ 보류 구성 (jin 2026-11-09 «보류 1,321만과 추가 300만이 따로 서면 중복으로 보인다 — 최종 금액 하나만, 구성은 그 안에»).
+     * 보류가 지급합계를 **넘은 만큼**은 지급추가를 흡수한 것이다(holdBase 가 추가까지 허용하므로). 그 몫은 「➕ 추가」로 따로 세우지 않고
+     * 보류 뱃지 안의 「지급 X + 추가 Y」 구성으로만 보여 준다. 흡수되지 않은 추가(보류가 지급합계 이하)만 ➕ 로 남는다.
+     * 카드·사내직원관리·포털 미러가 전부 이 함수를 쓴다 — 🚫 조건을 옮겨 적지 말 것.
+     *
+     * @return array{held:int, held_payout:int, held_extra:int, extra:int, extra_outside:int}
+     */
+    public function holdCompositionFor(int $salesmanId, ?int $payout = null): array
+    {
+        $payout ??= (int) (collect($this->breakdownForDisplay()['people'] ?? [])->firstWhere('salesman_id', $salesmanId)['payout'] ?? 0);
+        $held = (int) ($this->heldAmountsBySalesman()[$salesmanId] ?? 0);
+        $extra = (int) ($this->extraAmountsBySalesman()[$salesmanId] ?? 0);
+        $absorbed = PayoutHold::sameSignMin($held - $payout, $extra);
+
+        return ['held' => $held, 'held_payout' => $held - $absorbed, 'held_extra' => $absorbed, 'extra' => $extra, 'extra_outside' => $extra - $absorbed];
+    }
+
+    /**
      * ➕ 지급추가 (jin 2026-11-06) — 대표가 따로 정해 기안자가 기입하는 추가 지급(+/−, 사유 필수). 결재는 안 탄다(대표가 이미 정한 것).
      * 승인된 사내직원 월정산의 그 사람 줄에 적고, 돈은 「월정산 밖 지급」 또는 다음 월정산 줄(extra_release — 그 달 회사이익 차감)로 나간다.
      * 박제·총액은 그대로 — 장부에만 남고 화면·엑셀이 「실제 송금액 = 송금 총액 − 보류 + 추가」로 겹쳐 보여 준다.

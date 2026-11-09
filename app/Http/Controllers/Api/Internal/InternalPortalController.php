@@ -356,7 +356,7 @@ class InternalPortalController extends Controller
             ])
             ->orderByDesc('month')
             ->get()
-            ->map(function (SettlementPayoutBatch $b) {
+            ->map(function (SettlementPayoutBatch $b) use ($sid) {
                 $settlementTotal = (int) $b->settlements->sum(fn (Settlement $s) => $s->actual_payout);
                 $adjustmentTotal = (int) $b->adjustments->sum('amount');
                 $ledgerRow = fn (PayoutHold $h) => [
@@ -402,6 +402,16 @@ class InternalPortalController extends Controller
                     'extras' => $extras,
                     'held_total' => (int) $holds->sum('amount_krw'),
                     'extra_total' => (int) $extras->sum('amount_krw'),
+                    // 보류 구성(jin 11-09 «중복으로 보인다») — 보류가 지급합계를 넘은 만큼은 추가를 흡수한 것. board 는 ⏸ 뱃지 하나 + 구성 툴팁,
+                    // ➕ 는 extra_outside_total 이 0 이 아닐 때만. 계산은 SettlementPayoutBatch::holdCompositionFor 한 곳.
+                    ...(function () use ($b, $sid, $holds, $extras) {
+                        if ($holds->isEmpty() && $extras->isEmpty()) {
+                            return ['held_payout_part' => 0, 'held_extra_part' => 0, 'extra_outside_total' => 0];
+                        }
+                        $c = $b->holdCompositionFor($sid);
+
+                        return ['held_payout_part' => $c['held_payout'], 'held_extra_part' => $c['held_extra'], 'extra_outside_total' => $c['extra_outside']];
+                    })(),
                     'finalized_at' => $b->finalized_at?->toDateString(),   // 월정산 최종 확정 도장 — null 이면 보류·추가가 아직 바뀔 수 있다
                 ];
             })

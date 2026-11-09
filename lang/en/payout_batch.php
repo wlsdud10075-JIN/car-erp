@@ -123,6 +123,8 @@ return [
         'extra_badge' => 'Extra',
         'extra_ok' => 'Add',
         'extra_amount_label' => 'Extra amount',
+        'composition' => 'payout :payout + extra :extra',
+        'extra_in_hold' => '➕ extra :amount is included in the hold',
         'extra_amount_hint' => 'Extra payout decided by the CEO (+/−). Goes into the next payout batch or is paid outside it; deducted from company profit in the month paid.',
         'extra_zero' => 'Enter an extra amount (not zero).',
         'extra_cancel' => 'Cancel extra',
