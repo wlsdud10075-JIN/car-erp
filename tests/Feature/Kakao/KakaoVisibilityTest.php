@@ -111,4 +111,33 @@ class KakaoVisibilityTest extends TestCase
         $component->call('savePayrollViewers');
         $this->assertSame(1, AuditLog::where('action', 'kakao_viewers_changed')->count());
     }
+
+    /** 헤더 클릭 = 그 칸 전체 선택/해제 (jin 11-10 «하나하나 빼기 너무 힘들다») — 저장 전엔 화면 상태만, [공개 범위 저장]으로 확정 */
+    public function test_column_header_toggles_the_whole_column(): void
+    {
+        $super = $this->user('super', '관리');
+        $a = $this->user('user', '수출통관');
+        $b = $this->user('user', '재무');
+        $this->actingAs($super);
+
+        $c = Volt::test('admin.settings');
+        $this->assertEqualsCanonicalizing([(string) $a->id, (string) $b->id], $c->get('payrollViewerMatrix')['kakao'], '저장 전 = 전원');
+        $c->assertSee('data-viewer-col-toggle="kakao"', false);
+
+        $c->call('toggleViewerColumn', 'kakao');
+        $this->assertSame([], $c->get('payrollViewerMatrix')['kakao'], '전원 체크 상태에서 누르면 전체 해제');
+        $c->call('toggleViewerColumn', 'kakao');
+        $this->assertEqualsCanonicalizing([(string) $a->id, (string) $b->id], $c->get('payrollViewerMatrix')['kakao'], '다시 누르면 전체 선택');
+
+        $c->set('payrollViewerMatrix.kakao', [(string) $a->id])->call('toggleViewerColumn', 'kakao');
+        $this->assertEqualsCanonicalizing([(string) $a->id, (string) $b->id], $c->get('payrollViewerMatrix')['kakao'], '일부만 체크면 전체 선택');
+
+        // 급여 칸은 급여 권한자만 — 수출통관은 안 들어간다
+        $c->call('toggleViewerColumn', 'employee');
+        $this->assertNotContains((string) $a->id, $c->get('payrollViewerMatrix')['employee']);
+
+        $c->call('toggleViewerColumn', 'kakao')->call('savePayrollViewers');
+        $this->assertSame([], Setting::kakaoViewerIds(), '해제한 채 저장하면 아무도 못 쓴다(시스템관리자 제외)');
+        $this->assertFalse($a->fresh()->canUseKakaoAssistant());
+    }
 }
