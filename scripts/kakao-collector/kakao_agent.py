@@ -265,12 +265,19 @@ class Handler(BaseHTTPRequestHandler):
             if not AGENT.start_read(rooms):
                 return self.reply(409, {"ok": False, "message": "이미 읽는 중입니다."})
             return self.reply(202, {"ok": True, "started": True, "rooms": rooms})
-        if path == "/focus":   # 「카톡에서 이 방 열기」(§6 [⋯] 보기) — 열려 있는 방 창을 앞으로. 안 열려 있으면 알려만 준다(자동 열기는 미구현)
+        if path == "/focus":   # 「카톡에서 이 방 열기」(§6 [⋯] 보기) — 열려 있으면 앞으로, 닫혀 있으면 메인 창 검색으로 연다(collector.open_room)
             name = str(self.body().get("room") or "").strip()
-            win = C.find_room_window(name) if name else None
+            if not name:
+                return self.reply(422, {"ok": False, "message": "방 이름이 없습니다."})
+            if AGENT.busy:
+                return self.reply(409, {"ok": False, "message": "읽는 중입니다. 끝난 뒤 다시 누르세요."})
+            try:
+                win = C.open_room(name)
+            except Exception as e:
+                return self.reply(500, {"ok": False, "message": f"카톡 창을 열지 못했습니다: {e}"})
             if not win:
-                return self.reply(404, {"ok": False, "message": f"「{name}」 창이 열려 있지 않습니다. 카톡에서 그 방을 열어 두세요."})
-            return self.reply(200, {"ok": C.focus(win["hwnd"]), "room": win["title"]})
+                return self.reply(404, {"ok": False, "message": f"「{name}」 방을 카톡에서 찾지 못했습니다. 카톡이 로그인돼 있고 방 이름이 같은지 보세요."})
+            return self.reply(200, {"ok": C.is_foreground(win["hwnd"]), "room": win["title"]})
         if path == "/quit":
             self.reply(200, {"ok": True, "message": "bye"})
             threading.Thread(target=self.server.shutdown, daemon=True).start()

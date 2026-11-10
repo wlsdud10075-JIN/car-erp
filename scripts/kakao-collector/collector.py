@@ -127,6 +127,51 @@ def is_foreground(hwnd: int) -> bool:
     return u.GetForegroundWindow() == hwnd
 
 
+VK_V, VK_RETURN = 0x56, 0x0D
+MAIN_SEARCH_ICON = (-109, 55)   # 메인 창 「채팅」 탭 돋보기 — 오른쪽 위에서 (가로 -109, 세로 +55) px (11-10 캡처 실측, 창 392x816)
+MAIN_SEARCH_CLEAR = (-29, 101)  # 검색칸의 X (필터 지우기)
+
+
+def open_room(name: str, timeout: float = 4.0) -> dict | None:
+    """닫혀 있는 방을 메인 창 검색으로 연다(jin 11-10 «열어 놔야 되는구나.. 찾아주는 것까지 하면») — 돋보기 → 이름 붙여넣기 → Enter → 방 창이 뜬다.
+    ⚠️ 여기 Enter 는 「방 열기」일 뿐 전송이 아니다. 🚫 방 창 **안**에서는 Enter 를 절대 치지 말 것 — Ctrl+F 가 검색을 안 열고 붙여넣기가
+    입력칸에 들어간 뒤 Enter 가 **실제 전송**이 됐다(11-10 16:51 수출팀 방 실사고). 그래서 메시지 위치 점프는 안 만든다."""
+    win = find_room_window(name)
+    if win:
+        return win
+    main = next((w for w in kakao_windows() if w["title"].strip() == "카카오톡"), None)
+    if not main or not focus(main["hwnd"]):
+        return None
+    left, top, right, _ = main["rect"]
+    saved = pyperclip.paste()
+    try:
+        click(right + MAIN_SEARCH_ICON[0], top + MAIN_SEARCH_ICON[1])
+        time.sleep(0.5)
+        pyperclip.copy(name)
+        time.sleep(0.2)
+        key(VK_V, ctrl=True)
+        time.sleep(0.8)
+        key(VK_RETURN)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            time.sleep(0.4)
+            win = find_room_window(name)
+            if win:
+                break
+        # 검색 필터 지우기(안 지우면 메인 창 목록이 그 이름으로 걸러진 채 남는다)
+        if focus(main["hwnd"]):
+            click(right + MAIN_SEARCH_CLEAR[0], top + MAIN_SEARCH_CLEAR[1])
+            time.sleep(0.3)
+        if win:
+            focus(win["hwnd"])
+        return win
+    finally:
+        try:
+            pyperclip.copy(saved)
+        except Exception:
+            pass
+
+
 def click(x: int, y: int) -> None:
     u.SetCursorPos(x, y)
     u.mouse_event(0x0002, 0, 0, 0, 0)  # LEFTDOWN

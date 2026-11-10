@@ -32,6 +32,8 @@ pyinstaller --noconfirm --onefile --noconsole --name KakaoAgent kakao_agent.py  
 ## 함정 (실측)
 - 채팅방 창은 메인 창과 **같은 창 클래스**(`EVA_Window_Dblclk`) → 제목으로만 거른다(`open_room_titles`). 2026-11-10 실제로 0개로 나왔던 버그.
 - 목록 **가운데**를 누르면 사진 뷰어가 열려 포커스를 뺏긴다 → 빈 여백(`click_fraction`)을 누른다.
+- 🚨🚨 **방 창 안에서 Enter 를 치지 말 것 — 곧 전송이다.** 방 창의 Ctrl+F 는 검색을 안 연다. 11-10 16:51 「메시지 위치로 점프」 실험(Ctrl+F → 붙여넣기 → Enter)이 붙여넣기를 입력칸에 넣고 **실제로 한 줄을 보냈다**(jin 이 5분 안에 삭제). 그래서 점프 자동화는 없다. 방을 여는 Enter 는 **메인 창 검색칸**에서만(`open_room`, 그 Enter 는 전송이 아니다).
+- 🔎 **방 자동 열기**(`open_room`) = 메인 창 「채팅」 탭 돋보기(오른쪽 위에서 -109, +55px) → 이름 붙여넣기 → Enter → 방 창 → 검색 X(-29, +101). 좌표는 창 캡처 실측 — 카톡 UI 가 바뀌면 여기부터.
 - 🚨 **ESC 를 무조건 치지 말 것** — 카톡 PC 기본 설정이 「ESC 로 채팅창 닫기」라 방 창이 닫히고 맨 앞이 브라우저가 되어 Ctrl+A·C 가 **ERP 페이지를 읽어 보냈다**(11-10 jin 실사고). ESC 는 사진 뷰어가 떴을 때만, 그리고 복사 전마다 「맨 앞 창 = 그 방」을 확인한다.
 - 창 없는 에이전트는 백그라운드 프로세스라 `SetForegroundWindow` 가 조용히 거부될 수 있다 → ALT 키 한 번 · `AttachThreadInput` 으로 재시도하고 **정말 앞에 왔는지** 확인한다(`focus()`).
 - Windows 는 `SO_REUSEADDR` 이면 같은 포트에 두 번째 프로세스가 그냥 붙는다 → `allow_reuse_address=False` 로 단일 인스턴스 판정.
