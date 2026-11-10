@@ -267,7 +267,12 @@ new #[Layout('components.layouts.app')] class extends Component
         $room->forceFill(['sides' => null])->save();
         auth()->user()->kakaoRooms()->updateExistingPivot($room->id, ['my_name' => '']);
         $this->meFor[$roomId] = '';
-        $this->oursFor[$roomId] = [];
+        // 「같은 회사로 잡힌 사람」은 명부와 맞는 사람을 미리 체크(jin 11-10 «기본 0명으로 되어 있는데 체크해 줘야 하는 거야?» — 비워 두면 0명으로 보였다)
+        $senders = $room->senders();
+        $this->oursFor[$roomId] = array_values(array_unique(array_filter(array_map(fn ($n) => KakaoRoom::matchName($n, $senders), KakaoRoom::rosterNames(auth()->user())))));
+        if ($senders === []) {
+            $this->dispatch('notify', message: __('kakao.room_no_messages_yet'), type: 'warning');   // 메시지가 없는 방은 고를 사람이 없다 — 읽은 뒤에
+        }
     }
 
     /** 「읽기」 체크 — 수집기는 체크된 방만 읽는다. 체크를 풀어도 메시지·판정은 남는다. */

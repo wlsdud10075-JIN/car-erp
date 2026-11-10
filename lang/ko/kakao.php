@@ -63,6 +63,7 @@ return [
     'room_them' => '상대',
     'room_change' => '다시 고르기',
     'room_unsubscribe' => '이 방 그만 보기',
+    'room_no_messages_yet' => '이 방은 아직 읽은 메시지가 없어 고를 사람이 없습니다. [지금 읽기]로 한 번 읽은 뒤 고르세요.',
     'room_unsubscribed' => '이 방을 더 안 봅니다. 수집기가 다시 읽으면 다시 뜹니다.',
     'room_pending' => '미분류 :n건',
     'rooms_pick_title' => '읽을 방',
