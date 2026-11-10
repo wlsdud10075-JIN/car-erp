@@ -16,11 +16,24 @@ class KakaoPrompt
      * @param  array<string, array<int, string>>  $sides  편 이름 → 사람들
      * @param  array<string, string>  $roles  편 이름 → 역할 설명(선택, 방 설정에서 입력)
      */
+    /** 편 이름이 이와 같고 방 설정에 역할 설명이 없을 때만 붙는 기본 설명 — 다른 이름의 편엔 안 붙는다(없는 편을 지시하지 않게). */
+    public const DEFAULT_ROLES = [
+        '재무' => '송금·입금·보험·계산서·선수금 적용 담당. 영업의 입금·송금·계약금 요청이 향하는 편',
+        '수출팀' => '말소·저당·서류(패킹·면장)·인보이스·판매보고·B/L·OBL·서렌더·반입 담당',
+        '영업' => '차량을 매입·판매하는 쪽. 운임·일정을 묻고 부킹을 결정하고 바이어·컨사이니 정보를 준다',
+        '프롬' => '포워딩사 — 운임 견적·부킹·B/L·OBL·서렌더·체크빌·컨테이너 작업·선적 일정 담당',
+        '포워더' => '포워딩사 — 운임 견적·부킹·B/L·OBL·서렌더·체크빌·컨테이너 작업·선적 일정 담당',
+    ];
+
     public static function system(array $sides, array $roles = []): string
     {
         $lines = [];
         foreach ($sides as $side => $members) {
-            $desc = isset($roles[$side]) && trim($roles[$side]) !== '' ? ' — '.trim($roles[$side]) : '';
+            $role = trim((string) ($roles[$side] ?? ''));
+            if ($role === '') {
+                $role = self::DEFAULT_ROLES[$side] ?? '';
+            }
+            $desc = $role !== '' ? ' — '.$role : '';
             $lines[] = "- {$side}{$desc}: ".implode(', ', $members);
         }
         $sideNames = implode(' / ', array_keys($sides));
@@ -52,7 +65,7 @@ class KakaoPrompt
 - 잡담: 인사·사과·농담·흥정 멘트(「싸게좀…」).
 
 ## to (이 메시지가 향하는 편 — {$sideNames} / 없음 중 하나)
-보낸 사람과 내용으로 정한다. 송금·입금·보험·계산서·선수금 적용은 재무 쪽, 말소·저당·서류·인보이스·판매보고·B/L·서렌더·반입은 수출팀 쪽, 운임·일정 안내는 그걸 물은 영업 쪽. 잡담·누구에게도 아닌 것은 「없음」.
+보낸 사람과 내용, 그리고 위 「방 구성」의 각 편 역할 설명을 보고 정한다. 어떤 일을 맡은 편에게 그 일을 부탁·보고하는 것이다. 잡담·누구에게도 아닌 것은 「없음」.
 
 ## mention
 본문의 「@이름」 들을 쉼표로(@ 없이). 없으면 null.
