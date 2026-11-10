@@ -101,7 +101,8 @@ TXT;
         $this->assertStringContainsString("id={$req->id} 2026-06-10 10:58 [영업A] 1074 송금 부탁 드립니다", $this->fake->lastUser);
         $this->assertStringContainsString("id={$photo->id} 2026-06-10 11:02 [재무A] (첨부: 사진)", $this->fake->lastUser);
         // 시스템 프롬프트 방 구성 + 스키마 to enum 이 같은 sides 에서 나온다
-        $this->assertStringContainsString('- 수출팀: 수출팀A, 수출팀B', $this->fake->lastSystem);
+        $this->assertStringContainsString(': 수출팀A, 수출팀B', $this->fake->lastSystem);
+        $this->assertStringContainsString('- 수출팀 — 말소·저당', $this->fake->lastSystem);   // 역할 설명이 없으면 기본 설명이 붙는다
         $this->assertSame(['재무', '수출팀', '영업', '없음'], $this->fake->lastSchema['properties']['items']['items']['properties']['to']['enum']);
 
         $this->assertGreaterThan(0, (float) $read->cost_krw);
@@ -175,39 +176,5 @@ TXT;
         KakaoRead::create(['room_id' => $room->id, 'user_id' => $user->id, 'started_at' => now(), 'cost_krw' => 150, 'status' => 'done']);
         $this->expectException(KakaoLimitException::class);
         $svc->ingest($user, $room, self::TEXT);
-    }
-}
-
-class FakeClassifier implements KakaoClassifierClient
-{
-    public int $calls = 0;
-
-    public string $lastSystem = '';
-
-    public string $lastUser = '';
-
-    public array $lastSchema = [];
-
-    /** @var callable(array<int,int>): array */
-    public $plan;
-
-    public function classify(string $system, string $user, array $schema): array
-    {
-        $this->calls++;
-        $this->lastSystem = $system;
-        $this->lastUser = $user;
-        $this->lastSchema = $schema;
-        // 창에서 「이번에 분류할 메시지」의 id 를 순서대로 뽑되 (첨부) 줄은 뺀다
-        $section = substr($user, strpos($user, '## 이번에 분류할 메시지'));
-        preg_match_all('/^id=(\d+) .*$/mu', $section, $m, PREG_SET_ORDER);
-        $ids = [];
-        foreach ($m as $row) {
-            if (! str_contains($row[0], '(첨부:')) {
-                $ids[] = (int) $row[1];
-            }
-        }
-        $items = ($this->plan)($ids);
-
-        return ['items' => $items, 'usage' => ['input_tokens' => 2500, 'cache_read_tokens' => 2000, 'output_tokens' => 1500], 'model' => 'claude-sonnet-5-5'];
     }
 }

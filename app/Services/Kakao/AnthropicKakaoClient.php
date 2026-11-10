@@ -52,6 +52,7 @@ class AnthropicKakaoClient implements KakaoClassifierClient
             'usage' => [
                 'input_tokens' => (int) ($u->inputTokens ?? 0),
                 'cache_read_tokens' => (int) ($u->cacheReadInputTokens ?? 0),
+                'cache_write_tokens' => (int) ($u->cacheCreationInputTokens ?? 0),   // 첫 호출(5분 안 재호출 없을 때) 1.25배 과금
                 'output_tokens' => (int) ($u->outputTokens ?? 0),
             ],
             'model' => (string) ($message->model ?? $model),

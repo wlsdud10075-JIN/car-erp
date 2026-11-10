@@ -45,6 +45,7 @@ return new class extends Migration
             $table->string('model', 40)->nullable();
             $table->unsignedInteger('input_tokens')->default(0);
             $table->unsignedInteger('cache_read_tokens')->default(0);
+            $table->unsignedInteger('cache_write_tokens')->default(0);   // 캐시 생성(1.25배) — 5분 안 재호출이 없던 첫 읽기
             $table->unsignedInteger('output_tokens')->default(0);
             $table->decimal('cost_krw', 10, 2)->default(0);
             $table->string('status', 16)->default('pending');  // pending | done | failed

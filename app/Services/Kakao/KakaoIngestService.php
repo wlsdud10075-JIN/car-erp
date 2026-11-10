@@ -9,6 +9,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -35,6 +36,13 @@ class KakaoIngestService
     public function __construct(private KakaoClassifierClient $client, private KakaoExportParser $parser = new KakaoExportParser) {}
 
     public function ingest(User $user, KakaoRoom $room, string $text, ?string $fallbackDate = null): KakaoRead
+    {
+        // 같은 방을 두 사람이 몇 초 사이에 읽으면 둘 다 「처음 보는 메시지」로 판단해 같은 msg_key 를 넣다 유니크 위반이 난다.
+        // 방 단위 잠금 — 두 번째는 첫 번째가 끝난 뒤 들어와 「이미 있음」으로 지나간다(분류 1회 보장).
+        return Cache::lock('kakao:room:'.$room->id, 180)->block(30, fn () => $this->ingestLocked($user, $room, $text, $fallbackDate));
+    }
+
+    private function ingestLocked(User $user, KakaoRoom $room, string $text, ?string $fallbackDate): KakaoRead
     {
         $parsed = $this->parser->parse($text, $fallbackDate);
 
@@ -107,6 +115,7 @@ class KakaoIngestService
                 'model' => $result['model'],
                 'input_tokens' => $usage['input_tokens'],
                 'cache_read_tokens' => $usage['cache_read_tokens'],
+                'cache_write_tokens' => $usage['cache_write_tokens'] ?? 0,
                 'output_tokens' => $usage['output_tokens'],
                 'cost_krw' => self::costKrw($result['model'], $usage),
             ]);
@@ -202,7 +211,10 @@ class KakaoIngestService
     public static function costKrw(string $model, array $usage): float
     {
         [$in, $cache, $out] = self::PRICE_USD_PER_M[$model] ?? self::PRICE_USD_PER_M['claude-sonnet-5-5'];
-        $usd = ($usage['input_tokens'] * $in + $usage['cache_read_tokens'] * $cache + $usage['output_tokens'] * $out) / 1_000_000;
+        $usd = ($usage['input_tokens'] * $in
+            + ($usage['cache_write_tokens'] ?? 0) * $in * 1.25
+            + $usage['cache_read_tokens'] * $cache
+            + $usage['output_tokens'] * $out) / 1_000_000;
 
         return round($usd * (int) config('services.anthropic.krw_per_usd', 1400), 2);
     }

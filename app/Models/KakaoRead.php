@@ -13,7 +13,7 @@ class KakaoRead extends Model
 {
     protected $fillable = [
         'room_id', 'user_id', 'sides_snapshot', 'started_at', 'finished_at', 'total', 'new_count',
-        'model', 'input_tokens', 'cache_read_tokens', 'output_tokens', 'cost_krw', 'status', 'error',
+        'model', 'input_tokens', 'cache_read_tokens', 'cache_write_tokens', 'output_tokens', 'cost_krw', 'status', 'error',
     ];
 
     protected $casts = ['sides_snapshot' => 'array', 'started_at' => 'datetime', 'finished_at' => 'datetime'];

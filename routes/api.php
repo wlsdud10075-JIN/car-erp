@@ -6,12 +6,14 @@ use App\Http\Controllers\Api\Internal\InternalPortalController;
 use App\Http\Controllers\Api\Internal\PeerPayoutController;
 use App\Http\Controllers\Api\Internal\ShippingRequestController;
 use App\Http\Controllers\Api\Internal\SigningRequestController;
+use App\Http\Controllers\Api\KakaoIngestController;
 use App\Http\Controllers\Api\PortalBuyerController;
 use App\Http\Controllers\Api\PortalDocumentController;
 use App\Http\Controllers\Api\PortalVehicleController;
 use App\Http\Controllers\Webhook\PurchaseSyncController;
 use App\Http\Middleware\VerifyBoardReadHmac;
 use App\Http\Middleware\VerifyErpPeerHmac;
+use App\Http\Middleware\VerifyKakaoCollectorToken;
 use App\Http\Middleware\VerifyPortalReadHmac;
 use App\Http\Middleware\VerifyPurchaseSyncHmac;
 use Illuminate\Support\Facades\Route;
@@ -150,3 +152,9 @@ Route::middleware([VerifyPortalReadHmac::class])
                 ->name('vehicles.files');
         });
     });
+
+// 📱 카톡자동화 — PC 수집기가 복사한 카톡 본문을 올리는 길 (docs/design/kakao-automation.md §10-3).
+//   인증 = 사용자별 수집기 토큰(Bearer kck_…, kakao_collector_tokens) → 회사 토글 꺼져 있으면 403. 사람이 버튼을 눌러야 오는 요청이라 분당 20.
+Route::middleware([VerifyKakaoCollectorToken::class, 'throttle:20,1'])
+    ->post('kakao/ingest', KakaoIngestController::class)
+    ->name('api.kakao.ingest');
