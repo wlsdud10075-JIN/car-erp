@@ -24,8 +24,8 @@ class VerifyKakaoCollectorToken
         if (! $token || ! $token->user) {   // 사용자가 삭제되면 토큰 행도 cascade 로 사라진다
             return response()->json(['message' => '토큰이 폐기됐거나 사용자가 없습니다. 다시 발급하세요.'], 401);
         }
-        if (! Setting::kakaoAssistantEnabled()) {
-            return response()->json(['message' => '이 회사는 카톡자동화가 꺼져 있습니다(기능설정).'], 403);
+        if (! $token->user->canUseKakaoAssistant()) {   // 회사 토글 OFF 또는 공개 범위 밖
+            return response()->json(['message' => Setting::kakaoAssistantEnabled() ? '이 계정은 카톡자동화 공개 범위에 없습니다(기능설정).' : '이 회사는 카톡자동화가 꺼져 있습니다(기능설정).'], 403);
         }
         if (! $token->last_used_at || $token->last_used_at->lt(now()->subMinute())) {
             $token->forceFill(['last_used_at' => now()])->saveQuietly();

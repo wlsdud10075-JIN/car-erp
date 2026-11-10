@@ -430,6 +430,7 @@ return [
         'domestic_payout_viewers' => '내수직원 월정산 볼 사람',   // 2026-11-03 기능설정
         'payroll_viewers' => '사내직원관리 공개 범위',   // 2026-11-04 기능설정
         'staff_payout_viewers' => '사내직원 월정산 볼 사람',   // 2026-11-05 기능설정
+        'kakao_viewers' => '카톡자동화 쓰는 사람',   // 2026-11-10 기능설정 공개 범위 표
         'unsecured_limit_krw' => '무담보 한도',
         'credit_score_weights' => '신용도 가중치',
         'lock_threshold_bl_issue' => 'B/L 발행 필요입금률',
@@ -540,6 +541,7 @@ return [
         'domestic_payout_viewers_changed' => '내수직원 월정산 볼 사람 변경',   // 2026-11-03 기능설정
         'payroll_viewers_changed' => '사내직원관리 공개 범위 변경',   // 2026-11-04 기능설정
         'staff_payout_viewers_changed' => '사내직원 월정산 볼 사람 변경',   // 2026-11-05 기능설정
+        'kakao_viewers_changed' => '카톡자동화 쓰는 사람 변경',   // 2026-11-10 기능설정 공개 범위 표
         'shipment_added' => '서류 발송 줄 추가',   // 2026-11-04 EMS·DHL 줄 감사
         'shipment_removed' => '서류 발송 줄 삭제',
         'buyer_cash_receipt_added' => '바이어 현금 입금 기재',

@@ -293,6 +293,21 @@ class Setting extends Model
         return is_array($ids) ? array_values(array_unique(array_map('intval', $ids))) : null;
     }
 
+    /**
+     * 📱 카톡자동화(내 카톡 할 일)를 쓰는 사람(user id) — jin 2026-11-10 «공개 범위 표에서 공개하는 인원에게만».
+     * null = 한 번도 저장 안 함 → 종전(회사 토글이 켜져 있으면 로그인하는 전원). 기능설정 공개 범위 표의 「카톡자동화」 칸이 쓴다.
+     */
+    public static function kakaoViewerIds(): ?array
+    {
+        $raw = self::get('kakao_viewers');
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        $ids = is_array($raw) ? $raw : json_decode((string) $raw, true);
+
+        return is_array($ids) ? array_values(array_unique(array_map('intval', $ids))) : null;
+    }
+
     /** 내수직원 월정산을 볼 수 있게 시스템관리자가 지정한 사용자 id 목록(기능설정). 시스템관리자는 지정 없이 본다. */
     public static function domesticPayoutViewerIds(): array
     {

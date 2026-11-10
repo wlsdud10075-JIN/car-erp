@@ -421,6 +421,24 @@ class User extends Authenticatable
     }
 
     /**
+     * 📱 카톡자동화 「내 카톡 할 일」(메뉴·페이지·수집기 API)을 쓰나 — jin 2026-11-10 «공개 범위 표에서 공개하는 인원에게만».
+     * 회사 토글이 꺼져 있으면 아무도. 시스템관리자 = 항상. 기능설정에 한 번도 저장 안 했으면 종전(로그인하는 전원). 저장 뒤엔 체크한 사람만(후보 = 관리·수출통관·재무·업무관리자·최고관리자, 영업은 로그인하지 않는다).
+     * 단일 출처 — 사이드바·페이지 mount·수집기 토큰 미들웨어·수집기 로그인이 전부 이걸 본다(조건을 옮겨 적지 말 것).
+     */
+    public function canUseKakaoAssistant(): bool
+    {
+        if (! Setting::kakaoAssistantEnabled()) {
+            return false;
+        }
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+        $ids = Setting::kakaoViewerIds();
+
+        return $ids === null || in_array((int) $this->id, $ids, true);
+    }
+
+    /**
      * 🧾 내수직원 월정산·사내직원관리 내수 탭을 볼 수 있나 (jin 2026-11-03) — 회사 토글이 켜져 있고,
      * 시스템관리자이거나 기능설정에서 지정된 관리 이상. 결재자(대표 등)는 지정 없이 알림톡 링크로 승인 화면을 본다.
      */

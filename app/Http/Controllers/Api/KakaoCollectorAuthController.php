@@ -31,6 +31,9 @@ class KakaoCollectorAuthController extends Controller
             return response()->json(['message' => '아이디 또는 비밀번호가 맞지 않습니다.'], 401);
         }
         $user = User::where('email', $data['email'])->firstOrFail();
+        if (! $user->canUseKakaoAssistant()) {   // 공개 범위 밖(기능설정 「카톡자동화」 칸)
+            return response()->json(['message' => '이 계정은 카톡자동화 공개 범위에 없습니다(기능설정).'], 403);
+        }
         // 같은 기기 이름의 옛 토큰은 폐기(재설치·재로그인 때 토큰이 쌓이지 않게)
         if (! empty($data['device'])) {
             $user->kakaoCollectorTokens()->where('device_name', $data['device'])->whereNull('revoked_at')->update(['revoked_at' => now()]);
