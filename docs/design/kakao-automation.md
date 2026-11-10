@@ -166,7 +166,15 @@
 | `kakao_messages` | room_id, msg_key(sha1), sent_at, sender, body, type, to_side, mention, ref, vehicle_no, vin_tail, amount, resolves_id(FK self), vehicle_id(FK vehicles, 매칭되면), ai JSON(원 판정), created_at | unique(room_id, msg_key). 본문 저장 = jin 「사내방이라 OK」 |
 | `kakao_items` | message_id, user_id, state(`todo`/`waiting`/`snoozed`/`done`/`ignored`/`not_mine`), type_override, snooze_until, snooze_reason, done_at | unique(message_id,user_id). 사용자가 건드린 것만 행이 생긴다(없으면 계산값 그대로) |
 | `kakao_reads` | room_id, user_id, started_at, finished_at, total, new_count, model, input_tokens, cache_read_tokens, output_tokens, cost_krw, status, error | 비용·사용량 기록(API 키 공용이라 ERP 가 사람별로 센다) |
-| `users.kakao_token_hash` | 수집기 토큰(발급 때 1회 표시, 해시 저장) | 페이지의 [수집기 연결] 버튼 |
+| `kakao_collector_tokens` | user_id, token_hash(sha256), device_name, last_used_at, revoked_at | 기기별 폐기. users 표에 안 두는 이유 = User 감사 훅이 매 사용마다 울리지 않게 |
+
+🔑 **키·id 결정(11-10, 1단계 뒤 검토)** — 다음 세션이 다시 틀리게 도출하지 않도록:
+- `msg_key` = sha1(시각|보낸이|**첫 줄**|같은 (시각·보낸이·첫 줄) 묶음 안 **순번**). 본문 전체를 안 넣는 이유 = Ctrl+A·C 는 화면에 풀린 만큼만 잡혀 긴 서식의 이어지는 줄이 다음 읽기에 더 붙는다(같은 메시지 2번 분류·과금 방지). 순번 = 같은 분에 같은 사람의 「사진」 2개. 적재는 더 긴 본문을 **갱신**으로 받는다.
+- 프롬프트의 메시지 id = **`kakao_messages.id`(DB id) 그대로**(1..N 창 번호 ✗). 새 메시지를 먼저 insert(type null) → 창 텍스트 `id=<db id>` + 앞 읽기의 열린 항목도 같은 체계 → 모델의 `resolves` 가 곧 DB id. 검증 = 같은 방·더 이른 sent_at 아니면 null.
+- 첨부·스페이서는 모델에 안 보낸다(`isAttachment` → `type='첨부'`), 창에는 `[id=…] (사진)` 한 줄 표식만(흐름 유지, 토큰 절반).
+- 방 구성(`sides`) 한 곳에서 프롬프트 「방 구성」 블록과 스키마 `to` enum 을 같이 만든다(어긋나면 400).
+- 비용 상한 = 읽기당 새 메시지 `Setting kakao_max_new_per_read`(기본 500, 초과 = 거부·「범위를 좁히세요」) · 사용자당 하루 `kakao_daily_cost_cap_krw`(기본 2,000원).
+- `kakao_messages.sent_at` 은 dateTime(카톡 벽시계 그대로), `kakao_reads.*_at` 은 timestamp — 둘을 직접 비교하지 않는다.
 
 ### 10-3. 코드 자리
 - `App\Services\Kakao\KakaoExportParser` — 스크래치 `kakao_sample.py` 의 파서를 PHP 로(머리줄 정규식·날짜 구분선·이어지는 줄 병합·삭제 메시지 제외). 가드 = 단위 테스트(표본 txt 조각).
