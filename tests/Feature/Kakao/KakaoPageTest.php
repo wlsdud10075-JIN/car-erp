@@ -5,6 +5,7 @@ namespace Tests\Feature\Kakao;
 use App\Models\KakaoCollectorToken;
 use App\Models\KakaoItem;
 use App\Models\KakaoMessage;
+use App\Models\KakaoRead;
 use App\Models\KakaoRoom;
 use App\Models\Setting;
 use App\Models\User;
@@ -223,5 +224,30 @@ class KakaoPageTest extends TestCase
         $page = Volt::test('erp.kakao.index')->set('showSetup', true)->call('revokeToken', $token->id);
         $this->assertNotNull($token->fresh()->revoked_at);
         $this->assertSame([], $page->viewData('agent')['secrets']);
+    }
+
+    /** 💰 API 사용액은 시스템관리자만 본다 — 회사 DB 전체 합(오늘·이번 달·누적·이번 달 사람별) (jin 11-10 «얼마나 사용했는지») */
+    public function test_api_spend_card_is_for_super_admins_only(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'role' => '관리']);
+        $staff = User::factory()->create(['permission' => 'user', 'role' => '수출통관', 'name' => '수출팀A']);
+        $room = KakaoRoom::create(['name' => '방']);
+        KakaoRead::create(['room_id' => $room->id, 'user_id' => $staff->id, 'started_at' => now(), 'total' => 3, 'new_count' => 3, 'status' => 'done', 'cost_krw' => 12.5, 'created_at' => now()]);
+        KakaoRead::create(['room_id' => $room->id, 'user_id' => $staff->id, 'started_at' => now(), 'total' => 1, 'new_count' => 1, 'status' => 'done', 'cost_krw' => 7.5])
+            ->forceFill(['created_at' => now()->subMonths(2)])->saveQuietly();   // create() 는 created_at 을 못 넣는다(§8 #11)
+
+        $this->actingAs($super);
+        $page = Volt::test('erp.kakao.index');
+        $u = $page->viewData('usage');
+        $this->assertSame(12.5, $u['today']);
+        $this->assertSame(12.5, $u['month']);
+        $this->assertSame(20.0, $u['total']);
+        $this->assertSame('수출팀A', $u['by_user'][0]->name);
+        $page->assertSee('data-kakao-usage', false)->assertSee('API 사용액');
+
+        $this->actingAs($staff);
+        $page = Volt::test('erp.kakao.index');
+        $this->assertNull($page->viewData('usage'));
+        $page->assertDontSee('data-kakao-usage', false);
     }
 }

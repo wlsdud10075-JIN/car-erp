@@ -102,6 +102,19 @@ new #[Layout('components.layouts.app')] class extends Component
                 'selected' => $user->kakaoRooms()->wherePivot('selected', true)->pluck('name')->values()->all(),
             ],
             'types' => KakaoMessage::TYPES,
+            // 💰 API 사용액 — 시스템관리자만(jin 11-10 «지금 현재 얼마나 사용했는지 api 금액을»). 이 회사 DB 전체(kakao_reads.cost_krw)
+            'usage' => $user->isSuperAdmin() ? [
+                'today' => (float) \App\Models\KakaoRead::whereDate('created_at', now()->toDateString())->sum('cost_krw'),
+                'month' => (float) \App\Models\KakaoRead::where('created_at', '>=', now()->startOfMonth())->sum('cost_krw'),
+                'total' => (float) \App\Models\KakaoRead::sum('cost_krw'),
+                'reads_month' => \App\Models\KakaoRead::where('created_at', '>=', now()->startOfMonth())->count(),
+                'messages_month' => (int) \App\Models\KakaoRead::where('created_at', '>=', now()->startOfMonth())->sum('new_count'),
+                'cap' => Setting::kakaoDailyCostCapKrw(),
+                'by_user' => \App\Models\KakaoRead::where('kakao_reads.created_at', '>=', now()->startOfMonth())
+                    ->join('users', 'users.id', '=', 'kakao_reads.user_id')
+                    ->selectRaw('users.name AS name, SUM(kakao_reads.cost_krw) AS krw, SUM(kakao_reads.new_count) AS msgs')
+                    ->groupBy('users.id', 'users.name')->orderByDesc('krw')->limit(5)->get(),
+            ] : null,
         ];
     }
 
@@ -321,6 +334,22 @@ new #[Layout('components.layouts.app')] class extends Component
 
     @if($board['counts']['review'] > 0)
         <div class="card-tight mb-4 border-amber-200 bg-amber-50 text-sm text-amber-800">{{ __('kakao.needs_review', ['n' => $board['counts']['review']]) }}</div>
+    @endif
+
+    {{-- 💰 API 사용액 — 시스템관리자만 (jin 11-10). 회사 DB 전체 기준 --}}
+    @if($usage)
+        <div class="card-tight mb-4" data-kakao-usage>
+            <div class="section-header"><span class="section-dot bg-teal-500"></span><span class="section-title">{{ __('kakao.usage_title') }}</span>
+                <span class="ml-2 text-xs text-gray-400">{{ __('kakao.usage_hint', ['cap' => number_format($usage['cap'])]) }}</span></div>
+            <div class="mt-2 grid grid-cols-3 gap-2 text-center sm:max-w-md">
+                <div class="rounded border border-gray-100 px-2 py-1.5"><div class="text-[11px] text-gray-500">{{ __('kakao.usage_today') }}</div><div class="text-base font-semibold text-gray-800">{{ number_format($usage['today']) }}<span class="text-xs font-normal text-gray-500">원</span></div></div>
+                <div class="rounded border border-gray-100 px-2 py-1.5"><div class="text-[11px] text-gray-500">{{ __('kakao.usage_month') }}</div><div class="text-base font-semibold text-gray-800">{{ number_format($usage['month']) }}<span class="text-xs font-normal text-gray-500">원</span></div></div>
+                <div class="rounded border border-gray-100 px-2 py-1.5"><div class="text-[11px] text-gray-500">{{ __('kakao.usage_total') }}</div><div class="text-base font-semibold text-gray-800">{{ number_format($usage['total']) }}<span class="text-xs font-normal text-gray-500">원</span></div></div>
+            </div>
+            <p class="mt-1.5 text-xs text-gray-500">{{ __('kakao.usage_month_line', ['reads' => number_format($usage['reads_month']), 'msgs' => number_format($usage['messages_month'])]) }}
+                @if($usage['by_user']->isNotEmpty()) · {{ $usage['by_user']->map(fn ($r) => $r->name.' '.number_format((float) $r->krw).'원('.number_format((int) $r->msgs).'건)')->implode(' · ') }} @endif
+            </p>
+        </div>
     @endif
 
     {{-- 읽을 방 고르기 — 수집기가 보고한(열려 있던) 방 목록. 체크한 방만 읽고 보여 준다 (jin 11-10 «N개의 방을 추가 항목으로 넣어서 읽기») --}}
