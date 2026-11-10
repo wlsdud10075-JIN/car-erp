@@ -51,9 +51,19 @@ new #[Layout('components.layouts.app')] class extends Component
         if ($rooms->isEmpty()) {
             $this->showSetup = true;   // 아직 아무 방도 없으면 안내 + 토큰 발급부터
         }
-        foreach ($rooms as $room) {   // 「나」가 이미 잡힌 방은 폼 초기값으로
-            $this->meFor[$room->id] = (string) $room->pivot->my_name;
-            $this->oursFor[$room->id] = array_values(array_diff($room->sideMembers()[KakaoRoom::SIDE_US] ?? [], [(string) $room->pivot->my_name]));
+        foreach ($rooms as $room) {
+            // 「나」가 아직 없는 방은 ERP 명부로 자동으로 잡는다(jin 11-10 «왜 클릭을 하고 나눠야 하는데?») — 잡히면 쌓인 메시지를 바로 분류
+            if (trim((string) $room->pivot->my_name) === '' && $room->autoSetUpFor(auth()->user())) {
+                $room->refresh();
+                $room->pivot->my_name = (string) auth()->user()->kakaoRooms()->where('kakao_rooms.id', $room->id)->first()?->pivot->my_name;
+                app(KakaoIngestService::class)->classifyPending($room, auth()->user());
+            }
+            $this->meFor[$room->id] = (string) $room->pivot->my_name;   // 폼 초기값(못 잡은 방은 빈칸 — 「이 방에서 나는 누구?」)
+            $this->oursFor[$room->id] = $this->oursFor[$room->id] ?? array_values(array_diff($room->sideMembers()[KakaoRoom::SIDE_US] ?? [], [(string) $room->pivot->my_name]));
+            if (trim((string) $room->pivot->my_name) === '' && ! $room->isSetUp()) {   // 못 잡은 방: 우리 회사 후보는 명부와 맞는 사람으로 미리 체크
+                $senders = $room->senders();
+                $this->oursFor[$room->id] = array_values(array_unique(array_filter(array_map(fn ($n) => KakaoRoom::matchName($n, $senders), KakaoRoom::rosterNames(auth()->user())))));
+            }
         }
     }
 
@@ -319,17 +329,27 @@ new #[Layout('components.layouts.app')] class extends Component
                     @if(empty($senders[$room->id]))
                         <p class="text-xs text-gray-400">{{ __('kakao.setup_no_senders') }}</p>
                     @else
-                        {{-- jin 11-10 «동그라미 네모가 뭐야? 화면도 엄청 차지» — 범례 한 줄 + 여러 열 + 높이 제한. ◯ = 나(한 명) · □ = 우리 회사(여럿) --}}
-                        <p class="mb-1 text-[11px] text-gray-500">{{ __('kakao.setup_legend', ['n' => count($senders[$room->id])]) }}</p>
-                        <div class="grid max-h-56 gap-x-4 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
-                        @foreach($senders[$room->id] as $name)
-                            <div class="grid grid-cols-[1fr_2.5rem_2.5rem] items-center gap-1 rounded px-1 text-sm text-gray-700 hover:bg-gray-50" wire:key="setup-{{ $room->id }}-{{ md5($name) }}">
-                                <span class="truncate" title="{{ $name }}">{{ $name }}</span>
-                                <label class="flex h-9 items-center justify-center sm:h-7" title="{{ __('kakao.setup_me') }}"><input type="radio" wire:model="meFor.{{ $room->id }}" value="{{ $name }}" class="h-4 w-4" aria-label="{{ $name }} {{ __('kakao.setup_me') }}"></label>
-                                <label class="flex h-9 items-center justify-center sm:h-7" title="{{ __('kakao.setup_ours') }}"><input type="checkbox" wire:model="oursFor.{{ $room->id }}" value="{{ $name }}" class="h-4 w-4" aria-label="{{ $name }} {{ __('kakao.setup_ours') }}"></label>
-                            </div>
-                        @endforeach
+                        {{-- jin 11-10 «왜 클릭을 하고 나눠야 하는데?» — 보통은 ERP 명부로 자동으로 잡혀 이 카드가 안 뜬다. 여기 온 건 카톡 이름이 ERP 이름과 안 맞는 방뿐:
+                             「이 방에서 나는 누구?」 한 칸만 고른다. 우리 회사 사람은 명부와 맞는 이름이 미리 체크돼 있다(고칠 일 거의 없음). --}}
+                        <div class="flex flex-wrap items-center gap-2 text-sm">
+                            <label for="me-{{ $room->id }}" class="text-gray-700">{{ __('kakao.setup_me_q', ['name' => auth()->user()->name]) }}</label>
+                            <select id="me-{{ $room->id }}" wire:model="meFor.{{ $room->id }}" class="input-base h-9 w-full text-sm sm:h-8 sm:w-56">
+                                <option value="">{{ __('kakao.setup_me_pick') }}</option>
+                                @foreach($senders[$room->id] as $name)
+                                    <option value="{{ $name }}">{{ $name }}</option>
+                                @endforeach
+                            </select>
                         </div>
+                        <details class="mt-2 text-xs text-gray-600">
+                            <summary class="cursor-pointer">{{ __('kakao.setup_ours_summary', ['n' => count($oursFor[$room->id] ?? [])]) }}</summary>
+                            <div class="mt-1 flex flex-wrap gap-1.5">
+                                @foreach($senders[$room->id] as $name)
+                                    <label class="flex h-9 cursor-pointer items-center gap-1 rounded border border-gray-200 px-2 sm:h-7" wire:key="setup-{{ $room->id }}-{{ md5($name) }}">
+                                        <input type="checkbox" wire:model="oursFor.{{ $room->id }}" value="{{ $name }}" class="h-4 w-4" aria-label="{{ $name }} {{ __('kakao.setup_ours') }}"><span class="truncate" title="{{ $name }}">{{ $name }}</span>
+                                    </label>
+                                @endforeach
+                            </div>
+                        </details>
                         @error('meFor.'.$room->id) <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                         <button type="button" wire:click="saveSetup({{ $room->id }})" class="btn-primary mt-2 h-9 px-3 text-sm sm:h-8">{{ __('kakao.setup_save') }}</button>
                     @endif
@@ -417,7 +437,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             <div class="min-w-0 flex-1">
                                 <div class="text-sm text-gray-800">{{ $r['title'] }}</div>
                                 <div class="mt-0.5 flex flex-wrap gap-x-2 text-xs text-gray-500">
-                                    <span>{{ __('kakao.from_to', ['from' => $r['sender'], 'to' => $r['to'] ?: '—']) }}</span>
+                                    <span>{{ __('kakao.from_to', ['from' => $r['sender'].(! empty($r['sender_role']) ? '('.$r['sender_role'].')' : ''), 'to' => $r['to'] ?: '—']) }}</span>
                                     <span>{{ $r['ago'] }} · {{ $r['room'] }}</span>
                                     <span class="badge badge-gray">{{ $r['type'] ?: '?' }}</span>
                                     <span class="badge badge-purple">{{ $r['reason'] }}</span>

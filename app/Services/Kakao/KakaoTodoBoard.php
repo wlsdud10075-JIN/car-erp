@@ -23,6 +23,7 @@ class KakaoTodoBoard
         $roomIds = $rooms->pluck('id')->all();
         $myName = $rooms->mapWithKeys(fn ($r) => [$r->id => (string) $r->pivot->my_name])->all();
         $sides = $rooms->mapWithKeys(fn ($r) => [$r->id => $r->sideMembers()])->all();
+        $people = $rooms->mapWithKeys(fn ($r) => [$r->id => $r->personRoles()])->all();   // 보낸이 → 부서. ⚠️ 메시지의 room 은 부분 select(id,name)라 roles 가 없다(§8 #83) — 여기서 넘긴다
 
         $buckets = array_fill_keys(KakaoBuckets::ORDER, []);
         if ($roomIds !== []) {
@@ -44,7 +45,7 @@ class KakaoTodoBoard
                 if ($b['bucket'] === null) {
                     continue;
                 }
-                $buckets[$b['bucket']][] = self::row($m, $item, $direction, $b, $now);
+                $buckets[$b['bucket']][] = self::row($m, $item, $direction, $b, $now, $people[$m->room_id] ?? []);
             }
             // 놓쳤을 가능성·지금 할 일은 오래된 것부터, 나머지는 최신부터
             foreach (['missed', 'now', 'today', 'waiting'] as $k) {
@@ -64,7 +65,7 @@ class KakaoTodoBoard
         ];
     }
 
-    private static function row(KakaoMessage $m, $item, string $direction, array $b, CarbonInterface $now): array
+    private static function row(KakaoMessage $m, $item, string $direction, array $b, CarbonInterface $now, array $people = []): array
     {
         $first = KakaoExportParser::firstLine($m->body);
 
@@ -77,6 +78,7 @@ class KakaoTodoBoard
             'title' => mb_strlen($first) > 70 ? mb_substr($first, 0, 70).'…' : $first,
             'body' => $m->body,
             'sender' => $m->sender,
+            'sender_role' => $people[$m->sender] ?? null,   // 우리 편의 부서(ERP 명부) — jin 11-10 «부서별로 나눠서 보여주면»
             'to' => $m->to_side,
             'type' => $item?->type_override ?? $m->type,
             'sent_at' => $m->sent_at?->format('Y-m-d H:i') ?? '',

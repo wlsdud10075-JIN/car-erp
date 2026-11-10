@@ -95,13 +95,18 @@ class KakaoIngestService
             return collect($rows);
         });
 
+        // 편 구성이 아직 없는 방(처음 읽은 방) — ERP 명부로 「나」·「우리 회사」를 자동으로 잡는다(jin 11-10 «왜 클릭을 하고 나눠야 하는데?»).
+        // 못 잡으면 메시지만 쌓고 분류는 사람이 「이 방에서 나는 누구?」를 고른 뒤 classifyPending() 으로. 새 메시지가 0건이어도 「나」는 잡는다(두 번째 사람이 같은 방을 읽을 때)
+        $myName = (string) ($room->users()->where('users.id', $user->id)->first()?->pivot->my_name ?? '');
+        if (trim($myName) === '') {
+            $room->autoSetUpFor($user);   // 편이 이미 있는 방이면 이 사용자의 「나」만 잡는다
+        }
+
         if ($classifyCount === 0) {
             $read->update(['status' => 'done', 'finished_at' => now()]);
 
             return $read;
         }
-
-        // 편 구성이 아직 없는 방(처음 읽은 방) — 메시지만 쌓고 분류는 사람이 「나」를 고른 뒤 classifyPending() 으로
         if (! $room->isSetUp()) {
             $read->update(['status' => 'pending_setup', 'finished_at' => now()]);
 
@@ -140,7 +145,7 @@ class KakaoIngestService
             $sides = $room->sideMembers();
             $roles = $room->sideRoles();
             $open = $this->openItems($room, $fresh);
-            $result = $this->client->classify(KakaoPrompt::system($sides, $roles), KakaoPrompt::user($open, $fresh), KakaoPrompt::schema($sides));
+            $result = $this->client->classify(KakaoPrompt::system($sides, $roles, $room->personRoles()), KakaoPrompt::user($open, $fresh), KakaoPrompt::schema($sides));
             $this->apply($room, $fresh, $open, $result['items'], $sides);
             $usage = $result['usage'];
             $read->update([
