@@ -426,6 +426,7 @@ return [
         'buyer_cash_enabled' => '바이어 현금 원장 사용',
         'b2b_partners_enabled' => 'B2B 파트너스 사용',   // 2026-11-02 회사별 토글
         'domestic_payout_enabled' => '내수직원 월정산 사용',   // 2026-11-03 회사별 토글
+        'kakao_assistant_enabled' => '카톡자동화(내 카톡 할 일) 사용',   // 2026-11-10 회사별 토글
         'domestic_payout_viewers' => '내수직원 월정산 볼 사람',   // 2026-11-03 기능설정
         'payroll_viewers' => '사내직원관리 공개 범위',   // 2026-11-04 기능설정
         'staff_payout_viewers' => '사내직원 월정산 볼 사람',   // 2026-11-05 기능설정
