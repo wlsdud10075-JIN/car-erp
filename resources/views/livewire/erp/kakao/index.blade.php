@@ -335,7 +335,7 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     @endif
 
-    {{-- 설정 (안내 · 내가 읽는 방 · 수집기 토큰) --}}
+    {{-- 설정 (안내 · 내가 읽는 방 · 이 PC 연결·연결된 PC) --}}
     @if($showSetup)
         <div class="mb-4 grid gap-4 lg:grid-cols-2" data-kakao-setup>
             <div class="card">

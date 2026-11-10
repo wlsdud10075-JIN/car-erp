@@ -122,10 +122,7 @@ class Agent:
     def read_worker(self, rooms: list[str]) -> None:
         try:
             self.say(f"읽기 시작 — {len(rooms)}개 방. 끝날 때까지 키보드·마우스에서 손을 떼 주세요.")
-            try:
-                self.api("POST", "/api/kakao/rooms/select", json={"selected": rooms})   # 체크 상태를 ERP 와 맞춘다
-            except requests.RequestException as e:
-                self.say(f"체크 저장 실패(계속 진행): {e}")
+            # 체크 상태는 ERP 페이지가 정본(toggleRoom) — 여기서 rooms/select 를 부르면 「체크됐지만 지금 닫힌 방」이 해제된다(§11, exe 창 시절 잔재 제거)
             state = load(STATE, {})
             for name in rooms:
                 last = state.get(name)
@@ -159,7 +156,12 @@ class Handler(BaseHTTPRequestHandler):
     # ─── 공통 ───
     def origin_ok(self) -> bool:
         origin = (self.headers.get("Origin") or "").lower()
-        return origin == "" or (AGENT.origin != "" and origin == AGENT.origin)   # Origin 없음 = 같은 PC 의 비브라우저 호출
+        if origin == "":   # Origin 없음 = 같은 PC 의 비브라우저 호출(curl 진단)
+            return True
+        want = AGENT.origin
+        # 개발 PC 전용 — localhost 와 127.0.0.1 은 같은 곳으로 본다(ERP 를 어느 주소로 열었든). 운영은 https 도메인이라 해당 없음
+        norm = lambda o: o.replace("://localhost", "://127.0.0.1")
+        return want != "" and norm(origin) == norm(want)
 
     def cors(self) -> None:
         origin = self.headers.get("Origin")

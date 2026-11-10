@@ -30,7 +30,7 @@ class KakaoInstallerTest extends TestCase
     {
         $user = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
 
-        $res = $this->actingAs($user)->post(route('erp.kakao.installer'));
+        $res = $this->actingAs($user)->post('https://heymancar.com/erp/kakao/installer');   // 접속한 출처가 .bat 에 박힌다(APP_URL 이 아니라)
 
         $res->assertOk()->assertHeader('Content-Type', 'application/octet-stream');
         $bat = $res->getContent();
