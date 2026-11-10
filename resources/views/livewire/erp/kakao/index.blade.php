@@ -472,14 +472,14 @@ new #[Layout('components.layouts.app')] class extends Component
                                 @if(! in_array($key, ['done']))
                                     <button type="button" wire:click="openSnooze({{ $r['id'] }})" class="h-9 rounded border border-gray-300 px-2 text-xs text-gray-700 sm:h-7">{{ __('kakao.btn_snooze') }}</button>
                                 @endif
-                                @if($r['vehicle_id'])
-                                    <a href="{{ route('erp.vehicles.index', ['openVehicle' => $r['vehicle_id']]) }}" wire:navigate class="inline-flex h-9 items-center rounded border border-blue-200 px-2 text-xs text-blue-700 sm:h-7">{{ __('kakao.btn_open_vehicle') }}</a>
-                                @endif
+                                {{-- 「이 글 열기」 = 카톡에서 그 방을 열고 이 메시지 위치로(에이전트 /focus). 보이는 버튼은 3개까지 — 주 버튼·미루기·이 글 열기 (jin 11-10 «⋯에 숨기지 말고») --}}
+                                <button type="button" data-kakao-focus="{{ $r['room'] }}" data-kakao-snippet="{{ mb_substr(\App\Services\Kakao\KakaoExportParser::firstLine($r['body']), 0, 40) }}" class="h-9 rounded border border-amber-300 bg-amber-50 px-2 text-xs text-amber-900 sm:h-7">{{ __('kakao.btn_open_kakao') }}</button>
                                 <div class="relative">
                                     <button type="button" class="h-9 rounded border border-gray-300 px-2 text-xs text-gray-700 sm:h-7" @click="menu = (menu === {{ $r['id'] }} ? null : {{ $r['id'] }})" aria-label="{{ __('kakao.btn_more') }}">⋯</button>
                                     <div x-show="menu === {{ $r['id'] }}" x-cloak @click.outside="menu = null" class="absolute right-0 z-20 mt-1 w-40 rounded border border-gray-200 bg-white py-1 text-xs text-gray-700 shadow-lg">
-                                        {{-- §6 [⋯] 보기 「카톡에서 이 방 열기」 — 에이전트가 그 방 창을 앞으로(열려 있을 때만) --}}
-                                        <button type="button" data-kakao-focus="{{ $r['room'] }}" data-kakao-snippet="{{ mb_substr(\App\Services\Kakao\KakaoExportParser::firstLine($r['body']), 0, 40) }}" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_open_kakao') }}</button>
+                                        @if($r['vehicle_id'])
+                                            <a href="{{ route('erp.vehicles.index', ['openVehicle' => $r['vehicle_id']]) }}" wire:navigate @click="menu = null" class="block w-full px-3 py-2 text-left text-blue-700 hover:bg-gray-50">{{ __('kakao.btn_open_vehicle') }}</a>
+                                        @endif
                                         <button type="button" wire:click="openFix({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_fix_type') }}</button>
                                         <button type="button" wire:click="markNotMine({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_not_mine') }}</button>
                                         <button type="button" wire:click="ignoreItem({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_ignore') }}</button>
