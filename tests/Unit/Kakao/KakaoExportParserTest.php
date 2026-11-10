@@ -90,6 +90,18 @@ TXT;
         $this->assertSame('차량명   AUDI A3', KakaoExportParser::firstLine($b['body']));
     }
 
+    /** 창에서 Ctrl+A·C 로 복사하면 날짜 줄에 대시가 없다 — 11-10 실측(수출팀 방 134건이 전부 「날짜 모름」으로 버려져 total=0). */
+    public function test_window_copy_date_line_without_dashes_is_a_divider_too(): void
+    {
+        $text = "2026년 11월 10일 월요일\n서OO님이 왕OO님을 초대했습니다.\n[왕OO] [오후 1:05] 안녕하세요\n2026년 11월 11일 화요일 \n[재무A] [오전 9:00] 입금 확인";
+
+        $rows = (new KakaoExportParser)->parse($text);
+
+        $this->assertCount(2, $rows);
+        $this->assertSame('2026-11-10 13:05:00', $rows[0]['sent_at']);
+        $this->assertSame('2026-11-11 09:00:00', $rows[1]['sent_at']);
+    }
+
     public function test_messages_before_first_date_divider_need_a_fallback_date(): void
     {
         $text = "[영업A] [오전 9:00] 날짜 모름\n이어지는 줄\n--------------- 2026년 6월 10일 수요일 ---------------\n[영업A] [오전 9:01] 날짜 앎";

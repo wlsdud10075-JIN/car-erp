@@ -32,6 +32,8 @@ pyinstaller --noconfirm --onefile --noconsole --name KakaoAgent kakao_agent.py  
 ## 함정 (실측)
 - 채팅방 창은 메인 창과 **같은 창 클래스**(`EVA_Window_Dblclk`) → 제목으로만 거른다(`open_room_titles`). 2026-11-10 실제로 0개로 나왔던 버그.
 - 목록 **가운데**를 누르면 사진 뷰어가 열려 포커스를 뺏긴다 → 빈 여백(`click_fraction`)을 누른다.
+- 🚨 **ESC 를 무조건 치지 말 것** — 카톡 PC 기본 설정이 「ESC 로 채팅창 닫기」라 방 창이 닫히고 맨 앞이 브라우저가 되어 Ctrl+A·C 가 **ERP 페이지를 읽어 보냈다**(11-10 jin 실사고). ESC 는 사진 뷰어가 떴을 때만, 그리고 복사 전마다 「맨 앞 창 = 그 방」을 확인한다.
+- 창 없는 에이전트는 백그라운드 프로세스라 `SetForegroundWindow` 가 조용히 거부될 수 있다 → ALT 키 한 번 · `AttachThreadInput` 으로 재시도하고 **정말 앞에 왔는지** 확인한다(`focus()`).
 - Windows 는 `SO_REUSEADDR` 이면 같은 포트에 두 번째 프로세스가 그냥 붙는다 → `allow_reuse_address=False` 로 단일 인스턴스 판정.
 - 한국어 Windows 의 `.bat` 은 CP949 로 돌아 한글 `echo` 가 깨진다 → `.bat` 은 ASCII 만.
 - 최신 Chrome·Edge 는 https 페이지 → `127.0.0.1` 호출에 「로컬 네트워크 접근」 허용을 한 번 물을 수 있다 → 페이지가 자물쇠 → 「로컬 네트워크」 허용 안내를 띄운다.
