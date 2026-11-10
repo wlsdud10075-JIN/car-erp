@@ -270,7 +270,8 @@ class Handler(BaseHTTPRequestHandler):
 
     # ─── 라우팅 ───
     def do_OPTIONS(self) -> None:
-        if not self.origin_ok():
+        path = self.path.split("?", 1)[0]
+        if path not in ("/ping", "/rebind") and not self.origin_ok():   # ping·rebind 는 아직 모르는 회사의 페이지도(새 회사를 붙이는 길 — 11-10 jin ssancar 「버튼 안 뜸」)
             return self.deny(403)
         self.send_response(204)
         self.send_header("Content-Length", "0")
@@ -279,9 +280,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         path = self.path.split("?", 1)[0]
-        if path == "/ping":
-            if not self.origin_ok():
-                return self.deny(403)
+        if path == "/ping":   # 어느 회사 페이지든 답한다 — 모르는 회사면 erp_state=unconfigured → 페이지가 [이 PC 를 내 계정으로 연결]을 띄운다
             b = self.binding
             return self.reply(200, {
                 "ok": True, "version": VERSION, "device": AGENT.device, "erp_url": (b or {}).get("erp_url", ""),

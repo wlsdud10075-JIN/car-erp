@@ -81,7 +81,7 @@ return [
     'agent_missing' => 'No agent on this PC. Install it with [Connect this PC].',
     'agent_outdated' => 'The agent is an old version (v:version). Download [Connect this PC] again and run it.',
     'agent_unauthorized' => 'The agent on this PC lost its ERP link (revoked or another account). Download [Connect this PC] again and run it.',
-    'agent_blocked' => 'The browser blocked access to the agent on this PC. Click the lock in the address bar, allow "Local network" and refresh.',
+    'agent_blocked' => 'Either the agent is not running or the browser blocked it. If a reboot does not help, click the icon left of the address bar (lock or tune icon) → Site settings → allow "Local network devices", then refresh.',
     'devices_title' => 'Connected PCs',
     'agent_rebind' => 'Link this PC to my account',
     'agent_rebinding' => 'Linking the agent on this PC to my account…',
