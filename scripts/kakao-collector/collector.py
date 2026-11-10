@@ -127,6 +127,33 @@ def is_foreground(hwnd: int) -> bool:
     return u.GetForegroundWindow() == hwnd
 
 
+def screen_locked() -> bool:
+    """PC 가 잠겨 있나(잠금 화면·원격 세션 끊김) — 그 동안은 어떤 창도 앞으로 못 가져오고 키도 안 들어간다(11-10 실측: 맨 앞 창 = 「Windows 기본 잠금 화면」).
+    판정 ①맨 앞 창의 프로세스가 LockApp.exe(Windows 10/11 잠금 화면은 Default 데스크톱 위에 뜬다 — 11-10 실측) ②입력 데스크톱이 Default 가 아님(비밀번호 입력 단계)."""
+    try:
+        h = u.GetForegroundWindow()
+        pid = w.DWORD()
+        u.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        ph = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid.value)   # PROCESS_QUERY_LIMITED_INFORMATION
+        if ph:
+            buf = ctypes.create_unicode_buffer(260)
+            n = w.DWORD(260)
+            ok = ctypes.windll.kernel32.QueryFullProcessImageNameW(ph, 0, buf, ctypes.byref(n))
+            ctypes.windll.kernel32.CloseHandle(ph)
+            if ok and buf.value.lower().endswith("\\lockapp.exe"):
+                return True
+        desk = u.OpenInputDesktop(0, False, 0x0001)   # DESKTOP_READOBJECTS
+        if not desk:
+            return True
+        name = ctypes.create_unicode_buffer(64)
+        needed = w.DWORD()
+        ok = u.GetUserObjectInformationW(desk, 2, name, ctypes.sizeof(name), ctypes.byref(needed))   # UOI_NAME
+        u.CloseDesktop(desk)
+        return not ok or name.value.lower() != "default"
+    except Exception:
+        return False
+
+
 VK_V, VK_RETURN = 0x56, 0x0D
 ROOM_SEARCH_ICON = (-109, 57)   # 방 창 돋보기 — 오른쪽 위에서 (가로 -109, 세로 +57) px (11-10 실측, 창 380 폭)
 ROOM_SEARCH_CLOSE = (-23, 110)  # 열린 검색칸의 X (11-10 DPI 보정 캡처 실측: 물리 -29/+137 ÷ 1.25)
