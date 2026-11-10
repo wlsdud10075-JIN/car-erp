@@ -61,6 +61,7 @@ return [
     'room_ours' => 'Our company',
     'room_them' => 'Other side',
     'room_change' => 'Pick again',
+    'room_no_messages_yet' => 'No messages read from this room yet, so there is nobody to pick. Read it once with [Read now], then choose.',
     'room_unsubscribe' => 'Stop watching this room',
     'room_unsubscribed' => 'Stopped. It reappears if the collector reads it again.',
     'room_pending' => ':n unclassified',
