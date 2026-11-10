@@ -1,0 +1,29 @@
+# 카톡자동화 수집기 (내 PC 용, v1)
+
+ERP 「내 카톡 할 일」에 카톡 방 내용을 보내는 작은 프로그램. 기획 = `docs/design/kakao-automation.md` §6·§10-3.
+카톡 PC 창에서 **전체선택·복사(Ctrl+A·C)** 한 텍스트를 ERP 로 보낼 뿐이고, 카톡에 글을 쓰거나 보내지 않는다.
+
+## 설치 (1회)
+1. Python 3.10 이상, `pip install pyperclip requests`
+2. 이 폴더를 내 PC 아무 곳에 복사(예: `C:\kakao-collector`).
+3. `config.example.json` → `config.json` 으로 복사하고 채운다.
+   - `erp_url` = 회사 ERP 주소(ssancarerp `https://heymancar.com`)
+   - `token` = ERP 「내 카톡 할 일」 → 「방·수집기 설정」 → 「수집기 연결」에서 발급(발급 때 한 번만 보인다)
+   - `rooms` = 읽을 방 제목(카톡 창 제목 그대로). ERP 에 **같은 이름으로 방이 등록·구독**돼 있어야 한다(아니면 404/403).
+
+## 사용
+1. 카톡에서 읽을 방을 **창으로 열어 둔다**(v1 은 목록에서 자동으로 열지 않는다). `python collector.py windows` 로 창이 보이는지 확인.
+2. `python collector.py read --dry` 로 한 번: 복사가 되는지, 건수·가장 이른 날짜가 맞는지 본다(전송 안 함).
+3. `python collector.py read` — 방마다 ERP 로 보내고 결과 한 줄(새 메시지 N건 분류 완료 / 확인 필요 등)을 찍는다.
+4. 읽는 동안 키보드·마우스에서 손을 뗀다. 끝나면 클립보드는 원래대로 돌려 놓는다.
+
+처음은 최근 7일(`first_read_days`), 그 뒤는 마지막 읽은 시각 하루 전부터(`state.json`). PageUp 은 그 날짜가 보일 때까지만(최대 `max_pageups`).
+
+## 함정 (2026-11-09 실측)
+- 목록 **가운데**를 누르면 사진 뷰어가 열려 포커스를 뺏긴다 → 빈 여백을 눌러야 한다. 위치는 `click_fraction` [가로비, 세로비] 로 조정.
+- 메인 창 Ctrl+F 검색은 안 열린다 → 방은 목록 더블클릭으로 연다(v1 은 사람이).
+- 복사 뒤 클립보드에 대화가 남는다 → 수집기가 원복한다.
+- ERP 가 422 「상한」을 돌려주면 범위가 너무 넓은 것 — `first_read_days` 를 줄이거나 ERP 기능설정 상한을 올린다.
+
+## 다음 단계(미구현)
+트레이 상주 + [지금 읽기] 버튼 · 방 자동 열기 · exe 패키징(PyInstaller) · 미룸 시각 알림.
