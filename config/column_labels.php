@@ -431,6 +431,7 @@ return [
         'payroll_viewers' => '사내직원관리 공개 범위',   // 2026-11-04 기능설정
         'staff_payout_viewers' => '사내직원 월정산 볼 사람',   // 2026-11-05 기능설정
         'kakao_viewers' => '카톡자동화 쓰는 사람',   // 2026-11-10 기능설정 공개 범위 표
+        'kakao_params' => '카톡자동화 수치',   // 2026-11-10 기능설정
         'kakao_collector_tokens' => '카톡 에이전트 연결(PC)',   // 2026-11-10 §11
         'unsecured_limit_krw' => '무담보 한도',
         'credit_score_weights' => '신용도 가중치',
@@ -544,6 +545,7 @@ return [
         'payroll_viewers_changed' => '사내직원관리 공개 범위 변경',   // 2026-11-04 기능설정
         'staff_payout_viewers_changed' => '사내직원 월정산 볼 사람 변경',   // 2026-11-05 기능설정
         'kakao_viewers_changed' => '카톡자동화 쓰는 사람 변경',   // 2026-11-10 기능설정 공개 범위 표
+        'kakao_params_changed' => '카톡자동화 수치 변경(상한·기간)',   // 2026-11-10 기능설정
         'kakao_installer_downloaded' => '카톡 에이전트 설치 파일 받음',   // 2026-11-10 §11 「이 PC 연결하기」
         'kakao_agent_rebound' => '카톡 에이전트를 내 계정으로 다시 연결',   // 2026-11-10 .bat 없이 재연결
         'shipment_added' => '서류 발송 줄 추가',   // 2026-11-04 EMS·DHL 줄 감사
