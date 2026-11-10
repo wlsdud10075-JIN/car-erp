@@ -197,24 +197,31 @@ class KakaoPageTest extends TestCase
         Volt::test('erp.kakao.index')->call('toggleRoom', $c->id)->assertForbidden();
     }
 
-    public function test_token_is_shown_once_and_can_be_revoked(): void
+    public function test_connect_this_pc_downloads_a_one_time_installer_and_devices_can_be_revoked(): void
     {
-        $me = $this->user();
-        $this->roomWith($me, '수출팀A');
-        $this->actingAs($me);
+        $user = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
+        $this->actingAs($user);
 
-        $page = Volt::test('erp.kakao.index')->call('toggleSetup')->set('deviceName', '사무실 PC')->call('issueToken');
-        $plain = $page->get('tokenPlain');
-        $this->assertStringStartsWith('kck_', $plain);
-        $page->assertSee($plain);
+        // §11 — 토큰은 화면에 안 보인다. 설정 탭의 [이 PC 연결하기]가 .bat 을 내려 주고 그 안에 토큰·local_secret 이 박힌다
+        $page = Volt::test('erp.kakao.index')->set('showSetup', true)
+            ->assertSee(route('erp.kakao.installer'), false)->assertSee(__('kakao.token_connect'))->assertDontSee('kck_');
+        $res = $this->post(route('erp.kakao.installer'));
+        $res->assertOk()->assertHeader('Content-Disposition', 'attachment; filename="KakaoAgent-setup.bat"');
         $token = KakaoCollectorToken::first();
-        $this->assertSame('사무실 PC', $token->device_name);
-        $this->assertSame(KakaoCollectorToken::hashOf($plain), $token->token_hash);
-        $this->assertNotSame($plain, $token->token_hash);
+        $this->assertNotNull($token->local_secret);
+        $this->assertStringContainsString('"token": "kck_', $res->getContent());
+        $this->assertStringContainsString('"local_secret": "'.$token->local_secret.'"', $res->getContent());
+        $this->assertStringNotContainsString($token->token_hash, $res->getContent());
 
-        $page->call('revokeToken', $token->id);
+        // 페이지 JS 가 쓸 내 기기 비밀값은 본인 세션에만 — 다른 사용자 화면엔 없다
+        $page = Volt::test('erp.kakao.index')->set('showSetup', true)->assertSee('data-kakao-read', false);
+        $this->assertSame([$token->local_secret], array_column($page->viewData('agent')['secrets'], 'secret'));
+        $this->actingAs(User::factory()->create(['permission' => 'user', 'role' => '수출통관']));
+        $this->assertSame([], Volt::test('erp.kakao.index')->viewData('agent')['secrets']);
+
+        $this->actingAs($user);
+        $page = Volt::test('erp.kakao.index')->set('showSetup', true)->call('revokeToken', $token->id);
         $this->assertNotNull($token->fresh()->revoked_at);
-        $this->assertNull(KakaoCollectorToken::findActive($plain));
-        $this->assertNull($page->get('tokenPlain'));
+        $this->assertSame([], $page->viewData('agent')['secrets']);
     }
 }

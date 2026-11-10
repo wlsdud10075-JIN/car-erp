@@ -31,9 +31,8 @@ new #[Layout('components.layouts.app')] class extends Component
     /** @var array<int, array<int, string>> room_id → 「우리 회사」로 체크한 보낸이들 */
     public array $oursFor = [];
 
-    // 수집기 토큰
-    public string $deviceName = '';
-    public ?string $tokenPlain = null;
+    /** @var array<int, string> 에이전트가 방금 알려 준 「지금 열려 있는 방」 제목 — 페이지 JS 가 reportOpenRooms 로 넣는다(§11, 폴링 없음) */
+    public array $openRooms = [];
 
     // 미루기 폼 (행 하나)
     public ?int $snoozeId = null;
@@ -72,9 +71,39 @@ new #[Layout('components.layouts.app')] class extends Component
             'needSetup' => $board['rooms']->filter(fn ($r) => (trim((string) $r->pivot->my_name) === '' || ! $r->isSetUp()) && $r->messages()->exists())->values(),
             'senders' => $board['rooms']->mapWithKeys(fn ($r) => [$r->id => $r->senders()])->all(),
             'pendingCounts' => $board['rooms']->mapWithKeys(fn ($r) => [$r->id => $r->messages()->whereNull('type')->count()])->all(),
-            'tokens' => $this->showSetup ? $user->kakaoCollectorTokens()->orderByDesc('id')->get() : collect(),
+            'devices' => $this->showSetup ? $user->kakaoCollectorTokens()->whereNull('revoked_at')->orderByDesc('id')->get() : collect(),
+            // §11 페이지 JS 가 127.0.0.1 에이전트를 부를 때 쓰는 것 — 내 활성 기기의 local_secret(본인 세션에만 내려간다)·기대 버전·포트·체크된 방
+            'agent' => [
+                'port' => (int) config('services.kakao_agent.port', 47321),
+                'version' => (string) config('services.kakao_agent.version', '1.0.0'),
+                'secrets' => $user->kakaoCollectorTokens()->whereNull('revoked_at')->whereNotNull('local_secret')->orderByDesc('id')
+                    ->get(['device_name', 'local_secret'])->map(fn ($t) => ['device' => (string) $t->device_name, 'secret' => (string) $t->local_secret])->values()->all(),
+                'selected' => $user->kakaoRooms()->wherePivot('selected', true)->pluck('name')->values()->all(),
+            ],
             'types' => KakaoMessage::TYPES,
         ];
+    }
+
+    /**
+     * §11 — 에이전트가 알려 준 「지금 열려 있는 방」(페이지 JS → 여기). API 의 KakaoRoomsController::report 와 같은 일:
+     * 방 자동 등록 + 이 사용자에게 last_seen_at. 체크는 사람이 한다(toggleRoom). 폴링 없음 — 페이지를 열 때와 [지금 읽기] 뒤에만.
+     *
+     * @param  array<int, string>  $names
+     */
+    public function reportOpenRooms(array $names): void
+    {
+        $user = auth()->user();
+        $names = array_values(array_unique(array_filter(array_map(fn ($n) => mb_substr(trim((string) $n), 0, 120), $names), fn ($n) => $n !== '')));
+        $names = array_slice($names, 0, 200);
+        foreach ($names as $name) {
+            $room = KakaoRoom::firstOrCreate(['name' => $name]);
+            if ($room->users()->where('users.id', $user->id)->exists()) {
+                $room->users()->updateExistingPivot($user->id, ['last_seen_at' => now()]);
+            } else {
+                $room->users()->attach($user->id, ['my_name' => '', 'selected' => false, 'last_seen_at' => now()]);
+            }
+        }
+        $this->openRooms = $names;
     }
 
     // ───────── 행 동작 (kakao_items 만) ─────────
@@ -168,7 +197,6 @@ new #[Layout('components.layouts.app')] class extends Component
     public function toggleSetup(): void
     {
         $this->showSetup = ! $this->showSetup;
-        $this->tokenPlain = null;
     }
 
     /**
@@ -221,19 +249,11 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('kakao.room_unsubscribed'), type: 'success');
     }
 
-    // ───────── 수집기 토큰 ─────────
-
-    public function issueToken(): void
-    {
-        [, $plain] = KakaoCollectorToken::issue(auth()->user(), mb_substr(trim($this->deviceName), 0, 80) ?: null);
-        $this->tokenPlain = $plain;   // 1회 표시. 저장은 해시뿐
-        $this->deviceName = '';
-    }
+    // ───────── 연결된 PC (§11 — 발급은 「이 PC 연결하기」 .bat 다운로드가 한다, KakaoInstallerController) ─────────
 
     public function revokeToken(int $tokenId): void
     {
         auth()->user()->kakaoCollectorTokens()->whereKey($tokenId)->whereNull('revoked_at')->update(['revoked_at' => now()]);
-        $this->tokenPlain = null;
     }
 }; ?>
 
@@ -252,8 +272,16 @@ new #[Layout('components.layouts.app')] class extends Component
                 · {{ __('kakao.cost_today', ['krw' => number_format($board['cost_today'])]) }}
             </p>
         </div>
-        <button type="button" wire:click="toggleSetup" class="tab-pill h-9 px-3 text-sm sm:h-8">{{ $showSetup ? __('kakao.setup_close') : __('kakao.setup') }}</button>
+        <div class="flex flex-wrap items-center gap-2">
+            {{-- §11 이 PC 의 에이전트 상태 — 페이지 JS 가 127.0.0.1 /ping 결과로 채운다(폴링 없음) --}}
+            <span class="text-xs text-gray-500" data-kakao-agent-status data-state="checking" wire:ignore>{{ __('kakao.agent_checking') }}</span>
+            <button type="button" class="btn-primary h-9 px-3 text-sm disabled:opacity-40 sm:h-8" data-kakao-read disabled wire:ignore>{{ __('kakao.read_now') }}</button>
+            <button type="button" wire:click="toggleSetup" class="tab-pill h-9 px-3 text-sm sm:h-8">{{ $showSetup ? __('kakao.setup_close') : __('kakao.setup') }}</button>
+        </div>
     </div>
+
+    {{-- §11 읽기 진행 줄 — [지금 읽기] 동안 에이전트 /progress 를 보여 주고 끝나면 화면을 새로 그린다 --}}
+    <div class="card-tight mb-4 hidden whitespace-pre-line font-mono text-xs text-gray-700" data-kakao-progress wire:ignore></div>
 
     @if($board['counts']['review'] > 0)
         <div class="card-tight mb-4 border-amber-200 bg-amber-50 text-sm text-amber-800">{{ __('kakao.needs_review', ['n' => $board['counts']['review']]) }}</div>
@@ -267,10 +295,10 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="mt-2 flex flex-wrap gap-2">
                 @foreach($allRooms as $room)
                     @php($seen = $room->pivot->last_seen_at ? \Carbon\Carbon::parse($room->pivot->last_seen_at) : null)
-                    <label class="flex h-9 cursor-pointer items-center gap-2 rounded border px-2 text-sm sm:h-8 {{ $room->pivot->selected ? 'border-violet-300 bg-violet-50 text-violet-900' : 'border-gray-200 text-gray-700' }}" wire:key="pick-{{ $room->id }}" data-room-pick="{{ $room->id }}">
+                    <label class="flex h-9 cursor-pointer items-center gap-2 rounded border px-2 text-sm sm:h-8 {{ $room->pivot->selected ? 'border-violet-300 bg-violet-50 text-violet-900' : 'border-gray-200 text-gray-700' }}" wire:key="pick-{{ $room->id }}" data-room-pick="{{ $room->id }}" data-room-name="{{ $room->name }}" data-room-selected="{{ $room->pivot->selected ? 1 : 0 }}">
                         <input type="checkbox" wire:click="toggleRoom({{ $room->id }})" @checked($room->pivot->selected) class="h-4 w-4">
-                        <span class="truncate">{{ $room->name }}</span>
-                        @if($seen && $seen->gt(now()->subHours(6))) <span class="badge badge-green">{{ __('kakao.room_open') }}</span> @endif
+                        <span class="truncate" title="{{ $room->name }}">{{ $room->name }}</span>
+                        @if(in_array($room->name, $openRooms, true) || ($openRooms === [] && $seen && $seen->gt(now()->subHours(6)))) <span class="badge badge-green">{{ __('kakao.room_open') }}</span> @endif
                         @if($room->pivot->selected && trim((string) $room->pivot->my_name) === '') <span class="badge badge-amber">{{ __('kakao.room_need_me') }}</span> @endif
                     </label>
                 @endforeach
@@ -294,7 +322,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         <div class="hidden text-[11px] text-gray-400 sm:grid sm:grid-cols-[1fr_4rem_5rem] sm:gap-2"><span></span><span class="text-center">{{ __('kakao.setup_me') }}</span><span class="text-center">{{ __('kakao.setup_ours') }}</span></div>
                         @foreach($senders[$room->id] as $name)
                             <label class="grid grid-cols-[1fr_4rem_5rem] items-center gap-2 rounded px-1 py-1 text-sm text-gray-700 hover:bg-gray-50" wire:key="setup-{{ $room->id }}-{{ md5($name) }}">
-                                <span class="truncate">{{ $name }}</span>
+                                <span class="truncate" title="{{ $name }}">{{ $name }}</span>
                                 <span class="flex h-9 items-center justify-center sm:h-7"><input type="radio" wire:model="meFor.{{ $room->id }}" value="{{ $name }}" class="h-4 w-4"></span>
                                 <span class="flex h-9 items-center justify-center sm:h-7"><input type="checkbox" wire:model="oursFor.{{ $room->id }}" value="{{ $name }}" class="h-4 w-4"></span>
                             </label>
@@ -340,26 +368,22 @@ new #[Layout('components.layouts.app')] class extends Component
                 @endforelse
             </div>
 
-            <div class="card">
+            <div class="card" data-kakao-connect>
                 <div class="section-header"><span class="section-dot bg-teal-500"></span><span class="section-title">{{ __('kakao.token_title') }}</span></div>
                 <p class="mt-1 text-xs text-gray-500">{{ __('kakao.token_hint') }}</p>
-                <div class="mt-2 flex flex-wrap gap-2">
-                    <input type="text" wire:model="deviceName" placeholder="{{ __('kakao.token_device') }}" class="input-base h-9 w-56 text-sm sm:h-8">
-                    <button type="button" wire:click="issueToken" class="btn-primary h-9 px-3 text-sm sm:h-8">{{ __('kakao.token_issue') }}</button>
-                </div>
-                @if($tokenPlain)
-                    <div class="mt-3 rounded border border-teal-200 bg-teal-50 p-2 text-xs" data-token-plain>
-                        <div class="font-medium text-teal-800">{{ __('kakao.token_plain') }}</div>
-                        <code class="mt-1 block select-all break-all text-teal-900">{{ $tokenPlain }}</code>
-                    </div>
-                @endif
-                <ul class="mt-3 space-y-1 text-xs text-gray-700">
-                    @forelse($tokens as $t)
-                        <li class="flex flex-wrap items-center justify-between gap-2 rounded border border-gray-100 px-2 py-1" wire:key="tok-{{ $t->id }}">
-                            <span class="{{ $t->revoked_at ? 'line-through text-gray-400' : '' }}">{{ $t->device_name ?: '—' }} · {{ __('kakao.token_last_used') }} {{ $t->last_used_at?->format('m/d H:i') ?? __('kakao.token_never') }}</span>
-                            @unless($t->revoked_at)
-                                <button type="button" wire:click="revokeToken({{ $t->id }})" class="h-9 rounded border border-red-200 px-2 text-xs text-red-700 sm:h-7">{{ __('kakao.token_revoke') }}</button>
-                            @endunless
+                {{-- §11 「이 PC 연결하기」 = 1회용 설치 .bat 다운로드(토큰·local_secret 포함). 세션 POST — JS 없이도 된다 --}}
+                <form method="POST" action="{{ route('erp.kakao.installer') }}" class="mt-2">
+                    @csrf
+                    <button type="submit" class="btn-primary h-9 px-3 text-sm sm:h-8">{{ __('kakao.token_connect') }}</button>
+                </form>
+                <p class="mt-2 text-xs text-gray-500">{{ __('kakao.token_connect_hint') }}</p>
+                <hr class="section-divider my-3">
+                <div class="section-header"><span class="section-dot bg-teal-500"></span><span class="section-title">{{ __('kakao.devices_title') }}</span></div>
+                <ul class="mt-2 space-y-1 text-xs text-gray-700">
+                    @forelse($devices as $t)
+                        <li class="flex flex-wrap items-center justify-between gap-2 rounded border border-gray-100 px-2 py-1" wire:key="tok-{{ $t->id }}" data-kakao-device="{{ $t->id }}">
+                            <span>{{ $t->device_name ?: __('kakao.device_unnamed') }} · {{ __('kakao.token_last_used') }} {{ $t->last_used_at?->format('m/d H:i') ?? __('kakao.token_never') }}</span>
+                            <button type="button" wire:click="revokeToken({{ $t->id }})" class="h-9 rounded border border-red-200 px-2 text-xs text-red-700 sm:h-7">{{ __('kakao.token_revoke') }}</button>
                         </li>
                     @empty
                         <li class="text-gray-400">{{ __('kakao.token_none') }}</li>
@@ -458,4 +482,104 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
         </div>
     @endforeach
+
+    {{-- §11 「사용 화면은 ERP 하나」 — 이 PC 의 창 없는 에이전트(http://127.0.0.1:47321)를 브라우저가 직접 부른다. 폴링 없음(§1 #3):
+         페이지를 열 때 /ping → /rooms → reportOpenRooms, [지금 읽기] 때 /read → /progress(끝날 때까지만) → 화면 새로 그리기.
+         비밀값 = 내 활성 기기의 local_secret(본인 세션에만 내려온다). 상태 줄·버튼·진행 칸은 wire:ignore 라 Livewire 가 되돌리지 않는다. --}}
+    @script
+    <script>
+    (() => {
+        const cfg = @js($agent);
+        const t = @js([
+            'connected' => __('kakao.agent_connected'), 'missing' => __('kakao.agent_missing'), 'outdated' => __('kakao.agent_outdated'),
+            'unauthorized' => __('kakao.agent_unauthorized'), 'blocked' => __('kakao.agent_blocked'),
+            'none' => __('kakao.read_none_checked'), 'started' => __('kakao.read_started'), 'failed' => __('kakao.read_failed'),
+        ]);
+        const root = $wire.$el;
+        const base = 'http://127.0.0.1:' + cfg.port;
+        const el = (sel) => root.querySelector(sel);
+        const fmt = (s, vars) => String(s).replace(/:(\w+)/g, (m, k) => (k in vars ? vars[k] : m));
+        let secret = null, lastOpen = [], polling = null;
+
+        const setStatus = (state, text) => {
+            const s = el('[data-kakao-agent-status]');
+            if (s) { s.dataset.state = state; s.textContent = text; }
+            const b = el('[data-kakao-read]');
+            if (b) b.disabled = state !== 'connected';
+        };
+        const agent = async (path, opts = {}, withSecret = true) => {
+            const headers = { Accept: 'application/json' };
+            if (opts.body) headers['Content-Type'] = 'application/json';
+            if (withSecret && secret) headers['X-Kakao-Secret'] = secret;
+            const r = await fetch(base + path, { method: opts.method || 'GET', headers, body: opts.body ? JSON.stringify(opts.body) : undefined, mode: 'cors', credentials: 'omit', cache: 'no-store' });
+            return { status: r.status, body: await r.json().catch(() => ({})) };
+        };
+        const pickSecret = async (device) => {   // 기기 이름이 맞는 비밀값부터, 안 맞으면 내 기기 전부 한 번씩(이 PC 가 어느 행인지 모를 때)
+            const list = cfg.secrets || [];
+            const first = list.find((s) => s.device && s.device === device);
+            for (const s of first ? [first, ...list.filter((x) => x !== first)] : list) {
+                secret = s.secret;
+                if ((await agent('/progress')).status === 200) return true;
+            }
+            secret = null;
+            return false;
+        };
+        const ping = async () => {
+            let r;
+            try { r = await agent('/ping', {}, false); } catch (e) { setStatus('missing', (cfg.secrets || []).length ? t.missing + ' ' + t.blocked : t.missing); return false; }
+            if (r.status !== 200 || !r.body.ok) { setStatus('missing', t.missing); return false; }
+            const p = r.body;
+            if (p.version !== cfg.version) { setStatus('outdated', fmt(t.outdated, { version: p.version })); return false; }
+            if (p.erp_state === 'unauthorized' || p.erp_state === 'unconfigured' || !(await pickSecret(p.device))) { setStatus('unauthorized', t.unauthorized); return false; }
+            setStatus('connected', fmt(t.connected, { device: p.device, version: p.version }));
+            if (p.busy) startPolling();
+            return true;
+        };
+        const loadRooms = async () => {
+            const r = await agent('/rooms');
+            if (r.status !== 200) return;
+            lastOpen = r.body.rooms || [];
+            await $wire.reportOpenRooms(lastOpen);
+        };
+        const checkedOpenRooms = () => [...root.querySelectorAll('[data-room-pick]')]
+            .filter((l) => l.querySelector('input')?.checked && lastOpen.includes(l.dataset.roomName)).map((l) => l.dataset.roomName);
+        const showProgress = (lines, show = true) => {
+            const box = el('[data-kakao-progress]');
+            if (!box) return;
+            box.classList.toggle('hidden', !show);
+            box.textContent = lines.join('\n');
+        };
+        const startPolling = () => {
+            if (polling) return;
+            const b = el('[data-kakao-read]');
+            if (b) b.disabled = true;
+            polling = setInterval(async () => {
+                let r;
+                try { r = await agent('/progress'); } catch (e) { return; }
+                if (r.status !== 200) return;
+                showProgress(r.body.lines || []);
+                if (r.body.done) {
+                    clearInterval(polling); polling = null;
+                    if (b) b.disabled = false;
+                    await $wire.$refresh();
+                    await loadRooms();
+                }
+            }, 1500);
+        };
+        const readNow = async () => {
+            await loadRooms();   // 방금 닫은 방·새로 연 방을 반영
+            const rooms = checkedOpenRooms();
+            if (!rooms.length) { showProgress([t.none]); return; }
+            showProgress([t.started]);
+            let r;
+            try { r = await agent('/read', { method: 'POST', body: { rooms } }); } catch (e) { showProgress([fmt(t.failed, { message: String(e) })]); return; }
+            if (r.status !== 202) { showProgress([fmt(t.failed, { message: r.body.message || ('HTTP ' + r.status) })]); return; }
+            startPolling();
+        };
+
+        root.addEventListener('click', (e) => { if (e.target.closest('[data-kakao-read]')) readNow(); });
+        ping().then((ok) => { if (ok) loadRooms(); });
+    })();
+    </script>
+    @endscript
 </div>
