@@ -1,0 +1,9 @@
+{
+  "erp_url": "https://heymancar.com",
+  "token": "kck_여기에_ERP_내카톡할일_수집기연결에서_발급한_토큰",
+  "rooms": ["무사백-수출팀", "%프롬 - 이용빈"],
+  "first_read_days": 7,
+  "pageup_batch": 20,
+  "max_pageups": 400,
+  "click_fraction": [0.5, 0.35]
+}

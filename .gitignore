@@ -32,3 +32,9 @@ yarn-error.log
 /.nova
 /.vscode
 /.zed
+.env.preview
+
+# 카톡자동화 수집기(scripts/kakao-collector) — 개인 설정·상태·캐시
+scripts/kakao-collector/config.json
+scripts/kakao-collector/state.json
+scripts/kakao-collector/__pycache__/
