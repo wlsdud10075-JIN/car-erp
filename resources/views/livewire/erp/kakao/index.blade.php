@@ -307,6 +307,18 @@ new #[Layout('components.layouts.app')] class extends Component
     {{-- §11 읽기 진행 줄 — [지금 읽기] 동안 에이전트 /progress 를 보여 주고 끝나면 화면을 새로 그린다 --}}
     <div class="card-tight mb-4 hidden whitespace-pre-line font-mono text-xs text-gray-700" data-kakao-progress wire:ignore></div>
 
+    {{-- 돌아가는 동안 화면을 덮는 창 (jin 11-10 «뭔가 하는 중이라는 걸 모달로 — 멈춘 줄 알고 다른 걸 눌렀다») — 읽기·이 글 열기. 페이지 JS 가 열고 닫는다 --}}
+    <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 p-4" data-kakao-overlay wire:ignore role="dialog" aria-modal="true">
+        <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+            <div class="flex items-center gap-3">
+                <span class="inline-block h-5 w-5 animate-spin rounded-full border-2 border-violet-300" style="border-top-color:#4c3fb1"></span>
+                <span class="text-sm font-semibold text-gray-800" data-kakao-overlay-title></span>
+            </div>
+            <p class="mt-2 text-xs text-gray-500" data-kakao-overlay-hint></p>
+            <div class="mt-3 max-h-56 overflow-y-auto whitespace-pre-line rounded bg-gray-50 p-2 font-mono text-xs text-gray-700" data-kakao-overlay-lines></div>
+        </div>
+    </div>
+
     @if($board['counts']['review'] > 0)
         <div class="card-tight mb-4 border-amber-200 bg-amber-50 text-sm text-amber-800">{{ __('kakao.needs_review', ['n' => $board['counts']['review']]) }}</div>
     @endif
@@ -536,6 +548,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'unauthorized' => __('kakao.agent_unauthorized'), 'blocked' => __('kakao.agent_blocked'),
             'none' => __('kakao.read_none_checked'), 'started' => __('kakao.read_started'), 'failed' => __('kakao.read_failed'),
             'rebinding' => __('kakao.agent_rebinding'), 'rebind_failed' => __('kakao.agent_rebind_failed'), 'focus_failed' => __('kakao.focus_failed'), 'focus_denied' => __('kakao.focus_denied'),
+            'reading' => __('kakao.overlay_reading'), 'reading_hint' => __('kakao.overlay_reading_hint'), 'opening' => __('kakao.overlay_opening'), 'opening_hint' => __('kakao.overlay_opening_hint'),
         ]);
         const root = $wire.$el;
         const base = 'http://127.0.0.1:' + cfg.port;
@@ -566,7 +579,10 @@ new #[Layout('components.layouts.app')] class extends Component
         const toast = (message, type = 'warning') => window.dispatchEvent(new CustomEvent('notify', { detail: { message, type } }));   // 공통 토스트(사이드바 @notify.window) — 행 옆에서 눌렀으니 페이지 위 진행 칸은 안 보인다
         const focusRoom = async (room, snippet) => {   // 방을 열고(닫혀 있으면 메인 창 검색) 그 메시지 위치로(방 검색칸에 포커스가 있을 때만 키를 친다)
             let r;
-            try { r = await agent('/focus', { method: 'POST', body: { room, snippet: snippet || '' } }); } catch (e) { toast(fmt(t.focus_failed, { message: String(e) })); return; }
+            showProgress([]);
+            overlay(true, fmt(t.opening, { room }), t.opening_hint);
+            try { r = await agent('/focus', { method: 'POST', body: { room, snippet: snippet || '' } }); } catch (e) { overlay(false); toast(fmt(t.focus_failed, { message: String(e) })); return; }
+            overlay(false);
             if (r.status !== 200 || !r.body.ok) toast(r.body.message || fmt(t.focus_failed, { message: r.status === 200 ? t.focus_denied : 'HTTP ' + r.status }));
             else if (snippet && r.body.jumped === false) toast(r.body.message || t.focus_denied);
         };
@@ -610,14 +626,22 @@ new #[Layout('components.layouts.app')] class extends Component
             .sort((a, b) => (lastOpen.includes(b) ? 1 : 0) - (lastOpen.includes(a) ? 1 : 0));
         const showProgress = (lines, show = true) => {
             const box = el('[data-kakao-progress]');
-            if (!box) return;
-            box.classList.toggle('hidden', !show);
-            box.textContent = lines.join('\n');
+            if (box) { box.classList.toggle('hidden', !show); box.textContent = lines.join('\n'); }
+            const ol = el('[data-kakao-overlay-lines]');
+            if (ol) { ol.textContent = lines.join('\n'); ol.scrollTop = ol.scrollHeight; }
+        };
+        const overlay = (open, title = '', hint = '') => {   // 돌아가는 동안 화면을 덮는다 — 다른 걸 누르거나 「멈췄나」 오해하지 않게
+            const o = el('[data-kakao-overlay]');
+            if (!o) return;
+            o.classList.toggle('hidden', !open);
+            o.classList.toggle('flex', open);
+            if (open) { el('[data-kakao-overlay-title]').textContent = title; el('[data-kakao-overlay-hint]').textContent = hint; }
         };
         const startPolling = () => {
             if (polling) return;
             const b = el('[data-kakao-read]');
             if (b) b.disabled = true;
+            overlay(true, t.reading, t.reading_hint);
             polling = setInterval(async () => {
                 let r;
                 try { r = await agent('/progress'); } catch (e) { return; }
@@ -626,6 +650,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 if (r.body.done) {
                     clearInterval(polling); polling = null;
                     if (b) b.disabled = false;
+                    overlay(false);
                     await $wire.$refresh();
                     await loadRooms();
                 }
@@ -636,9 +661,10 @@ new #[Layout('components.layouts.app')] class extends Component
             const rooms = checkedOpenRooms();
             if (!rooms.length) { showProgress([t.none]); return; }
             showProgress([t.started]);
+            overlay(true, t.reading, t.reading_hint);
             let r;
-            try { r = await agent('/read', { method: 'POST', body: { rooms } }); } catch (e) { showProgress([fmt(t.failed, { message: String(e) })]); return; }
-            if (r.status !== 202) { showProgress([fmt(t.failed, { message: r.body.message || ('HTTP ' + r.status) })]); return; }
+            try { r = await agent('/read', { method: 'POST', body: { rooms } }); } catch (e) { overlay(false); showProgress([fmt(t.failed, { message: String(e) })]); return; }
+            if (r.status !== 202) { overlay(false); showProgress([fmt(t.failed, { message: r.body.message || ('HTTP ' + r.status) })]); return; }
             startPolling();
         };
 
