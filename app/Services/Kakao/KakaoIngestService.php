@@ -55,8 +55,26 @@ class KakaoIngestService
         $existing = $keys === [] ? collect() : KakaoMessage::where('room_id', $room->id)->whereIn('msg_key', $keys)->get()->keyBy('msg_key');
         $newParsed = array_values(array_filter($parsed, fn ($m) => ! $existing->has($m['msg_key'])));
         $classifyCount = count(array_filter($newParsed, fn ($m) => ! KakaoExportParser::isAttachment($m['body'])));
+        // 읽기 1회 상한 — 거부하지 않고 **오래된 것부터 상한까지만** 저장한다(jin 11-10 «7일 기준 500 충분했어?» — 표본B 프롬 방은 바쁜 주 7일 창이 591건).
+        // 수집기는 매번 창 전체를 다시 보내고 저장된 건은 건너뛰므로, [지금 읽기]를 한 번 더 누르면 나머지가 들어온다.
+        $leftover = 0;
         if ($classifyCount > Setting::kakaoMaxNewPerRead()) {
-            throw new KakaoLimitException("새 메시지가 {$classifyCount}건으로 읽기 1회 상한(".Setting::kakaoMaxNewPerRead().'건)을 넘습니다. 읽는 범위를 좁히세요.');
+            $kept = [];
+            $n = 0;
+            foreach ($newParsed as $m) {   // 파싱 순서 = 시각 순
+                $isAtt = KakaoExportParser::isAttachment($m['body']);
+                if (! $isAtt && $n >= Setting::kakaoMaxNewPerRead()) {
+                    $leftover++;
+
+                    continue;
+                }
+                $kept[] = $m;
+                $n += $isAtt ? 0 : 1;
+            }
+            $newParsed = $kept;
+            $keptKeys = array_flip(array_column($kept, 'msg_key'));
+            $parsed = array_values(array_filter($parsed, fn ($m) => $existing->has($m['msg_key']) || isset($keptKeys[$m['msg_key']])));
+            $classifyCount = $n;
         }
 
         $read = KakaoRead::create([
@@ -68,6 +86,7 @@ class KakaoIngestService
             'new_count' => count($newParsed),
             'status' => 'pending',
         ]);
+        $read->leftover = $leftover;   // 상한에 걸려 이번에 안 담은 건수(선언된 프로퍼티 — §8 #96-B, DB 컬럼 아님)
 
         // ① 저장 (갱신 + 신규) — 분류와 분리해 둔다: 분류가 죽어도 메시지는 남는다
         $fresh = DB::transaction(function () use ($parsed, $existing, $newParsed, $room, $read) {

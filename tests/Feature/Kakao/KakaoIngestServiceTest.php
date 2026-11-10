@@ -164,14 +164,12 @@ TXT;
 
         Setting::updateOrCreate(['key' => 'kakao_max_new_per_read'], ['value' => '50', 'type' => 'integer']);
         $big = "--------------- 2026년 6월 10일 수요일 ---------------\n".implode("\n", array_map(fn ($i) => "[영업A] [오전 9:00] 입금 부탁 {$i}", range(1, 60)));
-        try {
-            $svc->ingest($user, $room, $big);
-            $this->fail('상한을 넘겼는데 통과');
-        } catch (KakaoLimitException $e) {
-            $this->assertStringContainsString('60건', $e->getMessage());
-        }
-        $this->assertSame(0, KakaoMessage::count());
-        $this->assertSame(0, KakaoRead::count());
+        // 읽기 1회 상한은 거부가 아니라 「오래된 것부터 상한까지」(jin 11-10) — 나머지는 다음 읽기에
+        $read = $svc->ingest($user, $room, $big);
+        $this->assertSame(10, $read->leftover);
+        $this->assertSame(50, $read->new_count);
+        $this->assertSame(50, KakaoMessage::count());
+        $this->assertSame(1, KakaoRead::count());
 
         Setting::updateOrCreate(['key' => 'kakao_daily_cost_cap_krw'], ['value' => '100', 'type' => 'integer']);
         KakaoRead::create(['room_id' => $room->id, 'user_id' => $user->id, 'started_at' => now(), 'cost_krw' => 150, 'status' => 'done']);

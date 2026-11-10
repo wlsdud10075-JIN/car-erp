@@ -51,11 +51,15 @@ class KakaoIngestController extends Controller
             $read->new_count === 0 => "새 메시지가 없습니다(받은 {$read->total}건 전부 이미 있음).",
             default => "새 메시지 {$read->new_count}건 분류 완료(받은 {$read->total}건).",
         };
+        if ($read->leftover > 0) {   // 읽기 1회 상한 — 나머지는 [지금 읽기] 한 번 더(이미 저장된 건은 건너뛴다)
+            $message .= " 읽기 1회 상한에 걸려 {$read->leftover}건은 아직 안 담았습니다 — [지금 읽기]를 한 번 더 누르세요.";
+        }
 
         return response()->json([
             'read_id' => $read->id,
             'total' => $read->total,
             'new_count' => $read->new_count,
+            'leftover' => $read->leftover,
             'status' => $read->status,
             'needs_review' => $needsReview,
             'cost_krw' => (float) $read->cost_krw,

@@ -42,7 +42,7 @@ pyinstaller --noconfirm --onefile --noconsole --name KakaoAgent kakao_agent.py  
 - Windows 는 `SO_REUSEADDR` 이면 같은 포트에 두 번째 프로세스가 그냥 붙는다 → `allow_reuse_address=False` 로 단일 인스턴스 판정.
 - 한국어 Windows 의 `.bat` 은 CP949 로 돌아 한글 `echo` 가 깨진다 → `.bat` 은 ASCII 만.
 - 최신 Chrome·Edge 는 https 페이지 → `127.0.0.1` 호출에 「로컬 네트워크 접근」 허용을 한 번 물을 수 있다 → 페이지가 자물쇠 → 「로컬 네트워크」 허용 안내를 띄운다.
-- ERP 가 422 「상한」을 돌려주면 범위가 너무 넓은 것 — `config.json` 의 `first_read_days` 를 줄이거나 ERP 기능설정 상한을 올린다.
+- 읽기 1회 상한(기능설정 「읽기당 최대 건수」, 기본 500)을 넘으면 ERP 가 거부하지 않고 **오래된 것부터 상한까지만** 저장하고 「N건은 아직 안 담았습니다 — [지금 읽기] 한 번 더」를 돌려준다(저장된 건은 건너뛰므로 두 번째에 나머지가 들어온다). 실측 11-10: 표본B(프롬 방) 바쁜 7일 창 591건. 하루 비용 상한(기본 2,000원)은 여전히 422.
 
 ## 명령줄 진단(개발·장애 조사용)
 ```powershell

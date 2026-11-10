@@ -137,10 +137,16 @@ class KakaoIngestApiTest extends TestCase
 
         Setting::updateOrCreate(['key' => 'kakao_max_new_per_read'], ['value' => '50', 'type' => 'integer']);
         $big = "--------------- 2026년 6월 10일 수요일 ---------------\n".implode("\n", array_map(fn ($i) => "[영업A] [오전 9:00] 입금 부탁 {$i}", range(1, 60)));
+        // 읽기 1회 상한 — 거부가 아니라 오래된 것부터 상한까지만 저장하고 나머지는 「한 번 더」(jin 11-10 — 바쁜 방 7일 창 591건 실측)
         $res = $this->ingestAs($plain, ['room' => '무사백-수출팀', 'text' => $big]);
-        $res->assertStatus(422);
-        $this->assertStringContainsString('상한', $res->json('message'));
-        $this->assertSame(0, KakaoMessage::count());
+        $res->assertOk()->assertJsonPath('leftover', 10)->assertJsonPath('new_count', 50);
+        $this->assertStringContainsString('10건은 아직 안 담았습니다', $res->json('message'));
+        $this->assertSame(50, KakaoMessage::count());
+        $this->assertSame('입금 부탁 50', KakaoMessage::orderByDesc('id')->value('body'), '오래된 것부터 담는다');
+
+        $res2 = $this->ingestAs($plain, ['room' => '무사백-수출팀', 'text' => $big]);   // 한 번 더 — 저장된 건은 건너뛰고 나머지 10건
+        $res2->assertOk()->assertJsonPath('leftover', 0)->assertJsonPath('new_count', 10);
+        $this->assertSame(60, KakaoMessage::count());
     }
 
     public function test_model_failure_is_reported_as_needs_review(): void
