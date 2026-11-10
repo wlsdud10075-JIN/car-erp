@@ -30,8 +30,16 @@ class KakaoPrompt
     /**
      * @param  array<string, string>  $people  보낸이 → 부서(ERP 역할, 우리 편만) — 「김다정(수출통관), 최영숙(재무)」처럼 이름 뒤에 붙어 누가 무엇을 처리하는지 알려 준다
      */
-    public static function system(array $sides, array $roles = [], array $people = []): string
+    /**
+     * @param  array<int, array{body: string, from: string, to: string, sender: string}>  $corrections  이 방에서 사람이 고친 분류(KakaoRoom::corrections) — 같은 유형은 그렇게 분류하라는 예시
+     */
+    public static function system(array $sides, array $roles = [], array $people = [], array $corrections = []): string
     {
+        $correctionsBlock = '';
+        if ($corrections !== []) {
+            $ex = array_map(fn ($c) => "- 「{$c['body']}」({$c['sender']}) → {$c['to']} (엔진은 {$c['from']}으로 봤으나 사람이 고침)", $corrections);
+            $correctionsBlock = "\n## 이 방에서 사람이 고친 분류 — 같은 성격의 메시지는 이렇게 분류한다\n".implode("\n", $ex)."\n";
+        }
         $lines = [];
         foreach ($sides as $side => $members) {
             $role = trim((string) ($roles[$side] ?? ''));
@@ -51,7 +59,7 @@ class KakaoPrompt
 ## 방 구성 (편 이름과 사람들)
 {$sidesBlock}
 같은 편끼리의 지시(예: 포워딩사 직원이 자기 동료에게 「부킹 부탁」)는 to 를 그 편 자신으로 적는다.
-
+{$correctionsBlock}
 ## type (하나만)
 - 요청: 상대에게 무엇을 해 달라고 하는 것. 「~부탁드립니다」「~요청드립니다」「~해주세요」「~알려주세요」. 다음도 전부 요청이다:
   · 견적·일정·진행 문의 「운임 알 수 있을까요?」「OBL 바로 진행 가능할까요?」(답이 아니라 행동을 구한다)

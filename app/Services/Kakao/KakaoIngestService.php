@@ -149,7 +149,7 @@ class KakaoIngestService
             $sides = $room->sideMembers();
             $roles = $room->sideRoles();
             $open = $this->openItems($room, $fresh);
-            $result = $this->client->classify(KakaoPrompt::system($sides, $roles, $room->personRoles()), KakaoPrompt::user($open, $fresh), KakaoPrompt::schema($sides));
+            $result = $this->client->classify(KakaoPrompt::system($sides, $roles, $room->personRoles(), $room->corrections()), KakaoPrompt::user($open, $fresh), KakaoPrompt::schema($sides));   // 사람이 고친 분류를 예시로(jin 11-10)
             $this->apply($room, $fresh, $open, $result['items'], $sides);
             $usage = $result['usage'];
             $read->update([
