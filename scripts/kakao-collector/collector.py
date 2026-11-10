@@ -102,8 +102,10 @@ def focus(hwnd: int) -> bool:
     """방 창을 앞으로 — 그리고 **정말 앞에 왔는지 확인**한다.
     §11 실사고(jin 11-10): 창 없는 에이전트는 백그라운드 프로세스라 Windows 가 SetForegroundWindow 를 조용히 거부한다 → Ctrl+A·C 가
     맨 앞에 있던 브라우저(ERP 페이지)로 가서 웹페이지를 읽어 보냈다. exe 창 시절엔 사용자가 그 창의 [읽기]를 눌러 앞 권한이 있었다.
-    세 번 시도: ①그냥 ②ALT 키 한 번(마지막 입력 프로세스가 앞 권한을 얻는 규칙) ③앞 창의 스레드에 입력을 붙여서(AttachThreadInput)."""
-    u.ShowWindow(hwnd, 9)  # SW_RESTORE
+    세 번 시도: ①그냥 ②ALT 키 한 번(마지막 입력 프로세스가 앞 권한을 얻는 규칙) ③앞 창의 스레드에 입력을 붙여서(AttachThreadInput).
+    ⚠️ SW_RESTORE 는 최소화된 창에만 — 최대화·전체화면 창에 걸면 보통 크기로 줄어든다(jin 11-10 «왜 갑자기 다른 화면의 풀스크린을 줄이지?»)."""
+    if u.IsIconic(hwnd):
+        u.ShowWindow(hwnd, 9)  # SW_RESTORE
     for attempt in range(3):
         if attempt == 1:
             u.keybd_event(VK_MENU, 0, 0, 0)
