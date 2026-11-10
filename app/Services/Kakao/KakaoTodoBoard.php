@@ -19,7 +19,7 @@ class KakaoTodoBoard
 {
     public static function forUser(User $user, CarbonInterface $now): array
     {
-        $rooms = $user->kakaoRooms()->orderBy('name')->get();
+        $rooms = $user->kakaoRooms()->wherePivot('selected', true)->orderBy('name')->get();   // 「읽기」로 체크한 방만
         $roomIds = $rooms->pluck('id')->all();
         $myName = $rooms->mapWithKeys(fn ($r) => [$r->id => (string) $r->pivot->my_name])->all();
         $sides = $rooms->mapWithKeys(fn ($r) => [$r->id => $r->sideMembers()])->all();

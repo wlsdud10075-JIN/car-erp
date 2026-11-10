@@ -38,7 +38,7 @@ class KakaoIngestApiTest extends TestCase
         $user = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
         [, $plain] = KakaoCollectorToken::issue($user, '사무실 PC');
         $room = KakaoRoom::create(['name' => '무사백-수출팀', 'sides' => ['재무' => ['재무A'], '수출팀' => ['수출팀A'], '영업' => ['영업A']]]);
-        $room->users()->attach($user->id, ['my_name' => '수출팀A']);
+        $room->users()->attach($user->id, ['my_name' => '수출팀A', 'selected' => true]);
 
         return [$user, $plain, $room];
     }
@@ -109,6 +109,24 @@ class KakaoIngestApiTest extends TestCase
         app(KakaoIngestService::class)->classifyPending($room, $user);
         $this->assertSame(1, $this->fake->calls);
         $this->assertSame(0, KakaoMessage::where('room_id', $room->id)->whereNull('type')->count());
+    }
+
+    public function test_collector_reports_open_rooms_and_gets_back_only_ticked_ones(): void
+    {
+        [$user, $plain, $room] = $this->ready();
+
+        $res = $this->withHeader('Authorization', 'Bearer '.$plain)->postJson('/api/kakao/rooms', ['rooms' => ['무사백-수출팀', '새로열린방', '새로열린방', '']]);
+
+        $res->assertOk()->assertJson(['selected' => ['무사백-수출팀']]);          // 체크된 것만(새 방은 등록만)
+        $new = KakaoRoom::where('name', '새로열린방')->firstOrFail();
+        $pivot = $new->users()->where('users.id', $user->id)->first()->pivot;
+        $this->assertFalse((bool) $pivot->selected);
+        $this->assertNotNull($pivot->last_seen_at);
+        $this->assertSame(2, KakaoRoom::count());
+
+        $user->kakaoRooms()->updateExistingPivot($new->id, ['selected' => true]);
+        $this->withHeader('Authorization', 'Bearer '.$plain)->getJson('/api/kakao/rooms')
+            ->assertOk()->assertJson(['selected' => ['무사백-수출팀', '새로열린방'], 'need_setup' => ['새로열린방']]);
     }
 
     public function test_validation_and_limits_are_422_with_korean_text(): void

@@ -29,7 +29,9 @@ return new class extends Migration
             $table->id();
             $table->foreignId('room_id')->constrained('kakao_rooms')->cascadeOnDelete();
             $table->foreignId('user_id')->constrained('users')->cascadeOnDelete();
-            $table->string('my_name', 80);                  // 그 방에서 「나」의 카톡 표시명
+            $table->string('my_name', 80)->default('');     // 그 방에서 「나」의 카톡 표시명 (화면에서 「나」 클릭으로 채움)
+            $table->boolean('selected')->default(false);    // 이 사용자가 「읽기」로 체크한 방 (수집기는 체크된 방만 읽는다)
+            $table->timestamp('last_seen_at')->nullable();  // 수집기가 이 방 창이 열려 있다고 마지막으로 보고한 시각
             $table->timestamps();
             $table->unique(['room_id', 'user_id']);
         });
