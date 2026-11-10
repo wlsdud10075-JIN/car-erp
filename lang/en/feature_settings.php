@@ -210,9 +210,10 @@ return [
     'domestic_viewers_sub' => 'Only checked people see the domestic settlement and the domestic staff tab (system admins always). Approvers act through the notification link.',
     'domestic_viewers_save' => 'Save viewers',
     'payroll_viewers' => 'Staff page visibility',
-    'payroll_viewers_sub' => 'Only checked people see and edit that column\'s payroll items on the Staff page (including payroll upload). The domestic column covers the domestic tab, fee upload and domestic settlement; the staff settlement column covers that menu, page and Excel (unchecked approvers see it only on their turn). Approval links are not affected. The KakaoTalk column covers the "My KakaoTalk tasks" menu, page and PC link (only when the company toggle is on; everyone who logs in is a candidate). System admins always see everything.',
+    'payroll_viewers_sub' => 'Only checked people see and edit that column\'s payroll items on the Staff page (including payroll upload). The domestic column covers the domestic tab, fee upload and domestic settlement; the staff settlement column covers that menu, page and Excel (unchecked approvers see it only on their turn). Approval links are not affected. The KakaoTalk column covers the "My KakaoTalk tasks" menu, page and PC link (only when the company toggle is on; everyone who logs in is a candidate). Click a column title to select or clear the whole column. System admins always see everything.',
     'kakao_col' => 'KakaoTalk tasks',
     'staff_payout_col' => 'Staff settlement',
     'payroll_viewers_person' => 'Person',
+    'payroll_viewers_toggle_col' => 'Click to select / clear the whole column',
     'payroll_viewers_save' => 'Save visibility',
 ];

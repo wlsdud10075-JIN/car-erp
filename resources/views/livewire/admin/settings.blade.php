@@ -1096,6 +1096,23 @@ new #[Layout('components.layouts.app')] class extends Component
         return $this->payrollViewerCandidates->filter(fn ($u) => $u->canEditPayroll())->pluck('id')->map(fn ($i) => (int) $i)->values()->all();
     }
 
+    /**
+     * 공개 범위 표 헤더 클릭 = 그 칸 전체 선택 / 전체 해제 (jin 2026-11-10 «하나하나 빼기 너무 힘들다»).
+     * 후보 = 카톡자동화 칸은 전원, 나머지(급여·사내직원 월정산·내수직원)는 급여 입력 권한자. 전원 체크돼 있으면 해제, 아니면 전원 체크. 저장은 종전대로 [공개 범위 저장].
+     */
+    public function toggleViewerColumn(string $cat): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $ids = $cat === 'kakao'
+            ? $this->payrollViewerCandidates->pluck('id')->map(fn ($i) => (string) $i)->values()->all()
+            : array_map('strval', $this->payrollViewerAllowedIds());
+        $current = array_map('strval', (array) ($this->payrollViewerMatrix[$cat] ?? []));
+        $allChecked = $ids !== [] && array_diff($ids, $current) === [];
+        $this->payrollViewerMatrix[$cat] = $allChecked ? [] : $ids;
+    }
+
     /** 칸별 체크 상태 — 한 번도 저장 안 한 급여 칸은 「종전 = 후보 전원」을 체크해 둔다(저장해도 지금과 같게). */
     private function loadPayrollViewerMatrix(): void
     {
@@ -2032,7 +2049,10 @@ new #[Layout('components.layouts.app')] class extends Component
                         <thead><tr class="border-b border-gray-200 text-gray-500">
                             <th class="py-1 pr-2 text-left font-normal">{{ __('feature_settings.payroll_viewers_person') }}</th>
                             @foreach($pvCats as $cat => $label)
-                            <th class="px-1 py-1 text-center font-normal whitespace-nowrap">{{ $label }}{{ $cat === 'domestic' ? '' : '' }}</th>
+                            <th class="px-1 py-1 text-center font-normal whitespace-nowrap">
+                                {{-- 헤더 클릭 = 그 칸 전체 선택/해제 (jin 11-10) --}}
+                                <button type="button" wire:click="toggleViewerColumn('{{ $cat }}')" class="h-9 rounded px-1 text-gray-500 underline decoration-dotted underline-offset-2 hover:bg-gray-100 hover:text-gray-800 sm:h-7" title="{{ __('feature_settings.payroll_viewers_toggle_col') }}" data-viewer-col-toggle="{{ $cat }}">{{ $label }}</button>
+                            </th>
                             @endforeach
                         </tr></thead>
                         <tbody class="divide-y divide-gray-100">
