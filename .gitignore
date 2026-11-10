@@ -41,7 +41,7 @@ scripts/kakao-collector/__pycache__/
 scripts/kakao-collector/build/
 scripts/kakao-collector/dist/
 scripts/kakao-collector/*.spec
-scripts/kakao-collector/build.log
+scripts/kakao-collector/build*.log
 
 # 카톡자동화 에이전트 exe — 빌드 산출물(약 19MB), 배포 경로는 S3/서버 복사 (docs/design/kakao-automation.md §11-4)
 public/downloads/KakaoAgent.exe
