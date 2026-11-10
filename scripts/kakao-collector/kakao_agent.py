@@ -36,7 +36,7 @@ import requests
 
 import collector as C
 
-VERSION = "1.1.0"   # 1.1.0 = 회사별 설정(config.<host>.json)
+VERSION = "1.1.1"   # 1.1.1 = 설치 .bat 이 비밀값 없이 /quit 호출(권한 수준 달라 taskkill 못 죽일 때) · 1.1.0 = 회사별 설정
 PORT = 47321
 
 APP_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "KakaoReader"
@@ -305,6 +305,10 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/rebind":   # 비밀값 없이 — 새 회사를 더하는 것도 허용(같은 PC 의 ERP 페이지가 보낸 것 = .bat 재실행과 같은 효과). 출처 ≠ erp_url 이면 거부(아래)
             return self.do_POST_rebind()
+        if path == "/quit" and not (self.headers.get("Origin") or ""):   # 같은 PC 의 비브라우저 호출(설치 .bat 의 curl)은 비밀값 없이 종료 가능 —
+            self.reply(200, {"ok": True, "message": "bye"})                 # 권한 수준이 달라 taskkill 이 못 죽이는 경우(11-10 실측 «curl (23) write error») 대비. 브라우저 호출엔 Origin 이 늘 있어 안 열린다
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            return
         if not self.guard():
             return
         b = self.binding
