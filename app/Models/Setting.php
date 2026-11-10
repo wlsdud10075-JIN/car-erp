@@ -217,6 +217,24 @@ class Setting extends Model
         return max(100, (int) self::get('kakao_daily_cost_cap_krw', 2000));
     }
 
+    /** 「내 카톡 할 일」이 보는 기간(일) — 수집기 첫 읽기 범위(기획 §1 #5 = 7일)와 같게. */
+    public static function kakaoWindowDays(): int
+    {
+        return max(1, (int) self::get('kakao_window_days', 7));
+    }
+
+    /** 내 일이 이 시간(h)을 넘기면 「지금 할 일」로 올린다(경과시간만으론 안 올린다는 §5 원칙의 예외 = 하루 묵은 요청). */
+    public static function kakaoUrgentHours(): int
+    {
+        return max(1, (int) self::get('kakao_urgent_hours', 24));
+    }
+
+    /** 내 일이 이 일수를 넘기면 「놓쳤을 가능성」. 미룸 시각이 지난 것도 같은 묶음. */
+    public static function kakaoMissedDays(): int
+    {
+        return max(1, (int) self::get('kakao_missed_days', 3));
+    }
+
     /**
      * 🧾 내수직원 월정산(별도 결재) on/off — **회사별**(jin 2026-11-03). 키 = `domestic_payout_enabled_{회사}`.
      *   기본값 = ssancarerp(system) 켬 · heymanerp·karabaerp 끔. 끄면 내수 기능이 통째로 숨는다

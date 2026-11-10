@@ -161,6 +161,14 @@
                     'active' => request()->routeIs('erp.inventory.*'),
                     'show' => true,
                 ],
+                // 📱 카톡자동화 「내 카톡 할 일」 (jin 2026-11-10) — 회사별 토글(기능설정, 기본 OFF). docs/design/kakao-automation.md
+                [
+                    'label' => __('nav.menu.kakao'),
+                    'href' => route('erp.kakao.index'),
+                    'icon' => 'chat-bubble-left-right',
+                    'active' => request()->routeIs('erp.kakao.*'),
+                    'show' => \App\Models\Setting::kakaoAssistantEnabled(),
+                ],
                 // 🗑️ 2026-10-20 (jin «없애는 게 낫겠다») — 「수출통관」 메뉴(= 차량관리 ?action=clearance_candidates 링크 + 배지) 제거.
                 //   별도 화면이 아니었고 필터가 진행 중 판매 차를 거의 다 담아(신고서 있으면 전부) 거르는 게 없었다. 14일 접속 ssancar 21회·karaba 0.
                 //   대신 차량관리 「말소 필요 · 선적 필요 · 통관 필요」 토글. 옛 URL 은 scopeAction 이 남아 계속 열린다.
@@ -391,7 +399,8 @@
     ];
 
     $icons = [
-        'home'           => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/>',
+        'chat-bubble-left-right' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/>',   // 📱 내 카톡 할 일
+        'home'           =>'<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/>',
         'truck'          => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 17h8m-8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 11-4 0 2 2 0 014 0zM3 4h10v13H3V4zm10 4h4l3 4v5h-7V8z"/>',
         'users'          => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>',
         'identification' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M5 4h14a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2zm5 5a2 2 0 11-4 0 2 2 0 014 0zm-2 4a4 4 0 00-4 4h8a4 4 0 00-4-4zm6-3h6m-6 4h6"/>',

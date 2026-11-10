@@ -31,6 +31,9 @@ new #[Layout('components.layouts.app')] class extends Component
     /** 🤝 B2B 파트너스 on/off (jin 2026-11-02) — 회사별. */
     public bool $b2bPartnersEnabled = false;
 
+    /** 📱 카톡자동화 「내 카톡 할 일」 on/off (jin 2026-11-10) — 회사별, 기본 꺼짐. 키는 서버 .env. */
+    public bool $kakaoAssistantEnabled = false;
+
     /** 🧾 내수직원 월정산 on/off (jin 2026-11-03) — 회사별, 기본 ssancarerp 만 켬. 볼 사람은 아래 지정. */
     public bool $domesticPayoutEnabled = false;
 
@@ -169,6 +172,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->unsecuredLimitEnabled = Setting::unsecuredLimitEnabled();
         $this->buyerCashEnabled = Setting::buyerCashEnabled();
         $this->b2bPartnersEnabled = Setting::b2bPartnersEnabled();
+        $this->kakaoAssistantEnabled = Setting::kakaoAssistantEnabled();
         $this->domesticPayoutEnabled = Setting::domesticPayoutEnabled();
         $this->loadPayrollViewerMatrix();
         $this->assistantEnabled = (bool) Setting::get('assistant_enabled', false);
@@ -1014,6 +1018,32 @@ new #[Layout('components.layouts.app')] class extends Component
             'auditable_id' => $setting->id,
             'action' => 'b2b_partners_toggle_changed',
             'column_name' => 'b2b_partners_enabled',
+            'old_value' => $value ? '0' : '1',
+            'new_value' => $value ? '1' : '0',
+            'ip_address' => request()?->ip(),
+        ]);
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    /** 📱 카톡자동화 on/off (jin 2026-11-10) — 회사별 키, 시스템관리자만, 감사로그. 끄면 메뉴·페이지·수집기 API 가 막힌다(저장된 메시지는 남음). */
+    public function updatedKakaoAssistantEnabled(bool $value): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+
+        $key = 'kakao_assistant_enabled_'.Setting::companyTemplateSet();
+        $setting = Setting::updateOrCreate(
+            ['key' => $key],
+            ['value' => $value ? '1' : '0', 'type' => 'boolean', 'description' => '카톡자동화(내 카톡 할 일) 활성화'],
+        );
+
+        \App\Models\AuditLog::create([
+            'user_id' => auth()->id(),
+            'auditable_type' => Setting::class,
+            'auditable_id' => $setting->id,
+            'action' => 'kakao_assistant_toggle_changed',
+            'column_name' => 'kakao_assistant_enabled',
             'old_value' => $value ? '0' : '1',
             'new_value' => $value ? '1' : '0',
             'ip_address' => request()?->ip(),
@@ -1930,6 +1960,19 @@ new #[Layout('components.layouts.app')] class extends Component
                         <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.b2b_sub') }}</span>
                     </span>
                     <input type="checkbox" wire:model.live="b2bPartnersEnabled" class="peer sr-only">
+                    <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
+                                 after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
+                </label>
+            </div>
+
+            {{-- 📱 카톡자동화 「내 카톡 할 일」 on/off (jin 2026-11-10) — 회사별, 기본 꺼짐. 기획 docs/design/kakao-automation.md
+                 끄면 메뉴·페이지·PC 수집기 API 가 막힌다(저장된 메시지는 남음). 분류 키는 서버 .env(ANTHROPIC_API_KEY). --}}
+            <div class="rounded-md border border-gray-100 px-3 py-2" data-kakao-assistant-setting>
+                <label class="flex cursor-pointer items-center justify-between gap-3">
+                    <span class="text-sm text-gray-700">{{ __('feature_settings.kakao_label') }}
+                        <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.kakao_sub') }}</span>
+                    </span>
+                    <input type="checkbox" wire:model.live="kakaoAssistantEnabled" class="peer sr-only">
                     <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
                                  after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
                 </label>
