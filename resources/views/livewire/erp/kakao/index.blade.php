@@ -326,6 +326,16 @@ new #[Layout('components.layouts.app')] class extends Component
     <div class="card-tight mb-4 hidden whitespace-pre-line font-mono text-xs text-gray-700" data-kakao-progress wire:ignore></div>
 
     {{-- 돌아가는 동안 화면을 덮는 창 (jin 11-10 «뭔가 하는 중이라는 걸 모달로 — 멈춘 줄 알고 다른 걸 눌렀다») — 읽기·이 글 열기. 페이지 JS 가 열고 닫는다 --}}
+    {{-- Livewire 쪽 긴 작업(「이대로 분류 시작」 = Claude 분류, 수 초~수십 초)도 같은 모양의 창 — jin 11-10 «반응이 없이 다 되고 토스트만, 분류 중입니다가 필요» --}}
+    <div wire:loading.flex wire:target="saveSetup" class="fixed inset-0 z-50 items-center justify-center bg-black/40 p-4" data-kakao-classifying role="dialog" aria-modal="true">
+        <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
+            <div class="flex items-center gap-3">
+                <span class="inline-block h-5 w-5 animate-spin rounded-full border-2 border-violet-300" style="border-top-color:#4c3fb1"></span>
+                <span class="text-sm font-semibold text-gray-800">{{ __('kakao.setup_classifying') }}</span>
+            </div>
+            <p class="mt-2 text-xs text-gray-500">{{ __('kakao.setup_classifying_hint') }}</p>
+        </div>
+    </div>
     <div class="fixed inset-0 z-50 hidden items-center justify-center bg-black/40 p-4" data-kakao-overlay wire:ignore role="dialog" aria-modal="true">
         <div class="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
             <div class="flex items-center gap-3">
@@ -411,7 +421,10 @@ new #[Layout('components.layouts.app')] class extends Component
                             </div>
                         </details>
                         @error('meFor.'.$room->id) <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
-                        <button type="button" wire:click="saveSetup({{ $room->id }})" class="btn-primary mt-2 h-9 px-3 text-sm sm:h-8">{{ __('kakao.setup_save') }}</button>
+                        <button type="button" wire:click="saveSetup({{ $room->id }})" wire:loading.attr="disabled" wire:target="saveSetup" class="btn-primary mt-2 h-9 px-3 text-sm disabled:opacity-60 sm:h-8">
+                            <span wire:loading.remove wire:target="saveSetup">{{ __('kakao.setup_save') }}</span>
+                            <span wire:loading wire:target="saveSetup">{{ __('kakao.setup_classifying_btn') }}</span>
+                        </button>
                     @endif
                 </div>
             @endforeach
