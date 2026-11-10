@@ -935,6 +935,13 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-10 (2) — master `3660ee17` · 마이그 0 (jin «응 배포해줘», 21시대 업무시간 밖 — 1차 배포 직후 추가분)
+
+dev `2d373a6f` → master `3660ee17`(cherry-pick 1, README 제외, 충돌 0).
+- 🏢 **한 PC 에서 회사 여러 곳**(jin «heyman, ssancar 둘 다 쓰면 둘 다 설치해도 되니?») — 에이전트 1.1.0: 설정을 회사별 `config.<host>.json` 으로, 요청 Origin 으로 회사를 가려 그 토큰으로. 설치 .bat 도 그 파일에 쓰고 옛 `config.json` 은 지움. 기대 버전 `services.kakao_agent.version` 1.1.0.
+- 서버: `KakaoAgent.exe` 1.1.0(15,761,387 bytes) 3사 교체(scp). ssancarerp 사용액에 로컬 시험 비용 456.35원(읽기 11회·760건) 회차 1건 삽입(jin 지시).
+- 확인: 런 잡 5 success · 3사 SHA `3660ee17` · `/login` 200 ×3 · exe 200 ×3.
+
 ## 2026-11-10 — master `1801baba` · 마이그 2 · composer +anthropic-ai/sdk (jin «배포하자. 기능설정은 3사 전부 off 로», 21시대 업무시간 밖)
 
 dev 11-10 코드 커밋 36개(`4770446a`~`e46743f2`) → master `67e1dbc6`~`1801baba`(cherry-pick 36, 문서·`scripts/notion-*`·`docs/` 제외). 충돌 3 = `.gitignore`(dev 판) · `routes/web.php`(dev 전용 DevUserSwitch import 를 빼고 Kakao import 만) · `tests/Feature/NotionGuideAudienceTest.php`(dev 판, master 에선 자동 skip).
