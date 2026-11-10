@@ -4,6 +4,7 @@ use App\Http\Controllers\BuyerAccountExportController;
 use App\Http\Controllers\BuyerDocumentController;
 use App\Http\Controllers\CapitalReportController;
 use App\Http\Controllers\DevUserSwitchController;
+use App\Http\Controllers\KakaoInstallerController;
 use App\Http\Controllers\PayoutApprovalController;
 use App\Http\Controllers\PayoutBatchExportController;
 use App\Http\Controllers\ProvideNiceLookupController;
@@ -96,6 +97,8 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
     Volt::route('deposits', 'erp.deposits.index')->name('deposits.index');
     // 📱 카톡자동화 「내 카톡 할 일」 — 회사 토글(Setting::kakaoAssistantEnabled) 은 페이지 mount 가 본다 (docs/design/kakao-automation.md §10)
     Volt::route('kakao', 'erp.kakao.index')->name('kakao.index');
+    // §11 「이 PC 연결하기」 — 사용자별 1회용 설치 .bat(토큰·local_secret 포함) 다운로드. 게이트 = canUseKakaoAssistant(컨트롤러)
+    Route::post('kakao/installer', [KakaoInstallerController::class, 'download'])->name('kakao.installer');
 
     // ETA 통관서류 알림함 (2026-06-18) — 컴포넌트 mount 에서 canAccessClearance 가드.
     Volt::route('alarms', 'erp.alarms.index')->name('alarms.index');

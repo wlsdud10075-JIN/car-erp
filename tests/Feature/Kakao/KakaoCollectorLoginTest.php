@@ -10,7 +10,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 /**
- * 수집기 로그인(아이디·비밀번호 → 토큰)과 체크 상태 저장 — 실무자는 exe 창에 ERP 로그인만 한다.
+ * 수집기 로그인(아이디·비밀번호 → 토큰)과 체크 상태 저장 — 11-10 exe 창 시절 경로. §11 부터 실무자는 ERP 설정 탭 [이 PC 연결하기](.bat)로 연결하고,
+ * 이 API 는 남겨 둔다(비밀번호를 치는 다른 경로가 필요할 때·옛 exe 호환).
  */
 class KakaoCollectorLoginTest extends TestCase
 {

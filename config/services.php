@@ -132,4 +132,10 @@ return [
         'krw_per_usd' => (int) env('ANTHROPIC_KRW_PER_USD', 1400),     // 비용 기록용 환율
     ],
 
+    // 📱 카톡자동화 §11 실무자 PC 에이전트 — public/downloads/KakaoAgent.exe(git 밖)의 버전. 페이지가 에이전트 /ping 의 version 과 대조해 다르면 「다시 연결」을 안내한다
+    'kakao_agent' => [
+        'version' => env('KAKAO_AGENT_VERSION', '1.0.0'),
+        'port' => 47321,
+    ],
+
 ];

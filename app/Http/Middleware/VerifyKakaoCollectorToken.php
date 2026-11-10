@@ -27,8 +27,17 @@ class VerifyKakaoCollectorToken
         if (! $token->user->canUseKakaoAssistant()) {   // 회사 토글 OFF 또는 공개 범위 밖
             return response()->json(['message' => Setting::kakaoAssistantEnabled() ? '이 계정은 카톡자동화 공개 범위에 없습니다(기능설정).' : '이 회사는 카톡자동화가 꺼져 있습니다(기능설정).'], 403);
         }
+        $touch = [];
         if (! $token->last_used_at || $token->last_used_at->lt(now()->subMinute())) {
-            $token->forceFill(['last_used_at' => now()])->saveQuietly();
+            $touch['last_used_at'] = now();
+        }
+        // §11 — 설치 .bat 은 기기 이름을 모른다(ERP 가 만들어 준다) → 에이전트가 첫 호출에 PC 이름을 헤더로 보내면 그때 채운다
+        $device = mb_substr(trim((string) $request->header('X-Kakao-Device', '')), 0, 80);
+        if ($device !== '' && trim((string) $token->device_name) === '') {
+            $touch['device_name'] = $device;
+        }
+        if ($touch) {
+            $token->forceFill($touch)->saveQuietly();
         }
         $request->attributes->set('kakao_user', $token->user);
         $request->attributes->set('kakao_token', $token);
