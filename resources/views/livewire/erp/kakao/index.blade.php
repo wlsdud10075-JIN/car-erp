@@ -51,18 +51,29 @@ new #[Layout('components.layouts.app')] class extends Component
         if ($rooms->isEmpty()) {
             $this->showSetup = true;   // 아직 아무 방도 없으면 안내 + 토큰 발급부터
         }
-        foreach ($rooms as $room) {
-            // 「나」가 아직 없는 방은 ERP 명부로 자동으로 잡는다(jin 11-10 «왜 클릭을 하고 나눠야 하는데?») — 잡히면 쌓인 메시지를 바로 분류
-            if (trim((string) $room->pivot->my_name) === '' && $room->autoSetUpFor(auth()->user())) {
+        $this->autoSetUpRooms();
+    }
+
+    /**
+     * 「나」가 아직 없는 방은 ERP 명부로 자동으로 잡는다(jin 11-10 «왜 클릭을 하고 나눠야 하는데?») — 잡히면 쌓인 메시지를 바로 분류.
+     * mount 와 reportOpenRooms(에이전트가 방을 처음 붙인 직후) 둘 다 부른다 — 11-10 실사고: 페이지를 열 때는 방이 아직 안 붙어 있어 mount 가 건너뛰고,
+     * 그 뒤 붙은 방은 「나」 고르기 카드가 떴는데 우리 회사 미리 체크도 비어 있어 수출팀 방이 「나 혼자 우리」로 저장됐다.
+     */
+    private function autoSetUpRooms(): void
+    {
+        $user = auth()->user();
+        foreach ($user->kakaoRooms()->get() as $room) {
+            if (trim((string) $room->pivot->my_name) === '' && $room->autoSetUpFor($user)) {
                 $room->refresh();
-                $room->pivot->my_name = (string) auth()->user()->kakaoRooms()->where('kakao_rooms.id', $room->id)->first()?->pivot->my_name;
-                app(KakaoIngestService::class)->classifyPending($room, auth()->user());
+                $room->pivot->my_name = (string) $user->kakaoRooms()->where('kakao_rooms.id', $room->id)->first()?->pivot->my_name;
+                app(KakaoIngestService::class)->classifyPending($room, $user);   // 잡힌 그 순간 한 번만 — 매 페이지 로드마다 돌리면 「확인 필요」(분류 실패분)를 매번 다시 과금한다
             }
             $this->meFor[$room->id] = (string) $room->pivot->my_name;   // 폼 초기값(못 잡은 방은 빈칸 — 「이 방에서 나는 누구?」)
-            $this->oursFor[$room->id] = $this->oursFor[$room->id] ?? array_values(array_diff($room->sideMembers()[KakaoRoom::SIDE_US] ?? [], [(string) $room->pivot->my_name]));
             if (trim((string) $room->pivot->my_name) === '' && ! $room->isSetUp()) {   // 못 잡은 방: 우리 회사 후보는 명부와 맞는 사람으로 미리 체크
                 $senders = $room->senders();
-                $this->oursFor[$room->id] = array_values(array_unique(array_filter(array_map(fn ($n) => KakaoRoom::matchName($n, $senders), KakaoRoom::rosterNames(auth()->user())))));
+                $this->oursFor[$room->id] = array_values(array_unique(array_filter(array_map(fn ($n) => KakaoRoom::matchName($n, $senders), KakaoRoom::rosterNames($user)))));
+            } else {
+                $this->oursFor[$room->id] = array_values(array_diff($room->sideMembers()[KakaoRoom::SIDE_US] ?? [], [(string) $room->pivot->my_name]));
             }
         }
     }
@@ -114,6 +125,7 @@ new #[Layout('components.layouts.app')] class extends Component
             }
         }
         $this->openRooms = $names;
+        $this->autoSetUpRooms();   // 방금 붙은 방의 「나」·「우리 회사」를 바로 잡는다(mount 때는 방이 아직 없었다)
     }
 
     // ───────── 행 동작 (kakao_items 만) ─────────
