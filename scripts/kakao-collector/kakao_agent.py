@@ -128,6 +128,12 @@ class Agent:
                 last = state.get(name)
                 since = (datetime.fromisoformat(last).date() - timedelta(days=1)) if last else (date.today() - timedelta(days=int(self.cfg.get("first_read_days", 7))))
                 try:
+                    # 닫혀 있는 방은 메인 창 검색으로 열고 읽는다(jin 11-10 «체크돼 있으면 그 방을 찾아서 열어주고 지금 읽기») — 처음 한 번만 사람이 열어 둔다(목록에 뜨게)
+                    if not C.find_room_window(name):
+                        self.say(f"[{name}] 닫혀 있어 카톡에서 엽니다…")
+                        if not C.open_room(name):
+                            self.say(f"[{name}] 카톡에서 방을 찾지 못해 건너뜁니다(방 이름이 바뀌었거나 나간 방).")
+                            continue
                     info = C.read_room(self.cfg, name, since, dry=False)
                 except Exception as e:   # 창이 사라졌거나 클립보드 실패 — 다음 방으로
                     info = {"ok": False, "message": f"읽기 실패: {e}"}
