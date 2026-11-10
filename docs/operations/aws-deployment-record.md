@@ -1,6 +1,6 @@
 # car-erp AWS Lightsail 배포 기록 (운영)
 
-> 최초 작성: 2026-05-26 / 최종 갱신: 2026-06-09 (deploy #7 — §17)
+> 최초 작성: 2026-05-26 / 최종 갱신: 2026-11-10 (카톡자동화 배포)
 > 대상: car-erp ERP 운영 배포 — **heysellcar 회사용** 인스턴스. 사용자 ~20명 규모.
 > 구성: Lightsail 단일 인스턴스(앱 + MySQL 동거) + S3(업로드 서류 / DB 백업).
 > 본 문서는 실제 배포를 진행하며 기록한 것으로, `deployment.md` 런북의 실행 결과 + 그 과정에서 발견된 이슈/해결을 담는다.
@@ -934,6 +934,14 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - `73c2ede7` 채권관리 🚢 운항중 / ⚓ 도착예정 토글 · `2cb12f2b` 도착 임박 잔금 안내 배별 묶음(설정 10일) + 도착 후 미수 주간 요약(신규 템플릿 `erp_arrived_unpaid_weekly`, 3사 BizM 승인요청 완료 — 승인 뒤 tmplId) · `da155728` 통장 마감잔액 기준일 ‹ › 화살표
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
+
+## 2026-11-10 — master `1801baba` · 마이그 2 · composer +anthropic-ai/sdk (jin «배포하자. 기능설정은 3사 전부 off 로», 21시대 업무시간 밖)
+
+dev 11-10 코드 커밋 36개(`4770446a`~`e46743f2`) → master `67e1dbc6`~`1801baba`(cherry-pick 36, 문서·`scripts/notion-*`·`docs/` 제외). 충돌 3 = `.gitignore`(dev 판) · `routes/web.php`(dev 전용 DevUserSwitch import 를 빼고 Kakao import 만) · `tests/Feature/NotionGuideAudienceTest.php`(dev 판, master 에선 자동 skip).
+- 📱 **카톡자동화 「내 카톡 할 일」 전부** — 테이블 6개(+`local_secret`), Sonnet 5.5 분류(`anthropic-ai/sdk`, 프롬프트 캐시), 수집기 API, Volt 페이지(묶음 9·행 버튼 완료/미루기/이 글 열기), 창 없는 PC 에이전트 `KakaoAgent.exe`(127.0.0.1:47321) + 설정 탭 [이 PC 연결하기](1회용 .bat) + [이 PC 를 내 계정으로 연결], 「나」·「우리 회사」 ERP 명부 자동 매칭 + 부서, 사람이 고친 분류 → 프롬프트 예시, 닫힌 방 자동 열기·메시지 위치 이동(검색칸 포커스일 때만 키), 진행 오버레이, 읽기 상한 완화(오래된 것부터 상한까지), 기능설정 토글 + 공개 범위 「카톡자동화」 칸(헤더 클릭 전체 선택) + 수치 5칸, super 전용 API 사용액 카드. 기획 = `docs/design/kakao-automation.md` §1 #14~#21·§10·§11.
+- 서버 준비(배포 전·후): `ANTHROPIC_API_KEY` = ssancarerp·heymanerp `.env`(같은 값), karabaerp 비움(jin) · `KakaoAgent.exe`(15.7MB) 3사 `public/downloads/`(git 밖, scp) · **토글 3사 전부 OFF**(기본값 — jin 이 직접 켬 → 공개 범위 칸 체크 → 실무자 PC 마다 .bat 1회).
+- 확인: 로컬 병렬 dev 3,758(포털 문서 3건은 병렬 캐시 충돌 — 순차 통과) · master 체크아웃 병렬 **3,755 pass(skip 7)** · 런 42816198669 잡 5 success · 3사 SHA `1801baba` · 카톡 마이그 2 Ran · vendor anthropic ✓ · `/login` 200 ×3 · `/downloads/KakaoAgent.exe` 200 ×3.
+- ⚠️ 운영 첫 사용 때 볼 것: https 페이지 → 127.0.0.1 호출에 브라우저가 「로컬 네트워크 접근」을 한 번 물을 수 있다(허용) · SmartScreen 파란 창(추가 정보 → 실행) · 원격 데스크톱으로 쓰는 PC 는 잠기면 읽기가 멈춘다(에이전트가 안내).
 
 ## 2026-11-09 (3) — master `35f718a8` · 마이그 0 (jin «응 배포해줘», 21시대 업무시간 밖)
 
