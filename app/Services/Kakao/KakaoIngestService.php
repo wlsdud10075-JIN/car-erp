@@ -104,11 +104,7 @@ class KakaoIngestService
         // ② 분류
         try {
             $sides = $room->sideMembers();
-            // 역할 설명은 sides 안에 「편__role => 설명」 으로 들어 있다(페이지 saveRoom) — 편 이름으로 되돌려 프롬프트에 준다
-            $roles = collect((array) ($room->sides ?? []))
-                ->filter(fn ($v, $k) => is_string($v) && str_ends_with((string) $k, '__role'))
-                ->mapWithKeys(fn ($v, $k) => [substr((string) $k, 0, -6) => $v])
-                ->all();
+            $roles = $room->sideRoles();
             $open = $this->openItems($room, $fresh);
             $result = $this->client->classify(KakaoPrompt::system($sides, $roles), KakaoPrompt::user($open, $fresh), KakaoPrompt::schema($sides));
             $this->apply($room, $fresh, $open, $result['items'], $sides);

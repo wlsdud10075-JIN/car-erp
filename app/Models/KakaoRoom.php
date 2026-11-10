@@ -12,9 +12,15 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class KakaoRoom extends Model
 {
-    protected $fillable = ['name', 'sides', 'last_read_at'];
+    protected $fillable = ['name', 'sides', 'roles', 'last_read_at'];
 
-    protected $casts = ['sides' => 'array', 'last_read_at' => 'datetime'];
+    protected $casts = ['sides' => 'array', 'roles' => 'array', 'last_read_at' => 'datetime'];
+
+    /** 편 이름 → 역할 설명(문자열만). 프롬프트의 「방 구성」 줄에 붙는다. */
+    public function sideRoles(): array
+    {
+        return array_filter((array) ($this->roles ?? []), fn ($v) => is_string($v) && trim($v) !== '');
+    }
 
     public function users(): BelongsToMany
     {

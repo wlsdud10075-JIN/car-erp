@@ -143,7 +143,8 @@ class KakaoPageTest extends TestCase
             ->call('saveRoom')->assertHasNoErrors();
         $room = KakaoRoom::where('name', '무사백-수출팀')->firstOrFail();
         $this->assertSame(['재무' => ['재무A', '재무B'], '수출팀' => ['수출팀A'], '영업' => ['영업A']], $room->sideMembers());
-        $this->assertSame('송금 담당', $room->sides['재무__role']);
+        $this->assertSame(['재무' => '송금 담당'], $room->sideRoles());
+        $this->assertArrayNotHasKey('재무__role', $room->sides);   // 역할은 sides 에 섞지 않는다
 
         // 내 표시명이 편 구성에 없으면 구독 거부
         $page->set('myNameFor.'.$room->id, '없는사람')->call('subscribeRoom', $room->id)->assertHasErrors(['myNameFor.'.$room->id]);
