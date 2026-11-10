@@ -81,6 +81,12 @@ def kakao_windows() -> list[dict]:
     return found
 
 
+def open_room_titles() -> list[str]:
+    """지금 열려 있는 채팅방 창 제목들. 채팅방 창은 메인 창과 같은 클래스(EVA_Window_Dblclk)라 **제목으로만** 거른다
+    (11-10 실측: 「■■ 수출팀」 방 창 = EVA_Window_Dblclk 382x640). 메인 「카카오톡」·제목 없는 보조 창만 뺀다."""
+    return [w["title"] for w in kakao_windows() if w["title"].strip() and w["title"].strip() != "카카오톡"]
+
+
 def find_room_window(name: str) -> dict | None:
     for win in kakao_windows():
         if win["title"] == name or win["title"].startswith(name):
@@ -239,7 +245,7 @@ def main() -> int:
     hdr = {"Authorization": "Bearer " + cfg["token"], "Accept": "application/json"}
     base = cfg["erp_url"].rstrip("/")
     # ① 지금 열려 있는 방 창을 ERP 에 보고 → ERP 가 방을 등록하고, 사용자가 화면에서 「읽기」로 체크한 방 목록을 돌려준다
-    open_rooms = [w["title"] for w in kakao_windows() if w["title"] and w["title"] != "카카오톡" and w["cls"] != "EVA_Window_Dblclk"]
+    open_rooms = open_room_titles()
     if not open_rooms:
         print("열려 있는 카톡 방 창이 없습니다. 읽을 방을 카톡에서 창으로 열어 두고 다시 하세요. (python collector.py windows 로 확인)")
         return 2

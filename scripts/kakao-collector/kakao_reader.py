@@ -151,7 +151,7 @@ class App(tk.Tk):
         return requests.request(method, self.cfg["erp_url"].rstrip("/") + path, **kw)
 
     def refresh_rooms(self) -> None:
-        open_rooms = [w["title"] for w in C.kakao_windows() if w["title"] and w["title"] != "카카오톡" and w["cls"] != "EVA_Window_Dblclk"]
+        open_rooms = C.open_room_titles()
         for w in self.rooms_frame.winfo_children():
             w.destroy()
         if not open_rooms:
