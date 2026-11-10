@@ -1,0 +1,114 @@
+<?php
+
+namespace Tests\Feature\Kakao;
+
+use App\Models\AuditLog;
+use App\Models\KakaoCollectorToken;
+use App\Models\Setting;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Livewire\Volt\Volt;
+use Tests\TestCase;
+
+/**
+ * 📱 카톡자동화 = 기능설정 공개 범위 표의 「카톡자동화」 칸에 체크된 사람만 (jin 2026-11-10 «공개하는 인원에게만»).
+ * 저장 전 = 종전(회사 토글이 켜져 있으면 로그인하는 전원) · 저장 뒤 = 체크한 사람 · 시스템관리자 = 항상 · 토글 OFF = 아무도.
+ * 세 문(사이드바·페이지·수집기 API)이 모두 User::canUseKakaoAssistant 하나를 본다.
+ */
+class KakaoVisibilityTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private int $n = 0;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Setting::updateOrCreate(['key' => 'kakao_assistant_enabled_'.Setting::companyTemplateSet()], ['value' => '1', 'type' => 'boolean']);
+    }
+
+    private function user(string $permission, string $role = '수출통관'): User
+    {
+        return User::factory()->create(['permission' => $permission, 'role' => $role, 'password' => 'secret-pw1',
+            'phone' => '0107777'.str_pad((string) ++$this->n, 4, '0', STR_PAD_LEFT), 'email_verified_at' => now()]);
+    }
+
+    private function save(array $ids): void
+    {
+        Setting::query()->updateOrCreate(['key' => 'kakao_viewers'], ['value' => json_encode($ids), 'type' => 'string']);
+        Setting::flushRiskParamMemo();
+    }
+
+    public function test_before_saving_everyone_who_logs_in_can_use_it(): void
+    {
+        foreach (['수출통관', '재무', '관리'] as $role) {
+            $u = $this->user('user', $role);
+            $this->assertTrue($u->canUseKakaoAssistant(), $role);
+            $this->actingAs($u)->get(route('erp.kakao.index'))->assertOk();
+        }
+        $this->assertTrue($this->user('manager', '관리')->canUseKakaoAssistant());
+    }
+
+    public function test_after_saving_only_checked_people_see_the_menu_page_and_api(): void
+    {
+        $picked = $this->user('user', '수출통관');
+        $other = $this->user('user', '수출통관');
+        $this->save([$picked->id]);
+
+        $this->actingAs($picked)->get(route('erp.kakao.index'))->assertOk();
+        $this->actingAs($picked)->get(route('erp.dashboard'))->assertOk()->assertSee(__('nav.menu.kakao'));
+        $this->actingAs($other)->get(route('erp.kakao.index'))->assertForbidden();
+        $this->actingAs($other)->get(route('erp.dashboard'))->assertOk()->assertDontSee(__('nav.menu.kakao'));
+        $this->actingAs($this->user('super', '관리'))->get(route('erp.kakao.index'))->assertOk();
+
+        // 수집기 로그인(토큰 발급)도 같은 문 — 공개 범위 밖은 403, 안은 토큰
+        $this->postJson('/api/kakao/login', ['email' => $other->email, 'password' => 'secret-pw1', 'device' => 'PC-1'])->assertStatus(403);
+        $this->assertSame(0, KakaoCollectorToken::count());
+        $this->postJson('/api/kakao/login', ['email' => $picked->email, 'password' => 'secret-pw1', 'device' => 'PC-1'])->assertOk();
+
+        // 이미 발급된 토큰이라도 체크가 빠지면 그 순간부터 403
+        [, $plain] = KakaoCollectorToken::issue($other, 'PC-2');
+        $this->withHeader('Authorization', 'Bearer '.$plain)->getJson('/api/kakao/rooms')->assertStatus(403)
+            ->assertJsonFragment(['message' => '이 계정은 카톡자동화 공개 범위에 없습니다(기능설정).']);
+        $this->save([$picked->id, $other->id]);
+        $this->withHeader('Authorization', 'Bearer '.$plain)->getJson('/api/kakao/rooms')->assertOk();
+    }
+
+    public function test_company_toggle_off_beats_the_column(): void
+    {
+        $picked = $this->user('user', '수출통관');
+        $this->save([$picked->id]);
+        Setting::updateOrCreate(['key' => 'kakao_assistant_enabled_'.Setting::companyTemplateSet()], ['value' => '0', 'type' => 'boolean']);
+        Setting::flushRiskParamMemo();
+
+        $this->assertFalse($picked->canUseKakaoAssistant());
+        $this->assertFalse($this->user('super', '관리')->canUseKakaoAssistant());
+    }
+
+    public function test_settings_table_saves_the_column_with_everyone_as_candidates(): void
+    {
+        $super = $this->user('super', '관리');
+        $clearance = $this->user('user', '수출통관');   // 급여 칸 후보는 아니지만 카톡 칸 후보
+        $finance = $this->user('user', '재무');
+
+        $this->actingAs($super)->withoutExceptionHandling();
+        $component = Volt::test('admin.settings');
+        $matrix = $component->get('payrollViewerMatrix');
+        $this->assertEqualsCanonicalizing([(string) $clearance->id, (string) $finance->id], $matrix['kakao'], '저장 전 = 전원 체크(시스템관리자는 항상 보므로 줄 없음)');
+        $this->assertNotContains((string) $clearance->id, $matrix['employee'], '수출통관은 급여 칸 후보가 아니다');
+        $component->assertSee('—');   // 급여 칸이 없는 줄
+
+        $matrix['kakao'] = [(string) $clearance->id];
+        $component->set('payrollViewerMatrix', $matrix)->call('savePayrollViewers');
+
+        $this->assertSame([$clearance->id], Setting::kakaoViewerIds());
+        $this->assertTrue($clearance->fresh()->canUseKakaoAssistant());
+        $this->assertFalse($finance->fresh()->canUseKakaoAssistant());
+        $this->assertDatabaseHas('audit_logs', ['action' => 'kakao_viewers_changed', 'column_name' => 'kakao_viewers']);
+        $this->assertSame(1, AuditLog::where('action', 'kakao_viewers_changed')->count());
+
+        // 같은 값으로 다시 저장하면 감사 기록이 늘지 않는다
+        $component->call('savePayrollViewers');
+        $this->assertSame(1, AuditLog::where('action', 'kakao_viewers_changed')->count());
+    }
+}

@@ -46,7 +46,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function mount(): void
     {
-        abort_unless(Setting::kakaoAssistantEnabled(), 403, __('kakao.disabled'));
+        abort_unless(auth()->user()->canUseKakaoAssistant(), 403, __('kakao.disabled'));   // 회사 토글 + 공개 범위 칸
         $this->snoozeDate = now()->addDay()->format('Y-m-d');
         $rooms = auth()->user()->kakaoRooms()->get();
         if ($rooms->isEmpty()) {

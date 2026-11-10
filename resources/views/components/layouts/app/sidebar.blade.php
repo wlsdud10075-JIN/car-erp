@@ -139,7 +139,7 @@
                     'href' => route('erp.kakao.index'),
                     'icon' => 'chat-bubble-left-right',
                     'active' => request()->routeIs('erp.kakao.*'),
-                    'show' => \App\Models\Setting::kakaoAssistantEnabled(),
+                    'show' => $user->canUseKakaoAssistant(),   // 토글 + 기능설정 공개 범위 「카톡자동화」 칸(jin 11-10)
                 ],
                 [
                     'label' => __('nav.menu.admin_dashboard'),

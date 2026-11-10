@@ -1084,22 +1084,34 @@ new #[Layout('components.layouts.app')] class extends Component
     #[\Livewire\Attributes\Computed]
     public function payrollViewerCandidates()
     {
+        // 📱 2026-11-10 — 「카톡자동화」 칸은 전원 대상이라 로그인하는 사람 전부(관리·수출통관·재무·업무관리자·최고관리자)를 줄로 둔다. 급여 칸은 급여 입력 권한자(canEditPayroll) 줄에만 체크칸이 그려진다.
         return \App\Models\User::query()->whereIn('permission', ['admin', 'manager'])
-            ->orWhere(fn ($q) => $q->where('permission', 'user')->whereIn('role', ['관리', '재무']))
+            ->orWhere(fn ($q) => $q->where('permission', 'user')->whereIn('role', \App\Models\User::STAFF_ROLES))   // 영업은 로그인하지 않는다(jin 10-17) → 후보 아님
             ->orderBy('name')->get(['id', 'name', 'permission', 'role', 'approval_title']);
+    }
+
+    /** 급여 칸을 고를 수 있는 후보 id(급여 입력 권한자) — 종전 후보 집합. */
+    private function payrollViewerAllowedIds(): array
+    {
+        return $this->payrollViewerCandidates->filter(fn ($u) => $u->canEditPayroll())->pluck('id')->map(fn ($i) => (int) $i)->values()->all();
     }
 
     /** 칸별 체크 상태 — 한 번도 저장 안 한 급여 칸은 「종전 = 후보 전원」을 체크해 둔다(저장해도 지금과 같게). */
     private function loadPayrollViewerMatrix(): void
     {
         $saved = Setting::payrollViewers();
-        $all = $this->payrollViewerCandidates->pluck('id')->map(fn ($i) => (string) $i)->all();
+        $all = array_map('strval', $this->payrollViewerAllowedIds());
         $this->payrollViewerMatrix = [];
         foreach (array_keys(\App\Models\Salesman::PAYROLL_VIEW_CATEGORIES) as $cat) {
             $this->payrollViewerMatrix[$cat] = $cat === 'domestic'
                 ? array_map('strval', Setting::domesticPayoutViewerIds())
                 : ($saved === null ? $all : array_map('strval', $saved[$cat] ?? []));
         }
+        // 📱 카톡자동화 쓰는 사람(jin 2026-11-10) — 저장 전엔 「종전 = 로그인하는 전원」을 체크해 둔다.
+        $kakao = Setting::kakaoViewerIds();
+        $this->payrollViewerMatrix['kakao'] = $kakao === null
+            ? $this->payrollViewerCandidates->pluck('id')->map(fn ($i) => (string) $i)->all()
+            : array_map('strval', $kakao);
         // 🧾 사내직원 월정산 볼 사람(jin 2026-11-05) — 저장 전엔 「종전 = 관리 이상(canApprove)」을 체크해 둔다(저장해도 지금과 같게).
         $staff = Setting::staffPayoutViewerIds();
         $this->payrollViewerMatrix['staff_payout'] = $staff === null
@@ -1112,7 +1124,7 @@ new #[Layout('components.layouts.app')] class extends Component
         if (! auth()->user()?->isSuperAdmin()) {
             abort(403);
         }
-        $allowed = $this->payrollViewerCandidates->pluck('id')->map(fn ($i) => (int) $i)->all();
+        $allowed = $this->payrollViewerAllowedIds();   // 급여·사내직원 월정산 칸 = 급여 입력 권한자만
         $clean = [];
         foreach (array_keys(\App\Models\Salesman::PAYROLL_VIEW_CATEGORIES) as $cat) {
             $ids = array_values(array_intersect(array_map('intval', (array) ($this->payrollViewerMatrix[$cat] ?? [])), $allowed));
@@ -1153,6 +1165,20 @@ new #[Layout('components.layouts.app')] class extends Component
                 'user_id' => auth()->id(), 'auditable_type' => Setting::class, 'auditable_id' => $sp->id,
                 'action' => 'staff_payout_viewers_changed', 'column_name' => 'staff_payout_viewers',
                 'old_value' => $beforeStaff === null ? null : json_encode($beforeStaff), 'new_value' => json_encode($staff), 'ip_address' => request()?->ip(),
+            ]);
+        }
+        // 📱 카톡자동화 쓰는 사람(jin 2026-11-10) — 후보 = 로그인하는 전원. 저장 전(null)이면 첫 저장에 그대로 박힌다.
+        $everyone = $this->payrollViewerCandidates->pluck('id')->map(fn ($i) => (int) $i)->all();
+        $kakao = array_values(array_intersect(array_map('intval', (array) ($this->payrollViewerMatrix['kakao'] ?? [])), $everyone));
+        sort($kakao);
+        $beforeKakao = Setting::kakaoViewerIds();
+        if ($beforeKakao === null || $kakao !== (function ($x) { sort($x); return $x; })($beforeKakao)) {
+            $kv = Setting::updateOrCreate(['key' => 'kakao_viewers'],
+                ['value' => json_encode($kakao), 'type' => 'string', 'description' => '카톡자동화(내 카톡 할 일) 쓰는 사람(user id)']);
+            \App\Models\AuditLog::create([
+                'user_id' => auth()->id(), 'auditable_type' => Setting::class, 'auditable_id' => $kv->id,
+                'action' => 'kakao_viewers_changed', 'column_name' => 'kakao_viewers',
+                'old_value' => $beforeKakao === null ? null : json_encode($beforeKakao), 'new_value' => json_encode($kakao), 'ip_address' => request()?->ip(),
             ]);
         }
         Setting::flushRiskParamMemo();
@@ -1994,7 +2020,9 @@ new #[Layout('components.layouts.app')] class extends Component
                  사내직원관리에서만 숨긴다(월정산·결재 화면 무관). 처음엔 급여 칸 전원 체크(= 종전). 시스템관리자는 늘 본다. --}}
             @php $pvCats = \App\Models\Salesman::PAYROLL_VIEW_CATEGORIES; if (! $domesticPayoutEnabled) { unset($pvCats['domestic']); }
                  // 🧾 사내직원 월정산 볼 사람(jin 2026-11-05) — 급여 칸이 아니라 메뉴 칸. 맨 앞에(내수직원과 나란히).
-                 $pvCats = ['staff_payout' => __('feature_settings.staff_payout_col')] + $pvCats; @endphp
+                 $pvCats = ['staff_payout' => __('feature_settings.staff_payout_col')] + $pvCats;
+                 // 📱 카톡자동화 쓰는 사람(jin 2026-11-10) — 회사 토글이 켜진 회사만 칸이 보인다. 전원 후보라 모든 줄에 체크칸.
+                 if ($kakaoAssistantEnabled) { $pvCats['kakao'] = __('feature_settings.kakao_col'); } @endphp
             <div class="rounded-md border border-gray-100 px-3 py-2" data-payroll-viewers>
                 <div class="text-sm text-gray-700">{{ __('feature_settings.payroll_viewers') }}
                     <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.payroll_viewers_sub') }}</span>
@@ -2012,7 +2040,11 @@ new #[Layout('components.layouts.app')] class extends Component
                         <tr data-payroll-viewer-row="{{ $cand->id }}">
                             <td class="py-1 pr-2 whitespace-nowrap text-gray-700">{{ $cand->name }} <span class="text-gray-400">· {{ $cand->approval_title ?: ($cand->permission === 'user' ? $cand->role : __('nav.permission.'.$cand->permission)) }}</span></td>
                             @foreach($pvCats as $cat => $label)
+                            @if($cat !== 'kakao' && ! $cand->canEditPayroll())
+                            <td class="px-1 py-1 text-center text-gray-300">—</td>{{-- 급여 칸은 급여 입력 권한자(관리 이상·재무)만 --}}
+                            @else
                             <td class="px-1 py-1 text-center"><input type="checkbox" wire:model="payrollViewerMatrix.{{ $cat }}" value="{{ $cand->id }}" class="h-4 w-4 rounded border-gray-300" aria-label="{{ $cand->name }} {{ $label }}"></td>
+                            @endif
                             @endforeach
                         </tr>
                         @endforeach
