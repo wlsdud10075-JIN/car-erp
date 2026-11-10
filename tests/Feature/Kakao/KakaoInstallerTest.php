@@ -93,4 +93,25 @@ class KakaoInstallerTest extends TestCase
         $this->actingAs($other)->post(route('erp.kakao.installer'))->assertForbidden();
         $this->assertSame(0, KakaoCollectorToken::count());
     }
+
+    /** .bat 없이 재연결(jin 11-10 «사용자 전환한다고 계속 재설치해야 되면 너무 불편») — 새 토큰·비밀값을 JSON 으로 내주고, 발급 규칙은 .bat 과 같다 */
+    public function test_rebind_issues_a_token_as_json_for_the_page_to_push_into_the_agent(): void
+    {
+        $user = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
+        $this->actingAs($user);
+        $this->post(route('erp.kakao.installer'))->assertOk();   // 받고 설치 안 한 .bat 의 토큰 → 재연결 때 폐기
+
+        $res = $this->postJson('https://heymancar.com/erp/kakao/rebind');
+
+        $res->assertOk()->assertJsonPath('erp_url', 'https://heymancar.com')->assertHeader('Cache-Control', 'no-store, private');
+        $this->assertStringStartsWith('kck_', $res->json('token'));
+        $active = KakaoCollectorToken::whereNull('revoked_at')->sole();
+        $this->assertSame($active->local_secret, $res->json('local_secret'));
+        $this->assertSame($active->id, KakaoCollectorToken::findActive($res->json('token'))?->id);
+        $this->assertDatabaseHas('audit_logs', ['action' => 'kakao_agent_rebound', 'auditable_id' => $active->id]);
+
+        Setting::updateOrCreate(['key' => 'kakao_viewers'], ['value' => json_encode([]), 'type' => 'string']);
+        Setting::flushRiskParamMemo();
+        $this->postJson(route('erp.kakao.rebind'))->assertForbidden();
+    }
 }

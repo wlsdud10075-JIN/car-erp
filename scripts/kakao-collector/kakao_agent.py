@@ -247,6 +247,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         path = self.path.split("?", 1)[0]
+        if path == "/rebind":   # 비밀값 없이 — Origin 만 본다(위 docstring)
+            if not self.origin_ok():
+                self.send_response(403)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            return self.do_POST_rebind()
         if not self.guard():
             return
         if path == "/read":
@@ -258,11 +265,31 @@ class Handler(BaseHTTPRequestHandler):
             if not AGENT.start_read(rooms):
                 return self.reply(409, {"ok": False, "message": "이미 읽는 중입니다."})
             return self.reply(202, {"ok": True, "started": True, "rooms": rooms})
+        if path == "/focus":   # 「카톡에서 이 방 열기」(§6 [⋯] 보기) — 열려 있는 방 창을 앞으로. 안 열려 있으면 알려만 준다(자동 열기는 미구현)
+            name = str(self.body().get("room") or "").strip()
+            win = C.find_room_window(name) if name else None
+            if not win:
+                return self.reply(404, {"ok": False, "message": f"「{name}」 창이 열려 있지 않습니다. 카톡에서 그 방을 열어 두세요."})
+            return self.reply(200, {"ok": C.focus(win["hwnd"]), "room": win["title"]})
         if path == "/quit":
             self.reply(200, {"ok": True, "message": "bye"})
             threading.Thread(target=self.server.shutdown, daemon=True).start()
             return
         self.reply(404, {"ok": False, "message": "no such path"})
+
+    def do_POST_rebind(self) -> None:
+        """이 PC 의 에이전트를 지금 ERP 에 로그인한 계정으로 다시 묶는다(.bat 없이) — 다른 계정으로 바꿀 때·토큰이 폐기됐을 때·개발 PC 의 사용자 전환.
+        비밀값 없이 받는다(이미 떠 있는 에이전트를 같은 ERP 출처의 페이지가 가져가는 것 = .bat 을 다시 받아 실행하는 것과 같은 효과). Origin 은 config 의 ERP 출처만."""
+        b = self.body()
+        token, secret, erp = str(b.get("token") or ""), str(b.get("local_secret") or ""), str(b.get("erp_url") or AGENT.cfg.get("erp_url") or "")
+        if not token.startswith("kck_") or len(secret) < 16 or not erp:
+            return self.reply(422, {"ok": False, "message": "token·local_secret·erp_url 이 필요합니다."})
+        AGENT.cfg.update({"erp_url": erp, "token": token, "local_secret": secret})
+        save(CONFIG, AGENT.cfg)
+        AGENT.erp_state, AGENT.erp_message = "unknown", ""
+        AGENT.check_erp()
+        log.info("rebound to %s (device=%s) erp_state=%s", erp, AGENT.device, AGENT.erp_state)
+        self.reply(200, {"ok": AGENT.erp_state == "connected", "erp_state": AGENT.erp_state, "erp_message": AGENT.erp_message, "device": AGENT.device, "version": VERSION})
 
 
 class Server(ThreadingHTTPServer):
