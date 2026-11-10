@@ -4,6 +4,8 @@ namespace App\Providers;
 
 use App\Listeners\NotifyScheduledTaskOutcome;
 use App\Services\Assistant\OllamaClient;
+use App\Services\Kakao\AnthropicKakaoClient;
+use App\Services\Kakao\KakaoClassifierClient;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
@@ -34,6 +36,8 @@ class AppServiceProvider extends ServiceProvider
         // 사내 업무 도우미 — Ollama 클라이언트를 config(.env) 기반으로 바인딩 (이식성).
         $this->app->bind(OllamaClient::class,
             fn () => OllamaClient::fromConfig());
+        // 📱 카톡자동화 분류 모델 — 인터페이스 뒤에 두어 테스트는 가짜(녹음 응답)로 바꾼다 (docs/design/kakao-automation.md §10-3).
+        $this->app->bind(KakaoClassifierClient::class, AnthropicKakaoClient::class);
     }
 
     /**

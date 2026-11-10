@@ -72,17 +72,30 @@ class KakaoExportParser
             $messages[array_key_last($messages)]['body'] .= "\n".$line;   // 이어지는 줄
         }
 
+        // msg_key = 시각|보낸이|첫 줄|같은 (시각·보낸이·첫 줄) 묶음 안 순번.
+        //  - 본문 전체를 키에 넣지 않는다: Ctrl+A·C 는 화면에 풀린 만큼만 잡혀서 긴 서식 메시지의 이어지는 줄이
+        //    다음 읽기에 더 붙을 수 있다 → 같은 메시지가 두 번 들어와 두 번 분류·과금된다. 첫 줄만 쓰면 키가 같고,
+        //    적재 쪽(KakaoIngestService)이 더 긴 본문을 「갱신」으로 받는다.
+        //  - 순번: 카톡 시각은 분 단위라 같은 사람이 같은 분에 「사진」을 두 번 보내면 키가 겹친다(표본 1 #36·37).
+        $seen = [];
         foreach ($messages as &$msg) {
             $msg['body'] = trim($msg['body']);
-            $msg['msg_key'] = self::key($msg['sent_at'], $msg['sender'], $msg['body']);
+            $group = $msg['sent_at'].'|'.$msg['sender'].'|'.self::firstLine($msg['body']);
+            $ordinal = $seen[$group] = ($seen[$group] ?? -1) + 1;
+            $msg['msg_key'] = self::key($msg['sent_at'], $msg['sender'], $msg['body'], $ordinal);
         }
 
         return $messages;
     }
 
-    public static function key(string $sentAt, string $sender, string $body): string
+    public static function key(string $sentAt, string $sender, string $body, int $ordinal = 0): string
     {
-        return sha1($sentAt.'|'.$sender.'|'.$body);
+        return sha1($sentAt.'|'.$sender.'|'.self::firstLine($body).'|'.$ordinal);
+    }
+
+    public static function firstLine(string $body): string
+    {
+        return trim(strtok(trim($body), "\n") ?: '');
     }
 
     /**
