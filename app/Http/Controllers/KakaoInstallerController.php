@@ -34,7 +34,8 @@ class KakaoInstallerController extends Controller
             'old_value' => null, 'new_value' => 'token#'.$token->id, 'ip_address' => $request->ip(),
         ]);
 
-        $bat = self::bat(rtrim(config('app.url'), '/'), $plain, (string) $token->local_secret);
+        // 회사 주소 = 사용자가 실제로 접속한 출처(www·apex 별칭이 있으면 APP_URL 과 다를 수 있다 — 에이전트는 이 출처의 Origin 만 받는다)
+        $bat = self::bat($request->getSchemeAndHttpHost(), $plain, (string) $token->local_secret);
 
         return response($bat, 200, [
             'Content-Type' => 'application/octet-stream',
