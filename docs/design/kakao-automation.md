@@ -143,3 +143,42 @@
 - 국산 모델(Kanana·HyperCLOVA X SEED Think·EXAONE)은 **라이선스(EXAONE 4.x 비상업)·Ollama 적재 가능 여부**부터 확인해야 후보가 된다. Qwen3 = Apache 2.0 · Ollama 공식.
 - 속도: 2070 에서 8B 14줄 7.4초. 16GB 카드는 5060 Ti ↔ 5070 Ti 가 대역폭 2배 차 — 카드가 정해지면 다시 적는다.
 - 출처(2026-11-09 검색): localllm.in 16GB 가이드 · localaimaster 16GB · llmconfigurator VRAM 별 · klymentiev 8/16/24/64GB · PromptQuorum 한국어 로컬 LLM 2026 · 엘리스 국산 LLM 6종 · BenchLM Korea 리더보드 2026-10 · CanRun RTX 4060.
+
+## 10. ERP 구현 설계 (2026-11-10, #14·#15 뒤 — 코드 착수 기준)
+
+**원칙**: A안(개인 PC 저장)은 폐기하고 **B 단계로 바로** — 수집만 각자 PC, 분류·저장·화면은 ERP. 3사 공통 코드, 회사별 토글(super 기능설정, 기본 OFF), 키는 각 서버 `.env`.
+
+### 10-1. 흐름
+```
+실무자 PC 수집기(트레이, [지금 읽기]) ─Ctrl+A·C─▶ 파싱(날짜/시각/보낸이/본문, 여러 줄 병합)
+   ─POST /api/kakao/ingest (사용자 토큰)─▶ ERP: 방·메시지 저장(중복 제거: 방+날짜+시각+보낸이+본문 해시)
+   ─▶ 새 메시지 + 그 방의 열린 항목 ─▶ Anthropic Sonnet 5.5 (구조화 출력, 시스템 프롬프트 캐시) ─▶ 판정 저장
+   ─▶ 그 방을 구독한 사용자마다 방향(내 일·기다림·동료·무관) 계산 ─▶ 「내 카톡 할 일」 페이지(Volt)
+```
+- **분류는 방 단위 1회**(#15 실증). 같은 방을 두 사람이 읽어도 두 번째 읽기는 새 메시지만 분류한다.
+- 방향은 저장하지 않고 보는 사람 기준으로 계산(보낸이·to·mention·방 구성). 사용자 상태(완료·미룸·내 일 아님)만 저장.
+
+### 10-2. 테이블 (마이그 1개)
+| 표 | 칸 | 비고 |
+|---|---|---|
+| `kakao_rooms` | id, name(방 제목, 회사 안 유일), sides JSON(편 구성: `{"재무":[이름…],"수출팀":[…],"영업":[…]}` + 역할 설명), last_read_at | 방 설정은 페이지에서 사용자가 한 번 적는다(프롬프트의 「방 구성」) |
+| `kakao_room_users` | room_id, user_id, my_name(그 방에서 나의 카톡 표시명), created_at | 구독 = 체크한 방 |
+| `kakao_messages` | room_id, msg_key(sha1), sent_at, sender, body, type, to_side, mention, ref, vehicle_no, vin_tail, amount, resolves_id(FK self), vehicle_id(FK vehicles, 매칭되면), ai JSON(원 판정), created_at | unique(room_id, msg_key). 본문 저장 = jin 「사내방이라 OK」 |
+| `kakao_items` | message_id, user_id, state(`todo`/`waiting`/`snoozed`/`done`/`ignored`/`not_mine`), type_override, snooze_until, snooze_reason, done_at | unique(message_id,user_id). 사용자가 건드린 것만 행이 생긴다(없으면 계산값 그대로) |
+| `kakao_reads` | room_id, user_id, started_at, finished_at, total, new_count, model, input_tokens, cache_read_tokens, output_tokens, cost_krw, status, error | 비용·사용량 기록(API 키 공용이라 ERP 가 사람별로 센다) |
+| `users.kakao_token_hash` | 수집기 토큰(발급 때 1회 표시, 해시 저장) | 페이지의 [수집기 연결] 버튼 |
+
+### 10-3. 코드 자리
+- `App\Services\Kakao\KakaoExportParser` — 스크래치 `kakao_sample.py` 의 파서를 PHP 로(머리줄 정규식·날짜 구분선·이어지는 줄 병합·삭제 메시지 제외). 가드 = 단위 테스트(표본 txt 조각).
+- `App\Services\Kakao\KakaoClassifier` — 시스템 프롬프트(§4 규칙 + #15 6규칙 + 방 구성 주입, `cache_control`), 스키마(type·to·mention·ref·vehicle·vin_tail·amount·resolves), `anthropic-ai/sdk` `messages->create(model: claude-sonnet-5-5, outputConfig: json_schema, effort medium)`. 입력 = 새 메시지 + 열린 항목(요청·질문 중 미해결) 요약. 테스트는 SDK 호출을 인터페이스 뒤로 두고 가짜 응답으로.
+- `App\Services\Kakao\KakaoDirection` — (보낸이, to, mention, 방 구성, 나) → 내일/기다림/동료/무관. 스크래치 `score2.py` 의 `direction()` 그대로. 가드 = 표본 2 의 김다정 17건·박수정 19건 재현 테스트(본문 없이 판정 칸만 픽스처).
+- `App\Services\Kakao\KakaoIngestService` — 파싱 → 중복 제거 → 분류 → 저장 → 차량 매칭(`vehicle_no` = `vehicles.vehicle_number`, `vin_tail` = `vin` 끝 6자리) 을 트랜잭션으로. 실패 시 `kakao_reads.status=failed` + 메시지는 저장(분류만 비움 → 「확인 필요」 묶음).
+- `POST /api/kakao/ingest` + `VerifyKakaoUserToken` 미들웨어(Bearer, 해시 대조, 회사 토글 꺼져 있으면 403).
+- Volt `resources/views/livewire/erp/kakao/index.blade.php` 「내 카톡 할 일」 — v4 목업 묶음 9개(놓쳤을 가능성·지금 할 일·오늘 안에·답 기다리는 중·미뤄둔 일·**팀 동료 진행 중**·오늘 끝난 것·확인 필요·나와 무관), 전부 접힘, 행 버튼 [주 버튼][미루기][⋯], 차량 매칭되면 [차량 열기]. 상단 = 방 구독·방 구성·[수집기 연결]. 🚫 Volt 프로퍼티↔메서드 동명 금지(§8 #32).
+- 묶음 판정(v1, 단순): 지금 할 일 = 내 일 중 (금액·입금·송금·마감·BL·홀딩·꼭·급 키워드) 또는 24h 경과 / 오늘 안에 = 나머지 내 일 / 놓쳤을 가능성 = 미룸 시각 지남 또는 내 일 3일 경과 / 답 기다리는 중 = 기다림(상대 답 resolves 없음) / 확인 필요 = 분류 실패.
+- 기능설정: `Setting::kakaoAssistantEnabled()`(키 `kakao_assistant_enabled_{회사}`, 기본 OFF) + 사이드바 「내 카톡 할 일」(`업무` 그룹, show = 토글 && 로그인 사용자) + `config/services.php` `anthropic.key/model`.
+- 📖 가이드: `scripts/notion-cards/cards.json` 카드 1장(audience: staff) + 공통 가이드 블록 1절 — 같은 커밋.
+- 수집기(③, ERP 뒤): `scripts/kakao-collector/`(Python, 설정 = ERP URL·토큰·방 목록, Ctrl+A·C·PageUp·클립보드 원복) → 나중에 exe.
+
+### 10-4. 순서·검증
+1. 마이그 + 모델 + 파서 + 방향 계산 + 테스트(표본 재현) → 2. 분류기 + SDK(composer) + 가짜 응답 테스트 → 3. ingest API + 토큰 발급 + 테스트 → 4. Volt 페이지 + 묶음 판정 테스트 → 5. 토글·사이드바·가이드 카드 + `NotionGuideAudienceTest` → 6. 로컬에서 실제 Sonnet 호출 1회(표본 창) → 7. 수집기 → 8. jin PC 1~2주 사용(ssancarerp 토글 ON).
