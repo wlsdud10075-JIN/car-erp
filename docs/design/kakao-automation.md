@@ -2,6 +2,7 @@
 
 > 상태: **기획 확정(v4 목업 정본) · 코드 착수 전.** jin 지시 «일단 이렇게 기획하고 갈무리해서 아카이브». 다음 세션은 이 문서 → §7 「재개 절차」부터.
 > 🔀 **2026-11-10 — 2단계 LLM 이 Claude API 로 바뀌었다(§1 #14). §9 의 16GB PC 는 폐기.**
+> 🟢 **2026-11-10 저녁 — ERP 구현 1~5단계 dev 완료**(§10-4: 테이블·파서·방향·분류기·적재·API·페이지·토글·가이드). 남은 것 = ⑥ 로컬 실사용 1창(실호출은 됨) · ⑦ 수집기(PC 프로그램) · ⑧ ssancarerp 토글 ON 뒤 jin 1~2주 사용. **미배포**(master 미반영, 마이그 1 + composer 추가 anthropic-ai/sdk). v1 에서 뺀 것 = 원문·앞뒤 대화 드로어 · 「지금 재촉」 문구 복사 · 놓쳤을 가능성 자동 펼침 · ERP 상태 조건형 미루기(「상대가 답하면」만 있음).
 > 목업 정본 = `docs/design/mock/2026-11-09/kakao-my-todo-v4.html`(움직임 있음). 경위 비교용 = 같은 폴더 `kakao-todo-modal.html`(팀 버전, 폐기) · `kakao-my-todo.html`(개인 1차) · `kakao-my-todo-distilled.html`(distill 적용).
 > 메모리 = `project_kakao_work_assistant`. 관련 ERP 자리 = 요청·확인 신호 `board_requests`(`docs/integration/board-portal-api.md §11`) — B 단계에서 쓴다.
 
