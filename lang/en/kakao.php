@@ -77,6 +77,7 @@ return [
     'agent_rebinding' => 'Linking the agent on this PC to my account…',
     'agent_rebind_failed' => 'Could not relink: :message — download [Connect this PC] from the settings tab and run it.',
     'focus_failed' => 'Could not bring the KakaoTalk window to front: :message',
+    'focus_denied' => 'Windows blocked bringing it to front. Click KakaoTalk on the taskbar once.',
     'btn_open_kakao' => 'Open this room in KakaoTalk',
     'read_now' => 'Read now',
     'read_none_checked' => 'No room is both open and ticked. Open the room in KakaoTalk and tick it under "Rooms to read".',

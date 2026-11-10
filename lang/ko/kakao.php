@@ -78,6 +78,7 @@ return [
     'agent_rebinding' => '이 PC 의 에이전트를 내 계정으로 묶는 중…',
     'agent_rebind_failed' => '다시 연결하지 못했습니다: :message — 설정 탭에서 [이 PC 연결하기]를 받아 실행하세요.',
     'focus_failed' => '카톡 창을 앞으로 가져오지 못했습니다: :message',
+    'focus_denied' => 'Windows 가 앞으로 가져오기를 막았습니다. 작업 표시줄의 카톡을 한 번 누르세요.',
     'btn_open_kakao' => '카톡에서 이 방 열기',
     'read_now' => '지금 읽기',
     'read_none_checked' => '열려 있으면서 체크된 방이 없습니다. 카톡에서 방을 열어 두고 위 「읽을 방」에서 체크하세요.',
