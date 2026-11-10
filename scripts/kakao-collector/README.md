@@ -1,4 +1,13 @@
-# 카톡자동화 수집기 (내 PC 용, v1)
+# 카톡자동화 수집기 (내 PC 용)
+
+## 실무자에게 주는 것 = `KakaoReader.exe` 하나 (`dist/`, 개발 PC 에서 빌드)
+1. 더블클릭 → 「처음 한 번만: ERP 로그인」 창 — 회사 고르고 ERP 아이디·비밀번호 → [연결]. 비밀번호는 저장하지 않고 이 PC 전용 연결 열쇠만 사용자 폴더 `KakaoReader\config.json` 에 남는다.
+2. 카톡에서 읽을 방을 창으로 열어 둔다 → 프로그램의 [목록 새로고침] → 열린 방이 체크박스로 뜬다 → 읽을 방 체크 → [읽기]. 읽는 동안 손을 뗀다.
+3. 처음 읽은 방은 ERP 「내 카톡 할 일」에 「「나」를 골라 주세요」 카드로 뜬다 → 내 이름 클릭(같은 회사 사람은 체크). 그 뒤는 [읽기]만.
+빌드(개발 PC): `pip install pyinstaller` → 이 폴더에서 `pyinstaller --noconfirm --onefile --windowed --name KakaoReader kakao_reader.py` → `dist/KakaoReader.exe`(약 19MB). 소스 = `kakao_reader.py`(창) + `collector.py`(읽기 엔진).
+
+---
+아래는 명령줄 버전(개발·진단용).
 
 ERP 「내 카톡 할 일」에 카톡 방 내용을 보내는 작은 프로그램. 기획 = `docs/design/kakao-automation.md` §6·§10-3.
 카톡 PC 창에서 **전체선택·복사(Ctrl+A·C)** 한 텍스트를 ERP 로 보낼 뿐이고, 카톡에 글을 쓰거나 보내지 않는다.
