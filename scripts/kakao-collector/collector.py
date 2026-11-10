@@ -128,6 +128,94 @@ def is_foreground(hwnd: int) -> bool:
 
 
 VK_V, VK_RETURN = 0x56, 0x0D
+ROOM_SEARCH_ICON = (-109, 57)   # 방 창 돋보기 — 오른쪽 위에서 (가로 -109, 세로 +57) px (11-10 실측, 창 380 폭)
+ROOM_SEARCH_CLOSE = (-23, 110)  # 열린 검색칸의 X (11-10 DPI 보정 캡처 실측: 물리 -29/+137 ÷ 1.25)
+
+
+def child_windows(hwnd: int) -> list[tuple[str, str, tuple[int, int, int, int]]]:
+    """방 창의 자식 창 (클래스, 제목, (x, y, w, h)) — 검색칸이 열려 있나 등을 보는 데 쓴다."""
+    out: list[tuple[str, str, tuple[int, int, int, int]]] = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, w.HWND, w.LPARAM)
+    def cb(c, _):
+        cls = ctypes.create_unicode_buffer(128)
+        u.GetClassNameW(c, cls, 128)
+        t = ctypes.create_unicode_buffer(128)
+        u.GetWindowTextW(c, t, 128)
+        r = w.RECT()
+        u.GetWindowRect(c, ctypes.byref(r))
+        out.append((cls.value, t.value, (r.left, r.top, r.right - r.left, r.bottom - r.top)))
+        return True
+
+    u.EnumChildWindows(hwnd, cb, 0)
+    return out
+CLS_INPUT, CLS_SEARCH, CLS_LIST = "RICHEDIT50W", "Edit", "EVA_VH_ListControl_Dblclk"   # 방 창의 자식: 메시지 입력칸 / 대화 검색칸 / 대화 목록
+
+
+def focused_child(hwnd: int) -> tuple[str, tuple[int, int, int, int]]:
+    """그 창 안에서 지금 키 입력을 받는 자식 창의 (클래스, 사각형). 🔑 Enter·붙여넣기 전에 **반드시** 이걸로 어느 칸인지 확인한다 —
+    11-10 실측: 메시지 입력칸 = RICHEDIT50W(아래), 대화 검색칸 = Edit(돋보기를 누르면 위에 176x22 로 생김), 목록 = EVA_VH_ListControl_Dblclk."""
+    tid = u.GetWindowThreadProcessId(hwnd, None)
+    my = k32.GetCurrentThreadId()
+    u.AttachThreadInput(my, tid, True)
+    f = u.GetFocus()
+    u.AttachThreadInput(my, tid, False)
+    cls = ctypes.create_unicode_buffer(128)
+    u.GetClassNameW(f, cls, 128)
+    r = w.RECT()
+    u.GetWindowRect(f, ctypes.byref(r))
+    return cls.value, (r.left, r.top, r.right - r.left, r.bottom - r.top)
+
+
+def jump_to_message(name: str, snippet: str) -> dict:
+    """방을 열고 그 방의 대화 검색으로 메시지 위치로 간다(jin 11-10 «돋보기 그림을 클릭해서 찾기»). 11-10 실측 OK(밥밥밥 「착한맛」 → 그 말풍선 선택).
+    🚫 안전 규칙: Enter·붙여넣기는 **검색칸(Edit, 창 위쪽)에 포커스가 있을 때만**. 입력칸(RICHEDIT50W)이면 아무 키도 안 치고 중단 — 11-10 16:51 전송 사고 재발 방지."""
+    win = open_room(name)
+    if not win:
+        return {"ok": False, "message": f"「{name}」 방을 카톡에서 찾지 못했습니다."}
+    hwnd = win["hwnd"]
+    if not focus(hwnd):
+        return {"ok": False, "message": f"「{name}」 창을 앞으로 가져오지 못했습니다."}
+    left, top, right, _ = win["rect"]
+
+    def search_box_focused() -> bool:
+        cls, rect = focused_child(hwnd)
+        return cls == CLS_SEARCH and rect[3] > 0 and rect[1] < top + 120
+
+    def search_box_open() -> bool:   # 검색칸(Edit)이 보이나 — 포커스와 무관
+        for c in child_windows(hwnd):
+            if c[0] == CLS_SEARCH and c[2][3] > 0 and c[2][1] < top + 120:
+                return True
+        return False
+
+    if search_box_open():   # 지난번 검색어가 남아 있다(jin 11-10 «기존 내용 지우고 해야») → X 로 닫고 새로 연다
+        click(right + ROOM_SEARCH_CLOSE[0], top + ROOM_SEARCH_CLOSE[1])
+        time.sleep(0.5)
+    click(right + ROOM_SEARCH_ICON[0], top + ROOM_SEARCH_ICON[1])   # 돋보기 → 빈 검색칸이 생기고 포커스가 거기로
+    time.sleep(0.8)
+    if not search_box_focused():
+        return {"ok": True, "jumped": False, "message": "방은 열었지만 검색칸이 안 열려 위치 이동은 건너뜁니다(아무 키도 치지 않음)."}
+    snippet = snippet.strip()[:40]
+    if not snippet:
+        return {"ok": True, "jumped": False, "message": "방을 열었습니다."}
+    saved = pyperclip.paste()
+    try:
+        pyperclip.copy(snippet)
+        time.sleep(0.2)
+        key(VK_A, ctrl=True)   # 검색칸 안에서만(포커스 확인 뒤) — 남은 글이 있어도 덮어쓴다
+        time.sleep(0.1)
+        key(VK_V, ctrl=True)
+        time.sleep(0.5)
+        if not search_box_focused():   # 붙여넣기 뒤에도 검색칸이어야 Enter
+            return {"ok": True, "jumped": False, "message": "검색칸을 잃어 위치 이동은 건너뜁니다."}
+        key(VK_RETURN)
+        time.sleep(0.8)
+        return {"ok": True, "jumped": True, "message": f"「{name}」 에서 「{snippet}」 위치로 이동했습니다."}
+    finally:
+        try:
+            pyperclip.copy(saved)
+        except Exception:
+            pass
 MAIN_SEARCH_ICON = (-109, 55)   # 메인 창 「채팅」 탭 돋보기 — 오른쪽 위에서 (가로 -109, 세로 +55) px (11-10 캡처 실측, 창 392x816)
 MAIN_SEARCH_CLEAR = (-29, 101)  # 검색칸의 X (필터 지우기)
 
@@ -239,6 +327,11 @@ def read_room(cfg: dict, name: str, since: date, dry: bool) -> dict:
                 focus(hwnd)
             if not is_foreground(hwnd):   # 🚫 다른 창에 Ctrl+A·C 를 보내지 않는다(브라우저·엑셀 내용을 읽어 보내는 사고 방지)
                 return {"room": name, "ok": False, "message": f"「{name}」 창이 앞에 있지 않아 중단했습니다. 읽는 동안 다른 창을 누르지 마세요."}
+        if focused_child(hwnd)[0] != CLS_LIST:   # 검색칸·입력칸에 포커스면 Ctrl+A·C 가 그 칸만 복사한다 → 목록을 한 번 더 누르고, 그래도 아니면 중단
+            click(int(left + (right - left) * fx), int(top + (bottom - top) * fy))
+            time.sleep(0.3)
+            if focused_child(hwnd)[0] != CLS_LIST:
+                return {"room": name, "ok": False, "message": f"「{name}」 대화 목록에 포커스를 못 잡았습니다(검색칸이 열려 있으면 닫아 주세요)."}
 
         batch = int(cfg.get("pageup_batch", 20))
         max_pageups = int(cfg.get("max_pageups", 400))
