@@ -17,7 +17,9 @@
 | `collector.py` | 읽기 엔진(카톡 창 찾기 → PageUp → Ctrl+A·C → `POST /api/kakao/ingest`) + 명령줄 진단(`windows` / `read --dry`) |
 | ERP `app/Http/Controllers/KakaoInstallerController.php` | 설치 `.bat` 생성(토큰·`local_secret`·회사 주소 포함, ASCII·CRLF) |
 
-PC 쪽 파일 = `%LOCALAPPDATA%\KakaoReader\` : `KakaoAgent.exe` · `config.json`(erp_url·token·local_secret) · `state.json`(방별 마지막 읽은 시각) · `agent.log`.
+PC 쪽 파일 = `%LOCALAPPDATA%\KakaoReader\` : `KakaoAgent.exe` · **`config.<호스트>.json`**(회사마다 하나 — erp_url·token·local_secret, 1.1.0부터. 옛 `config.json` 도 읽는다) · `state.<호스트>.json`(방별 마지막 읽은 시각) · `agent.log`.
+
+🏢 **한 PC 에서 두 회사(heymanerp·ssancarerp)** — 각 회사 ERP 에서 [이 PC 연결하기](또는 [이 PC 를 내 계정으로 연결])를 한 번씩 하면 설정이 회사별로 따로 남고, 페이지의 출처(Origin)로 어느 회사인지 가려 그 회사 토큰으로 보낸다. 포트는 하나(47321), 에이전트도 하나.
 
 ## exe 빌드 → 배포 (개발 PC)
 ```powershell

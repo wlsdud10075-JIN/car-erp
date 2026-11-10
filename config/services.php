@@ -134,7 +134,7 @@ return [
 
     // 📱 카톡자동화 §11 실무자 PC 에이전트 — public/downloads/KakaoAgent.exe(git 밖)의 버전. 페이지가 에이전트 /ping 의 version 과 대조해 다르면 「다시 연결」을 안내한다
     'kakao_agent' => [
-        'version' => env('KAKAO_AGENT_VERSION', '1.0.0'),
+        'version' => env('KAKAO_AGENT_VERSION', '1.1.0'),   // 1.1.0 = 회사별 설정(config.<host>.json) — 한 PC 에서 두 회사(11-10)
         'port' => 47321,
     ],
 

@@ -69,6 +69,8 @@ class KakaoInstallerController extends Controller
     public static function bat(string $erpUrl, string $token, string $secret): string
     {
         $exeUrl = $erpUrl.'/'.self::EXE_PUBLIC_PATH;
+        // 회사별 설정 파일 이름(에이전트 host_slug 와 같은 규칙: netloc 의 영숫자·.·- 외는 _) — 한 PC 에서 heymanerp·ssancarerp 를 같이 쓸 수 있다(jin 11-10)
+        $host = preg_replace('/[^A-Za-z0-9.-]+/', '_', (string) parse_url($erpUrl, PHP_URL_HOST).(parse_url($erpUrl, PHP_URL_PORT) ? ':'.parse_url($erpUrl, PHP_URL_PORT) : '')) ?: 'erp';
         $lines = [
             '@echo off',
             'setlocal',
@@ -92,7 +94,8 @@ class KakaoInstallerController extends Controller
             ')',
             'powershell -NoProfile -ExecutionPolicy Bypass -Command "Unblock-File -LiteralPath \'%EXE%\'" >nul 2>&1',
             'echo [3/5] Writing settings',
-            '> "%DIR%\\config.json" echo {"erp_url": "%ERP%", "token": "'.$token.'", "local_secret": "'.$secret.'", "first_read_days": 7, "pageup_batch": 20, "max_pageups": 400, "click_fraction": [0.5, 0.35]}',
+            '> "%DIR%\\config.'.$host.'.json" echo {"erp_url": "%ERP%", "token": "'.$token.'", "local_secret": "'.$secret.'", "first_read_days": 7, "pageup_batch": 20, "max_pageups": 400, "click_fraction": [0.5, 0.35]}',
+            'if exist "%DIR%\\config.json" del "%DIR%\\config.json"',   // 한 회사 시절 설정(1.0.0) — 같은 회사가 두 번 잡히지 않게',
             'echo [4/5] Registering autostart',
             'powershell -NoProfile -ExecutionPolicy Bypass -Command "$s=(New-Object -ComObject WScript.Shell).CreateShortcut([Environment]::GetFolderPath(\'Startup\')+\'\\KakaoAgent.lnk\'); $s.TargetPath=\'%EXE%\'; $s.WorkingDirectory=\'%DIR%\'; $s.Description=\'ERP KakaoTalk agent\'; $s.Save()" >nul 2>&1',
             'echo [5/5] Starting agent',
