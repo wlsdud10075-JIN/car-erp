@@ -121,6 +121,9 @@ class Agent:
 
     def read_worker(self, rooms: list[str]) -> None:
         try:
+            if C.screen_locked():   # 잠금 화면에선 창을 앞으로 못 가져온다 — 「방을 못 찾음」으로 오해하지 않게 먼저 알린다(11-10 실측)
+                self.say("PC 가 잠겨 있어 읽을 수 없습니다. 잠금을 풀고(원격이면 다시 접속해서) 다시 [지금 읽기].")
+                return
             self.say(f"읽기 시작 — {len(rooms)}개 방. 끝날 때까지 키보드·마우스에서 손을 떼 주세요.")
             # 체크 상태는 ERP 페이지가 정본(toggleRoom) — 여기서 rooms/select 를 부르면 「체크됐지만 지금 닫힌 방」이 해제된다(§11, exe 창 시절 잔재 제거)
             state = load(STATE, {})
@@ -278,6 +281,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(422, {"ok": False, "message": "방 이름이 없습니다."})
             if AGENT.busy:
                 return self.reply(409, {"ok": False, "message": "읽는 중입니다. 끝난 뒤 다시 누르세요."})
+            if C.screen_locked():
+                return self.reply(409, {"ok": False, "message": "PC 가 잠겨 있어 카톡 창을 열 수 없습니다. 잠금을 풀고 다시 누르세요."})
             snippet = str(b.get("snippet") or "").strip()
             try:
                 if snippet:   # 그 메시지 위치까지 — 검색칸(Edit)에 포커스가 있을 때만 키를 친다(collector.jump_to_message)
