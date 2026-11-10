@@ -479,7 +479,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                     <button type="button" class="h-9 rounded border border-gray-300 px-2 text-xs text-gray-700 sm:h-7" @click="menu = (menu === {{ $r['id'] }} ? null : {{ $r['id'] }})" aria-label="{{ __('kakao.btn_more') }}">⋯</button>
                                     <div x-show="menu === {{ $r['id'] }}" x-cloak @click.outside="menu = null" class="absolute right-0 z-20 mt-1 w-40 rounded border border-gray-200 bg-white py-1 text-xs text-gray-700 shadow-lg">
                                         {{-- §6 [⋯] 보기 「카톡에서 이 방 열기」 — 에이전트가 그 방 창을 앞으로(열려 있을 때만) --}}
-                                        <button type="button" data-kakao-focus="{{ $r['room'] }}" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_open_kakao') }}</button>
+                                        <button type="button" data-kakao-focus="{{ $r['room'] }}" data-kakao-snippet="{{ mb_substr(\App\Services\Kakao\KakaoExportParser::firstLine($r['body']), 0, 40) }}" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_open_kakao') }}</button>
                                         <button type="button" wire:click="openFix({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_fix_type') }}</button>
                                         <button type="button" wire:click="markNotMine({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_not_mine') }}</button>
                                         <button type="button" wire:click="ignoreItem({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_ignore') }}</button>
@@ -564,10 +564,11 @@ new #[Layout('components.layouts.app')] class extends Component
             } catch (e) { setStatus('unauthorized', fmt(t.rebind_failed, { message: String(e.message || e) })); }
         };
         const toast = (message, type = 'warning') => window.dispatchEvent(new CustomEvent('notify', { detail: { message, type } }));   // 공통 토스트(사이드바 @notify.window) — 행 옆에서 눌렀으니 페이지 위 진행 칸은 안 보인다
-        const focusRoom = async (room) => {
+        const focusRoom = async (room, snippet) => {   // 방을 열고(닫혀 있으면 메인 창 검색) 그 메시지 위치로(방 검색칸에 포커스가 있을 때만 키를 친다)
             let r;
-            try { r = await agent('/focus', { method: 'POST', body: { room } }); } catch (e) { toast(fmt(t.focus_failed, { message: String(e) })); return; }
+            try { r = await agent('/focus', { method: 'POST', body: { room, snippet: snippet || '' } }); } catch (e) { toast(fmt(t.focus_failed, { message: String(e) })); return; }
             if (r.status !== 200 || !r.body.ok) toast(r.body.message || fmt(t.focus_failed, { message: r.status === 200 ? t.focus_denied : 'HTTP ' + r.status }));
+            else if (snippet && r.body.jumped === false) toast(r.body.message || t.focus_denied);
         };
         const agent = async (path, opts = {}, withSecret = true) => {
             const headers = { Accept: 'application/json' };
@@ -642,7 +643,7 @@ new #[Layout('components.layouts.app')] class extends Component
         root.addEventListener('click', (e) => {
             if (e.target.closest('[data-kakao-read]')) readNow();
             else if (e.target.closest('[data-kakao-rebind]')) rebind();
-            else { const f = e.target.closest('[data-kakao-focus]'); if (f) focusRoom(f.dataset.kakaoFocus); }
+            else { const f = e.target.closest('[data-kakao-focus]'); if (f) focusRoom(f.dataset.kakaoFocus, f.dataset.kakaoSnippet); }
         });
         ping().then((ok) => { if (ok) loadRooms(); });
     })();

@@ -266,12 +266,17 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(409, {"ok": False, "message": "이미 읽는 중입니다."})
             return self.reply(202, {"ok": True, "started": True, "rooms": rooms})
         if path == "/focus":   # 「카톡에서 이 방 열기」(§6 [⋯] 보기) — 열려 있으면 앞으로, 닫혀 있으면 메인 창 검색으로 연다(collector.open_room)
-            name = str(self.body().get("room") or "").strip()
+            b = self.body()   # ⚠️ 본문은 한 번만 읽는다 — 두 번 읽으면 두 번째 read 가 영원히 기다린다(11-10 /focus 60초 멈춤의 원인)
+            name = str(b.get("room") or "").strip()
             if not name:
                 return self.reply(422, {"ok": False, "message": "방 이름이 없습니다."})
             if AGENT.busy:
                 return self.reply(409, {"ok": False, "message": "읽는 중입니다. 끝난 뒤 다시 누르세요."})
+            snippet = str(b.get("snippet") or "").strip()
             try:
+                if snippet:   # 그 메시지 위치까지 — 검색칸(Edit)에 포커스가 있을 때만 키를 친다(collector.jump_to_message)
+                    info = C.jump_to_message(name, snippet)
+                    return self.reply(200 if info.get("ok") else 404, info)
                 win = C.open_room(name)
             except Exception as e:
                 return self.reply(500, {"ok": False, "message": f"카톡 창을 열지 못했습니다: {e}"})
