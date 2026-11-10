@@ -535,7 +535,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'connected' => __('kakao.agent_connected'), 'missing' => __('kakao.agent_missing'), 'outdated' => __('kakao.agent_outdated'),
             'unauthorized' => __('kakao.agent_unauthorized'), 'blocked' => __('kakao.agent_blocked'),
             'none' => __('kakao.read_none_checked'), 'started' => __('kakao.read_started'), 'failed' => __('kakao.read_failed'),
-            'rebinding' => __('kakao.agent_rebinding'), 'rebind_failed' => __('kakao.agent_rebind_failed'), 'focus_failed' => __('kakao.focus_failed'),
+            'rebinding' => __('kakao.agent_rebinding'), 'rebind_failed' => __('kakao.agent_rebind_failed'), 'focus_failed' => __('kakao.focus_failed'), 'focus_denied' => __('kakao.focus_denied'),
         ]);
         const root = $wire.$el;
         const base = 'http://127.0.0.1:' + cfg.port;
@@ -563,10 +563,11 @@ new #[Layout('components.layouts.app')] class extends Component
                 if (await ping()) { await loadRooms(); await $wire.$refresh(); }
             } catch (e) { setStatus('unauthorized', fmt(t.rebind_failed, { message: String(e.message || e) })); }
         };
+        const toast = (message, type = 'warning') => window.dispatchEvent(new CustomEvent('notify', { detail: { message, type } }));   // 공통 토스트(사이드바 @notify.window) — 행 옆에서 눌렀으니 페이지 위 진행 칸은 안 보인다
         const focusRoom = async (room) => {
             let r;
-            try { r = await agent('/focus', { method: 'POST', body: { room } }); } catch (e) { showProgress([fmt(t.focus_failed, { message: String(e) })]); return; }
-            if (r.status !== 200) showProgress([r.body.message || fmt(t.focus_failed, { message: 'HTTP ' + r.status })]);
+            try { r = await agent('/focus', { method: 'POST', body: { room } }); } catch (e) { toast(fmt(t.focus_failed, { message: String(e) })); return; }
+            if (r.status !== 200 || !r.body.ok) toast(r.body.message || fmt(t.focus_failed, { message: r.status === 200 ? t.focus_denied : 'HTTP ' + r.status }));
         };
         const agent = async (path, opts = {}, withSecret = true) => {
             const headers = { Accept: 'application/json' };
