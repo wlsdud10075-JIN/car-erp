@@ -116,6 +116,7 @@ class Agent:
             if self.busy:
                 return False
             self.busy, self.done, self.lines, self.started_at = True, False, [], datetime.now().isoformat(timespec="seconds")
+            self.return_to = C.u.GetForegroundWindow()   # [지금 읽기]를 누른 창(ERP 브라우저) — 끝나면 다시 맨 앞으로(jin 11-10 «다 되면 ERP 화면을 맨 위로»)
         threading.Thread(target=self.read_worker, args=(rooms,), daemon=True).start()
         return True
 
@@ -150,6 +151,12 @@ class Agent:
         finally:
             with self.lock:
                 self.busy, self.done = False, True
+            back = getattr(self, "return_to", 0)
+            if back and C.u.IsWindow(back):   # ERP 화면을 다시 맨 앞으로(카톡 창들이 앞에 나와 있다)
+                try:
+                    C.focus(back)
+                except Exception:
+                    pass
 
 
 AGENT = Agent()
