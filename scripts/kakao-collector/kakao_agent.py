@@ -36,7 +36,7 @@ import requests
 
 import collector as C
 
-VERSION = "1.1.1"   # 1.1.1 = 설치 .bat 이 비밀값 없이 /quit 호출(권한 수준 달라 taskkill 못 죽일 때) · 1.1.0 = 회사별 설정
+VERSION = "1.1.0"   # 운영 페이지가 기대하는 버전(services.kakao_agent.version)과 같아야 한다 — 다음 배포 때 둘을 함께 올린다
 PORT = 47321
 
 APP_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "KakaoReader"
