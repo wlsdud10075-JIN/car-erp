@@ -140,4 +140,22 @@ class KakaoVisibilityTest extends TestCase
         $this->assertSame([], Setting::kakaoViewerIds(), '해제한 채 저장하면 아무도 못 쓴다(시스템관리자 제외)');
         $this->assertFalse($a->fresh()->canUseKakaoAssistant());
     }
+
+    /** 기능설정 수치 — 하루 상한 등 5개가 Setting::kakao*() 와 같은 키로 저장되고 하한 아래는 올려 잡는다 (jin 11-10 «하루 상한 설정값 없는데?») */
+    public function test_kakao_numbers_are_edited_in_feature_settings(): void
+    {
+        $this->actingAs($this->user('super', '관리'));
+        $c = Volt::test('admin.settings')->assertSee('data-kakao-params', false);
+        $this->assertSame(2000, $c->get('kakaoParams')['kakao_daily_cost_cap_krw']);
+
+        $c->set('kakaoParams.kakao_daily_cost_cap_krw', 5000)->set('kakaoParams.kakao_window_days', 0)->call('saveKakaoParams');
+
+        $this->assertSame(5000, Setting::kakaoDailyCostCapKrw());
+        $this->assertSame(1, Setting::kakaoWindowDays(), '하한(1일) 아래는 하한으로');
+        $this->assertSame(500, Setting::kakaoMaxNewPerRead(), '안 바꾼 값은 그대로');
+        $this->assertDatabaseHas('audit_logs', ['action' => 'kakao_params_changed']);
+        $this->assertSame(1, AuditLog::where('action', 'kakao_params_changed')->count());
+        $c->call('saveKakaoParams');
+        $this->assertSame(1, AuditLog::where('action', 'kakao_params_changed')->count(), '같은 값 재저장은 감사 없음');
+    }
 }

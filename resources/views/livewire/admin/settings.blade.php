@@ -34,6 +34,11 @@ new #[Layout('components.layouts.app')] class extends Component
     /** 📱 카톡자동화 「내 카톡 할 일」 on/off (jin 2026-11-10) — 회사별, 기본 꺼짐. 키는 서버 .env. */
     public bool $kakaoAssistantEnabled = false;
 
+    /** 📱 카톡자동화 수치(jin 11-10 «기능설정에 하루 상한 설정값 없는데?») — 키는 Setting::kakao*() 와 같다(회사 DB 단위) */
+    public array $kakaoParams = ['kakao_daily_cost_cap_krw' => 2000, 'kakao_max_new_per_read' => 500, 'kakao_window_days' => 7, 'kakao_urgent_hours' => 24, 'kakao_missed_days' => 3];
+
+    public const KAKAO_PARAM_MIN = ['kakao_daily_cost_cap_krw' => 100, 'kakao_max_new_per_read' => 50, 'kakao_window_days' => 1, 'kakao_urgent_hours' => 1, 'kakao_missed_days' => 1];
+
     /** 🧾 내수직원 월정산 on/off (jin 2026-11-03) — 회사별, 기본 ssancarerp 만 켬. 볼 사람은 아래 지정. */
     public bool $domesticPayoutEnabled = false;
 
@@ -173,6 +178,8 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->buyerCashEnabled = Setting::buyerCashEnabled();
         $this->b2bPartnersEnabled = Setting::b2bPartnersEnabled();
         $this->kakaoAssistantEnabled = Setting::kakaoAssistantEnabled();
+        $this->kakaoParams = ['kakao_daily_cost_cap_krw' => Setting::kakaoDailyCostCapKrw(), 'kakao_max_new_per_read' => Setting::kakaoMaxNewPerRead(),
+            'kakao_window_days' => Setting::kakaoWindowDays(), 'kakao_urgent_hours' => Setting::kakaoUrgentHours(), 'kakao_missed_days' => Setting::kakaoMissedDays()];
         $this->domesticPayoutEnabled = Setting::domesticPayoutEnabled();
         $this->loadPayrollViewerMatrix();
         $this->assistantEnabled = (bool) Setting::get('assistant_enabled', false);
@@ -1048,6 +1055,35 @@ new #[Layout('components.layouts.app')] class extends Component
             'new_value' => $value ? '1' : '0',
             'ip_address' => request()?->ip(),
         ]);
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
+    /** 📱 카톡자동화 수치 저장 — 하루 상한(원)·읽기당 최대 건수·표시 기간·급한 기준·놓침 기준. 하한은 KAKAO_PARAM_MIN(Setting::kakao*() 와 같음). 감사로그 1건. */
+    public function saveKakaoParams(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $before = [];
+        $after = [];
+        foreach (self::KAKAO_PARAM_MIN as $key => $min) {
+            $v = max($min, (int) ($this->kakaoParams[$key] ?? $min));
+            $old = Setting::get($key);
+            if ($old === null || (int) $old !== $v) {
+                Setting::updateOrCreate(['key' => $key], ['value' => (string) $v, 'type' => 'integer', 'description' => '카톡자동화 수치']);
+                $before[$key] = $old;
+                $after[$key] = $v;
+            }
+            $this->kakaoParams[$key] = $v;
+        }
+        if ($after !== []) {
+            \App\Models\AuditLog::create([
+                'user_id' => auth()->id(), 'auditable_type' => Setting::class, 'auditable_id' => Setting::where('key', 'kakao_daily_cost_cap_krw')->value('id'),
+                'action' => 'kakao_params_changed', 'column_name' => 'kakao_params',
+                'old_value' => json_encode($before), 'new_value' => json_encode($after), 'ip_address' => request()?->ip(),
+            ]);
+        }
+        Setting::flushRiskParamMemo();
         $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
     }
 
@@ -2019,6 +2055,20 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
                                  after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
                 </label>
+                @if($kakaoAssistantEnabled)
+                    {{-- 수치(jin 11-10 «하루 상한 설정값 없는데?») — Setting::kakao*() 가 읽는 키 5개. 저장 버튼 1개, 감사 1건 --}}
+                    <div class="mt-2 grid grid-cols-2 gap-2 border-t border-gray-100 pt-2 sm:grid-cols-5" data-kakao-params>
+                        @foreach(['kakao_daily_cost_cap_krw' => 'kakao_param_cap', 'kakao_max_new_per_read' => 'kakao_param_max_new', 'kakao_window_days' => 'kakao_param_window', 'kakao_urgent_hours' => 'kakao_param_urgent', 'kakao_missed_days' => 'kakao_param_missed'] as $key => $label)
+                            <label class="text-xs text-gray-600">{{ __('feature_settings.'.$label) }}
+                                <input type="number" min="{{ self::KAKAO_PARAM_MIN[$key] }}" wire:model="kakaoParams.{{ $key }}" class="input-base mt-0.5 h-9 w-full text-sm sm:h-8" aria-label="{{ __('feature_settings.'.$label) }}">
+                            </label>
+                        @endforeach
+                    </div>
+                    <div class="mt-1.5 flex items-center justify-between gap-2">
+                        <span class="text-[11px] text-gray-400">{{ __('feature_settings.kakao_params_sub') }}</span>
+                        <button type="button" wire:click="saveKakaoParams" class="rounded border border-gray-300 bg-white px-2.5 py-1 text-xs text-gray-700 hover:bg-gray-50">{{ __('feature_settings.kakao_params_save') }}</button>
+                    </div>
+                @endif
             </div>
 
             {{-- 🧾 내수직원 월정산 on/off + 볼 사람 (jin 2026-11-03) — 회사별. 끄면 내수 탭·업로드·메뉴·「내수」 역할이 숨는다(데이터는 남음). --}}
