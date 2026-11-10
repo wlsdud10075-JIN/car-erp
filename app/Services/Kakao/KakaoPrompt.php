@@ -27,7 +27,10 @@ class KakaoPrompt
         '포워더' => '포워딩사 — 운임 견적·부킹·B/L·OBL·서렌더·체크빌·컨테이너 작업·선적 일정 담당',
     ];
 
-    public static function system(array $sides, array $roles = []): string
+    /**
+     * @param  array<string, string>  $people  보낸이 → 부서(ERP 역할, 우리 편만) — 「김다정(수출통관), 최영숙(재무)」처럼 이름 뒤에 붙어 누가 무엇을 처리하는지 알려 준다
+     */
+    public static function system(array $sides, array $roles = [], array $people = []): string
     {
         $lines = [];
         foreach ($sides as $side => $members) {
@@ -36,7 +39,8 @@ class KakaoPrompt
                 $role = self::DEFAULT_ROLES[$side] ?? '';
             }
             $desc = $role !== '' ? ' — '.$role : '';
-            $lines[] = "- {$side}{$desc}: ".implode(', ', $members);
+            $named = array_map(fn ($m) => isset($people[$m]) && $people[$m] !== '' ? "{$m}({$people[$m]})" : $m, $members);
+            $lines[] = "- {$side}{$desc}: ".implode(', ', $named);
         }
         $sideNames = implode(' / ', array_keys($sides));
         $sidesBlock = implode("\n", $lines);
