@@ -297,6 +297,8 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="flex flex-wrap items-center gap-2">
             {{-- §11 이 PC 의 에이전트 상태 — 페이지 JS 가 127.0.0.1 /ping 결과로 채운다(폴링 없음) --}}
             <span class="text-xs text-gray-500" data-kakao-agent-status data-state="checking" wire:ignore>{{ __('kakao.agent_checking') }}</span>
+            {{-- 에이전트는 떠 있는데 다른 계정(또는 폐기된 토큰)에 묶여 있을 때 — .bat 없이 지금 계정으로 다시 묶는다 --}}
+            <button type="button" class="hidden h-9 rounded border border-violet-300 px-2 text-xs text-violet-800 hover:bg-violet-50 sm:h-8" data-kakao-rebind wire:ignore>{{ __('kakao.agent_rebind') }}</button>
             <button type="button" class="btn-primary h-9 px-3 text-sm disabled:opacity-40 sm:h-8" data-kakao-read disabled wire:ignore>{{ __('kakao.read_now') }}</button>
             <button type="button" wire:click="toggleSetup" class="tab-pill h-9 px-3 text-sm sm:h-8">{{ $showSetup ? __('kakao.setup_close') : __('kakao.setup') }}</button>
         </div>
@@ -476,6 +478,8 @@ new #[Layout('components.layouts.app')] class extends Component
                                 <div class="relative">
                                     <button type="button" class="h-9 rounded border border-gray-300 px-2 text-xs text-gray-700 sm:h-7" @click="menu = (menu === {{ $r['id'] }} ? null : {{ $r['id'] }})" aria-label="{{ __('kakao.btn_more') }}">⋯</button>
                                     <div x-show="menu === {{ $r['id'] }}" x-cloak @click.outside="menu = null" class="absolute right-0 z-20 mt-1 w-40 rounded border border-gray-200 bg-white py-1 text-xs text-gray-700 shadow-lg">
+                                        {{-- §6 [⋯] 보기 「카톡에서 이 방 열기」 — 에이전트가 그 방 창을 앞으로(열려 있을 때만) --}}
+                                        <button type="button" data-kakao-focus="{{ $r['room'] }}" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_open_kakao') }}</button>
                                         <button type="button" wire:click="openFix({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_fix_type') }}</button>
                                         <button type="button" wire:click="markNotMine({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_not_mine') }}</button>
                                         <button type="button" wire:click="ignoreItem({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_ignore') }}</button>
@@ -525,10 +529,13 @@ new #[Layout('components.layouts.app')] class extends Component
     <script>
     (() => {
         const cfg = @js($agent);
+        const rebindUrl = @js(route('erp.kakao.rebind'));
+        const csrf = @js(csrf_token());
         const t = @js([
             'connected' => __('kakao.agent_connected'), 'missing' => __('kakao.agent_missing'), 'outdated' => __('kakao.agent_outdated'),
             'unauthorized' => __('kakao.agent_unauthorized'), 'blocked' => __('kakao.agent_blocked'),
             'none' => __('kakao.read_none_checked'), 'started' => __('kakao.read_started'), 'failed' => __('kakao.read_failed'),
+            'rebinding' => __('kakao.agent_rebinding'), 'rebind_failed' => __('kakao.agent_rebind_failed'), 'focus_failed' => __('kakao.focus_failed'),
         ]);
         const root = $wire.$el;
         const base = 'http://127.0.0.1:' + cfg.port;
@@ -541,6 +548,25 @@ new #[Layout('components.layouts.app')] class extends Component
             if (s) { s.dataset.state = state; s.textContent = text; }
             const b = el('[data-kakao-read]');
             if (b) b.disabled = state !== 'connected';
+            const rb = el('[data-kakao-rebind]');   // 에이전트는 떠 있는데 내 계정이 아닐 때만 「내 계정으로 연결」
+            if (rb) rb.classList.toggle('hidden', state !== 'unauthorized');
+        };
+        const rebind = async () => {   // ERP 가 새 토큰을 내주고 → 페이지가 127.0.0.1 에이전트에 심는다(.bat 재실행과 같은 효과, 사용자 전환·토큰 폐기 뒤)
+            setStatus('checking', t.rebinding);
+            try {
+                const r = await fetch(rebindUrl, { method: 'POST', headers: { 'X-CSRF-TOKEN': csrf, Accept: 'application/json' }, credentials: 'same-origin' });
+                if (!r.ok) throw new Error('ERP ' + r.status);
+                const body = await r.json();
+                const a = await agent('/rebind', { method: 'POST', body }, false);
+                if (a.status !== 200 || !a.body.ok) throw new Error(a.body.erp_message || a.body.message || ('agent ' + a.status));
+                cfg.secrets = [{ device: a.body.device, secret: body.local_secret }, ...(cfg.secrets || [])];
+                if (await ping()) { await loadRooms(); await $wire.$refresh(); }
+            } catch (e) { setStatus('unauthorized', fmt(t.rebind_failed, { message: String(e.message || e) })); }
+        };
+        const focusRoom = async (room) => {
+            let r;
+            try { r = await agent('/focus', { method: 'POST', body: { room } }); } catch (e) { showProgress([fmt(t.focus_failed, { message: String(e) })]); return; }
+            if (r.status !== 200) showProgress([r.body.message || fmt(t.focus_failed, { message: 'HTTP ' + r.status })]);
         };
         const agent = async (path, opts = {}, withSecret = true) => {
             const headers = { Accept: 'application/json' };
@@ -612,7 +638,11 @@ new #[Layout('components.layouts.app')] class extends Component
             startPolling();
         };
 
-        root.addEventListener('click', (e) => { if (e.target.closest('[data-kakao-read]')) readNow(); });
+        root.addEventListener('click', (e) => {
+            if (e.target.closest('[data-kakao-read]')) readNow();
+            else if (e.target.closest('[data-kakao-rebind]')) rebind();
+            else { const f = e.target.closest('[data-kakao-focus]'); if (f) focusRoom(f.dataset.kakaoFocus); }
+        });
         ping().then((ok) => { if (ok) loadRooms(); });
     })();
     </script>

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\AuditLog;
 use App\Models\KakaoCollectorToken;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -42,6 +43,26 @@ class KakaoInstallerController extends Controller
             'Content-Disposition' => 'attachment; filename="KakaoAgent-setup.bat"',
             'Cache-Control' => 'no-store',
         ]);
+    }
+
+    /**
+     * 이미 떠 있는 에이전트를 지금 계정으로 다시 묶기(.bat 없이) — jin 11-10 «사용자 전환한다고 계속 재설치해야 되면 너무 불편».
+     * 페이지 JS 가 이 토큰·비밀값을 127.0.0.1 에이전트의 /rebind 로 보낸다. 발급 규칙은 .bat 과 같다(안 쓰인 토큰 폐기·기기 이름은 에이전트가 채움).
+     */
+    public function rebind(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless($user->canUseKakaoAssistant(), 403, __('kakao.disabled'));
+        $user->kakaoCollectorTokens()->whereNull('revoked_at')->whereNull('last_used_at')->update(['revoked_at' => now()]);
+        [$token, $plain] = KakaoCollectorToken::issue($user);
+        AuditLog::create([
+            'user_id' => $user->id, 'auditable_type' => KakaoCollectorToken::class, 'auditable_id' => $token->id,
+            'action' => 'kakao_agent_rebound', 'column_name' => 'kakao_collector_tokens',
+            'old_value' => null, 'new_value' => 'token#'.$token->id, 'ip_address' => $request->ip(),
+        ]);
+
+        return response()->json(['token' => $plain, 'local_secret' => (string) $token->local_secret, 'erp_url' => $request->getSchemeAndHttpHost()], 200, [], JSON_UNESCAPED_SLASHES)
+            ->header('Cache-Control', 'no-store');
     }
 
     /** .bat 본문 — CRLF, ASCII. 값은 전부 영숫자·URL 이라 따옴표 처리가 필요 없다. */

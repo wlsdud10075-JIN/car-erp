@@ -98,6 +98,7 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
     Volt::route('kakao', 'erp.kakao.index')->name('kakao.index');
     // §11 「이 PC 연결하기」 — 사용자별 1회용 설치 .bat(토큰·local_secret 포함) 다운로드. 게이트 = canUseKakaoAssistant(컨트롤러)
     Route::post('kakao/installer', [KakaoInstallerController::class, 'download'])->name('kakao.installer');
+    Route::post('kakao/rebind', [KakaoInstallerController::class, 'rebind'])->name('kakao.rebind');   // 떠 있는 에이전트를 지금 계정으로(.bat 없이)
 
     // ETA 통관서류 알림함 (2026-06-18) — 컴포넌트 mount 에서 canAccessClearance 가드.
     Volt::route('alarms', 'erp.alarms.index')->name('alarms.index');
