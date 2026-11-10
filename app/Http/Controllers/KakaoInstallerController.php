@@ -57,7 +57,10 @@ class KakaoInstallerController extends Controller
             'set "ERP='.$erpUrl.'"',
             'echo [1/5] Preparing %DIR%',
             'if not exist "%DIR%" mkdir "%DIR%"',
+            // 떠 있는 옛 에이전트 종료 — 11-10 실측: jin PC 에서 taskkill 한 줄로는 안 죽어 새 에이전트가 「포트 사용 중」으로 바로 꺼졌다(원인 미확정). 둘 다 쓰고 1초 기다린다
             'taskkill /F /IM KakaoAgent.exe >nul 2>&1',
+            'powershell -NoProfile -ExecutionPolicy Bypass -Command "Stop-Process -Name KakaoAgent -Force -ErrorAction SilentlyContinue" >nul 2>&1',
+            'timeout /t 1 >nul',
             'echo [2/5] Downloading agent from %ERP%',
             'curl.exe -fsSL -o "%EXE%" "'.$exeUrl.'"',
             'if errorlevel 1 (',

@@ -36,7 +36,7 @@ STATE = HERE / "state.json"
 u = ctypes.windll.user32
 
 HEAD = re.compile(r"^\[(.+?)\] \[(오전|오후) (\d{1,2}):(\d{2})\] (.*)$")
-DATE = re.compile(r"^-+ (\d{4})년 (\d{1,2})월 (\d{1,2})일 .요일 -+$")
+DATE = re.compile(r"^-*\s*(\d{4})년 (\d{1,2})월 (\d{1,2})일 .요일\s*-*$")   # 창에서 복사하면 대시 없음(11-10 실측) — ERP KakaoExportParser 와 같은 규칙
 
 VK_CONTROL, VK_A, VK_C, VK_PRIOR, VK_ESCAPE = 0x11, 0x41, 0x43, 0x21, 0x1B
 KEYEVENTF_KEYUP = 0x0002
@@ -94,10 +94,37 @@ def find_room_window(name: str) -> dict | None:
     return None
 
 
-def focus(hwnd: int) -> None:
+VK_MENU = 0x12
+k32 = ctypes.windll.kernel32
+
+
+def focus(hwnd: int) -> bool:
+    """방 창을 앞으로 — 그리고 **정말 앞에 왔는지 확인**한다.
+    §11 실사고(jin 11-10): 창 없는 에이전트는 백그라운드 프로세스라 Windows 가 SetForegroundWindow 를 조용히 거부한다 → Ctrl+A·C 가
+    맨 앞에 있던 브라우저(ERP 페이지)로 가서 웹페이지를 읽어 보냈다. exe 창 시절엔 사용자가 그 창의 [읽기]를 눌러 앞 권한이 있었다.
+    세 번 시도: ①그냥 ②ALT 키 한 번(마지막 입력 프로세스가 앞 권한을 얻는 규칙) ③앞 창의 스레드에 입력을 붙여서(AttachThreadInput)."""
     u.ShowWindow(hwnd, 9)  # SW_RESTORE
-    u.SetForegroundWindow(hwnd)
-    time.sleep(0.4)
+    for attempt in range(3):
+        if attempt == 1:
+            u.keybd_event(VK_MENU, 0, 0, 0)
+            u.keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, 0)
+        if attempt == 2:
+            fg_tid = u.GetWindowThreadProcessId(u.GetForegroundWindow(), None)
+            my_tid = k32.GetCurrentThreadId()
+            if fg_tid and fg_tid != my_tid:
+                u.AttachThreadInput(my_tid, fg_tid, True)
+        u.SetForegroundWindow(hwnd)
+        u.BringWindowToTop(hwnd)
+        if attempt == 2 and fg_tid and fg_tid != my_tid:
+            u.AttachThreadInput(my_tid, fg_tid, False)
+        time.sleep(0.4)
+        if u.GetForegroundWindow() == hwnd:
+            return True
+    return False
+
+
+def is_foreground(hwnd: int) -> bool:
+    return u.GetForegroundWindow() == hwnd
 
 
 def click(x: int, y: int) -> None:
@@ -150,12 +177,23 @@ def read_room(cfg: dict, name: str, since: date, dry: bool) -> dict:
         return {"room": name, "ok": False, "message": f"「{name}」 창을 못 찾았습니다. 카톡에서 그 방을 열어 두세요."}
 
     saved_clip = pyperclip.paste()
+    hwnd = win["hwnd"]
     try:
-        focus(win["hwnd"])
+        if not focus(hwnd):
+            return {"room": name, "ok": False, "message": f"「{name}」 창을 앞으로 가져오지 못했습니다. 그 방 창을 한 번 클릭한 뒤 다시 [지금 읽기]."}
         left, top, right, bottom = win["rect"]
         fx, fy = cfg.get("click_fraction", [0.5, 0.35])
         click(int(left + (right - left) * fx), int(top + (bottom - top) * fy))   # 목록 빈 여백(사진 위를 누르면 뷰어가 뜬다 → config 로 조정)
-        key(VK_ESCAPE)
+        time.sleep(0.3)
+        # 🚫 여기서 무조건 ESC 를 치면 안 된다 — 카톡 PC 는 기본 설정이 「ESC 로 채팅창 닫기」라 방 창이 닫히고 맨 앞이 브라우저가 되어
+        #    Ctrl+A·C 가 ERP 페이지를 읽어 보냈다(jin 11-10 실사고 «카톡방을 안 읽고 웹페이지를 읽는데?»). ESC 는 사진 뷰어가 떴을 때만.
+        if not is_foreground(hwnd):
+            if u.GetForegroundWindow() in {k["hwnd"] for k in kakao_windows()}:   # 카톡의 다른 창(사진 뷰어) → 닫고 방으로 복귀
+                key(VK_ESCAPE)
+                time.sleep(0.3)
+                focus(hwnd)
+            if not is_foreground(hwnd):   # 🚫 다른 창에 Ctrl+A·C 를 보내지 않는다(브라우저·엑셀 내용을 읽어 보내는 사고 방지)
+                return {"room": name, "ok": False, "message": f"「{name}」 창이 앞에 있지 않아 중단했습니다. 읽는 동안 다른 창을 누르지 마세요."}
 
         batch = int(cfg.get("pageup_batch", 20))
         max_pageups = int(cfg.get("max_pageups", 400))
@@ -167,6 +205,8 @@ def read_room(cfg: dict, name: str, since: date, dry: bool) -> dict:
                 key(VK_PRIOR)
             done += batch
             time.sleep(0.3)
+            if not is_foreground(hwnd):
+                return {"room": name, "ok": False, "message": f"「{name}」 읽는 도중 다른 창으로 넘어가 중단했습니다. 다시 [지금 읽기]."}
             text = copy_all()
             new_count, first = summarize(text)
             if new_count == count:   # 더 안 풀린다 = 맨 위
