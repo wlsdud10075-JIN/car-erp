@@ -1,0 +1,3327 @@
+{
+"note": "포워딩사 방 표본 300건의 판정 칸만(본문 없음, 보낸이는 역할 별칭). expect = 수출팀B(주담당 아님)/수출팀A(주담당) 시점 방향. 2026-11-10",
+"sides": {
+"프롬": [
+"프롬A",
+"프롬B",
+"프롬C",
+"프롬D",
+"프롬E",
+"프롬F",
+"프롬G"
+],
+"수출팀": [
+"수출팀A",
+"수출팀B",
+"수출팀C",
+"수출팀D"
+],
+"영업": [
+"영업A",
+"영업B",
+"영업C"
+]
+},
+"rows": [
+{
+"id": 1,
+"sender": "프롬A",
+"type": "정보",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 2,
+"sender": "프롬A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 3,
+"sender": "프롬A",
+"type": "정보",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 4,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 5,
+"sender": "영업A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 6,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 7,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 8,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 9,
+"sender": "영업A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 10,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 11,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 12,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 13,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 14,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 15,
+"sender": "영업A",
+"type": "잡담",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 16,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 17,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 18,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 19,
+"sender": "수출팀A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 20,
+"sender": "수출팀A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 21,
+"sender": "프롬D",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 22,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 23,
+"sender": "프롬D",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 24,
+"sender": "프롬D",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 25,
+"sender": "프롬D",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 26,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 27,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 28,
+"sender": "프롬D",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 29,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 30,
+"sender": "프롬D",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 31,
+"sender": "프롬D",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 32,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 33,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 34,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 35,
+"sender": "수출팀A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 36,
+"sender": "영업A",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 37,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 38,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 39,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 40,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 41,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 42,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 43,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 44,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 45,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 46,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 47,
+"sender": "프롬D",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 48,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 49,
+"sender": "프롬D",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 50,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 51,
+"sender": "프롬A",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 52,
+"sender": "수출팀A",
+"type": "요청",
+"to": "영업",
+"mention": "영업A",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 53,
+"sender": "영업A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 54,
+"sender": "영업A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 55,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": "프롬A",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 56,
+"sender": "프롬A",
+"type": "질문",
+"to": "영업",
+"mention": "영업A",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 57,
+"sender": "영업A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 58,
+"sender": "프롬A",
+"type": "요청",
+"to": "프롬",
+"mention": "프롬B",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 59,
+"sender": "프롬B",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 60,
+"sender": "프롬B",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 61,
+"sender": "프롬B",
+"type": "정보",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 62,
+"sender": "수출팀A",
+"type": "요청",
+"to": "영업",
+"mention": "영업A,영업C",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 63,
+"sender": "영업A",
+"type": "잡담",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 64,
+"sender": "영업A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 65,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 66,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 67,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 68,
+"sender": "영업A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 69,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 70,
+"sender": "프롬A",
+"type": "정보",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 71,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 72,
+"sender": "영업A",
+"type": "잡담",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 73,
+"sender": "영업A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 74,
+"sender": "영업A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 75,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 76,
+"sender": "영업A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 77,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 78,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 79,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 80,
+"sender": "프롬A",
+"type": "질문",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 81,
+"sender": "영업A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 82,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 83,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 84,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 85,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 86,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 87,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": "프롬A",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 88,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 89,
+"sender": "영업A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 90,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 91,
+"sender": "영업A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 92,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 93,
+"sender": "프롬A",
+"type": "요청",
+"to": "프롬",
+"mention": "프롬F,프롬B",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 94,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 95,
+"sender": "프롬B",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 96,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 97,
+"sender": "프롬A",
+"type": "대답",
+"to": "수출팀",
+"mention": "프롬B",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 98,
+"sender": "프롬B",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 99,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 100,
+"sender": "프롬B",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 101,
+"sender": "영업B",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 102,
+"sender": "프롬B",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 103,
+"sender": "프롬B",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 104,
+"sender": "프롬B",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 105,
+"sender": "프롬B",
+"type": "정보",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 106,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 107,
+"sender": "프롬B",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 108,
+"sender": "영업C",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 109,
+"sender": "프롬B",
+"type": "요청",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 110,
+"sender": "영업C",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 111,
+"sender": "프롬B",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 112,
+"sender": "프롬B",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 113,
+"sender": "수출팀A",
+"type": "요청",
+"to": "영업",
+"mention": "영업A,영업B,영업C",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 114,
+"sender": "영업C",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 115,
+"sender": "영업C",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 116,
+"sender": "영업C",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 117,
+"sender": "프롬B",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 118,
+"sender": "프롬B",
+"type": "질문",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 119,
+"sender": "영업C",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 120,
+"sender": "프롬B",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 121,
+"sender": "프롬B",
+"type": "요청",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 122,
+"sender": "영업C",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 123,
+"sender": "프롬B",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 124,
+"sender": "프롬B",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 125,
+"sender": "수출팀A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 126,
+"sender": "프롬B",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 127,
+"sender": "프롬B",
+"type": "요청",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 128,
+"sender": "영업A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 129,
+"sender": "영업C",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 130,
+"sender": "영업B",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 131,
+"sender": "프롬B",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 132,
+"sender": "프롬A",
+"type": "질문",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 133,
+"sender": "영업C",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 134,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 135,
+"sender": "프롬B",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 136,
+"sender": "프롬B",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 137,
+"sender": "프롬B",
+"type": "요청",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 138,
+"sender": "영업C",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 139,
+"sender": "프롬B",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 140,
+"sender": "프롬A",
+"type": "요청",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 141,
+"sender": "영업C",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 142,
+"sender": "영업C",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 143,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 144,
+"sender": "수출팀A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 145,
+"sender": "수출팀A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 146,
+"sender": "수출팀A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 147,
+"sender": "수출팀A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 148,
+"sender": "수출팀A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 149,
+"sender": "프롬A",
+"type": "요청",
+"to": "프롬",
+"mention": "프롬B",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 150,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 151,
+"sender": "프롬A",
+"type": "요청",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 152,
+"sender": "프롬A",
+"type": "정보",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 153,
+"sender": "프롬A",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 154,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 155,
+"sender": "수출팀A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 156,
+"sender": "프롬A",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 157,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 158,
+"sender": "프롬A",
+"type": "정보",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 159,
+"sender": "수출팀B",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 160,
+"sender": "수출팀B",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "기다림",
+"수출팀A": "무관"
+}
+},
+{
+"id": 161,
+"sender": "프롬A",
+"type": "요청",
+"to": "프롬",
+"mention": "프롬B",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 162,
+"sender": "프롬B",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 163,
+"sender": "수출팀B",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "기다림",
+"수출팀A": "무관"
+}
+},
+{
+"id": 164,
+"sender": "프롬A",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 165,
+"sender": "영업A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 166,
+"sender": "영업A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 167,
+"sender": "프롬A",
+"type": "요청",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 168,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 169,
+"sender": "영업A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 170,
+"sender": "영업A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 171,
+"sender": "프롬A",
+"type": "질문",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 172,
+"sender": "영업A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 173,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 174,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 175,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 176,
+"sender": "프롬A",
+"type": "요청",
+"to": "프롬",
+"mention": "프롬B",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 177,
+"sender": "프롬A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 178,
+"sender": "프롬B",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 179,
+"sender": "수출팀B",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "기다림",
+"수출팀A": "무관"
+}
+},
+{
+"id": 180,
+"sender": "프롬A",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 181,
+"sender": "수출팀B",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 182,
+"sender": "프롬A",
+"type": "질문",
+"to": "영업",
+"mention": "영업A",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 183,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 184,
+"sender": "영업A",
+"type": "확인",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 185,
+"sender": "영업A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 186,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 187,
+"sender": "프롬A",
+"type": "질문",
+"to": "영업",
+"mention": "영업A",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 188,
+"sender": "영업A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 189,
+"sender": "프롬A",
+"type": "요청",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 190,
+"sender": "프롬A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 191,
+"sender": "프롬B",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 192,
+"sender": "프롬B",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 193,
+"sender": "수출팀B",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 194,
+"sender": "수출팀B",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "기다림",
+"수출팀A": "무관"
+}
+},
+{
+"id": 195,
+"sender": "프롬A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 196,
+"sender": "프롬A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 197,
+"sender": "프롬A",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 198,
+"sender": "수출팀B",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 199,
+"sender": "영업A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 200,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 201,
+"sender": "영업A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 202,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 203,
+"sender": "프롬A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 204,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 205,
+"sender": "영업A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 206,
+"sender": "프롬A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 207,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 208,
+"sender": "영업A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 209,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 210,
+"sender": "영업A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 211,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 212,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 213,
+"sender": "프롬A",
+"type": "정보",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 214,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 215,
+"sender": "프롬B",
+"type": "질문",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 216,
+"sender": "수출팀B",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 217,
+"sender": "수출팀A",
+"type": "잡담",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 218,
+"sender": "프롬B",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 219,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 220,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 221,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 222,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 223,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 224,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 225,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 226,
+"sender": "프롬B",
+"type": "질문",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 227,
+"sender": "수출팀A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 228,
+"sender": "프롬C",
+"type": "요청",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 229,
+"sender": "프롬A",
+"type": "요청",
+"to": "영업",
+"mention": "영업A",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 230,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 231,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 232,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 233,
+"sender": "영업A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 234,
+"sender": "프롬C",
+"type": "질문",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 235,
+"sender": "프롬C",
+"type": "요청",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 236,
+"sender": "영업A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 237,
+"sender": "영업A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 238,
+"sender": "영업A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 239,
+"sender": "프롬C",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 240,
+"sender": "프롬C",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 241,
+"sender": "수출팀B",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "기다림",
+"수출팀A": "무관"
+}
+},
+{
+"id": 242,
+"sender": "프롬C",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 243,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 244,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 245,
+"sender": "프롬B",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 246,
+"sender": "프롬B",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 247,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 248,
+"sender": "프롬B",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 249,
+"sender": "프롬B",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 250,
+"sender": "수출팀A",
+"type": "요청",
+"to": "영업",
+"mention": "영업A",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 251,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 252,
+"sender": "프롬B",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 253,
+"sender": "프롬B",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 254,
+"sender": "수출팀A",
+"type": "정보",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 255,
+"sender": "프롬B",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 256,
+"sender": "수출팀A",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 257,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 258,
+"sender": "프롬B",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 259,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 260,
+"sender": "프롬A",
+"type": "정보",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 261,
+"sender": "영업A",
+"type": "잡담",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 262,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 263,
+"sender": "영업A",
+"type": "잡담",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 264,
+"sender": "프롬A",
+"type": "확인",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 265,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 266,
+"sender": "영업A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 267,
+"sender": "수출팀A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 268,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": "프롬A,프롬B",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 269,
+"sender": "프롬B",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 270,
+"sender": "프롬B",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 271,
+"sender": "수출팀D",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 272,
+"sender": "프롬A",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 273,
+"sender": "프롬A",
+"type": "대답",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 274,
+"sender": "프롬A",
+"type": "정보",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 275,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 276,
+"sender": "프롬A",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 277,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 278,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 279,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 280,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 281,
+"sender": "프롬B",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 282,
+"sender": "영업A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 283,
+"sender": "영업A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 284,
+"sender": "프롬A",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 285,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 286,
+"sender": "수출팀A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+},
+{
+"id": 287,
+"sender": "프롬B",
+"type": "질문",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 288,
+"sender": "프롬A",
+"type": "질문",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 289,
+"sender": "수출팀A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 290,
+"sender": "프롬A",
+"type": "정보",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 291,
+"sender": "프롬A",
+"type": "확인",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 292,
+"sender": "수출팀A",
+"type": "대답",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 293,
+"sender": "프롬A",
+"type": "요청",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 294,
+"sender": "프롬B",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 295,
+"sender": "프롬A",
+"type": "질문",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 296,
+"sender": "프롬A",
+"type": "대답",
+"to": "영업",
+"mention": "영업A",
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 297,
+"sender": "프롬B",
+"type": "요청",
+"to": "수출팀",
+"mention": null,
+"expect": {
+"수출팀B": "내일",
+"수출팀A": "내일"
+}
+},
+{
+"id": 298,
+"sender": "프롬B",
+"type": "첨부",
+"to": "없음",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 299,
+"sender": "수출팀A",
+"type": "확인",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "무관"
+}
+},
+{
+"id": 300,
+"sender": "수출팀A",
+"type": "질문",
+"to": "프롬",
+"mention": null,
+"expect": {
+"수출팀B": "무관",
+"수출팀A": "기다림"
+}
+}
+]
+}
