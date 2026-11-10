@@ -604,8 +604,10 @@ new #[Layout('components.layouts.app')] class extends Component
             lastOpen = r.body.rooms || [];
             await $wire.reportOpenRooms(lastOpen);
         };
+        // 체크된 방 전부 — 닫힌 방은 에이전트가 카톡 메인 창 검색으로 열고 읽는다(jin 11-10). 열린 방을 먼저 읽게 순서만 앞으로
         const checkedOpenRooms = () => [...root.querySelectorAll('[data-room-pick]')]
-            .filter((l) => l.querySelector('input')?.checked && lastOpen.includes(l.dataset.roomName)).map((l) => l.dataset.roomName);
+            .filter((l) => l.querySelector('input')?.checked).map((l) => l.dataset.roomName)
+            .sort((a, b) => (lastOpen.includes(b) ? 1 : 0) - (lastOpen.includes(a) ? 1 : 0));
         const showProgress = (lines, show = true) => {
             const box = el('[data-kakao-progress]');
             if (!box) return;
