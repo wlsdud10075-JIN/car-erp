@@ -67,6 +67,29 @@ TXT;
         $this->assertSame(40, strlen($a[0]['msg_key']));
     }
 
+    public function test_same_minute_same_sender_same_text_get_distinct_keys_by_ordinal(): void
+    {
+        // 표본 1 #36·37: 같은 사람이 같은 분에 「사진」을 두 번 — 키가 겹치면 두 번째가 조용히 사라진다
+        $text = "--------------- 2026년 6월 10일 수요일 ---------------\n[재무A] [오전 10:30] 사진\n[재무A] [오전 10:30] 사진\n[재무A] [오전 10:30] 138부9292";
+        $msgs = (new KakaoExportParser)->parse($text);
+        $this->assertCount(3, $msgs);
+        $this->assertCount(3, array_unique(array_column($msgs, 'msg_key')));
+        // 다시 읽어도 같은 순번 → 같은 키
+        $this->assertSame(array_column($msgs, 'msg_key'), array_column((new KakaoExportParser)->parse($text), 'msg_key'));
+    }
+
+    public function test_key_ignores_continuation_lines_so_a_longer_second_read_matches(): void
+    {
+        // 첫 읽기 때 화면에 덜 풀린 서식 메시지가 다음 읽기에 이어지는 줄까지 잡혀도 같은 메시지여야 한다
+        $short = "--------------- 2026년 6월 10일 수요일 ---------------\n[영업A] [오전 8:44] 차량명   AUDI A3\n차량번호:   38누0655";
+        $long = $short."\n차대번호   WAUZZZ8VXG1078563\n바이어:   DONI";
+        $a = (new KakaoExportParser)->parse($short)[0];
+        $b = (new KakaoExportParser)->parse($long)[0];
+        $this->assertSame($a['msg_key'], $b['msg_key']);
+        $this->assertTrue(str_starts_with($b['body'], $a['body']));
+        $this->assertSame('차량명   AUDI A3', KakaoExportParser::firstLine($b['body']));
+    }
+
     public function test_messages_before_first_date_divider_need_a_fallback_date(): void
     {
         $text = "[영업A] [오전 9:00] 날짜 모름\n이어지는 줄\n--------------- 2026년 6월 10일 수요일 ---------------\n[영업A] [오전 9:01] 날짜 앎";

@@ -197,6 +197,27 @@ class Setting extends Model
     }
 
     /**
+     * 📱 카톡자동화 「내 카톡 할 일」 on/off — **회사별, 기본 꺼짐**(jin 2026-11-10 «3사 공통, 시스템사용자 기능설정에서 on/off»).
+     *   키 = `kakao_assistant_enabled_{회사}`. 끄면 메뉴·페이지·수집기 API(403) 가 막힌다. 저장된 메시지는 남는다.
+     */
+    public static function kakaoAssistantEnabled(): bool
+    {
+        return (bool) self::get('kakao_assistant_enabled_'.self::companyTemplateSet(), false);
+    }
+
+    /** 읽기 1회에 분류할 새 메시지 상한 — 넘으면 거부(수집기 버그로 수만 줄이 오면 400번 호출을 막는다). §8 #60: N 은 설정. */
+    public static function kakaoMaxNewPerRead(): int
+    {
+        return max(50, (int) self::get('kakao_max_new_per_read', 500));
+    }
+
+    /** 사용자 한 명의 하루 분류 비용 상한(원). 넘으면 그날은 거부. 실측 50건 읽기 ≈ 36~48원. */
+    public static function kakaoDailyCostCapKrw(): int
+    {
+        return max(100, (int) self::get('kakao_daily_cost_cap_krw', 2000));
+    }
+
+    /**
      * 🧾 내수직원 월정산(별도 결재) on/off — **회사별**(jin 2026-11-03). 키 = `domestic_payout_enabled_{회사}`.
      *   기본값 = ssancarerp(system) 켬 · heymanerp·karabaerp 끔. 끄면 내수 기능이 통째로 숨는다
      *   (사내직원관리 내수 탭·평가수수료 업로드·내수직원 월정산 메뉴·사용자관리 「내수」 역할). 켜면 내수직원은 사내직원 월정산에서 빠지고

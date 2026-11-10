@@ -49,7 +49,7 @@ class KakaoDirection
         $mySide = self::sideOf($me, $sides);
 
         if ($actionable) {
-            $mentionsMe = self::mentions($mention, $me);
+            $mentionsMe = self::mentions($mention, $me, $sides);
             if ($mentionsMe) {
                 return self::MINE;
             }
@@ -78,16 +78,28 @@ class KakaoDirection
         return null;
     }
 
-    /** 「@싼카-수출팀 박수정」처럼 표시명 일부만 적혀도 맞춘다(어느 쪽이 다른 쪽을 포함하면 같은 사람). */
-    public static function mentions(?string $mention, string $me): bool
+    /**
+     * 「@싼카-수출팀 박수정」처럼 표시명 일부만 적혀도 맞춘다.
+     * 순서: ① 방 구성원 이름과 정확히 같은 토큰이면 그 사람(= 나인지만 본다) ② 아니면 부분 일치(어느 쪽이 다른 쪽을 포함).
+     * 2글자 미만 토큰(성 한 글자 등)은 무시 — 「정」 하나가 「박수정」「김다정」 둘 다에 걸린다.
+     */
+    public static function mentions(?string $mention, string $me, array $sides = []): bool
     {
         if ($mention === null || trim($mention) === '') {
             return false;
         }
+        $members = array_merge(...array_values(array_map(fn ($m) => (array) $m, $sides ?: [[]])));
         foreach (explode(',', $mention) as $token) {
-            $t = trim($token);
-            if ($t === '') {
+            $t = trim($token, " \t@");
+            if (mb_strlen($t) < 2) {
                 continue;
+            }
+            if (in_array($t, $members, true)) {
+                if ($t === $me) {
+                    return true;
+                }
+
+                continue;   // 다른 구성원을 정확히 가리켰다 — 부분 일치로 나를 잡지 않는다
             }
             if (str_contains($me, $t) || str_contains($t, $me)) {
                 return true;

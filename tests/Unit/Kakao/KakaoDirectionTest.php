@@ -63,6 +63,12 @@ class KakaoDirectionTest extends TestCase
         // 표시명 부분 일치(「김다정」 ↔ 「싼카-수출팀김다정」)
         $this->assertTrue(KakaoDirection::mentions('김다정', '싼카-수출팀김다정'));
         $this->assertFalse(KakaoDirection::mentions('박수정', '싼카-수출팀김다정'));
+        // 한 글자 조각(성)은 무시 — 「정」이 박수정·김다정 둘 다에 걸리면 안 된다
+        $this->assertFalse(KakaoDirection::mentions('정', '싼카-수출팀김다정'));
+        $this->assertFalse(KakaoDirection::mentions('@정, 영업A', '싼카-수출팀김다정', $sides));
+        // 방 구성원 이름과 정확히 같은 토큰은 그 사람 — 부분 일치로 남을 잡지 않는다
+        $this->assertFalse(KakaoDirection::mentions('싼카-수출팀 박수정 대리', '싼카-수출팀김다정', $sides));
+        $this->assertTrue(KakaoDirection::mentions('싼카-수출팀 박수정 대리', '싼카-수출팀 박수정 대리', $sides));
     }
 
     public function test_unclassified_and_chatter_are_never_todo(): void

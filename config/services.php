@@ -125,4 +125,11 @@ return [
         'cache_seconds' => (int) env('ADMIN_DASHBOARD_CACHE_SECONDS', 60),
     ],
 
+    // 📱 카톡자동화 분류 모델 (docs/design/kakao-automation.md §10). 키는 서버별 .env, 회사 토글은 기능설정.
+    'anthropic' => [
+        'key' => env('ANTHROPIC_API_KEY', ''),
+        'model' => env('ANTHROPIC_KAKAO_MODEL', 'claude-sonnet-5-5'),   // 표본 2개 실측(11-10): 대상 정확도 96% vs Haiku 90%
+        'krw_per_usd' => (int) env('ANTHROPIC_KRW_PER_USD', 1400),     // 비용 기록용 환율
+    ],
+
 ];
