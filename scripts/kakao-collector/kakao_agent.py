@@ -1,0 +1,288 @@
+"""
+카톡 에이전트 — 실무자 PC 에 창 없이 떠 있는 로컬 서버 (docs/design/kakao-automation.md §11 · jin 11-10 «사용 화면은 ERP 하나»)
+
+ERP 「내 카톡 할 일」 페이지의 브라우저 JS 가 http://127.0.0.1:47321 로 묻는다:
+  GET  /ping              연결 상태(버전·PC 이름·ERP 연결 여부). 비밀값 없이도 된다 — 페이지가 「어느 PC 인가」를 알아내는 용도
+  GET  /rooms             지금 열려 있는 카톡 방 창 제목
+  POST /read {rooms:[…]}  그 방들을 읽어 ERP 로 보낸다(백그라운드, 한 번에 하나)
+  GET  /progress          읽기 진행 줄·끝났는지
+  POST /quit              에이전트 종료(재설치·업데이트 때 .bat 이 부른다)
+/rooms·/read·/progress·/quit 은 설치 때 심은 local_secret 을 X-Kakao-Secret 헤더로 받아야 한다. 요청 Origin 은 config 의 ERP 출처만 허용.
+
+설정 = %LOCALAPPDATA%/KakaoReader/config.json (설치 .bat 이 쓴다: erp_url·token·local_secret). 상태 = 같은 폴더 state.json(방별 마지막 읽은 시각).
+읽기 엔진 = collector.py 그대로. 카톡에는 아무것도 쓰지 않는다. 읽는 동안 키보드·마우스에서 손을 뗀다.
+
+exe 만들기(개발 PC, 이 폴더에서): pyinstaller --noconfirm --onefile --noconsole --name KakaoAgent kakao_agent.py
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import sys
+import threading
+from datetime import date, datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from urllib.parse import urlsplit
+
+import requests
+
+import collector as C
+
+VERSION = "1.0.0"
+PORT = 47321
+
+APP_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "KakaoReader"
+APP_DIR.mkdir(parents=True, exist_ok=True)
+CONFIG = APP_DIR / "config.json"
+STATE = APP_DIR / "state.json"
+LOG = APP_DIR / "agent.log"
+C.CONFIG, C.STATE = CONFIG, STATE
+
+log = logging.getLogger("kakao-agent")
+log.setLevel(logging.INFO)
+_h = RotatingFileHandler(LOG, maxBytes=512_000, backupCount=2, encoding="utf-8")
+_h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+log.addHandler(_h)
+
+
+def load(path: Path, default):
+    try:
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
+    except Exception:
+        return default
+
+
+def save(path: Path, data) -> None:
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+class Agent:
+    """상태 하나 — 설정, ERP 연결 상태, 진행 중인 읽기."""
+
+    def __init__(self) -> None:
+        self.cfg: dict = load(CONFIG, {})
+        self.device = C.device_name()
+        self.erp_state = "unconfigured" if not self.cfg.get("token") else "unknown"   # connected | unauthorized | offline | unconfigured
+        self.erp_message = ""
+        self.lock = threading.Lock()
+        self.busy = False
+        self.lines: list[str] = []
+        self.done = True
+        self.started_at: str | None = None
+
+    # ───── ERP ─────
+    @property
+    def origin(self) -> str:
+        p = urlsplit(self.cfg.get("erp_url", ""))
+        return f"{p.scheme}://{p.netloc}".lower() if p.scheme and p.netloc else ""
+
+    def api(self, method: str, path: str, **kw):
+        kw.setdefault("timeout", 180)
+        kw.setdefault("headers", {})
+        kw["headers"].update({"Authorization": "Bearer " + self.cfg["token"], "Accept": "application/json", "X-Kakao-Device": self.device})
+        r = requests.request(method, self.cfg["erp_url"].rstrip("/") + path, **kw)
+        if r.status_code in (401, 403):
+            self.erp_state = "unauthorized"
+            try:
+                self.erp_message = r.json().get("message", "")
+            except ValueError:
+                self.erp_message = f"HTTP {r.status_code}"
+        else:
+            self.erp_state = "connected"
+            self.erp_message = ""
+        return r
+
+    def check_erp(self) -> None:
+        if not self.cfg.get("token"):
+            self.erp_state = "unconfigured"
+            return
+        try:
+            self.api("GET", "/api/kakao/rooms", timeout=15)
+        except requests.RequestException as e:
+            self.erp_state = "offline"
+            self.erp_message = str(e)[:200]
+
+    # ───── 읽기 ─────
+    def say(self, text: str) -> None:
+        with self.lock:
+            self.lines.append(datetime.now().strftime("%H:%M ") + text)
+        log.info(text)
+
+    def start_read(self, rooms: list[str]) -> bool:
+        with self.lock:
+            if self.busy:
+                return False
+            self.busy, self.done, self.lines, self.started_at = True, False, [], datetime.now().isoformat(timespec="seconds")
+        threading.Thread(target=self.read_worker, args=(rooms,), daemon=True).start()
+        return True
+
+    def read_worker(self, rooms: list[str]) -> None:
+        try:
+            self.say(f"읽기 시작 — {len(rooms)}개 방. 끝날 때까지 키보드·마우스에서 손을 떼 주세요.")
+            try:
+                self.api("POST", "/api/kakao/rooms/select", json={"selected": rooms})   # 체크 상태를 ERP 와 맞춘다
+            except requests.RequestException as e:
+                self.say(f"체크 저장 실패(계속 진행): {e}")
+            state = load(STATE, {})
+            for name in rooms:
+                last = state.get(name)
+                since = (datetime.fromisoformat(last).date() - timedelta(days=1)) if last else (date.today() - timedelta(days=int(self.cfg.get("first_read_days", 7))))
+                try:
+                    info = C.read_room(self.cfg, name, since, dry=False)
+                except Exception as e:   # 창이 사라졌거나 클립보드 실패 — 다음 방으로
+                    info = {"ok": False, "message": f"읽기 실패: {e}"}
+                self.say(f"[{name}] {info.get('message') or info}")
+                if info.get("status") in (401, 403):
+                    self.erp_state = "unauthorized"
+                if info.get("ok"):
+                    state[name] = datetime.now().isoformat(timespec="minutes")
+                    save(STATE, state)
+            self.say("끝.")
+        finally:
+            with self.lock:
+                self.busy, self.done = False, True
+
+
+AGENT = Agent()
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "KakaoAgent/" + VERSION
+    protocol_version = "HTTP/1.1"
+
+    def log_message(self, fmt, *args):   # 콘솔 없음 — 파일 로그만
+        log.debug(fmt, *args)
+
+    # ─── 공통 ───
+    def origin_ok(self) -> bool:
+        origin = (self.headers.get("Origin") or "").lower()
+        return origin == "" or (AGENT.origin != "" and origin == AGENT.origin)   # Origin 없음 = 같은 PC 의 비브라우저 호출
+
+    def cors(self) -> None:
+        origin = self.headers.get("Origin")
+        if origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, X-Kakao-Secret")
+            self.send_header("Access-Control-Allow-Private-Network", "true")
+            self.send_header("Access-Control-Max-Age", "600")
+
+    def reply(self, code: int, body: dict) -> None:
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.cors()
+        self.end_headers()
+        self.wfile.write(data)
+
+    def secret_ok(self) -> bool:
+        want = AGENT.cfg.get("local_secret") or ""
+        return want != "" and self.headers.get("X-Kakao-Secret", "") == want
+
+    def body(self) -> dict:
+        n = int(self.headers.get("Content-Length") or 0)
+        if n <= 0:
+            return {}
+        try:
+            return json.loads(self.rfile.read(n).decode("utf-8")) or {}
+        except (ValueError, UnicodeDecodeError):
+            return {}
+
+    def guard(self) -> bool:
+        """Origin → 비밀값 순서로 거른다. 통과하면 True."""
+        if not self.origin_ok():
+            self.send_response(403)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return False
+        if not self.secret_ok():
+            self.reply(401, {"ok": False, "message": "이 PC 의 에이전트와 ERP 설정이 다릅니다. 설정 탭에서 다시 연결하세요."})
+            return False
+        return True
+
+    # ─── 라우팅 ───
+    def do_OPTIONS(self) -> None:
+        if not self.origin_ok():
+            self.send_response(403)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+            return
+        self.send_response(204)
+        self.send_header("Content-Length", "0")
+        self.cors()
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        path = self.path.split("?", 1)[0]
+        if path == "/ping":
+            if not self.origin_ok():
+                self.send_response(403)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            return self.reply(200, {
+                "ok": True, "version": VERSION, "device": AGENT.device, "erp_url": AGENT.cfg.get("erp_url", ""),
+                "erp_state": AGENT.erp_state, "erp_message": AGENT.erp_message, "busy": AGENT.busy,
+            })
+        if not self.guard():
+            return
+        if path == "/rooms":
+            try:
+                rooms = C.open_room_titles()
+            except Exception as e:
+                return self.reply(500, {"ok": False, "message": f"카톡 창을 읽지 못했습니다: {e}"})
+            return self.reply(200, {"ok": True, "rooms": rooms, "kakao_running": bool(C.kakao_pids())})
+        if path == "/progress":
+            with AGENT.lock:
+                return self.reply(200, {"ok": True, "busy": AGENT.busy, "done": AGENT.done, "lines": list(AGENT.lines), "started_at": AGENT.started_at, "erp_state": AGENT.erp_state})
+        self.reply(404, {"ok": False, "message": "no such path"})
+
+    def do_POST(self) -> None:
+        path = self.path.split("?", 1)[0]
+        if not self.guard():
+            return
+        if path == "/read":
+            rooms = [str(r).strip() for r in (self.body().get("rooms") or []) if str(r).strip()]
+            if not rooms:
+                return self.reply(422, {"ok": False, "message": "읽을 방이 없습니다."})
+            if AGENT.erp_state == "unconfigured":
+                return self.reply(409, {"ok": False, "message": "이 PC 가 ERP 와 연결돼 있지 않습니다. 설정 탭에서 연결하세요."})
+            if not AGENT.start_read(rooms):
+                return self.reply(409, {"ok": False, "message": "이미 읽는 중입니다."})
+            return self.reply(202, {"ok": True, "started": True, "rooms": rooms})
+        if path == "/quit":
+            self.reply(200, {"ok": True, "message": "bye"})
+            threading.Thread(target=self.server.shutdown, daemon=True).start()
+            return
+        self.reply(404, {"ok": False, "message": "no such path"})
+
+
+class Server(ThreadingHTTPServer):
+    allow_reuse_address = False   # Windows 는 SO_REUSEADDR 이면 같은 포트에 두 번째가 그냥 붙는다 → 단일 인스턴스 판정이 안 된다
+    daemon_threads = True
+
+
+def main() -> int:
+    try:
+        srv = Server(("127.0.0.1", PORT), Handler)
+    except OSError:
+        log.info("port %s busy — another agent is running, exit", PORT)   # 시작프로그램 + 이미 떠 있음 → 조용히 종료
+        return 0
+    log.info("agent %s up on 127.0.0.1:%s (device=%s, erp=%s)", VERSION, PORT, AGENT.device, AGENT.cfg.get("erp_url", "-"))
+    threading.Thread(target=AGENT.check_erp, daemon=True).start()
+    try:
+        srv.serve_forever()
+    finally:
+        srv.server_close()
+        log.info("agent down")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
