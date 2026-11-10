@@ -677,6 +677,18 @@ class User extends Authenticatable
         return $this->isAdmin() || $this->isManager() || in_array($this->role, ['영업', '수출통관', '관리'], true);
     }
 
+    /** 📱 카톡자동화 — 내가 읽는 카톡 방(피벗 my_name = 그 방에서 내 표시명). docs/design/kakao-automation.md §10-2 */
+    public function kakaoRooms(): BelongsToMany
+    {
+        return $this->belongsToMany(KakaoRoom::class, 'kakao_room_users', 'user_id', 'room_id')
+            ->withPivot('my_name')->withTimestamps();
+    }
+
+    public function kakaoCollectorTokens(): HasMany
+    {
+        return $this->hasMany(KakaoCollectorToken::class);
+    }
+
     public function salesman(): HasOne
     {
         return $this->hasOne(Salesman::class);

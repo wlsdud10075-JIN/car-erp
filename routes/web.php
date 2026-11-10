@@ -93,6 +93,8 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
 
     // 예치·가수금 (jin 2026-07-27, 안건4 1단계) — mount 에서 canEnterCashBalance 가드.
     Volt::route('deposits', 'erp.deposits.index')->name('deposits.index');
+    // 📱 카톡자동화 「내 카톡 할 일」 — 회사 토글(Setting::kakaoAssistantEnabled) 은 페이지 mount 가 본다 (docs/design/kakao-automation.md §10)
+    Volt::route('kakao', 'erp.kakao.index')->name('kakao.index');
 
     // ETA 통관서류 알림함 (2026-06-18) — 컴포넌트 mount 에서 canAccessClearance 가드.
     Volt::route('alarms', 'erp.alarms.index')->name('alarms.index');

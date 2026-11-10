@@ -535,6 +535,7 @@ return [
         'buyer_cash_toggle_changed' => '바이어 현금 원장 켜기/끄기',
         'b2b_partners_toggle_changed' => 'B2B 파트너스 켜기/끄기',   // 2026-11-02 회사별 토글
         'domestic_payout_toggle_changed' => '내수직원 월정산 켜기/끄기',   // 2026-11-03 회사별 토글
+        'kakao_assistant_toggle_changed' => '카톡자동화(내 카톡 할 일) 켜기/끄기',   // 2026-11-10 회사별 토글
         'domestic_payout_viewers_changed' => '내수직원 월정산 볼 사람 변경',   // 2026-11-03 기능설정
         'payroll_viewers_changed' => '사내직원관리 공개 범위 변경',   // 2026-11-04 기능설정
         'staff_payout_viewers_changed' => '사내직원 월정산 볼 사람 변경',   // 2026-11-05 기능설정
