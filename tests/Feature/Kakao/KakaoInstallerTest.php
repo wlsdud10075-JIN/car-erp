@@ -41,6 +41,7 @@ class KakaoInstallerTest extends TestCase
         $this->assertSame($token->id, KakaoCollectorToken::findActive($m[1])?->id, '박힌 토큰으로 바로 API 가 된다');
         $this->assertStringContainsString('"local_secret": "'.$token->local_secret.'"', $bat);
         $this->assertStringContainsString('set "ERP=https://heymancar.com"', $bat);
+        $this->assertStringContainsString('config.heymancar.com.json', $bat, '회사별 설정 파일 — 한 PC 에서 두 회사(11-10)');
         $this->assertStringContainsString('https://heymancar.com/'.KakaoInstallerController::EXE_PUBLIC_PATH, $bat);
         $this->assertStringContainsString('Unblock-File', $bat);
         $this->assertStringContainsString("GetFolderPath('Startup')", $bat, '시작프로그램 바로가기 = PC 로그인 때 자동 시작');
