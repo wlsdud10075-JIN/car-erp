@@ -110,4 +110,25 @@ class KakaoAutoSetupTest extends TestCase
         $this->assertNull(KakaoRoom::matchName('이', $senders), '한 글자는 안 맞춘다');
         $this->assertSame('김다정', KakaoRoom::matchName('김다', $senders), '두 글자 이상이면 품는 이름도 맞춘다');
     }
+
+    /** 사람이 고친 분류는 다음 분류 프롬프트에 「같은 성격은 이렇게」 예시로 들어간다 (jin 11-10 «내가 분류한 것도 같이 적용») */
+    public function test_manual_type_corrections_feed_the_next_classification_prompt(): void
+    {
+        $me = User::factory()->create(['permission' => 'user', 'role' => '수출통관', 'name' => '김다정']);
+        [, $plain] = KakaoCollectorToken::issue($me, 'PC-1');
+        $this->withHeader('Authorization', 'Bearer '.$plain)->postJson('/api/kakao/ingest', ['room' => '수출팀', 'text' => self::TEXT])->assertOk();
+        $this->assertStringNotContainsString('사람이 고친 분류', $this->fake->lastSystem);
+
+        $room = KakaoRoom::sole();
+        $msg = KakaoMessage::where('room_id', $room->id)->where('body', 'like', '매입 보고%')->sole();   // 엔진 = 요청
+        $this->actingAs($me);
+        Volt::test('erp.kakao.index')->call('openFix', $msg->id)->set('fixType', '정보')->call('overrideType', $msg->id);
+        $this->assertSame([['body' => '매입 보고', 'from' => '요청', 'to' => '정보', 'sender' => '이영업']], $room->corrections());
+
+        $more = self::TEXT.'
+[김다정] [오후 2:00] 매입 보고 하나 더';
+        $this->withHeader('Authorization', 'Bearer '.$plain)->postJson('/api/kakao/ingest', ['room' => '수출팀', 'text' => $more])->assertOk();
+        $this->assertStringContainsString('## 이 방에서 사람이 고친 분류', $this->fake->lastSystem);
+        $this->assertStringContainsString('「매입 보고」(이영업) → 정보 (엔진은 요청으로 봤으나 사람이 고침)', $this->fake->lastSystem);
+    }
 }

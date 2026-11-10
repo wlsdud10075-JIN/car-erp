@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\Kakao\KakaoExportParser;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -56,6 +57,37 @@ class KakaoRoom extends Model
         $roles = (array) ($this->roles ?? []);
         $roles['_people'] = $people;
         $this->forceFill(['sides' => [self::SIDE_US => $ours, self::SIDE_THEM => $others], 'roles' => $roles])->save();
+    }
+
+    /**
+     * 이 방에서 사람이 고친 분류(최근 것부터) — 다음 분류의 프롬프트에 「같은 유형은 이렇게」 예시로 들어간다 (jin 11-10 «내가 분류한 것도 같이 적용»).
+     * 고친 사람이 누구든 방 단위로 쓴다(분류는 방 단위 1회). 같은 첫 줄은 한 번만.
+     *
+     * @return array<int, array{body: string, from: string, to: string, sender: string}>
+     */
+    public function corrections(int $limit = 20): array
+    {
+        $rows = KakaoItem::query()
+            ->join('kakao_messages', 'kakao_messages.id', '=', 'kakao_items.message_id')
+            ->where('kakao_messages.room_id', $this->id)
+            ->whereNotNull('kakao_items.type_override')
+            ->whereColumn('kakao_items.type_override', '!=', 'kakao_messages.type')
+            ->orderByDesc('kakao_items.updated_at')
+            ->limit($limit * 2)
+            ->get(['kakao_messages.body', 'kakao_messages.type', 'kakao_messages.sender', 'kakao_items.type_override']);
+        $out = [];
+        foreach ($rows as $r) {
+            $line = mb_substr(KakaoExportParser::firstLine((string) $r->body), 0, 60);
+            if ($line === '' || isset($out[$line])) {
+                continue;
+            }
+            $out[$line] = ['body' => $line, 'from' => (string) $r->type, 'to' => (string) $r->type_override, 'sender' => (string) $r->sender];
+            if (count($out) >= $limit) {
+                break;
+            }
+        }
+
+        return array_values($out);
     }
 
     /** 보낸이 → 부서(ERP 역할 라벨). 우리 편 중 명부와 맞은 사람만. */
