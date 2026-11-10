@@ -175,6 +175,9 @@
 - 방 구성(`sides`) 한 곳에서 프롬프트 「방 구성」 블록과 스키마 `to` enum 을 같이 만든다(어긋나면 400).
 - 비용 상한 = 읽기당 새 메시지 `Setting kakao_max_new_per_read`(기본 500, 초과 = 거부·「범위를 좁히세요」) · 사용자당 하루 `kakao_daily_cost_cap_krw`(기본 2,000원).
 - `kakao_messages.sent_at` 은 dateTime(카톡 벽시계 그대로), `kakao_reads.*_at` 은 timestamp — 둘을 직접 비교하지 않는다.
+- **방 잠금**: 적재는 `Cache::lock('kakao:room:{id}')` 안에서 — 같은 방을 두 사람이 몇 초 사이에 읽어도 분류 1회·유니크 위반 0.
+- **방은 페이지에서 미리 등록**(편 구성 + 내 표시명). 수집기가 모르는 방 이름을 보내면 404, 구독 안 한 방은 403 — 빈 구성으로 자동 생성하면 to enum 이 「없음」뿐이라 분류가 조용히 무의미해진다.
+- 캐시 실측(11-10): 시스템 프롬프트 ≈2.9k 토큰이 두 번째 호출부터 적중(`cache_read` 2,888). 첫 호출은 캐시 생성(1.25배)으로 `cache_write_tokens` 에 기록·과금.
 
 ### 10-3. 코드 자리
 - `App\Services\Kakao\KakaoExportParser` — 스크래치 `kakao_sample.py` 의 파서를 PHP 로(머리줄 정규식·날짜 구분선·이어지는 줄 병합·삭제 메시지 제외). 가드 = 단위 테스트(표본 txt 조각).
