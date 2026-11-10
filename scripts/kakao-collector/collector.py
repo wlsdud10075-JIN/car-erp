@@ -196,10 +196,25 @@ def main() -> int:
     except Exception:
         pass
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["windows", "read"])
+    ap.add_argument("cmd", choices=["setup", "windows", "read"])
     ap.add_argument("--dry", action="store_true", help="보내지 않고 복사·건수만")
     ap.add_argument("--room", help="이 방만")
     args = ap.parse_args()
+
+    if args.cmd == "setup":
+        cur = load_json(CONFIG, {}) or {}
+        print("ERP 주소와 수집기 토큰을 넣습니다. 토큰은 ERP 「내 카톡 할 일」 → 「방·수집기 설정」 → 「수집기 연결」 → [토큰 발급] (한 번만 보임).")
+        url = input(f"ERP 주소 [{cur.get('erp_url', 'https://heymancar.com')}]: ").strip() or cur.get("erp_url", "https://heymancar.com")
+        tok = input("토큰 (kck_…): ").strip() or cur.get("token", "")
+        if not tok.startswith("kck_"):
+            print("토큰이 kck_ 로 시작해야 합니다. 다시 발급해 넣으세요.")
+            return 2
+        cur.update({"erp_url": url, "token": tok})
+        cur.setdefault("first_read_days", 7); cur.setdefault("pageup_batch", 20); cur.setdefault("max_pageups", 400); cur.setdefault("click_fraction", [0.5, 0.35])
+        CONFIG.write_text(json.dumps(cur, ensure_ascii=False, indent=2), encoding="utf-8")
+        r = requests.get(url.rstrip("/") + "/api/kakao/rooms", headers={"Authorization": "Bearer " + tok, "Accept": "application/json"}, timeout=30)
+        print(f"저장했습니다. ERP 연결 확인: HTTP {r.status_code} — {r.json().get('message', '') if r.headers.get('content-type','').startswith('application/json') else r.text[:120]}")
+        return 0
 
     if args.cmd == "windows":
         for win in kakao_windows():
@@ -211,14 +226,24 @@ def main() -> int:
         print("config.json 이 없습니다 — config.example.json 을 복사해 erp_url·token·rooms 를 채우세요.")
         return 2
     state = load_json(STATE, {})
-    # 읽을 방 = 지금 열려 있는 카톡 방 창 전부 (config 의 rooms 는 「이것만」 좁힐 때만). 방 이름을 손으로 적지 않는다.
+    hdr = {"Authorization": "Bearer " + cfg["token"], "Accept": "application/json"}
+    base = cfg["erp_url"].rstrip("/")
+    # ① 지금 열려 있는 방 창을 ERP 에 보고 → ERP 가 방을 등록하고, 사용자가 화면에서 「읽기」로 체크한 방 목록을 돌려준다
     open_rooms = [w["title"] for w in kakao_windows() if w["title"] and w["title"] != "카카오톡" and w["cls"] != "EVA_Window_Dblclk"]
-    wanted = cfg.get("rooms") or []
-    rooms = [args.room] if args.room else ([r for r in open_rooms if r in wanted] if wanted else open_rooms)
-    if not rooms:
+    if not open_rooms:
         print("열려 있는 카톡 방 창이 없습니다. 읽을 방을 카톡에서 창으로 열어 두고 다시 하세요. (python collector.py windows 로 확인)")
         return 2
-    print(f"읽을 방 {len(rooms)}개: " + " · ".join(rooms))
+    r = requests.post(base + "/api/kakao/rooms", headers=hdr, json={"rooms": open_rooms}, timeout=60)
+    if not r.ok:
+        print(f"ERP 응답 {r.status_code}: {r.json().get('message', r.text[:200]) if r.headers.get('content-type','').startswith('application/json') else r.text[:200]}")
+        return 2
+    selected = r.json().get("selected", [])
+    rooms = [args.room] if args.room else [n for n in open_rooms if n in selected]
+    print(f"열린 방 {len(open_rooms)}개 보고 → 체크된 방 {len(selected)}개")
+    if not rooms:
+        print("읽을 방이 없습니다. ERP 「내 카톡 할 일」 맨 위 「읽을 방」에서 읽을 방을 체크한 뒤 다시 read 하세요.")
+        return 0
+    print("읽을 방: " + " · ".join(rooms))
 
     first_days = int(cfg.get("first_read_days", 7))
     for name in rooms:

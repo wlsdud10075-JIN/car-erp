@@ -36,7 +36,7 @@ class KakaoPageTest extends TestCase
     private function roomWith(User $user, string $myName): KakaoRoom
     {
         $room = KakaoRoom::create(['name' => '테스트방', 'sides' => self::SIDES]);
-        $room->users()->attach($user->id, ['my_name' => $myName]);
+        $room->users()->attach($user->id, ['my_name' => $myName, 'selected' => true]);
 
         return $room;
     }
@@ -86,7 +86,7 @@ class KakaoPageTest extends TestCase
 
         // 같은 방을 수출팀B 가 보면: 동료의 서렌더 요청이 「팀 동료」, 자기 명함 요청이 「답 기다리는 중」
         $other = $this->user();
-        $room->users()->attach($other->id, ['my_name' => '수출팀B']);
+        $room->users()->attach($other->id, ['my_name' => '수출팀B', 'selected' => true]);
         $this->actingAs($other);
         $board2 = Volt::test('erp.kakao.index')->viewData('board');
         $this->assertSame([$waiting->id], array_column($board2['buckets']['teammate'], 'id'));
@@ -124,7 +124,7 @@ class KakaoPageTest extends TestCase
         // 남의 방 메시지는 403 — id 는 사용자 입력이다
         $stranger = $this->user();
         $otherRoom = KakaoRoom::create(['name' => '남의방', 'sides' => self::SIDES]);
-        $otherRoom->users()->attach($stranger->id, ['my_name' => '수출팀A']);
+        $otherRoom->users()->attach($stranger->id, ['my_name' => '수출팀A', 'selected' => true]);
         $foreign = $this->msg($otherRoom, []);
         Volt::test('erp.kakao.index')->call('markDone', $foreign->id)->assertForbidden();
         $this->assertSame(0, KakaoItem::where('message_id', $foreign->id)->count());
@@ -140,7 +140,7 @@ class KakaoPageTest extends TestCase
 
         // 수집기가 처음 보낸 방 = 편 구성 없음·내 표시명 비어 있음·메시지만 쌓임(type null)
         $room = KakaoRoom::create(['name' => '처음방']);
-        $room->users()->attach($me->id, ['my_name' => '']);
+        $room->users()->attach($me->id, ['my_name' => '', 'selected' => true]);
         $this->msg($room, ['sender' => '상대A', 'type' => null, 'to_side' => null, 'body' => '입금 부탁드립니다']);
         $this->msg($room, ['sender' => '나임', 'type' => null, 'to_side' => null, 'body' => '넵']);
         $this->msg($room, ['sender' => '동료B', 'type' => null, 'to_side' => null, 'body' => '확인했습니다']);
@@ -167,6 +167,34 @@ class KakaoPageTest extends TestCase
         Volt::test('erp.kakao.index')->call('resetSetup', $room->id);
         $this->assertFalse($room->fresh()->isSetUp());
         $this->assertSame(3, KakaoMessage::where('room_id', $room->id)->whereNotNull('type')->count());
+    }
+
+    public function test_rooms_reported_by_collector_are_picked_with_a_checkbox(): void
+    {
+        $me = $this->user();
+        $this->actingAs($me);
+        $a = KakaoRoom::create(['name' => '방A']);
+        $b = KakaoRoom::create(['name' => '방B']);
+        $a->users()->attach($me->id, ['my_name' => '', 'selected' => false, 'last_seen_at' => now()]);
+        $b->users()->attach($me->id, ['my_name' => '', 'selected' => false, 'last_seen_at' => now()]);
+
+        $page = Volt::test('erp.kakao.index');
+        $this->assertCount(2, $page->viewData('allRooms'));
+        $this->assertCount(0, $page->viewData('board')['rooms']);   // 체크 전엔 안 읽는다
+        $page->assertSee('읽을 방')->assertSee('방A')->assertSee('방B');
+
+        $page->call('toggleRoom', $a->id);
+        $this->assertTrue((bool) $me->kakaoRooms()->where('kakao_rooms.id', $a->id)->first()->pivot->selected);
+        $this->assertSame(['방A'], Volt::test('erp.kakao.index')->viewData('board')['rooms']->pluck('name')->all());
+
+        $page->call('toggleRoom', $a->id);
+        $this->assertFalse((bool) $me->kakaoRooms()->where('kakao_rooms.id', $a->id)->first()->pivot->selected);
+
+        // 남의 방은 403
+        $stranger = $this->user();
+        $c = KakaoRoom::create(['name' => '방C']);
+        $c->users()->attach($stranger->id, ['my_name' => '', 'selected' => true]);
+        Volt::test('erp.kakao.index')->call('toggleRoom', $c->id)->assertForbidden();
     }
 
     public function test_token_is_shown_once_and_can_be_revoked(): void

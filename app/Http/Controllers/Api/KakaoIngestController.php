@@ -33,7 +33,9 @@ class KakaoIngestController extends Controller
         // 방은 수집기가 처음 보낼 때 자동으로 생긴다 — 사람이 적는 건 ERP 화면에서 「나」 한 번 (jin 11-10 «방이 수십개면 다 적어야해?»)
         $room = KakaoRoom::firstOrCreate(['name' => trim($data['room'])]);
         if (! $room->users()->where('users.id', $user->id)->exists()) {
-            $room->users()->attach($user->id, ['my_name' => '']);   // 내 표시명은 화면에서 고른다
+            $room->users()->attach($user->id, ['my_name' => '', 'selected' => true, 'last_seen_at' => now()]);   // 내 표시명은 화면에서 고른다
+        } else {
+            $room->users()->updateExistingPivot($user->id, ['selected' => true, 'last_seen_at' => now()]);   // 보냈다 = 읽기로 체크한 방
         }
 
         try {

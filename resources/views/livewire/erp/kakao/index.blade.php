@@ -68,7 +68,8 @@ new #[Layout('components.layouts.app')] class extends Component
             'order' => KakaoBuckets::ORDER,
             'labels' => KakaoBuckets::LABELS,
             'hints' => KakaoBuckets::HINTS,
-            'needSetup' => $board['rooms']->filter(fn ($r) => trim((string) $r->pivot->my_name) === '' || ! $r->isSetUp())->values(),
+            'allRooms' => $user->kakaoRooms()->orderByPivot('selected', 'desc')->orderByPivot('last_seen_at', 'desc')->get(),   // 수집기가 보고한 방 전부(체크 여부 포함)
+            'needSetup' => $board['rooms']->filter(fn ($r) => (trim((string) $r->pivot->my_name) === '' || ! $r->isSetUp()) && $r->messages()->exists())->values(),
             'senders' => $board['rooms']->mapWithKeys(fn ($r) => [$r->id => $r->senders()])->all(),
             'pendingCounts' => $board['rooms']->mapWithKeys(fn ($r) => [$r->id => $r->messages()->whereNull('type')->count()])->all(),
             'tokens' => $this->showSetup ? $user->kakaoCollectorTokens()->orderByDesc('id')->get() : collect(),
@@ -206,6 +207,14 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->oursFor[$roomId] = [];
     }
 
+    /** 「읽기」 체크 — 수집기는 체크된 방만 읽는다. 체크를 풀어도 메시지·판정은 남는다. */
+    public function toggleRoom(int $roomId): void
+    {
+        $pivot = auth()->user()->kakaoRooms()->where('kakao_rooms.id', $roomId)->first()?->pivot;
+        abort_unless($pivot, 403);
+        auth()->user()->kakaoRooms()->updateExistingPivot($roomId, ['selected' => ! $pivot->selected]);
+    }
+
     public function unsubscribeRoom(int $roomId): void
     {
         auth()->user()->kakaoRooms()->detach($roomId);
@@ -248,6 +257,25 @@ new #[Layout('components.layouts.app')] class extends Component
 
     @if($board['counts']['review'] > 0)
         <div class="card-tight mb-4 border-amber-200 bg-amber-50 text-sm text-amber-800">{{ __('kakao.needs_review', ['n' => $board['counts']['review']]) }}</div>
+    @endif
+
+    {{-- 읽을 방 고르기 — 수집기가 보고한(열려 있던) 방 목록. 체크한 방만 읽고 보여 준다 (jin 11-10 «N개의 방을 추가 항목으로 넣어서 읽기») --}}
+    @if($allRooms->isNotEmpty())
+        <div class="card-tight mb-4" data-kakao-rooms>
+            <div class="section-header"><span class="section-dot bg-violet-500"></span><span class="section-title">{{ __('kakao.rooms_pick_title') }}</span>
+                <span class="ml-2 text-xs text-gray-400">{{ __('kakao.rooms_pick_hint') }}</span></div>
+            <div class="mt-2 flex flex-wrap gap-2">
+                @foreach($allRooms as $room)
+                    @php($seen = $room->pivot->last_seen_at ? \Carbon\Carbon::parse($room->pivot->last_seen_at) : null)
+                    <label class="flex h-9 cursor-pointer items-center gap-2 rounded border px-2 text-sm sm:h-8 {{ $room->pivot->selected ? 'border-violet-300 bg-violet-50 text-violet-900' : 'border-gray-200 text-gray-700' }}" wire:key="pick-{{ $room->id }}" data-room-pick="{{ $room->id }}">
+                        <input type="checkbox" wire:click="toggleRoom({{ $room->id }})" @checked($room->pivot->selected) class="h-4 w-4">
+                        <span class="truncate">{{ $room->name }}</span>
+                        @if($seen && $seen->gt(now()->subHours(6))) <span class="badge badge-green">{{ __('kakao.room_open') }}</span> @endif
+                        @if($room->pivot->selected && trim((string) $room->pivot->my_name) === '') <span class="badge badge-amber">{{ __('kakao.room_need_me') }}</span> @endif
+                    </label>
+                @endforeach
+            </div>
+        </div>
     @endif
 
     {{-- 처음 읽은 방 — 「나」 고르기 (설정 패널과 무관하게 항상 보인다. 이걸 안 하면 그 방은 분류가 시작되지 않는다) --}}

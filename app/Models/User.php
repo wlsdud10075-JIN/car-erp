@@ -681,7 +681,7 @@ class User extends Authenticatable
     public function kakaoRooms(): BelongsToMany
     {
         return $this->belongsToMany(KakaoRoom::class, 'kakao_room_users', 'user_id', 'room_id')
-            ->withPivot('my_name')->withTimestamps();
+            ->withPivot('my_name', 'selected', 'last_seen_at')->withTimestamps();
     }
 
     public function kakaoCollectorTokens(): HasMany
