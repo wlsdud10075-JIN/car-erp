@@ -319,14 +319,17 @@ new #[Layout('components.layouts.app')] class extends Component
                     @if(empty($senders[$room->id]))
                         <p class="text-xs text-gray-400">{{ __('kakao.setup_no_senders') }}</p>
                     @else
-                        <div class="hidden text-[11px] text-gray-400 sm:grid sm:grid-cols-[1fr_4rem_5rem] sm:gap-2"><span></span><span class="text-center">{{ __('kakao.setup_me') }}</span><span class="text-center">{{ __('kakao.setup_ours') }}</span></div>
+                        {{-- jin 11-10 «동그라미 네모가 뭐야? 화면도 엄청 차지» — 범례 한 줄 + 여러 열 + 높이 제한. ◯ = 나(한 명) · □ = 우리 회사(여럿) --}}
+                        <p class="mb-1 text-[11px] text-gray-500">{{ __('kakao.setup_legend', ['n' => count($senders[$room->id])]) }}</p>
+                        <div class="grid max-h-56 gap-x-4 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
                         @foreach($senders[$room->id] as $name)
-                            <label class="grid grid-cols-[1fr_4rem_5rem] items-center gap-2 rounded px-1 py-1 text-sm text-gray-700 hover:bg-gray-50" wire:key="setup-{{ $room->id }}-{{ md5($name) }}">
+                            <div class="grid grid-cols-[1fr_2.5rem_2.5rem] items-center gap-1 rounded px-1 text-sm text-gray-700 hover:bg-gray-50" wire:key="setup-{{ $room->id }}-{{ md5($name) }}">
                                 <span class="truncate" title="{{ $name }}">{{ $name }}</span>
-                                <span class="flex h-9 items-center justify-center sm:h-7"><input type="radio" wire:model="meFor.{{ $room->id }}" value="{{ $name }}" class="h-4 w-4"></span>
-                                <span class="flex h-9 items-center justify-center sm:h-7"><input type="checkbox" wire:model="oursFor.{{ $room->id }}" value="{{ $name }}" class="h-4 w-4"></span>
-                            </label>
+                                <label class="flex h-9 items-center justify-center sm:h-7" title="{{ __('kakao.setup_me') }}"><input type="radio" wire:model="meFor.{{ $room->id }}" value="{{ $name }}" class="h-4 w-4" aria-label="{{ $name }} {{ __('kakao.setup_me') }}"></label>
+                                <label class="flex h-9 items-center justify-center sm:h-7" title="{{ __('kakao.setup_ours') }}"><input type="checkbox" wire:model="oursFor.{{ $room->id }}" value="{{ $name }}" class="h-4 w-4" aria-label="{{ $name }} {{ __('kakao.setup_ours') }}"></label>
+                            </div>
                         @endforeach
+                        </div>
                         @error('meFor.'.$room->id) <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
                         <button type="button" wire:click="saveSetup({{ $room->id }})" class="btn-primary mt-2 h-9 px-3 text-sm sm:h-8">{{ __('kakao.setup_save') }}</button>
                     @endif
