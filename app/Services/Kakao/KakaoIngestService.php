@@ -104,6 +104,10 @@ class KakaoIngestService
 
         if ($classifyCount === 0) {
             $read->update(['status' => 'done', 'finished_at' => now()]);
+            // 새 메시지는 없는데 방금 「나」가 잡혀 편이 생겼으면, 앞서 설정 없이 쌓였던 미분류를 이제 분류한다(두 번째 사람이 같은 방을 읽는 경우)
+            if ($room->isSetUp() && KakaoMessage::where('room_id', $room->id)->whereNull('type')->exists()) {
+                $this->classifyPending($room, $user);
+            }
 
             return $read;
         }

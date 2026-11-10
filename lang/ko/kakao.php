@@ -66,7 +66,7 @@ return [
     'token_title' => '이 PC 연결',
     'token_hint' => '카톡을 읽는 작은 프로그램을 이 PC 에 한 번 설치합니다. 받은 파일을 실행하면 검은 창이 잠깐 떴다 닫히고, 그 뒤로는 PC 를 켤 때마다 창 없이 자동으로 켜집니다. 토큰·비밀번호를 적을 일은 없습니다.',
     'token_connect' => '이 PC 연결하기',
-    'token_connect_hint' => '받은 KakaoAgent-setup.bat 을 더블클릭 → Windows 가 묻는 창에서 [실행]. 끝나면 이 페이지를 새로고침하세요. 다른 PC 에서도 쓰려면 그 PC 에서 다시 받습니다.',
+    'token_connect_hint' => '받은 KakaoAgent-setup.bat 을 더블클릭합니다. Windows 가 「PC 보호」 파란 창을 띄우면 「추가 정보」 → [실행]. 검은 창이 잠깐 떴다 닫히면 끝 — 이 페이지를 새로고침하세요. 파일이 Downloads 에 그대로 남아 있으면 실행이 안 된 것입니다. 다른 PC 에서도 쓰려면 그 PC 에서 다시 받습니다.',
     'agent_checking' => '이 PC 의 에이전트를 확인하는 중…',
     'agent_connected' => '이 PC 연결됨 — :device · 에이전트 v:version',
     'agent_missing' => '이 PC 에는 에이전트가 없습니다. [이 PC 연결하기]로 설치하세요.',

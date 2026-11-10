@@ -65,7 +65,7 @@ return [
     'token_title' => 'Connect this PC',
     'token_hint' => 'Installs a small program on this PC once. Run the downloaded file: a black window appears briefly and closes; from then on it starts silently every time the PC boots. Nothing to type.',
     'token_connect' => 'Connect this PC',
-    'token_connect_hint' => 'Double-click the downloaded KakaoAgent-setup.bat and press [Run] in the Windows prompt. Then refresh this page. To use another PC, download it again there.',
+    'token_connect_hint' => 'Double-click the downloaded KakaoAgent-setup.bat. If Windows shows the blue "protected your PC" screen, click "More info" then [Run anyway]. A black window appears briefly and closes — then refresh this page. If the file is still in Downloads, it did not run. To use another PC, download it again there.',
     'agent_checking' => 'Checking the agent on this PC…',
     'agent_connected' => 'This PC is connected — :device · agent v:version',
     'agent_missing' => 'No agent on this PC. Install it with [Connect this PC].',
