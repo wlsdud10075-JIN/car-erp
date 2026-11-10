@@ -1,38 +1,49 @@
-# 카톡자동화 수집기 (내 PC 용)
+# 카톡자동화 — 실무자 PC 쪽 (에이전트)
 
-## 실무자에게 주는 것 = `KakaoReader.exe` 하나 (`dist/`, 개발 PC 에서 빌드)
-1. 더블클릭 → 「처음 한 번만: ERP 로그인」 창 — 회사 고르고 ERP 아이디·비밀번호 → [연결]. 비밀번호는 저장하지 않고 이 PC 전용 연결 열쇠만 사용자 폴더 `KakaoReader\config.json` 에 남는다.
-2. 카톡에서 읽을 방을 창으로 열어 둔다 → 프로그램의 [목록 새로고침] → 열린 방이 체크박스로 뜬다 → 읽을 방 체크 → [읽기]. 읽는 동안 손을 뗀다.
-3. 처음 읽은 방은 ERP 「내 카톡 할 일」에 「「나」를 골라 주세요」 카드로 뜬다 → 내 이름 클릭(같은 회사 사람은 체크). 그 뒤는 [읽기]만.
-빌드(개발 PC): `pip install pyinstaller` → 이 폴더에서 `pyinstaller --noconfirm --onefile --windowed --name KakaoReader kakao_reader.py` → `dist/KakaoReader.exe`(약 19MB). 소스 = `kakao_reader.py`(창) + `collector.py`(읽기 엔진).
+기획 = `docs/design/kakao-automation.md` §11 「사용 화면은 ERP 하나」(jin 2026-11-10). 실무자가 보는 화면은 ERP 「내 카톡 할 일」 하나다.
 
----
-아래는 명령줄 버전(개발·진단용).
+## 실무자가 하는 것
+1. ERP 「내 카톡 할 일」 → 「방·수집기 설정」 → **[이 PC 연결하기]** → `KakaoAgent-setup.bat` 이 내려온다(PC 마다 한 번).
+2. 그 파일 더블클릭 → Windows 가 묻는 창에서 [실행] → 검은 창이 잠깐 떴다 닫힌다. 끝. (파일은 스스로 지워진다.)
+   이후 PC 를 켤 때마다 에이전트가 창 없이 자동 시작된다(시작프로그램 바로가기 `KakaoAgent.lnk`).
+3. 평소: 카톡에서 읽을 방을 창으로 열어 둔다 → ERP 페이지를 열면 「읽을 방」에 열린 방이 **열림** 배지로 뜬다 → 읽을 방 체크 → **[지금 읽기]**. 읽는 동안(방당 수 초~수십 초) 키보드·마우스에서 손을 뗀다. 처음 읽은 방은 「나」 클릭.
 
-ERP 「내 카톡 할 일」에 카톡 방 내용을 보내는 작은 프로그램. 기획 = `docs/design/kakao-automation.md` §6·§10-3.
-카톡 PC 창에서 **전체선택·복사(Ctrl+A·C)** 한 텍스트를 ERP 로 보낼 뿐이고, 카톡에 글을 쓰거나 보내지 않는다.
+토큰·비밀번호를 어디에 적을 일은 없다. 카톡에는 아무것도 쓰지 않는다.
 
-## 설치 (1회)
-1. Python 3.10 이상, `pip install pyperclip requests`
-2. 이 폴더를 내 PC 아무 곳에 복사(예: `C:\kakao-collector`).
-3. `python collector.py setup` — ERP 주소와 토큰을 물어 `config.json` 에 저장하고 연결을 확인한다.
-   - 토큰 = ERP 「내 카톡 할 일」 → 「방·수집기 설정」 → 「수집기 연결」 → [토큰 발급] (발급 때 한 번만 보인다)
+## 파일
+| 파일 | 역할 |
+|---|---|
+| `kakao_agent.py` | 창 없는 로컬 서버 `http://127.0.0.1:47321` — `/ping` `/rooms` `/read` `/progress` `/quit`. ERP 페이지 JS 만 부를 수 있다(Origin = 그 회사 ERP + `X-Kakao-Secret`) |
+| `collector.py` | 읽기 엔진(카톡 창 찾기 → PageUp → Ctrl+A·C → `POST /api/kakao/ingest`) + 명령줄 진단(`windows` / `read --dry`) |
+| ERP `app/Http/Controllers/KakaoInstallerController.php` | 설치 `.bat` 생성(토큰·`local_secret`·회사 주소 포함, ASCII·CRLF) |
 
-## 사용
-1. 카톡에서 읽을 방을 **창으로 열어 둔다**(여러 개 가능). `python collector.py windows` 로 창이 보이는지 확인.
-2. `python collector.py read` — 열린 방 목록을 ERP 에 보고한다. 처음엔 「ERP 에서 읽을 방을 체크하세요」가 찍힌다.
-3. ERP 「내 카톡 할 일」 맨 위 「읽을 방」에서 읽을 방을 **체크**한다.
-4. 다시 `python collector.py read` — 체크한 방만 읽어 보낸다. 처음 읽은 방은 「「나」를 골라 주세요」 카드로 뜨니 **내 이름을 클릭**(같은 회사 사람은 체크) → 쌓인 메시지가 바로 분류된다.
-5. 그 뒤로는 `read` 만 반복한다.
-읽는 동안 키보드·마우스에서 손을 뗀다. 끝나면 클립보드는 원래대로 돌려 놓는다. 먼저 `--dry` 로 복사만 해 봐도 된다(전송 안 함).
+PC 쪽 파일 = `%LOCALAPPDATA%\KakaoReader\` : `KakaoAgent.exe` · `config.json`(erp_url·token·local_secret) · `state.json`(방별 마지막 읽은 시각) · `agent.log`.
 
-처음은 최근 7일(`first_read_days`), 그 뒤는 마지막 읽은 시각 하루 전부터(`state.json`). PageUp 은 그 날짜가 보일 때까지만(최대 `max_pageups`).
+## exe 빌드 → 배포 (개발 PC)
+```powershell
+cd scripts\kakao-collector
+pip install pyinstaller pyperclip requests
+pyinstaller --noconfirm --onefile --noconsole --name KakaoAgent kakao_agent.py    # dist\KakaoAgent.exe (약 19MB)
+```
+- ERP 는 `public/downloads/KakaoAgent.exe` 를 정적으로 내려 준다(git 밖 — `.gitignore`). **운영 3사 서버에 올리는 것은 배포 절차의 한 줄**: `scp dist/KakaoAgent.exe ubuntu@{서버}:/var/www/car-erp/public/downloads/`.
+- 버전을 올리면 `kakao_agent.py` 의 `VERSION` 과 ERP `.env KAKAO_AGENT_VERSION`(기본 `config/services.php`)을 같이 올린다. 페이지가 `/ping` 의 version 과 대조해 다르면 「다시 연결」을 안내하고, `.bat` 을 다시 받아 실행하면 exe 가 교체된다.
+- 서명 없는 exe 라 첫 실행에 SmartScreen 이 뜰 수 있다 → `.bat` 이 `Unblock-File` 로 표시를 지운다. 회사 PC 정책에 막히면 한 번 허용.
 
-## 함정 (2026-11-09 실측)
-- 목록 **가운데**를 누르면 사진 뷰어가 열려 포커스를 뺏긴다 → 빈 여백을 눌러야 한다. 위치는 `click_fraction` [가로비, 세로비] 로 조정.
-- 메인 창 Ctrl+F 검색은 안 열린다 → 방은 목록 더블클릭으로 연다(v1 은 사람이).
-- 복사 뒤 클립보드에 대화가 남는다 → 수집기가 원복한다.
-- ERP 가 422 「상한」을 돌려주면 범위가 너무 넓은 것 — `first_read_days` 를 줄이거나 ERP 기능설정 상한을 올린다.
+## 함정 (실측)
+- 채팅방 창은 메인 창과 **같은 창 클래스**(`EVA_Window_Dblclk`) → 제목으로만 거른다(`open_room_titles`). 2026-11-10 실제로 0개로 나왔던 버그.
+- 목록 **가운데**를 누르면 사진 뷰어가 열려 포커스를 뺏긴다 → 빈 여백(`click_fraction`)을 누른다.
+- Windows 는 `SO_REUSEADDR` 이면 같은 포트에 두 번째 프로세스가 그냥 붙는다 → `allow_reuse_address=False` 로 단일 인스턴스 판정.
+- 한국어 Windows 의 `.bat` 은 CP949 로 돌아 한글 `echo` 가 깨진다 → `.bat` 은 ASCII 만.
+- 최신 Chrome·Edge 는 https 페이지 → `127.0.0.1` 호출에 「로컬 네트워크 접근」 허용을 한 번 물을 수 있다 → 페이지가 자물쇠 → 「로컬 네트워크」 허용 안내를 띄운다.
+- ERP 가 422 「상한」을 돌려주면 범위가 너무 넓은 것 — `config.json` 의 `first_read_days` 를 줄이거나 ERP 기능설정 상한을 올린다.
 
-## 다음 단계(미구현)
-트레이 상주 + [지금 읽기] 버튼 · 방 자동 열기 · exe 패키징(PyInstaller) · 미룸 시각 알림.
+## 명령줄 진단(개발·장애 조사용)
+```powershell
+python collector.py windows            # 카톡 창 목록(방 창이 보이는지)
+python collector.py read --dry         # 열린 방을 복사만(전송 안 함)
+curl http://127.0.0.1:47321/ping       # 에이전트가 떠 있나
+```
+`collector.py` 의 `setup`/`read` 는 `scripts/kakao-collector/config.json`(gitignore)을 쓴다 — `%LOCALAPPDATA%\KakaoReader\config.json` 을 복사해 쓰면 된다.
+
+## 폐기
+`kakao_reader.py`(tkinter 창, 11-10 낮) · `dist/KakaoReader*.exe` — §11 로 대체(jin «EXE 가 계속 떠 있어서 불편»). 바탕화면의 `KakaoReader.exe`·`KakaoReader_v2.exe` 는 지워도 된다.
