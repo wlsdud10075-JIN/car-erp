@@ -101,7 +101,41 @@ class KakaoIngestService
             return $read;
         }
 
-        // ② 분류
+        // 편 구성이 아직 없는 방(처음 읽은 방) — 메시지만 쌓고 분류는 사람이 「나」를 고른 뒤 classifyPending() 으로
+        if (! $room->isSetUp()) {
+            $read->update(['status' => 'pending_setup', 'finished_at' => now()]);
+
+            return $read;
+        }
+        $room->refreshCounterpart();   // 새로 나타난 사람은 「상대」로
+
+        $this->classify($room, $fresh, $read);   // 첨부도 같이 넘긴다 — 창에 표식으로만 들어가 흐름을 보여 준다(apply 는 첨부를 건너뛴다)
+
+        return $read;
+    }
+
+    /** 설정이 끝난 방의 미분류 메시지(첨부 제외, type null)를 분류한다 — 설정 전에 쌓인 것·실패했던 것. */
+    public function classifyPending(KakaoRoom $room, User $user): ?KakaoRead
+    {
+        if (! $room->isSetUp()) {
+            return null;
+        }
+        $room->refreshCounterpart();
+        $pending = KakaoMessage::where('room_id', $room->id)->whereNull('type')->orderBy('sent_at')->limit(Setting::kakaoMaxNewPerRead())->get();
+        if ($pending->isEmpty()) {
+            return null;
+        }
+        $read = KakaoRead::create([
+            'room_id' => $room->id, 'user_id' => $user->id, 'sides_snapshot' => $room->sides,
+            'started_at' => now(), 'total' => $pending->count(), 'new_count' => $pending->count(), 'status' => 'pending',
+        ]);
+        $this->classify($room, $pending, $read);
+
+        return $read;
+    }
+
+    private function classify(KakaoRoom $room, Collection $fresh, KakaoRead $read): void
+    {
         try {
             $sides = $room->sideMembers();
             $roles = $room->sideRoles();
@@ -123,8 +157,6 @@ class KakaoIngestService
             $read->update(['status' => 'failed', 'finished_at' => now(), 'error' => mb_substr($e->getMessage(), 0, 2000)]);
             report($e);
         }
-
-        return $read;
     }
 
     /** 앞 읽기에서 아직 답이 안 달린 요청·질문 (최근 N건) — 모델이 resolves 로 가리킬 수 있게 창에 같이 준다. */

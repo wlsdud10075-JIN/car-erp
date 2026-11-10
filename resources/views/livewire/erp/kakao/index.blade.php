@@ -6,6 +6,7 @@ use App\Models\KakaoMessage;
 use App\Models\KakaoRoom;
 use App\Models\Setting;
 use App\Services\Kakao\KakaoBuckets;
+use App\Services\Kakao\KakaoIngestService;
 use App\Services\Kakao\KakaoTodoBoard;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -24,13 +25,11 @@ new #[Layout('components.layouts.app')] class extends Component
 {
     public bool $showSetup = false;
 
-    // 방 등록 폼
-    public string $roomName = '';
-    public string $roomSides = '';
-    public string $roomRoles = '';
+    /** @var array<int, string> room_id → 「나」로 고른 보낸이 */
+    public array $meFor = [];
 
-    /** @var array<int, string> room_id → 내 표시명 (구독 폼) */
-    public array $myNameFor = [];
+    /** @var array<int, array<int, string>> room_id → 「우리 회사」로 체크한 보낸이들 */
+    public array $oursFor = [];
 
     // 수집기 토큰
     public string $deviceName = '';
@@ -49,8 +48,13 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         abort_unless(Setting::kakaoAssistantEnabled(), 403, __('kakao.disabled'));
         $this->snoozeDate = now()->addDay()->format('Y-m-d');
-        if (auth()->user()->kakaoRooms()->doesntExist()) {
-            $this->showSetup = true;   // 아직 아무 방도 없으면 설정부터
+        $rooms = auth()->user()->kakaoRooms()->get();
+        if ($rooms->isEmpty()) {
+            $this->showSetup = true;   // 아직 아무 방도 없으면 안내 + 토큰 발급부터
+        }
+        foreach ($rooms as $room) {   // 「나」가 이미 잡힌 방은 폼 초기값으로
+            $this->meFor[$room->id] = (string) $room->pivot->my_name;
+            $this->oursFor[$room->id] = array_values(array_diff($room->sideMembers()[KakaoRoom::SIDE_US] ?? [], [(string) $room->pivot->my_name]));
         }
     }
 
@@ -64,7 +68,9 @@ new #[Layout('components.layouts.app')] class extends Component
             'order' => KakaoBuckets::ORDER,
             'labels' => KakaoBuckets::LABELS,
             'hints' => KakaoBuckets::HINTS,
-            'otherRooms' => $this->showSetup ? KakaoTodoBoard::otherRooms($user) : collect(),
+            'needSetup' => $board['rooms']->filter(fn ($r) => trim((string) $r->pivot->my_name) === '' || ! $r->isSetUp())->values(),
+            'senders' => $board['rooms']->mapWithKeys(fn ($r) => [$r->id => $r->senders()])->all(),
+            'pendingCounts' => $board['rooms']->mapWithKeys(fn ($r) => [$r->id => $r->messages()->whereNull('type')->count()])->all(),
             'tokens' => $this->showSetup ? $user->kakaoCollectorTokens()->orderByDesc('id')->get() : collect(),
             'types' => KakaoMessage::TYPES,
         ];
@@ -156,7 +162,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('kakao.type_fixed'), type: 'success');
     }
 
-    // ───────── 방 · 구독 ─────────
+    // ───────── 방 설정 ─────────
 
     public function toggleSetup(): void
     {
@@ -164,78 +170,46 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->tokenPlain = null;
     }
 
-    public function saveRoom(): void
-    {
-        $data = $this->validate([
-            'roomName' => ['required', 'string', 'max:120'],
-            'roomSides' => ['required', 'string', 'max:4000'],
-            'roomRoles' => ['nullable', 'string', 'max:2000'],
-        ]);
-        $sides = self::parseSides($data['roomSides']);
-        if ($sides === []) {
-            $this->addError('roomSides', __('kakao.room_err_sides'));
-
-            return;
-        }
-        $roles = array_intersect_key(self::parseRoles($data['roomRoles'] ?? ''), $sides);   // 있는 편의 설명만
-        KakaoRoom::updateOrCreate(['name' => trim($data['roomName'])], ['sides' => $sides, 'roles' => $roles]);
-        $this->reset('roomName', 'roomSides', 'roomRoles');
-        $this->dispatch('notify', message: __('kakao.room_saved'), type: 'success');
-    }
-
-    public function subscribeRoom(int $roomId): void
+    /**
+     * 방 설정 = 「나」 하나 + 「우리 회사」 체크 (jin 11-10 «재무: 최영숙 이걸 적으라고? 방이 수십개면 다 적어야해?»).
+     * 편 이름은 우리/상대 둘로 고정, 상대는 나머지 보낸이 전부. 저장 즉시 쌓여 있던 미분류 메시지를 분류한다.
+     */
+    public function saveSetup(int $roomId, KakaoIngestService $ingest): void
     {
         $room = KakaoRoom::findOrFail($roomId);
-        $this->resetErrorBag('myNameFor.'.$roomId);
-        $myName = trim((string) ($this->myNameFor[$roomId] ?? ''));
-        if ($myName === '' || \App\Services\Kakao\KakaoDirection::sideOf($myName, $room->sideMembers()) === null) {
-            $this->addError('myNameFor.'.$roomId, __('kakao.room_err_myname'));
+        abort_unless(auth()->user()->kakaoRooms()->where('kakao_rooms.id', $room->id)->exists(), 403);
+        $this->resetErrorBag('meFor.'.$roomId);
+        $me = trim((string) ($this->meFor[$roomId] ?? ''));
+        $senders = $room->senders();
+        if ($me === '' || ! in_array($me, $senders, true)) {
+            $this->addError('meFor.'.$roomId, __('kakao.setup_err_me'));
 
             return;
         }
-        auth()->user()->kakaoRooms()->syncWithoutDetaching([$room->id => ['my_name' => $myName]]);
-        $this->dispatch('notify', message: __('kakao.room_subscribed'), type: 'success');
+        $ours = array_values(array_intersect((array) ($this->oursFor[$roomId] ?? []), $senders));
+        $room->setUpSides($me, $ours);
+        auth()->user()->kakaoRooms()->updateExistingPivot($room->id, ['my_name' => $me]);
+
+        $read = $ingest->classifyPending($room, auth()->user());
+        $n = $read?->status === 'done' ? $read->new_count : 0;
+        $this->dispatch('notify', message: $n > 0 ? __('kakao.setup_saved', ['n' => $n]) : __('kakao.setup_saved_none'), type: 'success');
+    }
+
+    /** 「다시 고르기」 — 편 구성을 비워 설정 카드가 다시 뜨게 한다(메시지·판정은 그대로). */
+    public function resetSetup(int $roomId): void
+    {
+        $room = KakaoRoom::findOrFail($roomId);
+        abort_unless(auth()->user()->kakaoRooms()->where('kakao_rooms.id', $room->id)->exists(), 403);
+        $room->forceFill(['sides' => null])->save();
+        auth()->user()->kakaoRooms()->updateExistingPivot($room->id, ['my_name' => '']);
+        $this->meFor[$roomId] = '';
+        $this->oursFor[$roomId] = [];
     }
 
     public function unsubscribeRoom(int $roomId): void
     {
         auth()->user()->kakaoRooms()->detach($roomId);
         $this->dispatch('notify', message: __('kakao.room_unsubscribed'), type: 'success');
-    }
-
-    /** 「편 이름: 이름, 이름」 줄들 → ['편' => [이름…]] */
-    public static function parseSides(string $text): array
-    {
-        $out = [];
-        foreach (preg_split('/\r\n|\r|\n/', $text) as $line) {
-            if (! str_contains($line, ':')) {
-                continue;
-            }
-            [$side, $names] = explode(':', $line, 2);
-            $side = trim($side);
-            $members = array_values(array_filter(array_map('trim', preg_split('/[,，]/u', $names)), fn ($n) => $n !== ''));
-            if ($side !== '' && $members !== []) {
-                $out[$side] = array_values(array_unique(array_merge($out[$side] ?? [], $members)));
-            }
-        }
-
-        return $out;
-    }
-
-    public static function parseRoles(string $text): array
-    {
-        $out = [];
-        foreach (preg_split('/\r\n|\r|\n/', $text) as $line) {
-            if (! str_contains($line, ':')) {
-                continue;
-            }
-            [$side, $desc] = explode(':', $line, 2);
-            if (trim($side) !== '' && trim($desc) !== '') {
-                $out[trim($side)] = mb_substr(trim($desc), 0, 200);
-            }
-        }
-
-        return $out;
     }
 
     // ───────── 수집기 토큰 ─────────
@@ -276,39 +250,66 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="card-tight mb-4 border-amber-200 bg-amber-50 text-sm text-amber-800">{{ __('kakao.needs_review', ['n' => $board['counts']['review']]) }}</div>
     @endif
 
-    {{-- 설정 (방 · 구독 · 수집기 토큰) --}}
+    {{-- 처음 읽은 방 — 「나」 고르기 (설정 패널과 무관하게 항상 보인다. 이걸 안 하면 그 방은 분류가 시작되지 않는다) --}}
+    @if($needSetup->isNotEmpty())
+        <div class="card mb-4 border-violet-200" data-kakao-need-setup>
+            <div class="section-header"><span class="section-dot bg-violet-500"></span><span class="section-title">{{ __('kakao.setup_needed_title', ['n' => $needSetup->count()]) }}</span></div>
+            <p class="mt-1 text-xs text-gray-500">{{ __('kakao.setup_needed_hint') }}</p>
+            @foreach($needSetup as $room)
+                <div class="mt-3 rounded border border-gray-100 px-3 py-2" wire:key="setup-{{ $room->id }}" data-setup-room="{{ $room->id }}">
+                    <div class="mb-2 text-sm font-medium text-gray-800">{{ $room->name }}
+                        @if(($pendingCounts[$room->id] ?? 0) > 0) <span class="badge badge-gray ml-1">{{ __('kakao.room_pending', ['n' => $pendingCounts[$room->id]]) }}</span> @endif
+                    </div>
+                    @if(empty($senders[$room->id]))
+                        <p class="text-xs text-gray-400">{{ __('kakao.setup_no_senders') }}</p>
+                    @else
+                        <div class="hidden text-[11px] text-gray-400 sm:grid sm:grid-cols-[1fr_4rem_5rem] sm:gap-2"><span></span><span class="text-center">{{ __('kakao.setup_me') }}</span><span class="text-center">{{ __('kakao.setup_ours') }}</span></div>
+                        @foreach($senders[$room->id] as $name)
+                            <label class="grid grid-cols-[1fr_4rem_5rem] items-center gap-2 rounded px-1 py-1 text-sm text-gray-700 hover:bg-gray-50" wire:key="setup-{{ $room->id }}-{{ md5($name) }}">
+                                <span class="truncate">{{ $name }}</span>
+                                <span class="flex h-9 items-center justify-center sm:h-7"><input type="radio" wire:model="meFor.{{ $room->id }}" value="{{ $name }}" class="h-4 w-4"></span>
+                                <span class="flex h-9 items-center justify-center sm:h-7"><input type="checkbox" wire:model="oursFor.{{ $room->id }}" value="{{ $name }}" class="h-4 w-4"></span>
+                            </label>
+                        @endforeach
+                        @error('meFor.'.$room->id) <p class="mt-1 text-xs text-red-600">{{ $message }}</p> @enderror
+                        <button type="button" wire:click="saveSetup({{ $room->id }})" class="btn-primary mt-2 h-9 px-3 text-sm sm:h-8">{{ __('kakao.setup_save') }}</button>
+                    @endif
+                </div>
+            @endforeach
+        </div>
+    @endif
+
+    {{-- 설정 (안내 · 내가 읽는 방 · 수집기 토큰) --}}
     @if($showSetup)
         <div class="mb-4 grid gap-4 lg:grid-cols-2" data-kakao-setup>
             <div class="card">
+                <div class="section-header"><span class="section-dot bg-violet-500"></span><span class="section-title">{{ __('kakao.how_title') }}</span></div>
+                <ol class="mt-2 list-decimal space-y-1 pl-5 text-sm text-gray-700">
+                    <li>{{ __('kakao.how_1') }}</li>
+                    <li>{{ __('kakao.how_2') }}</li>
+                    <li>{{ __('kakao.how_3') }}</li>
+                </ol>
+                <hr class="section-divider my-3">
                 <div class="section-header"><span class="section-dot bg-violet-500"></span><span class="section-title">{{ __('kakao.rooms_title') }}</span></div>
                 @forelse($board['rooms'] as $room)
-                    <div class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded border border-gray-100 px-3 py-2 text-sm" wire:key="room-sub-{{ $room->id }}">
-                        <div><span class="font-medium text-gray-800">{{ $room->name }}</span>
-                            <span class="ml-2 text-xs text-gray-500">{{ __('kakao.room_my_name') }}: {{ $room->pivot->my_name }}</span></div>
-                        <button type="button" wire:click="unsubscribeRoom({{ $room->id }})" class="h-9 rounded border border-gray-300 px-2 text-xs text-gray-700 sm:h-7">{{ __('kakao.room_unsubscribe') }}</button>
+                    @php($sides = $room->sideMembers())
+                    <div class="mt-2 rounded border border-gray-100 px-3 py-2 text-sm" wire:key="room-sub-{{ $room->id }}">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <span class="font-medium text-gray-800">{{ $room->name }}</span>
+                            <span class="flex gap-1">
+                                <button type="button" wire:click="resetSetup({{ $room->id }})" class="h-9 rounded border border-gray-300 px-2 text-xs text-gray-700 sm:h-7">{{ __('kakao.room_change') }}</button>
+                                <button type="button" wire:click="unsubscribeRoom({{ $room->id }})" class="h-9 rounded border border-gray-300 px-2 text-xs text-gray-700 sm:h-7">{{ __('kakao.room_unsubscribe') }}</button>
+                            </span>
+                        </div>
+                        <div class="mt-1 text-xs text-gray-500">
+                            {{ __('kakao.room_my_name') }}: {{ $room->pivot->my_name ?: '—' }}
+                            · {{ __('kakao.room_ours') }}: {{ implode(', ', $sides[\App\Models\KakaoRoom::SIDE_US] ?? []) ?: '—' }}
+                            · {{ __('kakao.room_them') }}: {{ count($sides[\App\Models\KakaoRoom::SIDE_THEM] ?? []) }}
+                        </div>
                     </div>
                 @empty
                     <p class="mt-2 text-xs text-gray-400">{{ __('kakao.rooms_none') }}</p>
                 @endforelse
-                @foreach($otherRooms as $room)
-                    <div class="mt-2 flex flex-wrap items-center gap-2 rounded border border-dashed border-gray-200 px-3 py-2 text-sm" wire:key="room-other-{{ $room->id }}">
-                        <span class="text-gray-700">{{ $room->name }}</span>
-                        <input type="text" wire:model="myNameFor.{{ $room->id }}" placeholder="{{ __('kakao.room_my_name') }}" class="input-base h-9 w-48 text-xs sm:h-7">
-                        <button type="button" wire:click="subscribeRoom({{ $room->id }})" class="btn-primary h-9 px-3 text-xs sm:h-7">{{ __('kakao.room_subscribe') }}</button>
-                        @error('myNameFor.'.$room->id) <span class="basis-full text-xs text-red-600">{{ $message }}</span> @enderror
-                    </div>
-                @endforeach
-
-                <hr class="section-divider my-3">
-                <div class="section-header"><span class="section-dot bg-violet-500"></span><span class="section-title">{{ __('kakao.room_add_title') }}</span></div>
-                <div class="mt-2 space-y-2">
-                    <input type="text" wire:model="roomName" placeholder="{{ __('kakao.room_name') }}" class="input-base w-full text-sm">
-                    @error('roomName') <p class="text-xs text-red-600">{{ $message }}</p> @enderror
-                    <textarea wire:model="roomSides" rows="4" placeholder="{{ __('kakao.room_sides') }}&#10;{{ str_replace("\n", '&#10;', __('kakao.room_sides_hint')) }}" class="input-base w-full text-sm"></textarea>
-                    @error('roomSides') <p class="text-xs text-red-600">{{ $message }}</p> @enderror
-                    <textarea wire:model="roomRoles" rows="2" placeholder="{{ __('kakao.room_roles') }}" class="input-base w-full text-sm"></textarea>
-                    <button type="button" wire:click="saveRoom" class="btn-primary h-9 px-3 text-sm sm:h-8">{{ __('kakao.room_save') }}</button>
-                </div>
             </div>
 
             <div class="card">

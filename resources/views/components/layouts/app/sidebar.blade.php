@@ -133,6 +133,14 @@
                     'active' => request()->routeIs('dashboard') || request()->routeIs('erp.dashboard'),
                     'show' => true,
                 ],
+                // 📱 카톡자동화 「내 카톡 할 일」 (jin 2026-11-10 «메인탭, 업무대시보드 아래») — 회사별 토글(기능설정, 기본 OFF)
+                [
+                    'label' => __('nav.menu.kakao'),
+                    'href' => route('erp.kakao.index'),
+                    'icon' => 'chat-bubble-left-right',
+                    'active' => request()->routeIs('erp.kakao.*'),
+                    'show' => \App\Models\Setting::kakaoAssistantEnabled(),
+                ],
                 [
                     'label' => __('nav.menu.admin_dashboard'),
                     'href' => $user->canViewAdminDashboard() ? route('admin.dashboard') : '#',
@@ -160,14 +168,6 @@
                     'icon' => 'building',
                     'active' => request()->routeIs('erp.inventory.*'),
                     'show' => true,
-                ],
-                // 📱 카톡자동화 「내 카톡 할 일」 (jin 2026-11-10) — 회사별 토글(기능설정, 기본 OFF). docs/design/kakao-automation.md
-                [
-                    'label' => __('nav.menu.kakao'),
-                    'href' => route('erp.kakao.index'),
-                    'icon' => 'chat-bubble-left-right',
-                    'active' => request()->routeIs('erp.kakao.*'),
-                    'show' => \App\Models\Setting::kakaoAssistantEnabled(),
                 ],
                 // 🗑️ 2026-10-20 (jin «없애는 게 낫겠다») — 「수출통관」 메뉴(= 차량관리 ?action=clearance_candidates 링크 + 배지) 제거.
                 //   별도 화면이 아니었고 필터가 진행 중 판매 차를 거의 다 담아(신고서 있으면 전부) 거르는 게 없었다. 14일 접속 ssancar 21회·karaba 0.
