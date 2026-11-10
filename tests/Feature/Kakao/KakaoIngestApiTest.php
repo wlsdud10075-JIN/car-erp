@@ -8,6 +8,7 @@ use App\Models\KakaoRoom;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\Kakao\KakaoClassifierClient;
+use App\Services\Kakao\KakaoIngestService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -89,17 +90,25 @@ class KakaoIngestApiTest extends TestCase
         $this->assertStringContainsString('꺼져', $res->json('message'));
     }
 
-    public function test_unknown_room_is_404_and_unsubscribed_room_is_403(): void
+    public function test_unknown_room_is_auto_registered_and_held_until_setup(): void
     {
         [$user, $plain] = $this->ready();
 
-        $this->ingestAs($plain, ['room' => '없는방', 'text' => self::TEXT])->assertStatus(404);
+        $res = $this->ingestAs($plain, ['room' => '처음보는방', 'text' => self::TEXT]);
 
-        KakaoRoom::create(['name' => '다른방', 'sides' => ['재무' => ['재무A']]]);
-        $res = $this->ingestAs($plain, ['room' => '다른방', 'text' => self::TEXT]);
-        $res->assertStatus(403);
-        $this->assertStringContainsString('구독하지 않았습니다', $res->json('message'));
-        $this->assertSame(0, KakaoMessage::count());
+        $res->assertOk()->assertJson(['status' => 'pending_setup', 'new_count' => 2]);
+        $this->assertStringContainsString('「나」를 한 번 골라', $res->json('message'));
+        $room = KakaoRoom::where('name', '처음보는방')->firstOrFail();
+        $this->assertFalse($room->isSetUp());
+        $this->assertTrue($room->users()->where('users.id', $user->id)->exists());   // 자동 구독(표시명은 비움)
+        $this->assertSame(1, KakaoMessage::where('room_id', $room->id)->whereNull('type')->count());   // 첨부 빼고 미분류로 쌓임
+        $this->assertSame(0, $this->fake->calls);
+
+        // 「나」를 고르면 쌓인 것이 분류된다
+        $room->setUpSides('재무A', []);
+        app(KakaoIngestService::class)->classifyPending($room, $user);
+        $this->assertSame(1, $this->fake->calls);
+        $this->assertSame(0, KakaoMessage::where('room_id', $room->id)->whereNull('type')->count());
     }
 
     public function test_validation_and_limits_are_422_with_korean_text(): void

@@ -7,7 +7,8 @@ Ctrl+A·C → 텍스트 파싱 → ERP `POST /api/kakao/ingest` 로 전송 → �
 사용 (PowerShell):
   python collector.py windows                 # 카톡 창 목록(방 창이 열려 있는지 확인)
   python collector.py read [--dry] [--room 이름]   # 설정의 방을 전부 읽어 보냄 (--dry = 보내지 않고 건수만)
-설정 = 같은 폴더 config.json (config.example.json 복사). 상태 = state.json (방별 마지막 읽은 시각).
+설정 = 같은 폴더 config.json (config.example.json 복사 — erp_url·token 만 필수). 상태 = state.json (방별 마지막 읽은 시각).
+읽을 방 = **지금 열려 있는 카톡 방 창 전부** (config 의 rooms 는 그중 일부만 읽고 싶을 때만). 처음 보낸 방은 ERP 가 자동 등록한다.
 
 ⚠️ 읽는 동안(방당 수 초~수십 초) 키보드·마우스에서 손을 뗀다. 방 창은 미리 열어 둔다(v1 은 목록에서 방을 자동으로 열지 않는다).
 의존: Python 3.10+ · pyperclip · requests (pip install pyperclip requests). 나머지는 표준 ctypes.
@@ -210,10 +211,14 @@ def main() -> int:
         print("config.json 이 없습니다 — config.example.json 을 복사해 erp_url·token·rooms 를 채우세요.")
         return 2
     state = load_json(STATE, {})
-    rooms = [args.room] if args.room else cfg.get("rooms", [])
+    # 읽을 방 = 지금 열려 있는 카톡 방 창 전부 (config 의 rooms 는 「이것만」 좁힐 때만). 방 이름을 손으로 적지 않는다.
+    open_rooms = [w["title"] for w in kakao_windows() if w["title"] and w["title"] != "카카오톡" and w["cls"] != "EVA_Window_Dblclk"]
+    wanted = cfg.get("rooms") or []
+    rooms = [args.room] if args.room else ([r for r in open_rooms if r in wanted] if wanted else open_rooms)
     if not rooms:
-        print("읽을 방이 없습니다(config.json rooms).")
+        print("열려 있는 카톡 방 창이 없습니다. 읽을 방을 카톡에서 창으로 열어 두고 다시 하세요. (python collector.py windows 로 확인)")
         return 2
+    print(f"읽을 방 {len(rooms)}개: " + " · ".join(rooms))
 
     first_days = int(cfg.get("first_read_days", 7))
     for name in rooms:

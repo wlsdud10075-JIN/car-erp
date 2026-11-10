@@ -8,6 +8,7 @@ use App\Models\KakaoMessage;
 use App\Models\KakaoRoom;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\Kakao\KakaoClassifierClient;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -129,31 +130,43 @@ class KakaoPageTest extends TestCase
         $this->assertSame(0, KakaoItem::where('message_id', $foreign->id)->count());
     }
 
-    public function test_room_setup_and_subscription_validation(): void
+    public function test_first_read_room_asks_only_for_me_then_classifies_stored_messages(): void
     {
         $me = $this->user();
         $this->actingAs($me);
+        $fake = new FakeClassifier;
+        $fake->plan = fn (array $ids) => array_map(fn ($id) => ['id' => $id, 'type' => '요청', 'to' => KakaoRoom::SIDE_US, 'mention' => null, 'ref' => null, 'vehicle' => null, 'vin_tail' => null, 'amount' => null, 'resolves' => null], $ids);
+        $this->app->instance(KakaoClassifierClient::class, $fake);
+
+        // 수집기가 처음 보낸 방 = 편 구성 없음·내 표시명 비어 있음·메시지만 쌓임(type null)
+        $room = KakaoRoom::create(['name' => '처음방']);
+        $room->users()->attach($me->id, ['my_name' => '']);
+        $this->msg($room, ['sender' => '상대A', 'type' => null, 'to_side' => null, 'body' => '입금 부탁드립니다']);
+        $this->msg($room, ['sender' => '나임', 'type' => null, 'to_side' => null, 'body' => '넵']);
+        $this->msg($room, ['sender' => '동료B', 'type' => null, 'to_side' => null, 'body' => '확인했습니다']);
 
         $page = Volt::test('erp.kakao.index');
-        $this->assertTrue($page->get('showSetup'));   // 방이 없으면 설정이 열린 채
+        $this->assertCount(1, $page->viewData('needSetup'));
+        $this->assertEqualsCanonicalizing(['동료B', '나임', '상대A'], $page->viewData('senders')[$room->id]);
+        $page->assertSee('「나」를 골라 주세요');
 
-        $page->set('roomName', '무사백-수출팀')
-            ->set('roomSides', "재무: 재무A, 재무B\n수출팀: 수출팀A\n영업: 영업A\n잘못된 줄")
-            ->set('roomRoles', '재무: 송금 담당')
-            ->call('saveRoom')->assertHasNoErrors();
-        $room = KakaoRoom::where('name', '무사백-수출팀')->firstOrFail();
-        $this->assertSame(['재무' => ['재무A', '재무B'], '수출팀' => ['수출팀A'], '영업' => ['영업A']], $room->sideMembers());
-        $this->assertSame(['재무' => '송금 담당'], $room->sideRoles());
-        $this->assertArrayNotHasKey('재무__role', $room->sides);   // 역할은 sides 에 섞지 않는다
+        // 「나」를 안 고르면 거부
+        $page->call('saveSetup', $room->id)->assertHasErrors(['meFor.'.$room->id]);
+        $this->assertSame(0, $fake->calls);
 
-        // 내 표시명이 편 구성에 없으면 구독 거부
-        $page->set('myNameFor.'.$room->id, '없는사람')->call('subscribeRoom', $room->id)->assertHasErrors(['myNameFor.'.$room->id]);
-        $this->assertSame(0, $me->kakaoRooms()->count());
+        // 나 + 우리 회사 1명 → 우리/상대 자동 구성 + 쌓인 메시지 즉시 분류
+        $page->set('meFor.'.$room->id, '나임')->set('oursFor.'.$room->id, ['동료B'])->call('saveSetup', $room->id)->assertHasNoErrors();
+        $room->refresh();
+        $this->assertSame([KakaoRoom::SIDE_US => ['나임', '동료B'], KakaoRoom::SIDE_THEM => ['상대A']], $room->sideMembers());
+        $this->assertSame('나임', $me->kakaoRooms()->first()->pivot->my_name);
+        $this->assertSame(1, $fake->calls);
+        $this->assertSame(0, KakaoMessage::where('room_id', $room->id)->whereNull('type')->count());
+        $this->assertCount(0, Volt::test('erp.kakao.index')->viewData('needSetup'));
 
-        $page->set('myNameFor.'.$room->id, '수출팀A')->call('subscribeRoom', $room->id)->assertHasNoErrors();
-        $this->assertSame('수출팀A', $me->kakaoRooms()->first()->pivot->my_name);
-
-        $page->set('roomSides', '')->set('roomName', 'x')->call('saveRoom')->assertHasErrors(['roomSides']);
+        // 다시 고르기 → 설정 카드가 다시 뜬다(메시지·판정은 그대로)
+        Volt::test('erp.kakao.index')->call('resetSetup', $room->id);
+        $this->assertFalse($room->fresh()->isSetUp());
+        $this->assertSame(3, KakaoMessage::where('room_id', $room->id)->whereNotNull('type')->count());
     }
 
     public function test_token_is_shown_once_and_can_be_revoked(): void
