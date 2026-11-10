@@ -38,3 +38,7 @@ yarn-error.log
 scripts/kakao-collector/config.json
 scripts/kakao-collector/state.json
 scripts/kakao-collector/__pycache__/
+scripts/kakao-collector/build/
+scripts/kakao-collector/dist/
+scripts/kakao-collector/*.spec
+scripts/kakao-collector/build.log

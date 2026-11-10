@@ -34,6 +34,28 @@ class KakaoRoomsController extends Controller
         return $this->selected($request);
     }
 
+    /** 수집기 창의 체크 상태를 그대로 저장 — 목록에 있는 방은 체크, 이 사용자의 나머지 방은 해제. */
+    public function select(Request $request): JsonResponse
+    {
+        $user = $request->attributes->get('kakao_user');
+        $data = $request->validate(['selected' => ['present', 'array', 'max:200'], 'selected.*' => ['nullable', 'string', 'max:120']]);
+        $names = array_values(array_filter(array_map(fn ($n) => trim((string) $n), $data['selected']), fn ($n) => $n !== ''));
+
+        foreach ($names as $name) {
+            $room = KakaoRoom::firstOrCreate(['name' => $name]);
+            if ($room->users()->where('users.id', $user->id)->exists()) {
+                $room->users()->updateExistingPivot($user->id, ['selected' => true, 'last_seen_at' => now()]);
+            } else {
+                $room->users()->attach($user->id, ['my_name' => '', 'selected' => true, 'last_seen_at' => now()]);
+            }
+        }
+        $ids = KakaoRoom::whereIn('name', $names)->pluck('id');
+        $user->kakaoRooms()->wherePivot('selected', true)->whereNotIn('kakao_rooms.id', $ids)->get()
+            ->each(fn ($r) => $user->kakaoRooms()->updateExistingPivot($r->id, ['selected' => false]));
+
+        return $this->selected($request);
+    }
+
     public function selected(Request $request): JsonResponse
     {
         $user = $request->attributes->get('kakao_user');

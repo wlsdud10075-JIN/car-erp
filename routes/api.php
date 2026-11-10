@@ -6,6 +6,7 @@ use App\Http\Controllers\Api\Internal\InternalPortalController;
 use App\Http\Controllers\Api\Internal\PeerPayoutController;
 use App\Http\Controllers\Api\Internal\ShippingRequestController;
 use App\Http\Controllers\Api\Internal\SigningRequestController;
+use App\Http\Controllers\Api\KakaoCollectorAuthController;
 use App\Http\Controllers\Api\KakaoIngestController;
 use App\Http\Controllers\Api\KakaoRoomsController;
 use App\Http\Controllers\Api\PortalBuyerController;
@@ -159,5 +160,8 @@ Route::middleware([VerifyPortalReadHmac::class])
 Route::middleware([VerifyKakaoCollectorToken::class, 'throttle:60,1'])->prefix('kakao')->name('api.kakao.')->group(function () {
     Route::post('ingest', KakaoIngestController::class)->name('ingest');
     Route::post('rooms', [KakaoRoomsController::class, 'report'])->name('rooms.report');     // 열린 방 보고 → 체크된 방 회신
+    Route::post('rooms/select', [KakaoRoomsController::class, 'select'])->name('rooms.select');   // 수집기 창의 체크 상태 저장
     Route::get('rooms', [KakaoRoomsController::class, 'selected'])->name('rooms.selected');
 });
+// 수집기 첫 실행 로그인(ERP 아이디·비밀번호 → 토큰). 토큰 미들웨어 밖, 무차별 대입 방지 분당 5회
+Route::middleware(['throttle:5,1'])->post('kakao/login', [KakaoCollectorAuthController::class, 'login'])->name('api.kakao.login');

@@ -42,6 +42,16 @@ VK_CONTROL, VK_A, VK_C, VK_PRIOR, VK_ESCAPE = 0x11, 0x41, 0x43, 0x21, 0x1B
 KEYEVENTF_KEYUP = 0x0002
 
 
+def device_name() -> str:
+    """이 PC 이름 — 토큰에 기기 이름으로 남겨 어느 PC 인지 알 수 있게."""
+    import socket
+
+    try:
+        return socket.gethostname()[:80]
+    except Exception:
+        return "PC"
+
+
 # ─────────── 창 ───────────
 def kakao_pids() -> list[int]:
     out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq KakaoTalk.exe", "/FO", "CSV"], capture_output=True, text=True).stdout
