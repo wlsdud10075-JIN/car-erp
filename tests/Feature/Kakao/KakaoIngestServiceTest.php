@@ -44,7 +44,7 @@ TXT;
 
     private function room(): KakaoRoom
     {
-        return KakaoRoom::create(['name' => '테스트방', 'sides' => self::SIDES]);
+        return KakaoRoom::create(['name' => '테스트방', 'sides' => self::SIDES, 'roles' => ['영업' => '차량을 파는 쪽(테스트 설명)']]);
     }
 
     private function user(): User
@@ -103,6 +103,7 @@ TXT;
         // 시스템 프롬프트 방 구성 + 스키마 to enum 이 같은 sides 에서 나온다
         $this->assertStringContainsString(': 수출팀A, 수출팀B', $this->fake->lastSystem);
         $this->assertStringContainsString('- 수출팀 — 말소·저당', $this->fake->lastSystem);   // 역할 설명이 없으면 기본 설명이 붙는다
+        $this->assertStringContainsString('- 영업 — 차량을 파는 쪽(테스트 설명): 영업A', $this->fake->lastSystem);   // 방의 roles 칸이 기본 설명을 덮는다
         $this->assertSame(['재무', '수출팀', '영업', '없음'], $this->fake->lastSchema['properties']['items']['items']['properties']['to']['enum']);
 
         $this->assertGreaterThan(0, (float) $read->cost_krw);

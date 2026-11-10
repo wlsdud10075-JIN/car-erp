@@ -19,7 +19,8 @@ return new class extends Migration
         Schema::create('kakao_rooms', function (Blueprint $table) {
             $table->id();
             $table->string('name', 120)->unique();          // 카톡 방 제목 (회사 DB 안에서 유일)
-            $table->json('sides')->nullable();              // 편 구성 {"재무":[이름…],"수출팀":[…],"영업":[…]} + 역할 설명
+            $table->json('sides')->nullable();              // 편 구성 {"재무":[이름…],"수출팀":[…],"영업":[…]} — 값은 전부 이름 배열
+            $table->json('roles')->nullable();              // 편 역할 설명 {"재무":"송금 담당"} — sides 와 섞지 않는다(소비자 둘이 같은 규칙을 가정하지 않게)
             $table->timestamp('last_read_at')->nullable();
             $table->timestamps();
         });

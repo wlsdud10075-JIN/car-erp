@@ -177,12 +177,8 @@ new #[Layout('components.layouts.app')] class extends Component
 
             return;
         }
-        foreach (self::parseRoles($data['roomRoles'] ?? '') as $side => $desc) {
-            if (isset($sides[$side])) {
-                $sides[$side.'__role'] = $desc;   // 편 이름 + __role = 설명 (sideMembers() 는 배열만 편으로 본다)
-            }
-        }
-        KakaoRoom::updateOrCreate(['name' => trim($data['roomName'])], ['sides' => $sides]);
+        $roles = array_intersect_key(self::parseRoles($data['roomRoles'] ?? ''), $sides);   // 있는 편의 설명만
+        KakaoRoom::updateOrCreate(['name' => trim($data['roomName'])], ['sides' => $sides, 'roles' => $roles]);
         $this->reset('roomName', 'roomSides', 'roomRoles');
         $this->dispatch('notify', message: __('kakao.room_saved'), type: 'success');
     }
