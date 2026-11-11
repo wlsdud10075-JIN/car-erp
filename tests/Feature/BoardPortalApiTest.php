@@ -1014,7 +1014,14 @@ class BoardPortalApiTest extends TestCase
         $gone->delete();
         User::factory()->create(['email' => 'super@a.com', 'permission' => 'super']);
 
-        $this->signedGet('/api/internal/board/buyers/'.$theirs->id, ['salesman_email' => 'me@a.com'])->assertNotFound();
+        // 남의 담당 바이어 = 404 가 아니라 **승계 안내**(jin 11-11 «ERP 관리자에게 바이어 승계가 필요합니다 정도로») — 연락처 없음·기록 없음
+        $res = $this->signedGet('/api/internal/board/buyers/'.$theirs->id, ['salesman_email' => 'me@a.com'])->assertForbidden();
+        $res->assertJsonPath('reason', 'handover_needed')->assertJsonPath('buyer_id', $theirs->id)->assertJsonPath('current_owner', $other->name);
+        $this->assertStringContainsString('바이어 승계가 필요합니다', $res->json('message'));
+        $this->assertStringNotContainsString('010', $res->getContent());
+        $orphan = Buyer::create(['name' => 'ORPHAN', 'is_active' => true, 'salesman_id' => null, 'contact_phone' => '020']);   // 그만둔 영업의 바이어(담당 비어 있음)
+        $this->signedGet('/api/internal/board/buyers/'.$orphan->id, ['salesman_email' => 'me@a.com'])->assertForbidden()
+            ->assertJsonPath('reason', 'handover_needed')->assertJsonPath('current_owner', null);
         $this->signedGet('/api/internal/board/buyers/999999', ['salesman_email' => 'me@a.com'])->assertNotFound();
         $this->signedGet('/api/internal/board/buyers/'.$gone->id, ['salesman_email' => 'me@a.com'])->assertNotFound();
         $this->assertSame(0, AuditLog::where('action', 'board_buyer_contact_read')->count());
