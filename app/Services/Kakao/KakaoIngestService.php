@@ -529,6 +529,7 @@ class KakaoIngestService
                 $msg->update([
                     'type' => $type,
                     'to_side' => $to,
+                    'topic' => in_array($it['topic'] ?? null, KakaoTopics::ALL, true) ? $it['topic'] : null,
                     'mention' => self::str($mention === [] ? null : implode(',', $mention), 200),
                     'ref' => self::str($it['ref'] ?? null, 40),
                     'vehicle_no' => $vehicleNo,

@@ -11,6 +11,7 @@ use App\Services\Kakao\KakaoClassifierClient;
 use App\Services\Kakao\KakaoClassifyException;
 use App\Services\Kakao\KakaoIngestService;
 use App\Services\Kakao\KakaoTodoBoard;
+use App\Services\Kakao\KakaoTopics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -170,7 +171,7 @@ TXT;
         $this->assertStringContainsString('(규칙·잡담:', $this->fake->lastUser);
         $this->assertSame(2, substr_count($this->fake->lastUser, '] 1480€ / 1320$'));
 
-        $board = KakaoTodoBoard::forUser($user, now());
+        $board = KakaoTodoBoard::forUser($user, now(), true);
         $ids = array_merge(...array_map(fn ($b) => array_column($b, 'id'), array_values($board['buckets'])));
         $this->assertNotContains($byBody[1]->id, $ids);   // 확인
         $this->assertNotContains($byBody[3]->id, $ids);   // 반복
@@ -296,7 +297,7 @@ TXT;
         $this->assertSame($m[3]->id, $m[4]->resolves_id);   // 영업의 「입금 확인했습니다」는 자기 서식이 아니라 재무의 「저당 있습니다, 확인 부탁」(다른 사람의 열린 요청)을 닫는다
         $this->assertSame($m[0]->id, $m[5]->resolves_id);   // 재무의 「이체 완료」가 Peugeot 서식을 닫는다(차량번호) — 자기가 올린 요청은 후보가 아니다
 
-        $board = KakaoTodoBoard::forUser($me, now());
+        $board = KakaoTodoBoard::forUser($me, now(), true);
         $done = array_column($board['buckets']['done'], 'id');
         $this->assertContains($m[0]->id, $done);
         $this->assertContains($m[1]->id, $done);
@@ -362,5 +363,49 @@ TXT;
         $this->assertNotEmpty($m);
         $this->assertStringNotContainsString('2,080', $m[0]);
         $this->assertStringNotContainsString('원', $m[0]);
+    }
+
+    /** 담당 분야(jin 11-11 «본인이 체크해서 보게») — 고른 분야가 아닌 요청은 팀 동료로, @나 는 분야 무관 내 일, 안 고르면 전부 내 일. */
+    public function test_topics_route_requests_to_teammate_unless_mine_or_mentioned(): void
+    {
+        $room = $this->room();
+        $me = $this->user($room, '수출팀A');
+        $at = now()->subHour();
+        $mk = fn (string $body, ?string $topic, ?string $mention = null) => KakaoMessage::create(['room_id' => $room->id, 'msg_key' => md5($body), 'sent_at' => $at, 'sender' => '영업A', 'body' => $body, 'type' => '요청', 'to_side' => '우리', 'topic' => $topic, 'mention' => $mention]);
+        $doc = $mk('면장 부탁드립니다', '서류');
+        $ins = $mk('보험 부탁드립니다', '보험');
+        $call = $mk('@수출팀A 보험 확인 부탁', '보험', '수출팀A');
+        $old = $mk('예전 글', null);
+
+        $ids = fn ($b, $k) => array_column($b['buckets'][$k], 'id');
+        $before = KakaoTodoBoard::forUser($me, now());   // 안 고름 = 전부 내 일
+        $this->assertNull($before['topics']);
+        $this->assertEqualsCanonicalizing([$doc->id, $ins->id, $call->id, $old->id], array_merge($ids($before, 'today'), $ids($before, 'now')));
+
+        KakaoTopics::save($me, ['등록', '서류']);
+        $after = KakaoTodoBoard::forUser($me, now());
+        $mine = array_merge($ids($after, 'today'), $ids($after, 'now'));
+        $this->assertEqualsCanonicalizing([$doc->id, $call->id, $old->id], $mine);   // 분야 모르는 옛 글은 놓치느니 보인다
+        $this->assertSame([$ins->id], $ids($after, 'teammate'));
+        $this->assertSame('다른 분야(보험)', $after['buckets']['teammate'][0]['reason']);
+
+        KakaoTopics::save($me, ['전체']);
+        $this->assertSame([], $ids(KakaoTodoBoard::forUser($me, now()), 'teammate'));
+    }
+
+    /** 완료 박기(jin 11-11) — 답이 오늘 온 것만 「오늘 끝난 것」, 지난 날 답은 「완료된 것 보기」에서만. */
+    public function test_done_shows_only_replies_from_today_unless_asked(): void
+    {
+        $room = $this->room();
+        $me = $this->user($room, '수출팀A');
+        $req = fn (string $b, $at) => KakaoMessage::create(['room_id' => $room->id, 'msg_key' => md5($b), 'sent_at' => $at, 'sender' => '영업A', 'body' => $b, 'type' => '요청', 'to_side' => '우리']);
+        $rep = fn (string $b, $at, $to) => KakaoMessage::create(['room_id' => $room->id, 'msg_key' => md5($b), 'sent_at' => $at, 'sender' => '수출팀A', 'body' => $b, 'type' => '대답', 'to_side' => '상대', 'resolves_id' => $to->id]);
+        $y = $req('어제 요청', now()->subDays(2));
+        $rep('어제 답', now()->subDays(1)->startOfDay()->addHours(10), $y);
+        $t = $req('오늘 요청', now()->startOfDay()->addMinutes(5));
+        $rep('오늘 답', now()->startOfDay()->addMinutes(10), $t);
+
+        $this->assertSame([$t->id], array_column(KakaoTodoBoard::forUser($me, now())['buckets']['done'], 'id'));
+        $this->assertEqualsCanonicalizing([$t->id, $y->id], array_column(KakaoTodoBoard::forUser($me, now(), true)['buckets']['done'], 'id'));
     }
 }

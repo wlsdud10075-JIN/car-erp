@@ -51,6 +51,7 @@ class KakaoPrompt
             $lines[] = "- {$side}{$desc}: ".implode(', ', $named);
         }
         $sideNames = implode(' / ', array_keys($sides));
+        $topicBlock = implode(PHP_EOL, array_map(fn ($t) => "- {$t}: ".KakaoTopics::HINTS[$t], array_values(array_diff(KakaoTopics::ALL, ['기타']))));
         $sidesBlock = implode("\n", $lines);
 
         return <<<PROMPT
@@ -80,6 +81,10 @@ class KakaoPrompt
 
 ## to (이 메시지가 향하는 편 — {$sideNames} / 없음 중 하나)
 보낸 사람과 내용, 그리고 위 「방 구성」의 각 편 역할 설명을 보고 정한다. 어떤 일을 맡은 편에게 그 일을 부탁·보고하는 것이다. 잡담·누구에게도 아닌 것은 「없음」.
+
+## topic (이 메시지가 속한 업무 분야 — 하나만)
+{$topicBlock}
+- 기타: 위 어디에도 안 맞음(인사·운임 견적 외 잡무 등). 요청·질문이 아닌 메시지(대답·확인·정보·잡담)도 그 내용의 분야를 적는다. 차량 매입 보고 서식(차량명/차량번호/계약금…)은 「입금」, 「저당 해지 요청」은 「말소」, 「ERP 에 판매금액·차종 수정」·「차량등록증 올려 주세요」는 「등록」.
 
 ## mention
 본문의 「@이름」 들을 쉼표로(@ 없이). 없으면 null. 「@이름」만 있는 메시지는 입력에 「(규칙·호출: …)」 표식으로만 오고 그 이름은 앞뒤 메시지에 이미 붙어 있다 — 그 표식 줄의 앞뒤 메시지가 그 사람에게 향한 것으로 본다.
@@ -117,6 +122,7 @@ PROMPT;
                             'id' => ['type' => 'integer'],
                             'type' => ['type' => 'string', 'enum' => self::MODEL_VISIBLE_TYPES],
                             'to' => ['type' => 'string', 'enum' => array_values(array_merge(array_keys($sides), ['없음']))],
+                            'topic' => ['type' => 'string', 'enum' => KakaoTopics::ALL],
                             'mention' => ['type' => ['string', 'null']],
                             'ref' => ['type' => ['string', 'null']],
                             'vehicle' => ['type' => ['string', 'null']],
@@ -124,7 +130,7 @@ PROMPT;
                             'amount' => ['type' => ['string', 'null']],
                             'resolves' => ['type' => ['integer', 'null']],
                         ],
-                        'required' => ['id', 'type', 'to', 'mention', 'ref', 'vehicle', 'vin_tail', 'amount', 'resolves'],
+                        'required' => ['id', 'type', 'to', 'topic', 'mention', 'ref', 'vehicle', 'vin_tail', 'amount', 'resolves'],
                         'additionalProperties' => false,
                     ],
                 ],
