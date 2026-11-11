@@ -8,6 +8,7 @@ use App\Models\Setting;
 use App\Services\Kakao\KakaoBuckets;
 use App\Services\Kakao\KakaoIngestService;
 use App\Services\Kakao\KakaoTodoBoard;
+use App\Services\Kakao\KakaoTopics;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -24,6 +25,9 @@ use Livewire\Volt\Component;
 new #[Layout('components.layouts.app')] class extends Component
 {
     public bool $showSetup = false;
+
+    /** 「오늘 끝난 것」에 지난 날 닫힌 것까지 보기(기본 = 오늘 닫힌 것만, jin 11-11) */
+    public bool $showAllDone = false;
 
     /** @var array<int, string> room_id → 「나」로 고른 보낸이 */
     public array $meFor = [];
@@ -81,7 +85,7 @@ new #[Layout('components.layouts.app')] class extends Component
     public function with(): array
     {
         $user = auth()->user();
-        $board = KakaoTodoBoard::forUser($user, now());
+        $board = KakaoTodoBoard::forUser($user, now(), $this->showAllDone);
 
         return [
             'board' => $board,
@@ -311,6 +315,32 @@ new #[Layout('components.layouts.app')] class extends Component
         }
     }
 
+    /** 담당 분야 칩 — 누르면 바로 저장(jin 11-11 «본인이 체크해서 보게»). 「전체」를 켜면 나머지는 의미가 없어 그것만 남긴다. */
+    public function toggleTopic(string $topic): void
+    {
+        abort_unless(in_array($topic, KakaoTopics::PICKABLE, true), 422);
+        $user = auth()->user();
+        $cur = KakaoTopics::of($user) ?? [];
+        $cur = in_array($topic, $cur, true) ? array_values(array_diff($cur, [$topic])) : array_merge($cur, [$topic]);
+        if ($topic === '전체' && in_array('전체', $cur, true)) {
+            $cur = ['전체'];
+        } elseif ($topic !== '전체') {
+            $cur = array_values(array_diff($cur, ['전체']));
+        }
+        KakaoTopics::save($user, $cur);
+    }
+
+    /** 처음 고르기 창 [나중에] — 빈 선택 = 지금처럼 전부 내 일. 창은 다시 안 뜬다(칩으로 언제든 고른다). */
+    public function skipTopics(): void
+    {
+        KakaoTopics::save(auth()->user(), []);
+    }
+
+    public function toggleAllDone(): void
+    {
+        $this->showAllDone = ! $this->showAllDone;
+    }
+
     /** 「읽기」 체크 — 수집기는 체크된 방만 읽는다. 체크를 풀어도 메시지·판정은 남는다. */
     public function toggleRoom(int $roomId): void
     {
@@ -357,6 +387,36 @@ new #[Layout('components.layouts.app')] class extends Component
             <button type="button" wire:click="toggleSetup" class="tab-pill h-9 px-3 text-sm sm:h-8">{{ $showSetup ? __('kakao.setup_close') : __('kakao.setup') }}</button>
         </div>
     </div>
+
+    {{-- 담당 분야 칩 (jin 11-11 «본인이 어떤 걸 담당하는지 체크해서 보게») — 누르면 바로 저장. 고른 분야가 아닌 요청은 「팀 동료 진행 중」으로 접힌다 --}}
+    @php($myTopics = $board['topics'])
+    <div class="card-tight mb-4 flex flex-wrap items-center gap-1.5" data-kakao-topics>
+        <span class="mr-1 text-xs text-gray-600">{{ __('kakao.topics_label') }}</span>
+        @foreach(\App\Services\Kakao\KakaoTopics::PICKABLE as $t)
+            @php($on = in_array($t, $myTopics ?? [], true))
+            <button type="button" wire:click="toggleTopic('{{ $t }}')" aria-pressed="{{ $on ? 'true' : 'false' }}" title="{{ \App\Services\Kakao\KakaoTopics::HINTS[$t] }}"
+                class="h-9 rounded-full border px-3 text-xs sm:h-7 {{ $on ? 'border-violet-400 bg-violet-50 font-semibold text-violet-800' : 'border-gray-300 bg-white text-gray-600 hover:bg-gray-50' }}">{{ $on ? '✓ ' : '' }}{{ $t }}</button>
+        @endforeach
+        <span class="basis-full text-[11px] text-gray-500">{{ empty($myTopics) || in_array('전체', $myTopics ?? [], true) ? __('kakao.topics_all') : __('kakao.topics_some') }}</span>
+    </div>
+    @if($myTopics === null && $board['rooms']->isNotEmpty())
+        <div x-data="{ open: true }" x-show="open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="kakao-topic-title" data-kakao-topic-picker>
+            <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-2xl">
+                <div id="kakao-topic-title" class="text-lg font-bold text-gray-800">{{ __('kakao.topics_pick_title') }}</div>
+                <p class="mt-2 text-sm text-gray-600">{{ __('kakao.topics_pick_body') }}</p>
+                <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    @foreach(\App\Services\Kakao\KakaoTopics::PICKABLE as $t)
+                        <button type="button" wire:click="toggleTopic('{{ $t }}')" class="flex min-h-11 items-center gap-2 rounded-lg border border-gray-300 px-3 text-left text-sm hover:bg-violet-50">
+                            <span class="font-semibold text-gray-800">{{ $t }}</span><span class="text-xs text-gray-500">{{ \App\Services\Kakao\KakaoTopics::HINTS[$t] }}</span>
+                        </button>
+                    @endforeach
+                </div>
+                <div class="mt-5 flex justify-end">
+                    <button type="button" wire:click="skipTopics" class="h-10 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-700">{{ __('kakao.topics_later') }}</button>
+                </div>
+            </div>
+        </div>
+    @endif
 
     {{-- §11 읽기 진행 줄 — [지금 읽기] 동안 에이전트 /progress 를 보여 주고 끝나면 화면을 새로 그린다 --}}
     <div class="card-tight mb-4 hidden whitespace-pre-line font-mono text-xs text-gray-700" data-kakao-progress wire:ignore></div>
@@ -559,11 +619,14 @@ new #[Layout('components.layouts.app')] class extends Component
             </button>
 
             <div x-show="open['{{ $key }}']" x-cloak class="mt-2 space-y-2">
+                @if($key === 'done')
+                    <button type="button" wire:click="toggleAllDone" class="text-xs text-violet-700 underline">{{ $showAllDone ? __('kakao.done_today_only') : __('kakao.done_show_all') }}</button>
+                @endif
                 @forelse($rows as $r)
                     <div class="rounded border border-gray-100 bg-white px-3 py-2" wire:key="row-{{ $key }}-{{ $r['id'] }}" data-row="{{ $r['id'] }}">
                         <div class="flex flex-wrap items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
-                                <div class="text-sm text-gray-800">{{ $r['title'] }}</div>
+                                <div class="text-sm text-gray-800">@if(! empty($r['topic']) && $r['topic'] !== '기타')<span class="badge badge-purple mr-1">{{ $r['topic'] }}</span>@endif{{ $r['title'] }}</div>
                                 <div class="mt-0.5 flex flex-wrap gap-x-2 text-xs text-gray-500">
                                     <span>{{ __('kakao.from_to', ['from' => $r['sender'].(! empty($r['sender_role']) ? '('.$r['sender_role'].')' : ''), 'to' => $r['to'] ?: '—']) }}</span>
                                     <span>{{ $r['ago'] }} · {{ $r['room'] }}</span>

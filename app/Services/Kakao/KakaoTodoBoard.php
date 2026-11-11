@@ -7,6 +7,7 @@ use App\Models\KakaoRead;
 use App\Models\KakaoRoom;
 use App\Models\Setting;
 use App\Models\User;
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
@@ -17,8 +18,12 @@ use Illuminate\Support\Collection;
  */
 class KakaoTodoBoard
 {
-    public static function forUser(User $user, CarbonInterface $now): array
+    /**
+     * @param  bool  $allDone  「완료된 것 보기」 — 꺼져 있으면 「오늘 끝난 것」은 오늘 닫힌 것만(jin 11-11: 7일 동안 164건이 쌓여 있었다)
+     */
+    public static function forUser(User $user, CarbonInterface $now, bool $allDone = false): array
     {
+        $picked = KakaoTopics::of($user);   // 담당 분야(null = 안 고름 → 전부 내 일)
         $rooms = $user->kakaoRooms()->wherePivot('selected', true)->orderBy('name')->get();   // 「읽기」로 체크한 방만
         $roomIds = $rooms->pluck('id')->all();
         $myName = $rooms->mapWithKeys(fn ($r) => [$r->id => (string) $r->pivot->my_name])->all();
@@ -35,13 +40,30 @@ class KakaoTodoBoard
                     ->orWhereHas('items', fn ($i) => $i->where('user_id', $user->id)))
                 ->with(['items' => fn ($i) => $i->where('user_id', $user->id), 'vehicle:id,vehicle_number', 'room:id,name'])
                 ->withExists('resolvedBy')
+                ->withMax('resolvedBy', 'sent_at')   // 답이 달린 시각 — 「오늘 끝난 것」을 오늘 닫힌 것만으로
                 ->orderByDesc('sent_at')
                 ->get();
 
             foreach ($messages as $m) {
                 $item = $m->items->first();
                 $direction = KakaoDirection::of($m->sender, $m->judgmentFor($item), $sides[$m->room_id] ?? [], $myName[$m->room_id] ?? '');
+                // 담당 분야 — 내 편에게 온 요청이라도 내 분야가 아니면 「팀 동료 진행 중」으로(@나 로 콕 집은 것은 분야 무관 내 일)
+                $offTopic = $direction === KakaoDirection::MINE
+                    && ! KakaoDirection::mentions($m->mention, $myName[$m->room_id] ?? '', $sides[$m->room_id] ?? [])
+                    && ! KakaoTopics::isMine($picked, $m->topic);
+                if ($offTopic) {
+                    $direction = KakaoDirection::TEAMMATE;
+                }
                 $b = KakaoBuckets::of($direction, $m, $item, (bool) $m->resolved_by_exists, $now);
+                if ($offTopic && $b['bucket'] === 'teammate') {
+                    $b['reason'] = '다른 분야('.$m->topic.')';
+                }
+                if ($b['bucket'] === 'done' && $b['auto'] && ! $allDone) {   // 답 달림 자동 완료 — 답이 오늘 온 것만(완료 박기, jin 11-11)
+                    $replyAt = $m->resolved_by_max_sent_at ? Carbon::parse($m->resolved_by_max_sent_at) : null;
+                    if (! $replyAt || ! $replyAt->isSameDay($now)) {
+                        continue;
+                    }
+                }
                 if ($b['bucket'] === null) {
                     continue;
                 }
@@ -62,6 +84,7 @@ class KakaoTodoBoard
             'last_read' => $lastRead,
             'cost_today' => (float) KakaoRead::where('user_id', $user->id)->whereDate('created_at', $now->toDateString())->sum('cost_krw'),
             'window_days' => Setting::kakaoWindowDays(),
+            'topics' => $picked,
         ];
     }
 
@@ -81,6 +104,7 @@ class KakaoTodoBoard
             'sender_role' => $people[$m->sender] ?? null,   // 우리 편의 부서(ERP 명부) — jin 11-10 «부서별로 나눠서 보여주면»
             'to' => $m->to_side,
             'type' => $item?->type_override ?? $m->type,
+            'topic' => $m->topic,
             'sent_at' => $m->sent_at?->format('Y-m-d H:i') ?? '',
             'ago' => $m->sent_at ? self::ago($m->sent_at, $now) : '',
             'room' => $m->room?->name ?? '',

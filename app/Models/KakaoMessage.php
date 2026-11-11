@@ -19,7 +19,7 @@ class KakaoMessage extends Model
 
     protected $fillable = [
         'room_id', 'read_id', 'msg_key', 'sent_at', 'sender', 'body',
-        'type', 'to_side', 'mention', 'ref', 'vehicle_no', 'vin_tail', 'amount',
+        'type', 'to_side', 'topic', 'mention', 'ref', 'vehicle_no', 'vin_tail', 'amount',
         'resolves_id', 'vehicle_id', 'ai',
     ];
 
