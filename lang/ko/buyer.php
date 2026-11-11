@@ -41,6 +41,7 @@ return [
         'consignees' => '컨사이니',
         'savings' => '적립금',
         'cash' => '현금',
+        'claims' => '클레임',
     ],
 
     'receivable' => [
@@ -163,6 +164,26 @@ return [
         'name' => '컨사이니명',
         'id_type' => 'ID 종류',
         'id_value' => 'ID 번호',
+    ],
+
+    'claims' => [
+        'save_first' => '바이어를 저장한 뒤에 볼 수 있습니다.',
+        'count' => '클레임 횟수',
+        'accepted' => '인정',
+        'declined' => '기각',
+        'sum' => '인정 확정 금액 합',
+        'board_count' => 'board 에서 센 누적 클레임 :n건(아직 ERP 로 안 보낸 것 포함일 수 있음)',
+        'empty' => 'board 에서 넘어온 클레임이 없습니다. board 클레임 탭에서 결재가 끝난 뒤 [ERP 로 보내기]를 누르면 여기에 쌓입니다.',
+        'col_date' => '결재일',
+        'col_vehicle' => '차량',
+        'col_result' => '결과',
+        'col_type' => '보상 방식',
+        'col_amount' => '확정 금액',
+        'col_reason' => '사유 · 담당/결재',
+        'result_accepted' => '인정',
+        'result_declined' => '기각',
+        'type_refund' => '송금',
+        'type_credit' => '차감',
     ],
 
     'savings' => [
