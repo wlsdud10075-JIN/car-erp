@@ -1,6 +1,7 @@
 # 클레임(파손보상) 관리 — 기획안
 
 > 상태: **기획만** (2026-08-04, jin). 코드 착수 안 함. 미결 1건 있음(§6).
+> 🔀 **2026-11-11 (jin) — 입력이 board 로 옮겨졌다.** 클레임 접수·판정·결재는 board 클레임 탭이 하고, ERP 는 확정된 것을 받아 **바이어 「클레임」 탭**에 쌓는다. §10 이 지금 정본, §2~§4 의 「ERP 직접 입력」은 대체됨.
 > 발단: "클레임 인보이스가 오는데 ERP에 저장해서 정산 때 차감하고, 부위·명목·바이어로 통계를 뽑을 수 있지 않나?"
 
 ## 1. 실무 흐름 (실물 서류 2종 실측)
@@ -144,3 +145,18 @@ SettlementPayoutAdjustment 음수 조정 생성(claim 연결) → 배치 총액 
    + 컬럼 사전** 3곳 + 새 action 라벨. 가드 = `AdminUiKoreanLabelTest`.
 4. Volt 화면: `public $search` + `search()` 이름 충돌 금지(§8 #32). 금액칸 `data-money`, 날짜칸 `data-date`.
 5. 사용자 가시 기능이므로 같은 커밋에 `scripts/notion-cards/cards.json` + 부서 가이드(`audience` 필수).
+
+## 10. board 클레임 미러 (2026-11-11 jin · board-96 세션 협의 — 정본)
+
+**jin 결정**
+- ERP 는 **클레임 확정 금액 하나만** 받는다(board 의 청구액·영업 제시액·담당자 제안액 3종은 board 쪽 판정 자료).
+- 바이어 드로어에 **「클레임」 탭 신설** — 적립금과 **별도**. 목적 = 바이어별 클레임 **횟수·내용·금액·타당성**을 지표로 쓰기. board 가 세는 클레임 횟수도 받는다.
+- 보내는 시점 = board 결재선 최종 승인 뒤 클레임 담당자가 [ERP 로 보내기](자동 전송 없음). 금액을 차량에 쓰는 장면은 나중에 ERP 에서 따로 정한다.
+
+**받는 스펙(초안 — board-96 에 보냄, 확정 전)**
+- `POST /api/internal/board/claims` — 연동 B 와 같은 HMAC·멱등. 키 = (회사 인스턴스, `board_claim_id`). 같은 키 재전송 = 갱신(회차 `revision` 이 커질 때만).
+- 본문: `board_claim_id, revision, vehicle_id, buyer_id(nullable), buyer_name, vehicle_number, vin, confirmed_amount, currency, compensation_type(refund|credit), result(accepted|declined), result_reason, approved_at, approved_by_name, handler_name, salesman_email, buyer_claim_count(board 가 센 그 바이어의 누적 클레임 수), board_url`.
+- 응답 `{erp_claim_id, status}`. 바이어를 못 정하면(본문 buyer_id 없음 + 그 차에도 바이어 없음) **422 「ERP 에서 이 차의 바이어를 먼저 정해 주세요」**.
+- 저장 = `vehicle_claims`(§4 스키마에서 금액은 `confirmed_amount` 한 칸 + `source='board'`·`board_claim_id` unique·`revision`·`board_buyer_claim_count`). 바이어 탭은 buyer_id 로 모아 보여 준다(목록 · 횟수 · 통화별 확정 금액 합 · 결과 · 사유).
+- 🚫 적립금(SavingsStatus)·미수·정산에는 손대지 않는다(기록만). 차량에 쓰는 기능·담당자 부담 차감(§3)은 다음 단계.
+
