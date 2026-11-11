@@ -13,6 +13,7 @@ use App\Models\SettlementPayoutAdjustment;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\BuyerCreditScore;
 use App\Services\ExchangeRateService;
 use App\Services\PurchaseRegistrationGate;
 use App\Services\SalesmanResolver;
@@ -567,12 +568,27 @@ class InternalPortalController extends Controller
             'ip_address' => $request->ip(),
         ]);
 
+        // 🧮 신용도(2026-11-11 jin «신용도 넣어. 점수로.» — board 클레임 보고서 BUYER PRIORITY) — `BuyerCreditScore::for()` 그대로.
+        //    ERP 안에선 관리 이상만 보는 값(buyers/index creditScore, jin 08-24)이라 board 조건 = 클레임 담당자 드로어·대표 승인 화면만, 영업 화면 ❌,
+        //    서버가 1회 읽어 클레임 행에 스냅샷. 나갔다는 사실은 별도 액션으로 남긴다(연락처 기록과 구분).
+        $credit = BuyerCreditScore::for($b);
+        AuditLog::create([
+            'user_id' => null,
+            'auditable_type' => Buyer::class, 'auditable_id' => $b->id,
+            'action' => 'board_buyer_credit_read', 'column_name' => 'credit_score',
+            'old_value' => (string) $request->query('salesman_email', ''), 'new_value' => $credit['grade'].'/'.$credit['score'],
+            'ip_address' => $request->ip(),
+        ]);
+
         return response()->json([
             'id' => $b->id,
             'name' => $b->name,
             'country' => $b->country?->name,
             'address' => trim((string) $b->address) !== '' ? $b->address : null,
             'phone' => trim((string) $b->contact_phone) !== '' ? $b->contact_phone : null,
+            'credit_score' => (int) $credit['score'],
+            'credit_grade' => (string) $credit['grade'],
+            'credit_available' => (bool) $credit['available'],
         ]);
     }
 

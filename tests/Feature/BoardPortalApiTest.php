@@ -14,6 +14,7 @@ use App\Models\ShippingRequest;
 use App\Models\TaskAlarm;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\BuyerCreditScore;
 use App\Services\SavingsLedger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
@@ -946,8 +947,11 @@ class BoardPortalApiTest extends TestCase
         $empty = Buyer::create(['name' => 'EMPTY', 'is_active' => true, 'salesman_id' => $me->id, 'address' => '  ', 'contact_phone' => null]);
 
         $res = $this->signedGet('/api/internal/board/buyers/'.$b->id, ['salesman_email' => 'me@a.com'])->assertOk();
-        $res->assertExactJson(['id' => $b->id, 'name' => 'ATLAS', 'country' => null, 'address' => 'Rr. Durresi 12, Tirana', 'phone' => '+355 69 123 4567']);
+        // 2026-11-11 jin «신용도 넣어. 점수로.» — 거래 이력 없는 바이어 = 평가 불가(0 · '-' · false). 값은 BuyerCreditScore::for() 그대로
+        $res->assertExactJson(['id' => $b->id, 'name' => 'ATLAS', 'country' => null, 'address' => 'Rr. Durresi 12, Tirana', 'phone' => '+355 69 123 4567',
+            'credit_score' => 0, 'credit_grade' => '-', 'credit_available' => false]);
         $this->assertStringNotContainsString('SECRET', $res->getContent());
+        $this->assertSame(BuyerCreditScore::for($b->fresh())['grade'], $res->json('credit_grade'));   // create() 직후 인스턴스엔 DB 기본값 컬럼이 없다(§8 #80)
 
         $this->signedGet('/api/internal/board/buyers/'.$empty->id, ['salesman_email' => 'me@a.com'])->assertOk()
             ->assertJsonPath('address', null)->assertJsonPath('phone', null);
@@ -955,6 +959,28 @@ class BoardPortalApiTest extends TestCase
         $log = AuditLog::where('auditable_type', Buyer::class)->where('auditable_id', $b->id)->where('action', 'board_buyer_contact_read')->get();
         $this->assertCount(1, $log);
         $this->assertSame('me@a.com', $log->first()->old_value);
+        $credit = AuditLog::where('auditable_type', Buyer::class)->where('auditable_id', $b->id)->where('action', 'board_buyer_credit_read')->get();   // 신용도가 나간 사실은 따로 남는다
+        $this->assertCount(1, $credit);
+        $this->assertSame('-/0', $credit->first()->new_value);
+    }
+
+    /** 거래 이력이 있는 바이어는 실제 점수·등급이 실린다 — 화면(buyers/index creditScore)과 같은 단일 출처. */
+    public function test_buyer_show_carries_the_credit_score_when_history_exists(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $b = Buyer::create(['name' => 'SCORED', 'is_active' => true, 'salesman_id' => $me->id]);
+        foreach ([1, 2] as $i) {
+            $v = Vehicle::create(['vehicle_number' => '1'.$i.'가123'.$i, 'sales_channel' => 'export', 'salesman_id' => $me->id, 'buyer_id' => $b->id,
+                'purchase_price' => 1_000_000, 'sale_price' => 2000, 'sale_date' => now()->subMonths($i), 'currency' => 'USD', 'exchange_rate' => 1400]);
+            $v->finalPayments()->create(['type' => 'balance', 'amount' => 2000, 'payment_date' => now()->subMonths($i)->addDays(3), 'confirmed_at' => now()]);
+        }
+        $expected = BuyerCreditScore::for($b->fresh());
+        $this->assertTrue($expected['available']);
+
+        $this->signedGet('/api/internal/board/buyers/'.$b->id, ['salesman_email' => 'me@a.com'])->assertOk()
+            ->assertJsonPath('credit_available', true)
+            ->assertJsonPath('credit_score', $expected['score'])
+            ->assertJsonPath('credit_grade', $expected['grade']);
     }
 
     /** 남의 바이어·없는 id·지운 바이어 = 404(기록 0) · super scope=all 이면 전체. */
