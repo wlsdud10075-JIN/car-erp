@@ -157,6 +157,7 @@ class KakaoIngestApiTest extends TestCase
         $res = $this->ingestAs($plain, ['room' => '무사백-수출팀', 'text' => self::TEXT]);
 
         $res->assertOk()->assertJson(['status' => 'failed', 'needs_review' => true]);
-        $this->assertStringContainsString('확인 필요', $res->json('message'));
+        $this->assertStringContainsString('이어서 분류', $res->json('message'));   // 11-11 — 실패분은 화면이 자동으로 다시 시도한다(남은 건수 표시)
+        $this->assertSame(1, $res->json('pending_after'));
     }
 }

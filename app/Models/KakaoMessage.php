@@ -11,7 +11,11 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class KakaoMessage extends Model
 {
-    public const TYPES = ['요청', '질문', '대답', '확인', '정보', '잡담', '첨부'];
+    /** 요청·질문·대답·확인·정보·잡담 = 모델이 고른다 / 첨부·호출·반복 = 규칙이 찍는다(KakaoRules, 모델에 안 보냄). 할 일이 되는 건 요청·질문뿐. */
+    public const TYPES = ['요청', '질문', '대답', '확인', '정보', '잡담', '첨부', '호출', '반복'];
+
+    /** 호출 규칙(「@이름」만)이 이 메시지에 붙인 이름들 — 분류 전이면 apply() 가 모델 mention 과 합친다(선언된 프로퍼티, DB 컬럼 아님 — §8 #96-B) */
+    public ?array $ruleMentions = null;
 
     protected $fillable = [
         'room_id', 'read_id', 'msg_key', 'sent_at', 'sender', 'body',

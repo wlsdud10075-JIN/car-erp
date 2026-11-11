@@ -125,4 +125,29 @@ TXT;
             $this->assertFalse(KakaoExportParser::isAttachment($body), $body);
         }
     }
+
+    /**
+     * 11-11 실사고 — 본문이 다음 줄부터 시작하는 메시지는 머리줄이 「[이름] [오후 3:22]」 로 끝난다. 본문을 요구하면 그 줄이
+     * 직전 메시지에 이어지는 줄로 붙어 「사진 5장 ⏎ [이다은] [오후 3:22] ⏎ 차량명…」 한 덩어리가 됐다(ssancarerp 4행·heymanerp 1행).
+     */
+    public function test_header_without_body_on_the_same_line_starts_a_new_message(): void
+    {
+        $text = '2026년 11월 4일 화요일
+[영업A] [오후 3:22] 사진 5장
+[영업A] [오후 3:22] 
+차량명   HYUNDAI SONATA
+차량번호:   371어7482
+[재무A] [오후 3:30]
+계좌번호가 확인이 되야 송금해드려요';
+        $msgs = (new KakaoExportParser)->parse($text);
+
+        $this->assertCount(3, $msgs);
+        $this->assertSame('사진 5장', $msgs[0]['body']);
+        $this->assertSame('차량명   HYUNDAI SONATA
+차량번호:   371어7482', $msgs[1]['body']);   // 앞 개행 없이
+        $this->assertSame('2026-11-04 15:22:00', $msgs[1]['sent_at']);
+        $this->assertSame('재무A', $msgs[2]['sender']);
+        $this->assertSame('계좌번호가 확인이 되야 송금해드려요', $msgs[2]['body']);
+        $this->assertNotSame($msgs[0]['msg_key'], $msgs[1]['msg_key']);
+    }
 }

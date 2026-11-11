@@ -37,25 +37,38 @@ class AnthropicKakaoClient implements KakaoClassifierClient
                 $text .= $block->text;
             }
         }
-        if (($message->stopReason ?? null) === 'refusal') {
-            throw new RuntimeException('모델이 분류를 거부했습니다(refusal).');
+        $u = $message->usage;
+        $usage = [
+            'input_tokens' => (int) ($u->inputTokens ?? 0),
+            'cache_read_tokens' => (int) ($u->cacheReadInputTokens ?? 0),
+            'cache_write_tokens' => (int) ($u->cacheCreationInputTokens ?? 0),   // 첫 호출(5분 안 재호출 없을 때) 1.25배 과금
+            'output_tokens' => (int) ($u->outputTokens ?? 0),
+        ];
+        $stop = $message->stopReason ?? null;
+        if ($stop === 'refusal') {
+            throw self::failure('모델이 분류를 거부했습니다(refusal).', $usage, $model);
+        }
+        if ($stop === 'max_tokens') {   // 11-11 실사고 — 267건 한 호출이 16k 출력에서 잘려 JSON 이 끊겼다. 지금은 60건씩 보내므로 나면 코드 쪽 문제
+            throw self::failure('모델 출력이 길이 상한에서 잘렸습니다(max_tokens) — 한 번에 보내는 건수를 줄여야 합니다.', $usage, $model);
         }
         $data = json_decode($text, true);
         if (! is_array($data) || ! isset($data['items']) || ! is_array($data['items'])) {
-            throw new RuntimeException('모델 응답이 JSON 스키마와 다릅니다: '.mb_substr($text, 0, 200));
+            throw self::failure('모델 응답이 JSON 스키마와 다릅니다: '.mb_substr($text, 0, 200), $usage, $model);
         }
-
-        $u = $message->usage;
 
         return [
             'items' => $data['items'],
-            'usage' => [
-                'input_tokens' => (int) ($u->inputTokens ?? 0),
-                'cache_read_tokens' => (int) ($u->cacheReadInputTokens ?? 0),
-                'cache_write_tokens' => (int) ($u->cacheCreationInputTokens ?? 0),   // 첫 호출(5분 안 재호출 없을 때) 1.25배 과금
-                'output_tokens' => (int) ($u->outputTokens ?? 0),
-            ],
+            'usage' => $usage,
             'model' => (string) ($message->model ?? $model),
         ];
+    }
+
+    private static function failure(string $message, array $usage, string $model): KakaoClassifyException
+    {
+        $e = new KakaoClassifyException($message);
+        $e->usage = $usage;
+        $e->model = $model;
+
+        return $e;
     }
 }

@@ -47,7 +47,8 @@ class KakaoIngestController extends Controller
         $needsReview = $read->status === 'failed';
         $message = match (true) {
             $read->status === 'pending_setup' => "메시지 {$read->new_count}건 저장. 처음 읽은 방입니다 — ERP 「내 카톡 할 일」에서 이 방의 「나」를 한 번 골라 주면 분류가 시작됩니다.",
-            $needsReview => "메시지 {$read->new_count}건은 저장했지만 분류에 실패했습니다. 화면의 「확인 필요」에서 보세요.",
+            $needsReview => "메시지 {$read->new_count}건은 저장했지만 분류에 실패했습니다({$read->pendingAfter}건 남음). 화면이 「이어서 분류」로 다시 시도합니다.",
+            $read->status === 'partial' => "새 메시지 {$read->new_count}건 중 {$read->pendingAfter}건은 시간이 모자라 아직 분류 전 — 화면이 이어서 분류합니다.",
             $read->new_count === 0 => "새 메시지가 없습니다(받은 {$read->total}건 전부 이미 있음).",
             default => "새 메시지 {$read->new_count}건 분류 완료(받은 {$read->total}건).",
         };
@@ -60,6 +61,7 @@ class KakaoIngestController extends Controller
             'total' => $read->total,
             'new_count' => $read->new_count,
             'leftover' => $read->leftover,
+            'pending_after' => $read->pendingAfter,
             'status' => $read->status,
             'needs_review' => $needsReview,
             'cost_krw' => (float) $read->cost_krw,
