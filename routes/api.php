@@ -70,6 +70,8 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('buyers/{id}/savings', [InternalPortalController::class, 'buyerSavings'])->whereNumber('id')->name('buyers.savings');
         // 2026-11 ② — 바이어 한 건(주소·전화, 서류 생성용 §3 예외 · 접근 기록 1행). 본인(super scope=all 전체), 남의 것 404.
         Route::get('buyers/{id}', [InternalPortalController::class, 'buyer'])->whereNumber('id')->name('buyers.show');
+        // 2026-11-11 jin «그 바이어의 신용도만» — board 클레임 보고서 BUYER PRIORITY. 바이어 id 만(영업 매칭 ❌), 연락처 ❌. 권위 §4 행.
+        Route::get('buyers/{id}/credit', [InternalPortalController::class, 'buyerCredit'])->whereNumber('id')->name('buyers.credit');
         // 2026-11 ② — 송금인 Name·ID 전용 전송(덮어쓰기, won 뒤). 권위 §14-2. 본인 차만(아니면 403).
         Route::post('vehicles/{id}/remitter', [InternalPortalController::class, 'remitter'])->whereNumber('id')->name('vehicles.remitter');
         // ③ 선적·B/L 묶음 v2 (2026-06-30 회의 조건부 GO) — 권위 §5
