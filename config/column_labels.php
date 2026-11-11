@@ -603,6 +603,7 @@ return [
         // 2026-10-27 — board 영업의 재전송(재촉). new_value = 회차, 행위자 없음(연동 API).
         'board_request_resent' => 'board 요청 재전송',
         'board_buyer_contact_read' => 'board 바이어 연락처 조회 (서류 생성용)',   // 2026-11 ② — GET /buyers/{id} 접근 기록
+        'board_buyer_credit_read' => 'board 바이어 신용도 조회 (클레임 보고서)',   // 2026-11-11 — 같은 엔드포인트, 등급/점수가 new_value
         // 2026-11-01 B2B 파트너스 — 바이어 계약서·관리대상·거래 유형
         'deal_type_cleared_on_buyer_change' => '거래 유형(DP/FD) 자동 해제 (바이어 변경)',
         'b2b_partner_toggled' => 'B2B 파트너스 관리대상 지정/해제',
