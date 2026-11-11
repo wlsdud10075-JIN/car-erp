@@ -6,6 +6,7 @@ use App\Services\Kakao\KakaoExportParser;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 
 /**
  * 카톡 방 — 회사 DB 안에서 방 제목으로 식별. sides = 편 구성(프롬프트의 「방 구성」, 방향 계산의 근거).
@@ -156,8 +157,17 @@ class KakaoRoom extends Model
     {
         $senders = $this->senders();
         $me = self::matchName($user->name, $senders);
+        $silent = false;
         if ($me === null) {
-            return false;
+            // 이 방에서 한 번도 말하지 않은 사람 — 보낸이 목록에 이름이 없어 못 잡았다(11-11 김다정 CIG 컨테이너, 엉뚱한 사람이 「나」로 골라짐).
+            //   다른 방에서 이미 잡힌 이 사람의 카톡 표시명을 그대로 쓴다(사람의 카톡 이름은 방마다 같다).
+            $known = DB::table('kakao_room_users')->where('user_id', $user->id)->where('my_name', '!=', '')->where('room_id', '!=', $this->id)
+                ->selectRaw('my_name, COUNT(*) AS n')->groupBy('my_name')->orderByDesc('n')->value('my_name');
+            if ($known === null || $this->messages()->doesntExist()) {
+                return false;   // 글이 0건인 방은 아직 읽지도 않은 것 — 편을 만들 근거가 없다
+            }
+            $me = (string) $known;
+            $silent = true;
         }
         if (! $this->isSetUp()) {
             $ours = [];
@@ -167,6 +177,13 @@ class KakaoRoom extends Model
                 }
             }
             $this->setUpSides($me, array_values(array_unique($ours)));
+        } elseif ($silent) {
+            // 편이 이미 있는 방에 말 없던 내가 들어온다 — 우리 편에 나를 보탠다(방향 계산이 「내 편」을 알아야 한다)
+            $sides = $this->sideMembers();
+            if (! in_array($me, array_merge(...array_values($sides ?: [[]])), true)) {
+                $sides[self::SIDE_US] = array_values(array_merge([$me], $sides[self::SIDE_US] ?? []));
+                $this->forceFill(['sides' => $sides])->save();
+            }
         }
         $this->users()->updateExistingPivot($user->id, ['my_name' => $me]);
 

@@ -385,9 +385,15 @@ new #[Layout('components.layouts.app')] class extends Component
 
     @if($capReached)
         {{-- 하루 비용 상한 — 진행 창 한 줄로 지나가 실무자가 몰랐다(11-11 김다정 10개 방이 0건). 크게, 무엇이 멈췄는지와 푸는 법을 같이 --}}
-        <div class="card-tight mb-4 border-red-300 bg-red-50 text-sm text-red-800" data-kakao-capped>
-            {{ __('kakao.cap_reached', ['spent' => number_format($board['cost_today']), 'cap' => number_format(\App\Models\Setting::kakaoDailyCostCapKrw())]) }}
+        {{-- jin 11-11 «비용은 넣지 마 · 위에 글로 나오면 잘 못 본다 · 모달로» — 페이지를 열 때·읽기가 끝나 다시 그릴 때마다 뜬다. 닫아도 아래 큰 띠는 남는다 --}}
+        <div x-data="{ open: true }" x-show="open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-modal="true" aria-labelledby="kakao-cap-title" data-kakao-capped wire:key="kakao-cap-{{ $board['last_read']?->id }}">
+            <div class="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-xl border-2 border-red-400 bg-white p-6 text-center shadow-2xl">
+                <div id="kakao-cap-title" class="text-xl font-bold text-red-700">{{ __('kakao.cap_title') }}</div>
+                <p class="mt-3 text-base text-gray-700">{{ __('kakao.cap_body') }}</p>
+                <button type="button" @click="open = false" class="btn-primary mt-5 h-11 w-full text-base">{{ __('kakao.cap_ok') }}</button>
+            </div>
         </div>
+        <div class="mb-4 rounded-lg border-2 border-red-400 bg-red-50 px-4 py-3 text-base font-bold text-red-700">{{ __('kakao.cap_title') }} <span class="text-sm font-normal text-red-600">{{ __('kakao.cap_body') }}</span></div>
     @endif
     @php($pendingTotal = array_sum($pendingCounts))
     @if($pendingTotal > 0)

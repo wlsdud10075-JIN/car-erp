@@ -10,6 +10,7 @@ use App\Models\User;
 use App\Services\Kakao\KakaoClassifierClient;
 use App\Services\Kakao\KakaoIngestService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
@@ -93,6 +94,8 @@ class KakaoIngestApiTest extends TestCase
     public function test_unknown_room_is_auto_registered_and_held_until_setup(): void
     {
         [$user, $plain] = $this->ready();
+        // 다른 방의 카톡 이름이 있으면 그걸 「나」로 쓴다(11-11) — 여기선 「아무 데서도 이름을 모르는」 첫 사용자를 본다
+        DB::table('kakao_room_users')->where('user_id', $user->id)->update(['my_name' => '']);
 
         $res = $this->ingestAs($plain, ['room' => '처음보는방', 'text' => self::TEXT]);
 
