@@ -83,7 +83,7 @@ class KakaoPageTest extends TestCase
         $this->assertSame([$teammate->id], array_column($board['buckets']['teammate'], 'id'));
         $this->assertSame([$review->id], array_column($board['buckets']['review'], 'id'));
         $this->assertSame(0, $board['counts']['none']);
-        $page->assertSee('상사 딜러 명함 올려주세요')->assertSee('지금 할 일')->assertSee('확인 필요 1건');
+        $page->assertSee('상사 딜러 명함 올려주세요')->assertSee('지금 할 일')->assertSee('아직 분류 안 된 메시지 1건')->assertSee('이어서 분류');   // type null = 아직 분류 전 → 이어서 분류 버튼(11-11)
 
         // 같은 방을 수출팀B 가 보면: 동료의 서렌더 요청이 「팀 동료」, 자기 명함 요청이 「답 기다리는 중」
         $other = $this->user();

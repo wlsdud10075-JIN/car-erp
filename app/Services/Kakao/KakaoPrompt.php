@@ -66,7 +66,6 @@ class KakaoPrompt
   · 영업이 올리는 차량 매입 보고 서식(차량명/차량번호/차대번호/차량대금…) — 그 자체가 재무의 입금 처리 요청이다
   · 숫자만 있는 메시지(예: 1730, 850, 1140/44) — 영업이 보내는 송금 요청(단위 만원)
   · 완료 보고에 「확인 부탁드립니다」「이상 유무 알려주세요」가 붙은 것(OBL 스캔본 전달 + 확인 부탁 → 상대가 할 일이 생긴다)
-  · 「@이름」만 있는 메시지 — 그 사람을 부르는 호출(앞 메시지를 보라는 뜻), mention 에 이름을 적는다
   · 받는 사람이 안 적힌 「해당건 확인 부탁드립니다」 — 우리 회사 쪽 편(재무·수출팀 등)에게 온 것으로 본다
 - 질문: 「~인가요?」「~까요?」「~없죠?」 처럼 답(정보)을 구하는 것. 단 견적·일정·진행을 달라는 뜻이면 요청.
 - 대답: 앞선 요청·질문에 대한 답이나 처리 완료 보고. 앞 요청·질문에 이어지는 응답은 사실 전달이어도 대답이고 resolves 에 그 id 를 적는다. 예:
@@ -82,7 +81,7 @@ class KakaoPrompt
 보낸 사람과 내용, 그리고 위 「방 구성」의 각 편 역할 설명을 보고 정한다. 어떤 일을 맡은 편에게 그 일을 부탁·보고하는 것이다. 잡담·누구에게도 아닌 것은 「없음」.
 
 ## mention
-본문의 「@이름」 들을 쉼표로(@ 없이). 없으면 null.
+본문의 「@이름」 들을 쉼표로(@ 없이). 없으면 null. 「@이름」만 있는 메시지는 입력에 「(규칙·호출: …)」 표식으로만 오고 그 이름은 앞뒤 메시지에 이미 붙어 있다 — 그 표식 줄의 앞뒤 메시지가 그 사람에게 향한 것으로 본다.
 
 ## ref
 컨테이너·B/L·부킹 번호(예: MAEU262876364, FFAU7568802, 266809985). 여러 개면 첫 번째. 없으면 null.
@@ -99,7 +98,7 @@ class KakaoPrompt
 ## resolves
 이 메시지가 앞선 어떤 요청·질문에 대한 답·완료 보고·접수 확인이면 그 메시지의 id(입력에 적힌 숫자 그대로). 아니면 null. 「(앞 읽기)」 표시가 붙은 열린 항목의 id 도 쓸 수 있다.
 
-반드시 입력된 모든 분류 대상 id 를 하나씩, 순서대로 포함한다. 「(첨부)」로 표시된 줄은 흐름 참고용이라 출력하지 않는다.
+반드시 입력된 모든 분류 대상 id 를 하나씩, 순서대로 포함한다. 「(첨부: …)」「(규칙·잡담/반복/호출: …)」로 표시된 줄은 흐름 참고용이라 출력하지 않는다(규칙이 이미 유형을 정했다).
 PROMPT;
     }
 
@@ -153,18 +152,25 @@ PROMPT;
         }
         $lines[] = '## 이번에 분류할 메시지';
         foreach ($fresh as $m) {
-            $lines[] = KakaoExportParser::isAttachment($m->body)
-                ? self::line($m, true)
-                : self::line($m);
+            $lines[] = self::line($m, $m->type !== null || KakaoExportParser::isAttachment($m->body));   // 규칙이 찍은 것(첨부·확인·잡담·반복·호출)은 표식만
         }
 
         return implode("\n", $lines);
     }
 
-    private static function line(KakaoMessage $m, bool $attachment = false): string
+    private static function line(KakaoMessage $m, bool $marker = false): string
     {
         $when = $m->sent_at?->format('Y-m-d H:i') ?? '';
-        $body = $attachment ? '(첨부: '.KakaoExportParser::firstLine($m->body).')' : str_replace("\n", ' ⏎ ', $m->body);
+        if (! $marker) {
+            $body = str_replace("\n", ' ⏎ ', $m->body);
+        } elseif ($m->type === null || $m->type === '첨부') {
+            $body = '(첨부: '.KakaoExportParser::firstLine($m->body).')';
+        } elseif ($m->type === KakaoRules::TYPE_CALL) {
+            $target = $m->ai['target'] ?? null;
+            $body = '(규칙·호출: @'.str_replace(',', ' @', (string) $m->mention).($target ? " → id={$target} 에 붙음" : ' → 붙일 메시지 없음').')';
+        } else {
+            $body = '(규칙·'.$m->type.': '.mb_substr(KakaoExportParser::firstLine($m->body), 0, 30).')';
+        }
 
         return "id={$m->id} {$when} [{$m->sender}] {$body}";
     }

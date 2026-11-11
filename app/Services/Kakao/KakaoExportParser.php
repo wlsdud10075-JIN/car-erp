@@ -16,7 +16,9 @@ namespace App\Services\Kakao;
  */
 class KakaoExportParser
 {
-    private const HEAD = '/^\[(.+?)\] \[(오전|오후) (\d{1,2}):(\d{2})\] (.*)$/u';
+    // 머리줄 뒤 본문은 선택 — 본문이 다음 줄부터 시작하는 메시지는 「[이름] [오후 3:22]」 로 끝난다(11-11 실측 ssancarerp 4건·heymanerp 1건:
+    //   본문을 요구하면 그 머리줄이 직전 메시지의 이어지는 줄로 붙어 「사진 5장 ⏎ [이다은] [오후 3:22] ⏎ 차량명…」 한 덩어리가 됐다 — 사진이 요청으로 둔갑)
+    private const HEAD = '/^\[(.+?)\] \[(오전|오후) (\d{1,2}):(\d{2})\](?: (.*))?$/u';
 
     // 날짜 구분선 — txt 내보내기는 「--------------- 2026년 11월 10일 월요일 ---------------」, 창에서 Ctrl+A·C 로 복사하면 **대시 없이** 「2026년 11월 10일 월요일」
     // (11-10 실측 — 대시만 요구해 창 복사분이 전부 「날짜 모름」으로 버려져 total=0 이었다)
@@ -57,7 +59,7 @@ class KakaoExportParser
                 $messages[] = [
                     'sent_at' => sprintf('%s %02d:%s:00', $date, $hour, $m[4]),
                     'sender' => trim($m[1]),
-                    'body' => $m[5],
+                    'body' => $m[5] ?? '',
                 ];
 
                 continue;
@@ -71,7 +73,8 @@ class KakaoExportParser
                     continue 2;
                 }
             }
-            $messages[array_key_last($messages)]['body'] .= "\n".$line;   // 이어지는 줄
+            $last = array_key_last($messages);
+            $messages[$last]['body'] .= ($messages[$last]['body'] === '' ? '' : "\n").$line;   // 이어지는 줄 (본문이 다음 줄부터 시작하는 메시지는 앞 개행 없이)
         }
 
         // msg_key = 시각|보낸이|첫 줄|같은 (시각·보낸이·첫 줄) 묶음 안 순번.

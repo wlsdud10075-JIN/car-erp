@@ -100,6 +100,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 'secrets' => $user->kakaoCollectorTokens()->whereNull('revoked_at')->whereNotNull('local_secret')->orderByDesc('id')
                     ->get(['device_name', 'local_secret'])->map(fn ($t) => ['device' => (string) $t->device_name, 'secret' => (string) $t->local_secret])->values()->all(),
                 'selected' => $user->kakaoRooms()->wherePivot('selected', true)->pluck('name')->values()->all(),
+                'pending' => $board['rooms']->filter(fn ($r) => $r->isSetUp())->sum(fn ($r) => KakaoIngestService::pendingCount($r)),   // 분류 안 된 건수 — 페이지가 열리면 JS 가 이어서 분류
             ],
             'types' => KakaoMessage::TYPES,
             // 💰 API 사용액 — 시스템관리자만(jin 11-10 «지금 현재 얼마나 사용했는지 api 금액을»). 이 회사 DB 전체(kakao_reads.cost_krw)
@@ -259,6 +260,39 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: $n > 0 ? __('kakao.setup_saved', ['n' => $n]) : __('kakao.setup_saved_none'), type: 'success');
     }
 
+    /**
+     * 「이어서 분류」 — 체크한 방에 분류 안 된(type null) 메시지가 남아 있으면 시간 예산(KakaoIngestService::$budgetSeconds) 안에서 이어서 분류한다.
+     * 큰 방(267건)은 한 HTTP 요청에 못 끝나 회차가 partial 로 남는다 — 페이지 JS 가 남은 건수가 0 이 되거나 줄지 않을 때까지 이걸 되부른다(11-11).
+     *
+     * @return array{remaining: int, failed: bool, message: ?string}
+     */
+    public function continueClassifying(KakaoIngestService $ingest): array
+    {
+        $user = auth()->user();
+        $failed = false;
+        $message = null;
+        foreach ($user->kakaoRooms()->wherePivot('selected', true)->get() as $room) {
+            if (! $room->isSetUp() || KakaoIngestService::pendingCount($room) === 0) {
+                continue;
+            }
+            $read = $ingest->classifyPending($room, $user);
+            if ($read === null) {   // 하루 비용 상한
+                $message = __('kakao.continue_capped', ['cap' => number_format(Setting::kakaoDailyCostCapKrw())]);
+                $failed = true;
+                break;
+            }
+            if ($read->status === 'failed') {
+                $failed = true;
+                $message = __('kakao.continue_failed', ['room' => $room->name, 'error' => mb_substr((string) $read->error, 0, 120)]);
+                break;
+            }
+            break;   // 한 요청에 한 방만(시간 예산) — 나머지는 JS 가 되부른다
+        }
+        $remaining = $user->kakaoRooms()->wherePivot('selected', true)->get()->filter(fn ($r) => $r->isSetUp())->sum(fn ($r) => KakaoIngestService::pendingCount($r));
+
+        return ['remaining' => (int) $remaining, 'failed' => $failed, 'message' => $message];
+    }
+
     /** 「다시 고르기」 — 편 구성을 비워 설정 카드가 다시 뜨게 한다(메시지·판정은 그대로). */
     public function resetSetup(int $roomId): void
     {
@@ -347,7 +381,14 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     </div>
 
-    @if($board['counts']['review'] > 0)
+    @php($pendingTotal = array_sum($pendingCounts))
+    @if($pendingTotal > 0)
+        {{-- 분류가 아직 안 된 메시지(시간 예산에 밀렸거나 실패) — 페이지 JS 가 자동으로 이어 가고, 멈췄으면 이 버튼으로(11-11) --}}
+        <div class="card-tight mb-4 flex flex-wrap items-center gap-2 border-amber-200 bg-amber-50 text-sm text-amber-800">
+            <span>{{ __('kakao.pending_classify', ['n' => $pendingTotal]) }}</span>
+            <button type="button" class="h-8 rounded border border-amber-300 bg-white px-2 text-xs text-amber-900 hover:bg-amber-100" data-kakao-continue wire:ignore>{{ __('kakao.continue_btn') }}</button>
+        </div>
+    @elseif($board['counts']['review'] > 0)
         <div class="card-tight mb-4 border-amber-200 bg-amber-50 text-sm text-amber-800">{{ __('kakao.needs_review', ['n' => $board['counts']['review']]) }}</div>
     @endif
 
@@ -596,6 +637,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'none' => __('kakao.read_none_checked'), 'started' => __('kakao.read_started'), 'failed' => __('kakao.read_failed'),
             'rebinding' => __('kakao.agent_rebinding'), 'rebind_failed' => __('kakao.agent_rebind_failed'), 'focus_failed' => __('kakao.focus_failed'), 'focus_denied' => __('kakao.focus_denied'),
             'reading' => __('kakao.overlay_reading'), 'reading_hint' => __('kakao.overlay_reading_hint'), 'opening' => __('kakao.overlay_opening'), 'opening_hint' => __('kakao.overlay_opening_hint'),
+            'classifying' => __('kakao.overlay_classifying'), 'classifying_hint' => __('kakao.overlay_classifying_hint'), 'classify_stuck' => __('kakao.classify_stuck'),
         ]);
         const root = $wire.$el;
         const base = 'http://127.0.0.1:' + cfg.port;
@@ -700,8 +742,30 @@ new #[Layout('components.layouts.app')] class extends Component
                     overlay(false);
                     await $wire.$refresh();
                     await loadRooms();
+                    await continueLoop();   // 큰 방은 한 요청에 분류가 못 끝난다(partial) — 남은 게 0 이 될 때까지 이어서
                 }
             }, 1500);
+        };
+        // 분류 이어가기 — 서버가 시간 예산 안에서 한 방씩 분류하고 남은 건수를 돌려준다. 0 이거나 줄지 않으면(실패·상한) 멈춘다
+        let continuing = false;
+        const continueLoop = async () => {
+            if (continuing) return;
+            continuing = true;
+            let prev = Infinity;
+            try {
+                overlay(true, t.classifying, '');
+                for (let i = 0; i < 20; i++) {
+                    const r = await $wire.continueClassifying();
+                    if (!r || r.remaining <= 0) break;
+                    if (r.failed || r.remaining >= prev) { showProgress([r.message || fmt(t.classify_stuck, { n: r.remaining })]); break; }
+                    prev = r.remaining;
+                    overlay(true, t.classifying, fmt(t.classifying_hint, { n: r.remaining }));
+                }
+            } finally {
+                continuing = false;
+                overlay(false);
+                await $wire.$refresh();
+            }
         };
         const readNow = async () => {
             await loadRooms();   // 방금 닫은 방·새로 연 방을 반영
@@ -717,10 +781,12 @@ new #[Layout('components.layouts.app')] class extends Component
 
         root.addEventListener('click', (e) => {
             if (e.target.closest('[data-kakao-read]')) readNow();
+            else if (e.target.closest('[data-kakao-continue]')) continueLoop();
             else if (e.target.closest('[data-kakao-rebind]')) rebind();
             else { const f = e.target.closest('[data-kakao-focus]'); if (f) focusRoom(f.dataset.kakaoFocus, f.dataset.kakaoSnippet); }
         });
         ping().then((ok) => { if (ok) loadRooms(); });
+        if ((cfg.pending || 0) > 0) continueLoop();   // 지난 읽기에서 분류가 덜 끝난 채 창을 닫았어도 다시 열면 이어 간다(에이전트 없어도 된다)
     })();
     </script>
     @endscript

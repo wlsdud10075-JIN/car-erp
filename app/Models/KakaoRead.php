@@ -14,6 +14,9 @@ class KakaoRead extends Model
     /** 읽기 1회 상한에 걸려 이번 회차에 안 담은 건수(응답용, DB 컬럼 아님 — 선언해 두어야 동적 속성이 안 된다, §8 #96-B) */
     public int $leftover = 0;
 
+    /** 이 회차가 끝난 뒤에도 분류 안 된(type null) 건수 — 시간 예산에 밀렸거나(partial) 실패(failed). 화면이 이어서 분류한다(응답용, DB 컬럼 아님) */
+    public int $pendingAfter = 0;
+
     protected $fillable = [
         'room_id', 'user_id', 'sides_snapshot', 'started_at', 'finished_at', 'total', 'new_count',
         'model', 'input_tokens', 'cache_read_tokens', 'cache_write_tokens', 'output_tokens', 'cost_krw', 'status', 'error',

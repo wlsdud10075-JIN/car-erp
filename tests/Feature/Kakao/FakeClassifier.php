@@ -26,12 +26,12 @@ class FakeClassifier implements KakaoClassifierClient
         $this->lastSystem = $system;
         $this->lastUser = $user;
         $this->lastSchema = $schema;
-        // 창에서 「이번에 분류할 메시지」의 id 를 순서대로 뽑되 (첨부) 줄은 뺀다
+        // 창에서 「이번에 분류할 메시지」의 id 를 순서대로 뽑되 (첨부)·(규칙·…) 표식 줄은 뺀다
         $section = substr($user, strpos($user, '## 이번에 분류할 메시지'));
         preg_match_all('/^id=(\d+) .*$/mu', $section, $m, PREG_SET_ORDER);
         $ids = [];
         foreach ($m as $row) {
-            if (! str_contains($row[0], '(첨부:')) {
+            if (! str_contains($row[0], '(첨부:') && ! str_contains($row[0], '(규칙·')) {
                 $ids[] = (int) $row[1];
             }
         }
