@@ -310,4 +310,15 @@ TXT;
         $this->assertSame([], KakaoIngestService::vehicleIdentifiers('계약금 300 부탁드립니다 1480€ / 1320$ 500,000원'));
         $this->assertSame(['P:55두8855'], KakaoIngestService::vehicleIdentifiers('헤이55두8855'));
     }
+
+    /** 11-11 — 카톡 방이 아닌 창(저장 대화상자·그림자 창·대화 내보내기 창)은 방으로 등록하지 않는다(김다정 PC 실측 제목). */
+    public function test_non_room_window_titles_are_not_rooms(): void
+    {
+        foreach (['다른 이름으로 저장', 'KakaoTalkShadowWnd', '싼카-수출팀김다정 2026-11-11', '싼카-수출팀 박수정 대리 2026-11-11', '카카오톡', ''] as $t) {
+            $this->assertFalse(KakaoRoom::isRoomTitle($t), $t);
+        }
+        foreach (['! 무사백-수출팀', '# 김연아 - 통관서류,BL,면장 방', '%프롬 - 이용빈', '■■ 수출팀', 'CIG X 싼카 두레스'] as $t) {
+            $this->assertTrue(KakaoRoom::isRoomTitle($t), $t);
+        }
+    }
 }

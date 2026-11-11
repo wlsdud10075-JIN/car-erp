@@ -19,7 +19,7 @@ class KakaoRoomsController extends Controller
     {
         $user = $request->attributes->get('kakao_user');
         $data = $request->validate(['rooms' => ['required', 'array', 'max:200'], 'rooms.*' => ['nullable', 'string', 'max:120']]);   // 빈 제목은 null 로 들어온다
-        $names = array_values(array_unique(array_filter(array_map(fn ($n) => trim((string) $n), $data['rooms']), fn ($n) => $n !== '')));
+        $names = array_values(array_unique(array_filter(array_map(fn ($n) => trim((string) $n), $data['rooms']), fn ($n) => KakaoRoom::isRoomTitle($n))));   // 저장 창·그림자 창은 방이 아니다(11-11)
 
         foreach ($names as $name) {
             $room = KakaoRoom::firstOrCreate(['name' => $name]);
@@ -39,7 +39,7 @@ class KakaoRoomsController extends Controller
     {
         $user = $request->attributes->get('kakao_user');
         $data = $request->validate(['selected' => ['present', 'array', 'max:200'], 'selected.*' => ['nullable', 'string', 'max:120']]);
-        $names = array_values(array_filter(array_map(fn ($n) => trim((string) $n), $data['selected']), fn ($n) => $n !== ''));
+        $names = array_values(array_filter(array_map(fn ($n) => trim((string) $n), $data['selected']), fn ($n) => KakaoRoom::isRoomTitle($n)));
 
         foreach ($names as $name) {
             $room = KakaoRoom::firstOrCreate(['name' => $name]);

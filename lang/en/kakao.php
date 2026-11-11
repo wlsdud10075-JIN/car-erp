@@ -16,6 +16,7 @@ return [
     'needs_review' => ':n need review — messages whose meaning could not be decided. Set the type in the "Needs review" group.',
     'pending_classify' => ':n messages not classified yet — big rooms are classified in batches. The page continues automatically; if it stopped, press the button.',
     'continue_btn' => 'Continue classifying',
+    'cap_reached' => "Today's classification cost cap is reached (:spent / :cap KRW). New messages are stored and classified tomorrow. To continue today, a system admin can raise the daily cap in feature settings.",
     'continue_capped' => "Today's classification cost cap (:cap KRW) is reached. Open again tomorrow or raise the cap in feature settings.",
     'continue_failed' => 'Classifying ":room" failed: :error',
     'overlay_classifying' => 'Claude is classifying',

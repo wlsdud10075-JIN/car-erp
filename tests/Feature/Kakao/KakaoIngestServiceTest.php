@@ -11,7 +11,6 @@ use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\Kakao\KakaoClassifierClient;
 use App\Services\Kakao\KakaoIngestService;
-use App\Services\Kakao\KakaoLimitException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -171,9 +170,33 @@ TXT;
         $this->assertSame(50, KakaoMessage::count());
         $this->assertSame(1, KakaoRead::count());
 
+        // 하루 비용 상한 — 🔀 11-11: 거부하지 않고 저장만, 분류는 미룬다(상한 뒤 처음 읽은 방이 0건으로 남아 「나」도 못 잡던 것)
         Setting::updateOrCreate(['key' => 'kakao_daily_cost_cap_krw'], ['value' => '100', 'type' => 'integer']);
         KakaoRead::create(['room_id' => $room->id, 'user_id' => $user->id, 'started_at' => now(), 'cost_krw' => 150, 'status' => 'done']);
-        $this->expectException(KakaoLimitException::class);
-        $svc->ingest($user, $room, self::TEXT);
+        $calls = $this->fake->calls;
+        $capped = $svc->ingest($user, $room, self::TEXT);
+        $this->assertSame('capped', $capped->status);
+        $this->assertSame($calls, $this->fake->calls);   // 모델 호출 없음
+        $this->assertSame(3, $capped->pendingAfter);
+        $this->assertSame(54, KakaoMessage::count());   // 저장은 됐다(50 + 새 4)
+        $this->assertNull($svc->classifyPending($room, $user));   // 이어서 분류도 상한 안에선 안 돈다
+    }
+
+    /** 읽기 범위(jin 11-11 «놓친 것 확인은 3일 전후») — 가장 최근 글 기준 N일 밖의 글은 저장·분류하지 않는다. */
+    public function test_read_range_keeps_only_the_last_days_before_the_newest_message(): void
+    {
+        Setting::updateOrCreate(['key' => 'kakao_read_days'], ['value' => '3', 'type' => 'integer']);
+        $room = $this->room();
+        $this->fake->plan = fn (array $ids) => array_map(fn ($id) => ['id' => $id, 'type' => '요청', 'to' => '재무', 'mention' => null, 'ref' => null, 'vehicle' => null, 'vin_tail' => null, 'amount' => null, 'resolves' => null], $ids);
+        $text = implode('
+', [
+            '--------------- 2026년 11월 1일 일요일 ---------------', '[영업A] [오전 9:00] 오래된 요청 부탁드립니다',
+            '--------------- 2026년 11월 7일 토요일 ---------------', '[영업A] [오전 9:00] 경계 밖 요청 부탁드립니다',
+            '--------------- 2026년 11월 8일 일요일 ---------------', '[영업A] [오전 9:00] 경계 첫날 요청 부탁드립니다',
+            '--------------- 2026년 11월 11일 수요일 ---------------', '[영업A] [오후 3:00] 오늘 요청 부탁드립니다',
+        ]);
+        $read = app(KakaoIngestService::class)->ingest($this->user(), $room, $text);
+        $this->assertSame(2, $read->new_count);
+        $this->assertSame(['경계 첫날 요청 부탁드립니다', '오늘 요청 부탁드립니다'], KakaoMessage::orderBy('sent_at')->pluck('body')->all());
     }
 }

@@ -217,6 +217,15 @@ class Setting extends Model
         return max(100, (int) self::get('kakao_daily_cost_cap_krw', 2000));
     }
 
+    /**
+     * 카톡 읽기 범위(일) — 복사본에서 가장 최근 글 기준 이 일수 안의 글만 저장·분류한다(jin 2026-11-11 «실무자는 실시간으로 보니 놓친 것 확인은 3일 전후, 금액이 너무 크다»).
+     * 에이전트는 종전대로 7일 치를 복사해 보내도 ERP 가 잘라 낸다(첫 읽기 비용 ≈ 220원 → 95원/방). 에이전트 재배포 없이 회사별 조절.
+     */
+    public static function kakaoReadDays(): int
+    {
+        return max(1, (int) self::get('kakao_read_days', 3));
+    }
+
     /** 「내 카톡 할 일」이 보는 기간(일) — 수집기 첫 읽기 범위(기획 §1 #5 = 7일)와 같게. */
     public static function kakaoWindowDays(): int
     {
