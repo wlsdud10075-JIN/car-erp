@@ -35,9 +35,9 @@ new #[Layout('components.layouts.app')] class extends Component
     public bool $kakaoAssistantEnabled = false;
 
     /** 📱 카톡자동화 수치(jin 11-10 «기능설정에 하루 상한 설정값 없는데?») — 키는 Setting::kakao*() 와 같다(회사 DB 단위) */
-    public array $kakaoParams = ['kakao_daily_cost_cap_krw' => 2000, 'kakao_max_new_per_read' => 500, 'kakao_window_days' => 7, 'kakao_urgent_hours' => 24, 'kakao_missed_days' => 3];
+    public array $kakaoParams = ['kakao_daily_cost_cap_krw' => 2000, 'kakao_max_new_per_read' => 500, 'kakao_read_days' => 3, 'kakao_window_days' => 7, 'kakao_urgent_hours' => 24, 'kakao_missed_days' => 3];
 
-    public const KAKAO_PARAM_MIN = ['kakao_daily_cost_cap_krw' => 100, 'kakao_max_new_per_read' => 50, 'kakao_window_days' => 1, 'kakao_urgent_hours' => 1, 'kakao_missed_days' => 1];
+    public const KAKAO_PARAM_MIN = ['kakao_daily_cost_cap_krw' => 100, 'kakao_max_new_per_read' => 50, 'kakao_read_days' => 1, 'kakao_window_days' => 1, 'kakao_urgent_hours' => 1, 'kakao_missed_days' => 1];
 
     /** 🧾 내수직원 월정산 on/off (jin 2026-11-03) — 회사별, 기본 ssancarerp 만 켬. 볼 사람은 아래 지정. */
     public bool $domesticPayoutEnabled = false;
@@ -178,7 +178,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->buyerCashEnabled = Setting::buyerCashEnabled();
         $this->b2bPartnersEnabled = Setting::b2bPartnersEnabled();
         $this->kakaoAssistantEnabled = Setting::kakaoAssistantEnabled();
-        $this->kakaoParams = ['kakao_daily_cost_cap_krw' => Setting::kakaoDailyCostCapKrw(), 'kakao_max_new_per_read' => Setting::kakaoMaxNewPerRead(),
+        $this->kakaoParams = ['kakao_daily_cost_cap_krw' => Setting::kakaoDailyCostCapKrw(), 'kakao_max_new_per_read' => Setting::kakaoMaxNewPerRead(), 'kakao_read_days' => Setting::kakaoReadDays(),
             'kakao_window_days' => Setting::kakaoWindowDays(), 'kakao_urgent_hours' => Setting::kakaoUrgentHours(), 'kakao_missed_days' => Setting::kakaoMissedDays()];
         $this->domesticPayoutEnabled = Setting::domesticPayoutEnabled();
         $this->loadPayrollViewerMatrix();
@@ -2058,7 +2058,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 @if($kakaoAssistantEnabled)
                     {{-- 수치(jin 11-10 «하루 상한 설정값 없는데?») — Setting::kakao*() 가 읽는 키 5개. 저장 버튼 1개, 감사 1건 --}}
                     <div class="mt-2 grid grid-cols-2 gap-2 border-t border-gray-100 pt-2 sm:grid-cols-5" data-kakao-params>
-                        @foreach(['kakao_daily_cost_cap_krw' => 'kakao_param_cap', 'kakao_max_new_per_read' => 'kakao_param_max_new', 'kakao_window_days' => 'kakao_param_window', 'kakao_urgent_hours' => 'kakao_param_urgent', 'kakao_missed_days' => 'kakao_param_missed'] as $key => $label)
+                        @foreach(['kakao_daily_cost_cap_krw' => 'kakao_param_cap', 'kakao_max_new_per_read' => 'kakao_param_max_new', 'kakao_read_days' => 'kakao_param_read_days', 'kakao_window_days' => 'kakao_param_window', 'kakao_urgent_hours' => 'kakao_param_urgent', 'kakao_missed_days' => 'kakao_param_missed'] as $key => $label)
                             <label class="text-xs text-gray-600">{{ __('feature_settings.'.$label) }}
                                 <input type="number" min="{{ self::KAKAO_PARAM_MIN[$key] }}" wire:model="kakaoParams.{{ $key }}" class="input-base mt-0.5 h-9 w-full text-sm sm:h-8" aria-label="{{ __('feature_settings.'.$label) }}">
                             </label>

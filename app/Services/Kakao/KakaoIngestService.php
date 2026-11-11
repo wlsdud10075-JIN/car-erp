@@ -8,6 +8,7 @@ use App\Models\KakaoRoom;
 use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
@@ -64,9 +65,17 @@ class KakaoIngestService
     {
         $parsed = $this->parser->parse($text, $fallbackDate);
 
-        if ($this->spentToday($user) >= Setting::kakaoDailyCostCapKrw()) {
-            throw new KakaoLimitException('오늘 분류 비용 상한('.Setting::kakaoDailyCostCapKrw().'원)에 닿았습니다. 내일 다시 읽거나 기능설정에서 상한을 올리세요.');
+        // 읽기 범위 — 이 복사본의 가장 최근 글 기준 N일 안만(jin 11-11 «놓친 것 확인은 3일 전후, 금액이 너무 크다»). 에이전트가 7일을 보내도 여기서 자른다.
+        //   기준을 「지금」이 아니라 「가장 최근 글」로 두는 이유 = 오래 안 읽은 방도 마지막 대화 묶음은 받는다.
+        if ($parsed !== []) {
+            $latest = max(array_column($parsed, 'sent_at'));
+            $from = Carbon::parse($latest)->subDays(Setting::kakaoReadDays())->startOfDay()->format('Y-m-d H:i:s');
+            $parsed = array_values(array_filter($parsed, fn ($m) => $m['sent_at'] >= $from));
         }
+
+        // 하루 비용 상한 — 🔀 11-11: 거부하지 않고 **저장만** 하고 분류를 미룬다. 전엔 저장 전에 던져서, 상한 뒤에 처음 읽은 방은 글이 0건이라
+        //   「나」도 못 잡고 방이 통째로 비어 보였다(ssancarerp 김다정 10개 방). 미룬 글은 type null → 다음 날·상한을 올린 뒤 「이어서 분류」가 처리.
+        $capped = $this->spentToday($user) >= Setting::kakaoDailyCostCapKrw();
 
         $keys = array_column($parsed, 'msg_key');
         $existing = $keys === [] ? collect() : KakaoMessage::where('room_id', $room->id)->whereIn('msg_key', $keys)->get()->keyBy('msg_key');
@@ -155,6 +164,13 @@ class KakaoIngestService
             return $read;
         }
         $room->refreshCounterpart();   // 새로 나타난 사람은 「상대」로
+
+        if ($capped) {   // 저장·「나」 잡기까지는 했다 — 분류만 미룬다
+            $read->update(['status' => 'capped', 'finished_at' => now()]);
+            $read->pendingAfter = $classifyCount;
+
+            return $read;
+        }
 
         // ② 이웃이 필요한 규칙 — 반복(같은 사람 같은 본문 N분 안) · 호출(@이름만 → 앞뒤 메시지에 멘션)
         $this->applyNeighborRules($room, $fresh);

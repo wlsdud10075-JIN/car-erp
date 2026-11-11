@@ -123,6 +123,23 @@ class KakaoRoom extends Model
         return $map;
     }
 
+    /**
+     * 카톡 방 창이 아닌 창 제목 — 에이전트가 카톡 프로세스의 창을 전부 보고해서 저장 대화상자·그림자 창·대화 내보내기 창까지 방으로 등록됐다
+     * (11-11 ssancarerp 김다정: 「다른 이름으로 저장」 「KakaoTalkShadowWnd」 「싼카-수출팀김다정 2026-11-11」). 방 등록·목록 양쪽에서 거른다.
+     */
+    public static function isRoomTitle(string $title): bool
+    {
+        $t = trim($title);
+        if ($t === '' || $t === '카카오톡') {
+            return false;
+        }
+        if (in_array($t, ['KakaoTalkShadowWnd', '다른 이름으로 저장', '열기', '저장', '파일 열기', '폴더 선택', '인쇄'], true)) {
+            return false;
+        }
+
+        return preg_match('/^KakaoTalk|\s\d{4}-\d{2}-\d{2}$/u', $t) !== 1;   // 「이름 2026-11-11」 = 대화 내보내기·저장 창
+    }
+
     public const SIDE_US = '우리';
 
     public const SIDE_THEM = '상대';

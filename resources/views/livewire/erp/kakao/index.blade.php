@@ -88,7 +88,9 @@ new #[Layout('components.layouts.app')] class extends Component
             'order' => KakaoBuckets::ORDER,
             'labels' => KakaoBuckets::LABELS,
             'hints' => KakaoBuckets::HINTS,
-            'allRooms' => $user->kakaoRooms()->orderByPivot('selected', 'desc')->orderByPivot('last_seen_at', 'desc')->get(),   // 수집기가 보고한 방 전부(체크 여부 포함)
+            'allRooms' => $user->kakaoRooms()->orderByPivot('selected', 'desc')->orderByPivot('last_seen_at', 'desc')->get()
+                ->filter(fn ($r) => KakaoRoom::isRoomTitle($r->name))->values(),   // 수집기가 보고한 방 전부(체크 여부 포함) — 저장 창·그림자 창으로 등록돼 버린 것은 숨김(11-11)
+            'capReached' => $board['cost_today'] >= Setting::kakaoDailyCostCapKrw(),   // 오늘 비용 상한 — 새 글은 저장만 되고 분류는 미뤄진다
             'needSetup' => $board['rooms']->filter(fn ($r) => (trim((string) $r->pivot->my_name) === '' || ! $r->isSetUp()) && $r->messages()->exists())->values(),
             'senders' => $board['rooms']->mapWithKeys(fn ($r) => [$r->id => $r->senders()])->all(),
             'pendingCounts' => $board['rooms']->mapWithKeys(fn ($r) => [$r->id => $r->messages()->whereNull('type')->count()])->all(),
@@ -128,7 +130,7 @@ new #[Layout('components.layouts.app')] class extends Component
     public function reportOpenRooms(array $names): void
     {
         $user = auth()->user();
-        $names = array_values(array_unique(array_filter(array_map(fn ($n) => mb_substr(trim((string) $n), 0, 120), $names), fn ($n) => $n !== '')));
+        $names = array_values(array_unique(array_filter(array_map(fn ($n) => mb_substr(trim((string) $n), 0, 120), $names), fn ($n) => KakaoRoom::isRoomTitle($n))));   // 저장 창·그림자 창은 방이 아니다(11-11)
         $names = array_slice($names, 0, 200);
         foreach ($names as $name) {
             $room = KakaoRoom::firstOrCreate(['name' => $name]);
@@ -381,6 +383,12 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     </div>
 
+    @if($capReached)
+        {{-- 하루 비용 상한 — 진행 창 한 줄로 지나가 실무자가 몰랐다(11-11 김다정 10개 방이 0건). 크게, 무엇이 멈췄는지와 푸는 법을 같이 --}}
+        <div class="card-tight mb-4 border-red-300 bg-red-50 text-sm text-red-800" data-kakao-capped>
+            {{ __('kakao.cap_reached', ['spent' => number_format($board['cost_today']), 'cap' => number_format(\App\Models\Setting::kakaoDailyCostCapKrw())]) }}
+        </div>
+    @endif
     @php($pendingTotal = array_sum($pendingCounts))
     @if($pendingTotal > 0)
         {{-- 분류가 아직 안 된 메시지(시간 예산에 밀렸거나 실패) — 페이지 JS 가 자동으로 이어 가고, 멈췄으면 이 버튼으로(11-11) --}}
