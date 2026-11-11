@@ -843,3 +843,13 @@ OCR(MRZ, 후보 제시만 · 자동 기입 ❌) · 이미지 폐기 · Name·ID 
 ### 14-5. 흡수 금지
 
 - 🚫 ERP 가 OCR 하지 않는다. 🚫 Travel 시트를 ERP 서류 탭·`BOARD_ALLOWED_TYPES` 에 넣지 않는다. 🚫 `remitter_id` 를 읽기 API·포털 응답에 싣지 않는다. 🚫 바이어 `passport_id` 와 동기화하지 않는다(다른 사람일 수 있다).
+
+## 15. 클레임 미러 — board → ERP (2026-11-11 jin · ✅ 구현 dev, 마이그 `2026_11_11_000002_create_vehicle_claims_table`, `BoardClaimController`, 가드 `BoardClaimMirrorTest` 6)
+
+> 기획 정본 = `docs/design/claim-management.md §10`. 보내는 쪽 = board SKILLS §12/§14-30(복사 금지).
+
+- `POST /api/internal/board/claims` — 인증 = 이 문서 §1 HMAC(본문 서명, nonce). board 결재선 최종 승인 뒤 클레임 담당자가 [ERP 로 보내기] 를 누를 때만(자동 전송 ❌).
+- 본문: `board_claim_id`(필수, 멱등 키) · `revision`(필수, ≥1) · `vehicle_id` · `buyer_id` · `buyer_name` · `vehicle_number` · `vin` · **`confirmed_amount`**(필수, 확정 금액 하나 — board 가 어느 칸을 확정액으로 쓸지 정한다) · `currency`(USD/JPY/EUR/GBP/CNY/KRW) · `compensation_type`(`refund` 송금 | `credit` 차감 | null — 담당자가 안 고름) · `result`(`accepted` | `declined`) · `result_reason` · `approved_at` · `approved_by_name` · `handler_name` · `salesman_email` · `buyer_claim_count`(board 가 센 그 바이어 누적) · `board_url`.
+- 규칙: **기각(`declined`)은 금액과 무관하게 0 으로 저장**(jin «0원은 기각»). 바이어 = 본문 `buyer_id` → 없으면 그 차의 바이어 → 둘 다 없으면 **422** `{status:'rejected', message:'ERP 에서 이 차의 바이어를 먼저 정해 주세요…'}`(저장 ❌).
+- 멱등: 같은 `board_claim_id` — `revision` 이 더 크면 갱신(200 `updated`), 같으면 그대로(200 `unchanged`), 더 작으면 **409** `stale`. 새 건 = **201** `created`. 응답 `{erp_claim_id, status}`.
+- ERP 저장 = `vehicle_claims` · 바이어 드로어 **「클레임」 탭**(횟수 · 인정/기각 · 통화별 인정 금액 합 · 목록). 🚫 적립금·미수·정산 무관(기록만). 감사 `board_claim_received`.
