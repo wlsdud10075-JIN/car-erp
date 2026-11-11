@@ -290,6 +290,7 @@ return [
         'contact_email' => '이메일',
         'contact_phone' => '전화번호',
         'address' => '주소',
+        'credit_score' => '신용도 점수',   // 2026-11-11 — board 클레임 보고서로 나간 신용도(감사 board_buyer_credit_read 의 column_name)
         'memo' => '메모',
         'is_active' => '활성 상태',
         'is_inherited' => '승계받은 바이어',
