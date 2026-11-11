@@ -186,6 +186,32 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 저장을 막지 않기로 한 만큼(jin 2026-09-16) 그 상태가 화면에 보여야 한다(SKILLS §8 #60).
      * ⚠️ 신규 등록(편집 중이 아님)이면 붙은 차가 없으므로 0 이다.
      */
+    /**
+     * 🧾 클레임 탭(jin 2026-11-11, claim-management.md §10) — board 에서 결재가 끝나 넘어온 클레임. 횟수·인정/기각·통화별 확정 금액 합.
+     * 적립금과 별도(지표용 기록). 기각 = 0원. 드로어가 열린 바이어 한 명만 계산.
+     */
+    #[Computed]
+    public function buyerClaims(): array
+    {
+        if (! $this->editingId) {
+            return ['rows' => collect(), 'count' => 0, 'accepted' => 0, 'declined' => 0, 'sums' => [], 'board_count' => null];
+        }
+        $rows = \App\Models\VehicleClaim::where('buyer_id', $this->editingId)->orderByDesc('approved_at')->orderByDesc('id')->get();
+        $sums = [];
+        foreach ($rows->where('result', 'accepted') as $c) {
+            $sums[$c->currency] = ($sums[$c->currency] ?? 0) + (float) $c->confirmed_amount;
+        }
+
+        return [
+            'rows' => $rows,
+            'count' => $rows->count(),
+            'accepted' => $rows->where('result', 'accepted')->count(),
+            'declined' => $rows->where('result', 'declined')->count(),
+            'sums' => $sums,
+            'board_count' => $rows->max('board_buyer_claim_count'),   // board 가 센 누적(아직 안 보낸 것 포함일 수 있다)
+        ];
+    }
+
     #[Computed]
     public function domesticForeignCount(): int
     {
@@ -1772,7 +1798,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {{-- 탭 --}}
     <div class="flex border-b px-5">
         {{-- 현금 탭은 토글 ON 인 회사에만 뜬다 — 목록 자체를 갈아서 「보이는데 안 되는」 상태를 안 만든다. --}}
-        @foreach($this->cashEnabled ? ['basic','consignees','savings','cash'] : ['basic','consignees','savings'] as $k)
+        @foreach($this->cashEnabled ? ['basic','consignees','savings','cash','claims'] : ['basic','consignees','savings','claims'] as $k)
         <button @click="tab='{{ $k }}'"
                 :class="tab==='{{ $k }}' ? 'border-b-2 border-violet-600 text-violet-600' : 'text-gray-500 hover:text-gray-700'"
                 class="px-4 py-3 text-sm font-medium transition flex-shrink-0">{{ __('buyer.tab.'.$k) }}</button>
@@ -2350,6 +2376,50 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <button wire:click="saveConsignee" class="btn-primary text-xs py-1.5 px-3">{{ __('common.save') }}</button>
                     <button wire:click="closeConsigneeForm" class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs text-gray-600">{{ __('common.cancel') }}</button>
                 </div>
+            </div>
+            @endif
+            @endif
+        </div>
+
+        {{-- ── 클레임 (jin 2026-11-11 — board 결재 끝난 클레임, 적립금과 별도) --}}
+        <div x-show="tab==='claims'" x-cloak data-buyer-claims>
+            @if(!$editingId)
+            <p class="text-sm text-gray-400">{{ __('buyer.claims.save_first') }}</p>
+            @else
+            @php $cl = $this->buyerClaims; @endphp
+            <div class="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div class="rounded-lg border border-gray-200 bg-white p-3"><div class="text-xs text-gray-500">{{ __('buyer.claims.count') }}</div><div class="text-lg font-bold text-gray-800">{{ $cl['count'] }}</div></div>
+                <div class="rounded-lg border border-gray-200 bg-white p-3"><div class="text-xs text-gray-500">{{ __('buyer.claims.accepted') }}</div><div class="text-lg font-bold text-green-700">{{ $cl['accepted'] }}</div></div>
+                <div class="rounded-lg border border-gray-200 bg-white p-3"><div class="text-xs text-gray-500">{{ __('buyer.claims.declined') }}</div><div class="text-lg font-bold text-gray-700">{{ $cl['declined'] }}</div></div>
+                <div class="rounded-lg border border-gray-200 bg-white p-3"><div class="text-xs text-gray-500">{{ __('buyer.claims.sum') }}</div>
+                    <div class="text-sm font-bold text-gray-800">@forelse($cl['sums'] as $cur => $amt)<span class="block">{{ $cur }} {{ number_format($amt, 2) }}</span>@empty — @endforelse</div></div>
+            </div>
+            @if($cl['board_count'] !== null)
+                <p class="mb-3 text-xs text-gray-500">{{ __('buyer.claims.board_count', ['n' => $cl['board_count']]) }}</p>
+            @endif
+            @if($cl['count'] === 0)
+                <p class="text-sm text-gray-400">{{ __('buyer.claims.empty') }}</p>
+            @else
+            <div class="overflow-x-auto">
+                <table class="w-full min-w-[560px] text-xs">
+                    <thead><tr class="border-b text-left text-gray-500">
+                        <th class="px-2 py-1.5">{{ __('buyer.claims.col_date') }}</th><th class="px-2 py-1.5">{{ __('buyer.claims.col_vehicle') }}</th>
+                        <th class="px-2 py-1.5">{{ __('buyer.claims.col_result') }}</th><th class="px-2 py-1.5">{{ __('buyer.claims.col_type') }}</th>
+                        <th class="px-2 py-1.5 text-right">{{ __('buyer.claims.col_amount') }}</th><th class="px-2 py-1.5">{{ __('buyer.claims.col_reason') }}</th>
+                    </tr></thead>
+                    <tbody>
+                    @foreach($cl['rows'] as $c)
+                        <tr class="border-b border-gray-100 align-top">
+                            <td class="px-2 py-1.5 whitespace-nowrap">{{ $c->approved_at?->format('Y-m-d') ?? '—' }}</td>
+                            <td class="px-2 py-1.5 whitespace-nowrap">{{ $c->vehicle_number ?? '—' }}</td>
+                            <td class="px-2 py-1.5"><span class="badge {{ $c->result === 'accepted' ? 'badge-green' : 'badge-gray' }}">{{ __('buyer.claims.result_'.$c->result) }}</span></td>
+                            <td class="px-2 py-1.5">{{ $c->compensation_type ? __('buyer.claims.type_'.$c->compensation_type) : '—' }}</td>
+                            <td class="px-2 py-1.5 text-right font-mono">{{ $c->currency }} {{ number_format((float) $c->confirmed_amount, 2) }}</td>
+                            <td class="px-2 py-1.5 text-gray-600">{{ \Illuminate\Support\Str::limit((string) $c->result_reason, 80) }}@if($c->handler_name)<span class="block text-gray-400">{{ $c->handler_name }}@if($c->approved_by_name) · {{ $c->approved_by_name }}@endif</span>@endif</td>
+                        </tr>
+                    @endforeach
+                    </tbody>
+                </table>
             </div>
             @endif
             @endif

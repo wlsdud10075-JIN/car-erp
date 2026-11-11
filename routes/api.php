@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Internal\BoardClaimController;
 use App\Http\Controllers\Api\Internal\BoardRequestController;
 use App\Http\Controllers\Api\Internal\InternalDocumentController;
 use App\Http\Controllers\Api\Internal\InternalPortalController;
@@ -74,6 +75,8 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('buyers/{id}/credit', [InternalPortalController::class, 'buyerCredit'])->whereNumber('id')->name('buyers.credit');
         // 2026-11 ② — 송금인 Name·ID 전용 전송(덮어쓰기, won 뒤). 권위 §14-2. 본인 차만(아니면 403).
         Route::post('vehicles/{id}/remitter', [InternalPortalController::class, 'remitter'])->whereNumber('id')->name('vehicles.remitter');
+        // 2026-11-11 jin — board 결재 끝난 클레임을 ERP 바이어 「클레임」 탭으로(확정 금액 하나·기각 0원·멱등 board_claim_id). claim-management.md §10
+        Route::post('claims', [BoardClaimController::class, 'store'])->name('claims.store');
         // ③ 선적·B/L 묶음 v2 (2026-06-30 회의 조건부 GO) — 권위 §5
         Route::get('shippable', [ShippingRequestController::class, 'shippable'])->name('shippable');          // 새로 묶을 차 후보
         // 포워딩사 명부 (2026-08-11) — board 는 고르기만 한다(신규 생성 없음). 활성 {id,name} 만.

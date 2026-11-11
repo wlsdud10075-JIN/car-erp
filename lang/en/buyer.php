@@ -41,6 +41,7 @@ return [
         'consignees' => 'Consignees',
         'savings' => 'Savings',
         'cash' => 'Cash',
+        'claims' => 'Claims',
     ],
 
     'receivable' => [
@@ -161,6 +162,26 @@ return [
         'name' => 'Consignee Name',
         'id_type' => 'ID Type',
         'id_value' => 'ID Number',
+    ],
+
+    'claims' => [
+        'save_first' => 'Save the buyer first.',
+        'count' => 'Claims',
+        'accepted' => 'Accepted',
+        'declined' => 'Declined',
+        'sum' => 'Accepted amount',
+        'board_count' => 'Board counts :n claims in total (may include ones not sent to ERP yet)',
+        'empty' => 'No claims from board yet. They appear here after approval when the handler presses [Send to ERP] on board.',
+        'col_date' => 'Approved',
+        'col_vehicle' => 'Vehicle',
+        'col_result' => 'Result',
+        'col_type' => 'Compensation',
+        'col_amount' => 'Confirmed amount',
+        'col_reason' => 'Reason / handler, approver',
+        'result_accepted' => 'Accepted',
+        'result_declined' => 'Declined',
+        'type_refund' => 'Refund',
+        'type_credit' => 'Credit',
     ],
 
     'savings' => [
