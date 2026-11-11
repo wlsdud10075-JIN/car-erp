@@ -947,11 +947,8 @@ class BoardPortalApiTest extends TestCase
         $empty = Buyer::create(['name' => 'EMPTY', 'is_active' => true, 'salesman_id' => $me->id, 'address' => '  ', 'contact_phone' => null]);
 
         $res = $this->signedGet('/api/internal/board/buyers/'.$b->id, ['salesman_email' => 'me@a.com'])->assertOk();
-        // 2026-11-11 jin «신용도 넣어. 점수로.» — 거래 이력 없는 바이어 = 평가 불가(0 · '-' · false). 값은 BuyerCreditScore::for() 그대로
-        $res->assertExactJson(['id' => $b->id, 'name' => 'ATLAS', 'country' => null, 'address' => 'Rr. Durresi 12, Tirana', 'phone' => '+355 69 123 4567',
-            'credit_score' => 0, 'credit_grade' => '-', 'credit_available' => false]);
+        $res->assertExactJson(['id' => $b->id, 'name' => 'ATLAS', 'country' => null, 'address' => 'Rr. Durresi 12, Tirana', 'phone' => '+355 69 123 4567']);   // 신용도는 이 통로에 없다(11-11 jin — 별도 /credit)
         $this->assertStringNotContainsString('SECRET', $res->getContent());
-        $this->assertSame(BuyerCreditScore::for($b->fresh())['grade'], $res->json('credit_grade'));   // create() 직후 인스턴스엔 DB 기본값 컬럼이 없다(§8 #80)
 
         $this->signedGet('/api/internal/board/buyers/'.$empty->id, ['salesman_email' => 'me@a.com'])->assertOk()
             ->assertJsonPath('address', null)->assertJsonPath('phone', null);
@@ -959,13 +956,37 @@ class BoardPortalApiTest extends TestCase
         $log = AuditLog::where('auditable_type', Buyer::class)->where('auditable_id', $b->id)->where('action', 'board_buyer_contact_read')->get();
         $this->assertCount(1, $log);
         $this->assertSame('me@a.com', $log->first()->old_value);
-        $credit = AuditLog::where('auditable_type', Buyer::class)->where('auditable_id', $b->id)->where('action', 'board_buyer_credit_read')->get();   // 신용도가 나간 사실은 따로 남는다
-        $this->assertCount(1, $credit);
-        $this->assertSame('-/0', $credit->first()->new_value);
+        $this->assertSame(0, AuditLog::where('action', 'board_buyer_credit_read')->count());   // 연락처 통로는 신용도 기록을 안 남긴다
+    }
+
+    /**
+     * 🧮 신용도 전용 통로(2026-11-11 jin «그 바이어의 신용도만 가져와. 무슨 영업이랑 매칭을 하고 연락처를 가져온다고») —
+     * 바이어 id 만(차를 판 영업 ≠ 담당 영업이어도 나온다, ssancarerp 14%), 연락처 ❌, 접근 기록 1행. 이력 없으면 0·'-'·false.
+     */
+    public function test_buyer_credit_is_by_buyer_id_only_without_contact(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $theirs = Buyer::create(['name' => 'THEIRS', 'is_active' => true, 'salesman_id' => $other->id, 'contact_phone' => '010', 'address' => 'SECRET ADDR']);
+        $gone = Buyer::create(['name' => 'GONE', 'is_active' => true, 'salesman_id' => $me->id]);
+        $gone->delete();
+
+        $res = $this->signedGet('/api/internal/board/buyers/'.$theirs->id.'/credit', ['salesman_email' => 'me@a.com'])->assertOk();   // 남의 담당 바이어도 신용도는 나온다
+        $res->assertExactJson(['buyer_id' => $theirs->id, 'credit_score' => 0, 'credit_grade' => '-', 'credit_available' => false]);
+        $this->assertStringNotContainsString('010', $res->getContent());
+        $this->assertStringNotContainsString('SECRET', $res->getContent());
+        $this->signedGet('/api/internal/board/buyers/'.$gone->id.'/credit', ['salesman_email' => 'me@a.com'])->assertNotFound();
+        $this->signedGet('/api/internal/board/buyers/999999/credit', ['salesman_email' => 'me@a.com'])->assertNotFound();
+
+        $log = AuditLog::where('auditable_type', Buyer::class)->where('auditable_id', $theirs->id)->where('action', 'board_buyer_credit_read')->get();
+        $this->assertCount(1, $log);
+        $this->assertSame('me@a.com', $log->first()->old_value);
+        $this->assertSame('-/0', $log->first()->new_value);
+        $this->assertSame(0, AuditLog::where('action', 'board_buyer_contact_read')->count());   // 연락처 기록은 안 생긴다
     }
 
     /** 거래 이력이 있는 바이어는 실제 점수·등급이 실린다 — 화면(buyers/index creditScore)과 같은 단일 출처. */
-    public function test_buyer_show_carries_the_credit_score_when_history_exists(): void
+    public function test_buyer_credit_carries_the_score_when_history_exists(): void
     {
         $me = $this->salesman('me@a.com');
         $b = Buyer::create(['name' => 'SCORED', 'is_active' => true, 'salesman_id' => $me->id]);
@@ -977,7 +998,7 @@ class BoardPortalApiTest extends TestCase
         $expected = BuyerCreditScore::for($b->fresh());
         $this->assertTrue($expected['available']);
 
-        $this->signedGet('/api/internal/board/buyers/'.$b->id, ['salesman_email' => 'me@a.com'])->assertOk()
+        $this->signedGet('/api/internal/board/buyers/'.$b->id.'/credit', ['salesman_email' => 'me@a.com'])->assertOk()
             ->assertJsonPath('credit_available', true)
             ->assertJsonPath('credit_score', $expected['score'])
             ->assertJsonPath('credit_grade', $expected['grade']);

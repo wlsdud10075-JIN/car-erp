@@ -568,9 +568,29 @@ class InternalPortalController extends Controller
             'ip_address' => $request->ip(),
         ]);
 
-        // 🧮 신용도(2026-11-11 jin «신용도 넣어. 점수로.» — board 클레임 보고서 BUYER PRIORITY) — `BuyerCreditScore::for()` 그대로.
-        //    ERP 안에선 관리 이상만 보는 값(buyers/index creditScore, jin 08-24)이라 board 조건 = 클레임 담당자 드로어·대표 승인 화면만, 영업 화면 ❌,
-        //    서버가 1회 읽어 클레임 행에 스냅샷. 나갔다는 사실은 별도 액션으로 남긴다(연락처 기록과 구분).
+        return response()->json([
+            'id' => $b->id,
+            'name' => $b->name,
+            'country' => $b->country?->name,
+            'address' => trim((string) $b->address) !== '' ? $b->address : null,
+            'phone' => trim((string) $b->contact_phone) !== '' ? $b->contact_phone : null,
+        ]);
+    }
+
+    /**
+     * 🧮 바이어 신용도만 (2026-11-11 jin «그 바이어의 신용도만 가져와. 무슨 영업이랑 매칭을 하고 연락처를 가져온다고») — board 클레임 보고서 BUYER PRIORITY.
+     *
+     * - 값 = `BuyerCreditScore::for()` 그대로(화면 buyers/index creditScore 와 단일 출처). 이력 없으면 0·'-'·false.
+     * - 스코프 = **바이어 id 만**(영업 매칭 없음 — 클레임은 「차를 판 영업」 명의라 담당 영업 스코프면 ssancarerp 14%·바이어 96명이 404 였다).
+     *   연락처(`buyer()`)는 종전대로 담당 영업만 — 이 통로엔 연락처가 없다. 지워진 바이어·없는 id = 404.
+     * - board 조건 = 클레임 담당자 드로어·대표 승인 화면만(ERP 안에선 관리 이상만 보는 값), 영업 화면 ❌, 서버 1회 조회 → 클레임 행 스냅샷.
+     * - 접근 기록 1행 `board_buyer_credit_read`(new_value = 등급/점수).
+     */
+    public function buyerCredit(Request $request, int $id): JsonResponse
+    {
+        $b = Buyer::query()->whereKey($id)->first();
+        abort_if($b === null, 404);
+
         $credit = BuyerCreditScore::for($b);
         AuditLog::create([
             'user_id' => null,
@@ -581,11 +601,7 @@ class InternalPortalController extends Controller
         ]);
 
         return response()->json([
-            'id' => $b->id,
-            'name' => $b->name,
-            'country' => $b->country?->name,
-            'address' => trim((string) $b->address) !== '' ? $b->address : null,
-            'phone' => trim((string) $b->contact_phone) !== '' ? $b->contact_phone : null,
+            'buyer_id' => $b->id,
             'credit_score' => (int) $credit['score'],
             'credit_grade' => (string) $credit['grade'],
             'credit_available' => (bool) $credit['available'],
