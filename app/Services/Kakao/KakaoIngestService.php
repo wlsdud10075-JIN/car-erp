@@ -356,6 +356,7 @@ class KakaoIngestService
                 $result = $this->client->classify($system, KakaoPrompt::user($open, $slice), $schema);
                 $lastChunkSeconds = microtime(true) - $chunkStarted;
                 $this->apply($room, $slice, $open, $result['items'], $sides);
+                $this->autoResolveByVehicle($room, $slice);   // 모델이 못 이은 「같은 차량 처리 보고」를 식별자로 잇는다(jin 11-11)
                 foreach ($usage as $k => $v) {
                     $usage[$k] += (int) ($result['usage'][$k] ?? 0);
                 }
@@ -401,6 +402,81 @@ class KakaoIngestService
             ->get()
             ->sortBy('sent_at')
             ->values();
+    }
+
+    /**
+     * 같은 차량 식별자로 요청을 닫는다 — jin 11-11 «서식 요청은 앞뒤 문맥상 처리됐는지가 중요하다».
+     * 실측(ssancarerp 무사백 방) 서식 요청 18건 중 모델이 답을 이은 건 5건뿐 — 우리 편의 처리 보고가 「012555 / CALJA 판매 € 6,130」
+     * 「46라3388 저당/압류 없습니다」처럼 **차량번호·차대번호 끝자리**로 오는데 모델이 resolves 를 안 달았다(정보로만 찍음).
+     * 규칙 = 이번에 분류된 대답·정보·확인 중 resolves 가 비고 식별자(차량번호 · 차대번호 끝 6자리)가 있으면,
+     *        같은 방에서 **다른 사람**이 앞서(14일 안) 올린 미해결 요청·질문 가운데 그 식별자를 본문에 가진 **가장 최근 것**에 잇는다.
+     *        같은 사람(영업이 같은 차를 또 올림)·요청/질문 유형(「48조5021 저당 있습니다, 확인 필요」)은 안 닫는다. 모델이 이미 이었으면 그대로.
+     * 결과는 「오늘 끝난 것 · 자동 완료 후보」로만 간다(사람이 [완료]/[다시 할 일로]) — 지우는 게 아니다.
+     */
+    private function autoResolveByVehicle(KakaoRoom $room, Collection $slice): void
+    {
+        foreach ($slice as $m) {
+            if (! in_array($m->type, ['대답', '정보', '확인'], true) || $m->resolves_id !== null) {
+                continue;
+            }
+            $ids = self::vehicleIdentifiers($m->body, $m->vehicle_no, $m->vin_tail);
+            if ($ids === []) {
+                continue;
+            }
+            $open = KakaoMessage::where('room_id', $room->id)
+                ->whereIn('type', ['요청', '질문'])
+                ->where('sender', '!=', $m->sender)
+                ->where('sent_at', '<', $m->sent_at)
+                ->where('sent_at', '>=', $m->sent_at->copy()->subDays(14))
+                ->whereDoesntHave('resolvedBy')
+                ->orderByDesc('sent_at')->orderByDesc('id')
+                ->limit(80)
+                ->get();
+            foreach ($open as $r) {
+                if (array_intersect($ids, self::vehicleIdentifiers($r->body, $r->vehicle_no, $r->vin_tail)) !== []) {
+                    $ai = $m->ai ?? [];
+                    $ai['auto_resolve'] = 'vehicle';
+                    $m->update(['resolves_id' => $r->id, 'ai' => $ai]);
+                    break;
+                }
+            }
+        }
+    }
+
+    /**
+     * 본문에서 차량 식별자 — 차량번호(12가3456 · 123가4567, 공백·「헤이」 접두 무시) · 차대번호 끝 6자리(17자 VIN 의 끝, 또는 공백 없는 6자리 숫자 토큰).
+     * 금액(「500000원」「1,730」)은 안 잡힌다 — 6자리는 단독 토큰일 때만.
+     *
+     * @return array<int, string>
+     */
+    public static function vehicleIdentifiers(string $body, ?string $vehicleNo = null, ?string $vinTail = null): array
+    {
+        $ids = [];
+        if ($vehicleNo) {
+            $ids[] = 'P:'.preg_replace('/\s+|^헤이/u', '', $vehicleNo);
+        }
+        if ($vinTail) {
+            $ids[] = 'V:'.$vinTail;
+        }
+        if (preg_match_all('/\d{2,3}\s?[가-힣]\s?\d{4}/u', $body, $m)) {
+            foreach ($m[0] as $p) {
+                $ids[] = 'P:'.preg_replace('/\s+/u', '', $p);
+            }
+        }
+        if (preg_match_all('/\b[A-HJ-NPR-Z0-9]{17}\b/', $body, $m)) {
+            foreach ($m[0] as $vin) {
+                if (preg_match('/[A-Z]/', $vin)) {
+                    $ids[] = 'V:'.substr($vin, -6);
+                }
+            }
+        }
+        if (preg_match_all('/(?<![\d,.])\d{6}(?![\d,.원만€$%])/u', $body, $m)) {   // 「500000원」「150000만」 같은 금액은 제외
+            foreach ($m[0] as $t) {
+                $ids[] = 'V:'.$t;
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 
     /** 모델 판정을 메시지에 적는다 — 값 검증(유형·편·resolves) + 차량 매칭. 미지의 id 는 무시. 규칙이 찍은 메시지는 건너뛴다. */

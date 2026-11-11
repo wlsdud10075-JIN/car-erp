@@ -260,4 +260,54 @@ TXT;
         $this->artisan('kakao:resplit-glued', ['--apply' => true])->assertSuccessful();   // 두 번 돌려도 그대로
         $this->assertSame(4, KakaoMessage::count());
     }
+
+    /** jin 11-11 «서식 요청은 앞뒤 문맥상 처리됐는지가 중요» — 우리 편이 같은 차량번호·차대번호 끝자리를 적어 올리면 그 요청이 닫힌다(모델이 못 이었어도). */
+    public function test_a_report_quoting_the_same_vehicle_closes_the_open_request(): void
+    {
+        $room = $this->room();
+        $me = $this->user($room);
+        $this->fake->plan = function (array $ids) {
+            [$a, $b, $c, $d, $e, $f] = $ids;
+            $row = fn ($id, $type) => ['id' => $id, 'type' => $type, 'to' => '우리', 'mention' => null, 'ref' => null, 'vehicle' => null, 'vin_tail' => null, 'amount' => null, 'resolves' => null];
+
+            return [$row($a, '요청'), $row($b, '요청'), $row($c, '정보'), $row($d, '요청'), $row($e, '대답'), $row($f, '대답')];
+        };
+        $text = <<<'TXT'
+--------------- 2026년 11월 6일 금요일 ---------------
+[영업A] [오전 10:32] 차량명   Peugeot 508
+차량번호:   259러8403
+차대번호   VR3FHEHZRLY001234
+계약금: 50만원 입금 부탁드립니다
+[영업A] [오전 10:35] 차량명   VOLKSWAGEN Golf
+차량번호:   48조5021
+차대번호   WVWZZZAUZLW012555
+계약금: 100만원 입금 부탁드립니다
+[재무A] [오전 11:02] 012555 / CALJA 판매 € 6,130
+[재무A] [오전 11:05] 259러8403 저당 있습니다, 확인 부탁드립니다
+[영업A] [오전 11:10] 259러8403 입금 확인했습니다
+[재무A] [오후 2:00] 259러8403 이체 완료
+TXT;
+        app(KakaoIngestService::class)->ingest($me, $room, $text);
+        $m = KakaoMessage::orderBy('id')->get();
+
+        $this->assertSame($m[1]->id, $m[2]->resolves_id);   // 차대번호 끝 6자리로 Golf 서식을 닫는다(모델은 정보로만 찍고 resolves 없음)
+        $this->assertSame('vehicle', $m[2]->fresh()->ai['auto_resolve']);
+        $this->assertNull($m[3]->resolves_id);              // 「저당 있습니다, 확인 부탁」 = 요청 — 닫지 않는다
+        $this->assertSame($m[3]->id, $m[4]->resolves_id);   // 영업의 「입금 확인했습니다」는 자기 서식이 아니라 재무의 「저당 있습니다, 확인 부탁」(다른 사람의 열린 요청)을 닫는다
+        $this->assertSame($m[0]->id, $m[5]->resolves_id);   // 재무의 「이체 완료」가 Peugeot 서식을 닫는다(차량번호) — 자기가 올린 요청은 후보가 아니다
+
+        $board = KakaoTodoBoard::forUser($me, now());
+        $done = array_column($board['buckets']['done'], 'id');
+        $this->assertContains($m[0]->id, $done);
+        $this->assertContains($m[1]->id, $done);
+        $this->assertContains($m[3]->id, $done);   // 재무의 확인 부탁도 영업의 「입금 확인했습니다」로 닫혔다
+    }
+
+    public function test_vehicle_identifiers_ignore_amounts(): void
+    {
+        $this->assertSame(['P:48조5021', 'V:012555'], KakaoIngestService::vehicleIdentifiers("차량번호:   48조5021\n차대번호   WVWZZZAUZLW012555\n차량대금:   1,700만원 ⏎ 500000원"));
+        $this->assertSame(['V:131538'], KakaoIngestService::vehicleIdentifiers('131538로 들어왔는데 확인 부탁드립니다'));
+        $this->assertSame([], KakaoIngestService::vehicleIdentifiers('계약금 300 부탁드립니다 1480€ / 1320$ 500,000원'));
+        $this->assertSame(['P:55두8855'], KakaoIngestService::vehicleIdentifiers('헤이55두8855'));
+    }
 }
