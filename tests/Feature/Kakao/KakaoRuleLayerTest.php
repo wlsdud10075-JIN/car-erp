@@ -321,4 +321,46 @@ TXT;
             $this->assertTrue(KakaoRoom::isRoomTitle($t), $t);
         }
     }
+
+    /** 11-11 김다정 CIG 컨테이너 — 그 방에서 한 번도 말하지 않은 사람은 보낸이 목록에 없어 「나」를 못 잡았다 → 다른 방에서 잡힌 카톡 표시명을 쓴다. */
+    public function test_a_silent_member_gets_their_kakao_name_from_other_rooms(): void
+    {
+        $user = User::factory()->create(['name' => '김다정', 'permission' => 'user', 'role' => '수출통관']);
+        $talked = KakaoRoom::create(['name' => '말한 방']);
+        $talked->users()->attach($user->id, ['my_name' => '', 'selected' => true]);
+        app(KakaoIngestService::class)->ingest($user, $talked, '--------------- 2026년 11월 10일 화요일 ---------------
+[싼카-수출팀김다정] [오전 9:00] 서류 전달드립니다
+[영업A] [오전 9:05] 말소증 부탁드립니다');
+        $this->assertSame('싼카-수출팀김다정', $talked->users()->first()->pivot->my_name);
+
+        $silent = KakaoRoom::create(['name' => '말 안 한 방']);
+        $silent->users()->attach($user->id, ['my_name' => '', 'selected' => true]);
+        app(KakaoIngestService::class)->ingest($user, $silent, '--------------- 2026년 11월 10일 화요일 ---------------
+[포워더A] [오전 9:00] 운임 안내드립니다
+[영업A] [오전 9:05] 부킹 부탁드립니다');
+        $silent->refresh();
+        $this->assertSame('싼카-수출팀김다정', $silent->users()->first()->pivot->my_name);
+        $this->assertContains('싼카-수출팀김다정', $silent->sideMembers()['우리']);
+        $this->assertNotContains('포워더A', $silent->sideMembers()['우리']);
+
+        $empty = KakaoRoom::create(['name' => '아직 안 읽은 방']);   // 글 0건 방은 근거가 없어 잡지 않는다
+        $empty->users()->attach($user->id, ['my_name' => '', 'selected' => true]);
+        $this->assertFalse($empty->autoSetUpFor($user));
+    }
+
+    /** jin 11-11 «비용은 넣지 마 · 모달로 크게» — 한도에 닿으면 모달 + 큰 띠, 금액은 안 보인다. */
+    public function test_cap_reached_shows_a_modal_without_amounts(): void
+    {
+        Setting::updateOrCreate(['key' => 'kakao_daily_cost_cap_krw'], ['value' => '100', 'type' => 'integer']);
+        $room = $this->room();
+        $user = $this->user($room);
+        KakaoRead::create(['room_id' => $room->id, 'user_id' => $user->id, 'started_at' => now(), 'cost_krw' => 2080, 'status' => 'done']);
+        $this->actingAs($user);
+        $html = Volt::test('erp.kakao.index')->html();
+        $this->assertStringContainsString('오늘 분류 한도에 닿았습니다', $html);
+        preg_match('/data-kakao-capped.*?<\/button>/su', $html, $m);   // 모달 안
+        $this->assertNotEmpty($m);
+        $this->assertStringNotContainsString('2,080', $m[0]);
+        $this->assertStringNotContainsString('원', $m[0]);
+    }
 }

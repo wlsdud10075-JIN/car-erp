@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\KakaoRoom;
-use App\Models\Setting;
 use App\Services\Kakao\KakaoIngestService;
 use App\Services\Kakao\KakaoLimitException;
 use Illuminate\Http\JsonResponse;
@@ -49,7 +48,7 @@ class KakaoIngestController extends Controller
         $message = match (true) {
             $read->status === 'pending_setup' => "메시지 {$read->new_count}건 저장. 처음 읽은 방입니다 — ERP 「내 카톡 할 일」에서 이 방의 「나」를 한 번 골라 주면 분류가 시작됩니다.",
             $needsReview => "메시지 {$read->new_count}건은 저장했지만 분류에 실패했습니다({$read->pendingAfter}건 남음). 화면이 「이어서 분류」로 다시 시도합니다.",
-            $read->status === 'capped' => '오늘 분류 비용 상한('.number_format(Setting::kakaoDailyCostCapKrw())."원)에 닿아 새 메시지 {$read->new_count}건은 저장만 했습니다. 분류는 내일(또는 기능설정에서 상한을 올린 뒤) 화면이 이어 갑니다.",
+            $read->status === 'capped' => "오늘 분류 한도에 닿아 새 메시지 {$read->new_count}건은 저장만 했습니다. 분류는 내일 이어서 합니다.",
             $read->status === 'partial' => "새 메시지 {$read->new_count}건 중 {$read->pendingAfter}건은 시간이 모자라 아직 분류 전 — 화면이 이어서 분류합니다.",
             $read->new_count === 0 => "새 메시지가 없습니다(받은 {$read->total}건 전부 이미 있음).",
             default => "새 메시지 {$read->new_count}건 분류 완료(받은 {$read->total}건).",
