@@ -556,8 +556,19 @@ class InternalPortalController extends Controller
     {
         $all = $this->superScopeAll($request);
         $sid = $all ? null : $this->salesmanId($request);
-        $b = Buyer::query()->whereKey($id)->when(! $all, fn ($q) => $q->where('salesman_id', $sid))->with('country')->first();
+        $b = Buyer::query()->whereKey($id)->with('country')->first();
         abort_if($b === null, 404);
+        // 🔁 바이어는 있는데 내 담당이 아니다(담당이 다른 영업이거나 비어 있음 — 그만둔 영업의 바이어를 승계 안 한 경우) → 404 대신 **승계 안내**
+        //    (jin 11-11 «404 에러 표시보단, ERP 의 관리자에게 바이어 승계가 필요합니다 정도로 알려주면»). 연락처는 안 나가고 접근 기록도 안 남긴다.
+        //    ssancarerp 최근 1년 판매 14%·바이어 96명이 이 경우. 승계 = ERP 바이어 편집의 영업담당자 칸(관리 이상).
+        if (! $all && (int) $b->salesman_id !== $sid) {
+            return response()->json([
+                'message' => 'ERP 관리자에게 바이어 승계가 필요합니다 — 이 바이어의 담당 영업이 '.($b->salesman_id ? '다른 사람' : '비어 있어').' 연락처를 내려 줄 수 없습니다.',
+                'reason' => 'handover_needed',
+                'buyer_id' => $b->id,
+                'current_owner' => $b->salesman?->name,   // 담당 영업 이름(없으면 null) — 관리자가 누구에게서 승계할지 보게
+            ], 403);
+        }
 
         // 접근 기록 — 연락처가 나간 사실을 남긴다(문서 다운로드 로그와 같은 결). 행위자는 세션이 없어 old_value 에 요청자 이메일.
         AuditLog::create([
