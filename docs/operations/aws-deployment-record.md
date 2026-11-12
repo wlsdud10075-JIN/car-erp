@@ -935,6 +935,10 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-12 (9) — master `4cd3bb04` · 마이그 0 (jin «배포해줘»)
+- 관제센터 사이트 줄 = 왼쪽 머리칸 ERP/BOARD/ETC + 회사 가로 나열(dev `a3df19a9`) · 루틴 칸 = 예약 작업 22개를 한글 묶음 11줄·시각·사이트별 결과로(dev `48228021`, 가드 = routes/console.php 커맨드 전부 GROUPS 에). 로컬 Playwright 로 화면 확인.
+- 배포 런·서버 확인은 백그라운드 — 결과는 아래 줄에 추기.
+
 ## 2026-11-12 (8) — master `7e70a743` · 마이그 0 (jin «배포해줘»)
 - 관제센터 3D 지도 안 그려지던 것(x-data 쌍따옴표 ↔ JSON 따옴표 충돌 — Playwright 실측으로 잡음) + 목업 3기둥 배치 복원(dev `a1a2e632`) · 관제 서명 v1 대조·폴백 삭제(dev `c917faed`, board aa0202c·ssancar.com 21217181 도 같은 날 삭제).
 - 결과(백그라운드 확인): 배포 잡 3개 success(테스트 게이트 통과) · ssancarerp SHA `7e70a743` · 허브 7칸 전부 ok(ERP 3사 7e70a743 · board aa0202c · ssancar.com 21217181 · GPU 감시 ok) · /login 200.
