@@ -168,8 +168,10 @@ class OpsControlCenterTest extends TestCase
         foreach (['ssancarerp', 'heymanerp', 'ssancarboard', '회사 GPU PC', 'ssancar.com', 'heymancar.com 열기', 'ssh SSANCAR@100.110.133.112', 'Tailscale 100.110.133.112', '버전 어긋남', '미연결', 'HTTP 500', 'data-ops-notes="gpu"', 'Ollama 응답 정상'] as $txt) {
             $this->assertStringContainsString($txt, $html);
         }
-        $this->assertSame(1, substr_count($html, '>ETC</span> 회사 GPU PC'), 'GPU PC 는 ETC 줄');
-        $this->assertSame(1, substr_count($html, '>ETC</span> ssancar.com'), 'ssancar.com 도 ETC 줄');
+        $etc = substr($html, strpos($html, 'data-ops-row="ETC"'));   // ETC 줄 = 머리칸 하나 + GPU PC·ssancar.com 카드
+        $this->assertStringContainsString('data-ops-site="gpu"', $etc, 'GPU PC 는 ETC 줄');
+        $this->assertStringContainsString('data-ops-site="ssancar-web"', $etc, 'ssancar.com 도 ETC 줄');
+        $this->assertSame(3, substr_count($html, 'data-ops-row='), '줄 = ERP · BOARD · ETC');
         $this->assertStringNotContainsString('요약 API 없음 — 메모만</span>', substr($html, strpos($html, 'data-ops-anomalies')), 'GPU PC(메모만)는 이상 감지에 안 오른다');
 
         $c = Volt::actingAs($jin)->test('admin.control')->call('pickSite', 'heyman-erp');
