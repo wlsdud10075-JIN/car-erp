@@ -935,6 +935,11 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-12 (11) — master `baf14084` · 마이그 1 (jin «배포해줘»)
+- `vehicles.imported_at`(엑셀 적재 차 표식) + 관제 「끊긴 컨사이니」에서 적재 차 제외 + `vehicles:mark-imported`(같은 분 20대 이상 = 적재, dry-run/apply)(dev `076c2501`). 배포 전 ssancarerp 바이어 3대 #400→#172 재연결(`buyers:check-dangling --rebind --apply`).
+- 결과: run 43204521943 잡 5 success · 3사 SHA `baf14084` · 마이그 Ran×3 · /login 200×3.
+- 배포 뒤(jin «진행해줘», 오토모드 그대로 통과): `vehicles:mark-imported --apply` ssancarerp 4,695 · heymanerp 135 · karabaerp 141. 관제 이상 = ssancarerp 「삭제된 컨사이니 222대」 사라짐(남은 것 = 미수 급변 1(11-13 아침 소멸)·빈 칸·카톡) · heymanerp 끊긴 컨사이니 15 → **4대(손입력 차, 진짜 신호)** · karabaerp 0.
+
 ## 2026-11-12 (10) — master `01f93efb` · 마이그 0 (jin «배포해줘»)
 - 관제센터 SITES — 카드 전부 같은 높이·접힘 통일(GPU PC 메모도 「▸ 메모 · 점검」, 머리줄 = Ollama 응답·확인 시각) + 보드 폭 1400→1720(dev `b46dd091`) · 보드·줄(ERP/BOARD/ETC) 접기 = 칩 한 줄 압축(`● 이름 버전 · 이상 N`, localStorage `ops_sites_fold_v1`, dev `08340db6`). 전체 3,833 통과(병렬) · Playwright 1920px 실측 카드 175px 균일·접힌 보드 66px.
 - 결과: run 43193761521 잡 5 success · 3사 SHA `01f93efb` · /login 200×3.
