@@ -148,14 +148,14 @@ new #[Layout('components.layouts.app')] class extends Component
         @keyframes opsPulse { 0% { box-shadow: 0 0 0 0 rgba(61,255,170,.7) } 70% { box-shadow: 0 0 0 8px rgba(61,255,170,0) } 100% { box-shadow: 0 0 0 0 rgba(61,255,170,0) } }
         @keyframes opsPulseBad { 0% { box-shadow: 0 0 0 0 rgba(255,90,90,.75) } 70% { box-shadow: 0 0 0 9px rgba(255,90,90,0) } 100% { box-shadow: 0 0 0 0 rgba(255,90,90,0) } }
         .ops-ok { animation: opsPulse 2s infinite } .ops-bad { animation: opsPulseBad 1.2s infinite }
-        /* 사이트 줄 = 왼쪽 머리칸(ERP·BOARD·ETC) + 회사 3칸 가로(목업 그대로, jin 11-12). 폰에서는 머리칸이 한 줄 차지 */
-        .ops-row { display: grid; grid-template-columns: 78px repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start }
+        /* 사이트 줄 = 왼쪽 머리칸(ERP·BOARD·ETC) + 회사 3칸 가로(목업 그대로, jin 11-12). 한 줄의 카드는 같은 높이(stretch) — 긴 내용은 전부 접힘 안에. 폰에서는 머리칸이 한 줄 차지 */
+        .ops-row { display: grid; grid-template-columns: 78px repeat(3, minmax(0, 1fr)); gap: 10px; align-items: stretch }
         @media (max-width: 760px) { .ops-row { grid-template-columns: minmax(0, 1fr) } }
         [data-ops-control] details > summary { list-style: none } [data-ops-control] details > summary::-webkit-details-marker { display: none }
     </style>
     <div aria-hidden="true" style="position: absolute; inset: 0; background-image: linear-gradient(rgba(80,160,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(80,160,255,.06) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none"></div>
 
-    <div style="position: relative; max-width: 1400px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px">
+    <div style="position: relative; max-width: 1720px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px">
         {{-- 머리줄 --}}
         <div style="{{ $panel }} display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px">
             <div>
@@ -177,7 +177,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
         {{-- 사이트 칸 --}}
         <div style="{{ $panel }} display: flex; flex-direction: column; gap: 12px">
-            <span style="{{ $head }}">SITES <span style="{{ $sub }}">· 이름을 누르면 「이상 감지」가 그 사이트만 · 「서버 · 연결」을 누르면 펼침</span></span>
+            <span style="{{ $head }}">SITES <span style="{{ $sub }}">· 이름을 누르면 「이상 감지」가 그 사이트만 · 「▸」를 누르면 서버·연결 API·메모 펼침</span></span>
             @foreach($rows as [$rowLabel, $rowColor, $rowSites])
                 @if($rowSites !== [])
                 <div class="ops-row" data-ops-row="{{ $rowLabel }}">
@@ -197,7 +197,9 @@ new #[Layout('components.layouts.app')] class extends Component
                                     {{ $site['name'] }}
                                 </span>
                                 @if($s['ok'] && empty($site['url']) && empty($site['self']))
-                                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $d['generated_at'] ?? '' ? '감시 '.\Carbon\Carbon::parse($d['generated_at'])->format('m/d H:i') : '' }}</span>
+                                    {{-- 메모 사이트(GPU PC) — 접힌 머리줄엔 핵심 한 줄만(Ollama 응답·확인 시각), 나머지는 아래 접힘 안(jin 11-12 «카드 전부 같은 높이로, 접고 펼치기로 통일») --}}
+                                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $d['health'][0]['detail'] ?? (($d['generated_at'] ?? '') ? '감시 '.\Carbon\Carbon::parse($d['generated_at'])->format('m/d H:i') : '') }}</span>
+                                    <span style="font-size: 12px; color: {{ $mine ? '#ffb38a' : '#3dffaa' }}">{{ $mine ? '이상 '.count($mine).'건' : '이상 없음' }}</span>
                                 @elseif($s['ok'])
                                     <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $srv['version'] ?? '—' }} · 대기 마이그 {{ $srv['pending_migrations'] ?? '—' }} · 오류 오늘 {{ $srv['errors_today'] ?? '—' }} · 디스크 {{ isset($srv['disk_used_pct']) ? $srv['disk_used_pct'].'%' : '—' }}</span>
                                     <span style="font-size: 12px; color: {{ $mine ? '#ffb38a' : '#3dffaa' }}">{{ $mine ? '이상 '.count($mine).'건' : '이상 없음' }}</span>
@@ -205,40 +207,39 @@ new #[Layout('components.layouts.app')] class extends Component
                                     <span style="font-size: 12px; color: #9aa6bd">{{ $s['error'] }}</span>
                                 @endif
                             </button>
-                            @if(empty($site['url']) && empty($site['self']))
-                                {{-- 메모 항목(GPU PC) — 접지 않고 바로 보인다(jin 11-12 «내용이 안 뜨는 것 같다») --}}
-                                <div style="display: flex; flex-direction: column; gap: 3px; border-top: 1px solid rgba(127,231,255,.14); padding-top: 6px; font-size: 11px" data-ops-notes="{{ $site['key'] }}">
-                                    @foreach((array) ($d['health'] ?? []) as $h)
-                                        <span style="color: {{ ($h['ok'] ?? true) ? '#3dffaa' : '#ffcf86' }}">{{ ($h['ok'] ?? true) ? '✓' : '✗' }} {{ $h['detail'] }}</span>
-                                    @endforeach
-                                    @foreach((array) ($site['notes'] ?? []) as $note)
-                                        <span style="font-family: 'JetBrains Mono', monospace; color: #c9dcee">{{ $note }}</span>
-                                    @endforeach
-                                </div>
-                            @endif
-                            <details style="border-top: 1px solid rgba(127,231,255,.14); padding-top: 6px" @if(empty($site['url']) && empty($site['self'])) hidden @endif>
-                                <summary style="cursor: pointer; font-size: 12px; color: #9cc3e0; min-height: 32px; display: flex; align-items: center">▸ 서버 · 연결</summary>
-                                <div style="display: flex; flex-direction: column; gap: 3px; padding-top: 4px; font-size: 11px">
+                            @php($memoOnly = empty($site['url']) && empty($site['self']))
+                            {{-- 접힘 = 전 사이트 공통(메모·점검·서버·연결 API). 카드 높이를 줄에 맞추려고 긴 내용은 전부 여기(jin 11-12) --}}
+                            <details style="border-top: 1px solid rgba(127,231,255,.14); padding-top: 6px">
+                                <summary style="cursor: pointer; font-size: 12px; color: #9cc3e0; min-height: 32px; display: flex; align-items: center">▸ {{ $memoOnly ? '메모 · 점검' : '서버 · 연결 API' }}</summary>
+                                <div style="display: flex; flex-direction: column; gap: 3px; padding-top: 4px; font-size: 11px" data-ops-notes="{{ $site['key'] }}">
                                     @foreach((array) ($site['notes'] ?? []) as $note)
                                         <span style="font-family: 'JetBrains Mono', monospace; color: #c9dcee">{{ $note }}</span>
                                     @endforeach
                                     @if($s['ok'])
-                                        <span style="font-family: 'JetBrains Mono', monospace; color: #c9dcee">PHP {{ $srv['php'] ?? '' }} · Laravel {{ $srv['laravel'] ?? '' }} · DB {{ isset($srv['db_mb']) ? number_format($srv['db_mb']).'MB' : '—' }}</span>
+                                        @if(isset($srv['php']))
+                                            <span style="font-family: 'JetBrains Mono', monospace; color: #c9dcee">PHP {{ $srv['php'] ?? '' }} · Laravel {{ $srv['laravel'] ?? '' }} · DB {{ isset($srv['db_mb']) ? number_format($srv['db_mb']).'MB' : '—' }}</span>
+                                        @endif
                                         @foreach((array) ($d['links']['keys'] ?? []) as $k => $on)
                                             <span style="color: {{ $on ? '#c9dcee' : '#7d8aa3' }}">{{ $on ? '● ' : '○ ' }}{{ ['anthropic' => 'Claude API 키', 'nice' => 'NICE 조회 토큰', 'holiday' => '공휴일 API 키', 'board_sync' => 'board 매입 연동 시크릿', 'erp_peer' => 'ERP 끼리 정산 시크릿'][$k] ?? $k }}</span>
                                         @endforeach
-                                        <span style="color: #c9dcee">알림톡 오늘 {{ $d['links']['alimtalk_sent_today'] ?? '—' }}건 · 실패 {{ $d['links']['alimtalk_failed_today'] ?? '—' }} · Claude 오늘 {{ isset($d['links']['claude_cost_today_krw']) ? number_format($d['links']['claude_cost_today_krw']).'원' : '—' }}</span>
+                                        @if(($d['links'] ?? []) !== [])
+                                            <span style="color: #c9dcee">알림톡 오늘 {{ $d['links']['alimtalk_sent_today'] ?? '—' }}건 · 실패 {{ $d['links']['alimtalk_failed_today'] ?? '—' }} · Claude 오늘 {{ isset($d['links']['claude_cost_today_krw']) ? number_format($d['links']['claude_cost_today_krw']).'원' : '—' }}</span>
+                                        @endif
                                         @foreach((array) ($d['health'] ?? []) as $h)
                                             <span style="color: {{ ($h['ok'] ?? true) ? '#9cc3e0' : '#ffcf86' }}">{{ ($h['ok'] ?? true) ? '✓' : '✗' }} {{ __('health.item.'.$h['key']) !== 'health.item.'.$h['key'] ? __('health.item.'.$h['key']) : $h['key'] }} — {{ $h['detail'] }}</span>
                                         @endforeach
                                     @endif
                                 </div>
                             </details>
-                            @if(! empty($site['host']))
-                                <a href="https://{{ $site['host'] }}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; justify-content: center; height: 36px; border-radius: 8px; border: 1px solid {{ $rowColor }}66; background: {{ $rowColor }}14; color: #eaf6ff; text-decoration: none; font-size: 12px">{{ $site['host'] }} 열기 ↗</a>
-                            @endif
-                            @if(! empty($site['ssh']))
-                                <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #c9dcee; border: 1px dashed rgba(127,231,255,.35); border-radius: 8px; padding: 8px">{{ $site['ssh'] }}</span>
+                            @if(! empty($site['host']) || ! empty($site['ssh']))
+                                <div style="margin-top: auto; display: flex; flex-direction: column; gap: 6px">
+                                    @if(! empty($site['host']))
+                                        <a href="https://{{ $site['host'] }}" target="_blank" rel="noopener" style="display: inline-flex; align-items: center; justify-content: center; height: 36px; border-radius: 8px; border: 1px solid {{ $rowColor }}66; background: {{ $rowColor }}14; color: #eaf6ff; text-decoration: none; font-size: 12px">{{ $site['host'] }} 열기 ↗</a>
+                                    @endif
+                                    @if(! empty($site['ssh']))
+                                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #c9dcee; border: 1px dashed rgba(127,231,255,.35); border-radius: 8px; padding: 8px">{{ $site['ssh'] }}</span>
+                                    @endif
+                                </div>
                             @endif
                         </div>
                     @endforeach

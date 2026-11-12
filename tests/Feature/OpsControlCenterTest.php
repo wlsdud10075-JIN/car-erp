@@ -173,6 +173,9 @@ class OpsControlCenterTest extends TestCase
         $this->assertStringContainsString('data-ops-site="gpu"', $etc, 'GPU PC 는 ETC 줄');
         $this->assertStringContainsString('data-ops-site="ssancar-web"', $etc, 'ssancar.com 도 ETC 줄');
         $this->assertSame(3, substr_count($html, 'data-ops-row='), '줄 = ERP · BOARD · ETC');
+        $gpu = substr($etc, strpos($etc, 'data-ops-site="gpu"'));
+        $this->assertLessThan(strpos($gpu, 'data-ops-notes="gpu"'), strpos($gpu, '<details'), 'GPU PC 메모·점검도 접힘 안 — 카드 높이 통일(jin 11-12)');
+        $this->assertStringContainsString('Ollama 응답 정상 · 확인', substr($gpu, 0, strpos($gpu, '<details')), '접힌 머리줄엔 Ollama 응답·확인 시각 한 줄');
         $this->assertStringNotContainsString('요약 API 없음 — 메모만</span>', substr($html, strpos($html, 'data-ops-anomalies')), 'GPU PC(메모만)는 이상 감지에 안 오른다');
 
         $c = Volt::actingAs($jin)->test('admin.control')->call('pickSite', 'heyman-erp');
