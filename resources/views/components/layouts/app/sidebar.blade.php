@@ -30,6 +30,7 @@
         $routeName === 'admin.users.index' => __('nav.crumb.users'),
         $routeName === 'admin.ports.index' => __('nav.crumb.ports'),
         $routeName === 'admin.settings' => __('nav.crumb.settings'),
+        $routeName === 'admin.control' => __('nav.crumb.control'),
         $routeName === 'admin.document-access-logs.index' => __('nav.crumb.doc_logs'),
         $routeName === 'admin.audit-logs.index' => __('nav.crumb.audit_logs'),
         $routeName === 'admin.alimtalk-logs.index' => __('nav.crumb.alimtalk_logs'),
@@ -345,6 +346,14 @@
                     'active' => request()->routeIs('admin.settings'),
                     'show' => $user->isSuperAdmin(),
                 ],
+                [
+                    // 🛰️ 관제센터 (jin 2026-11-12) — 시스템관리자 중 OPS_OWNER_EMAILS 만
+                    'label' => __('nav.menu.control'),
+                    'href' => $user->isOpsOwner() ? route('admin.control') : '#',
+                    'icon' => 'signal',
+                    'active' => request()->routeIs('admin.control'),
+                    'show' => $user->isOpsOwner(),
+                ],
             ],
         ],
         // 회의확장씬 Phase 3-1 (d) (2026-05-23) — 로그 그룹.
@@ -399,6 +408,7 @@
     ];
 
     $icons = [
+        'signal'         => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M9.348 14.652a3.75 3.75 0 010-5.304m5.304 0a3.75 3.75 0 010 5.304m-7.425 2.121a6.75 6.75 0 010-9.546m9.546 0a6.75 6.75 0 010 9.546M5.106 18.894c-3.808-3.807-3.808-9.98 0-13.788m13.788 0c3.808 3.807 3.808 9.98 0 13.788M12 12h.008v.008H12V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"/>',   // 🛰️ 관제센터
         'chat-bubble-left-right' => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M20.25 8.511c.884.284 1.5 1.128 1.5 2.097v4.286c0 1.136-.847 2.1-1.98 2.193-.34.027-.68.052-1.02.072v3.091l-3-3c-1.354 0-2.694-.055-4.02-.163a2.115 2.115 0 01-.825-.242m9.345-8.334a2.126 2.126 0 00-.476-.095 48.64 48.64 0 00-8.048 0c-1.131.094-1.976 1.057-1.976 2.192v4.286c0 .837.46 1.58 1.155 1.951m9.345-8.334V6.637c0-1.621-1.152-3.026-2.76-3.235A48.455 48.455 0 0011.25 3c-2.115 0-4.198.137-6.24.402-1.608.209-2.76 1.614-2.76 3.235v6.226c0 1.621 1.152 3.026 2.76 3.235.577.075 1.157.14 1.74.194V21l4.155-4.155"/>',   // 📱 내 카톡 할 일
         'home'           =>'<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0h4"/>',
         'truck'          => '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M8 17h8m-8 0a2 2 0 11-4 0 2 2 0 014 0zm8 0a2 2 0 11-4 0 2 2 0 014 0zM3 4h10v13H3V4zm10 4h4l3 4v5h-7V8z"/>',

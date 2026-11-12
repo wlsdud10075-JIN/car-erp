@@ -102,6 +102,15 @@ return [
         'heyman_url' => env('HEYMAN_ERP_URL'),
     ],
 
+    // 🛰️ 관제센터 (jin 2026-11-12 «오직 나만») — 사이트끼리 읽기 채널. 3사·board 에 같은 OPS_HMAC_SECRET.
+    //   owner_emails = 관제 화면을 열 수 있는 계정(시스템관리자 권한 + 이 목록 둘 다). 비면 아무도 못 연다(fail-closed).
+    //   sites = 허브(ssancarerp)에만 — JSON 배열 [{"key","name","kind":"erp|board|gpu","url"|"self":true,"host"}].
+    'ops' => [
+        'hmac_secret' => env('OPS_HMAC_SECRET', ''),
+        'owner_emails' => array_values(array_filter(array_map('trim', explode(',', strtolower((string) env('OPS_OWNER_EMAILS', '')))))),
+        'sites' => env('OPS_SITES', ''),
+    ],
+
     // 카카오 알림톡 — 발신 계정(userid·profile·tmplId)은 기능설정(admin/settings) DB 저장.
     // ⚠️ 로컬 테스트 안전장치(jin 2026-07-10): 운영 크리덴셜을 로컬에서 쓰는 구조라, 로컬 테스트가
     //    실수신자에게 실제 카톡을 보내는 사고를 막는다. local 환경에서 ALIMTALK_TEST_PHONE 설정 시
