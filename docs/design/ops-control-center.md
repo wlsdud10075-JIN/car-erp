@@ -27,8 +27,9 @@
 
 ## 4. 요약 API 계약 (board 도 같은 것을 붙이면 저절로 들어온다)
 - `GET /api/internal/ops/summary` · 본문 없음.
-- 서명 = ERP 끼리 채널과 같은 정규 문자열: `METHOD\npath?query\nts\nbody`(query 는 ksort + http_build_query, 여기선 빈 값) → `hash_hmac('sha256', …, OPS_HMAC_SECRET)`.
-  헤더 = `X-Timestamp`(초, ±300) · `X-Nonce`(1회용) · `X-Board-Signature: sha256=<hex>`. 단일 출처 = `App\Http\Middleware\VerifyErpPeerHmac::canonical`.
+- 서명 **v2**(jin 11-12 결정 — nonce 를 서명 안에): `METHOD\npath?query\nts\nnonce\nbody`(query 는 ksort + http_build_query, 여기선 빈 값) → `hash_hmac('sha256', …, OPS_HMAC_SECRET)`. 단일 출처 = `App\Services\Ops\OpsSignature::canonicalV2`.
+  헤더 = `X-Timestamp`(초, ±300) · `X-Nonce`(1회용) · `X-Board-Signature: sha256=<hex>`.
+  전환(11-12~): 받는 쪽은 v2 먼저, 안 맞으면 v1(`METHOD\npath?query\nts\nbody`)도 받는다. 허브는 v2 로 보내고 401 이면 v1 로 한 번 더(화면에 「서명 v1(전환 전)」). board·ssancar.com 이 v2 를 받으면 **양쪽 v1 삭제**.
 - 시크릿이 비면 **401**(fail-closed). 없는 경로면 허브가 「미연결」로 그린다.
 - 응답(JSON) 최소 = `server.version`(짧은 SHA) + `anomalies[]`. 나머지 키는 비워도 된다.
   ```
@@ -48,6 +49,7 @@
 - ✅ board 요약 API — board master `801b381` 두 박스 배포 + 시크릿 투입(11-12) → 허브에서 읽힘.
 - 🔔 **nonce 를 서명에 넣을지** — jin 11-12 «셋 다 붙고 얘기해줘». 이제 ERP·board·ssancar.com 전부 붙었다 → jin 결정 대기(바꾸면 3곳 같은 날).
 - 세컨드 브레인 목록 자동 갱신(이 PC 작업 스케줄러로 밤마다 `ops:brain-sync --push`) — 후속.
+- 회사 GPU PC 칸 = `"probe":"assistant"` → `assistant:health-check`(5분, ssancarerp .env `ASSISTANT_OLLAMA_URL=http://100.110.133.112:11434`) 캐시로 Ollama 응답·색인 시각을 보여 준다(그 PC 에 API 없이). 5분 넘게 응답 없으면 이상 「GPU PC 응답 없음」.
 - ✅ ssancar.com 요약 API 운영 반영(11-12 14:25, jin 직접) — 허브에서 읽힘(6b1e9164, health 13줄). 아래는 경위:
 - ssancar.com 요약 API — 11-12 ssancar 세션 착수. 경로 `https://www.ssancar.com/page/api_ops_summary.php`(그쪽 제안 — `_ops/` 는 문서 폴더, 기존 서명 API 가 `page/` 에 있음 · `ssancar.com` 은 www 로 301). 허브 나가는 IP 54.116.7.83 은 그쪽 지오게이트 통과 목록에 이미 있음. 시크릿 = 그 서버 `/opt/bitnami/ssancar_secrets/ops_control.json` {"hmac_secret"} (jin 이 넣음, 운영은 수동 업로드). 1차 응답 = version·php·disk · health(ERP 미러 소스별 마지막 성공) · anomalies(미러 13h 없음·미러 실패·디스크 90%). ⚠️ ssancar 지적: nonce 가 서명 대상 밖이라 ±300초 안 nonce 만 바꾼 재전송이 가능(HTTPS·읽기 전용 GET — 바꿀지는 jin 판단, 바꾸면 3곳 동시).
 - 루틴 표에 「마지막 성공」 열 · 「N시간 넘게 running」 규칙(기록이 쌓인 뒤 결정).
