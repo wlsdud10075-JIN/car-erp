@@ -2,10 +2,10 @@
 
 namespace Tests\Feature;
 
-use App\Http\Middleware\VerifyErpPeerHmac;
 use App\Models\User;
 use App\Services\Ops\BrainCatalog;
 use App\Services\Ops\OpsBrain;
+use App\Services\Ops\OpsSignature;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\File;
@@ -71,11 +71,10 @@ class OpsBrainTest extends TestCase
     private function signedPost(string $body, array $extra = []): TestResponse
     {
         $path = '/api/internal/ops/brain';
-        $ts = now()->timestamp;
-        $sig = hash_hmac('sha256', VerifyErpPeerHmac::canonical('POST', $path, [], $ts, $body), self::SECRET);
+        $h = OpsSignature::headers('POST', $path, [], $body, self::SECRET);   // v2 — nonce 가 서명 안
 
         return $this->call('POST', $path, [], [], [], array_merge([
-            'HTTP_X_TIMESTAMP' => (string) $ts, 'HTTP_X_NONCE' => (string) Str::uuid(), 'HTTP_X_BOARD_SIGNATURE' => 'sha256='.$sig, 'CONTENT_TYPE' => 'application/gzip', 'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_TIMESTAMP' => $h['X-Timestamp'], 'HTTP_X_NONCE' => $h['X-Nonce'], 'HTTP_X_BOARD_SIGNATURE' => $h['X-Board-Signature'], 'CONTENT_TYPE' => 'application/gzip', 'HTTP_ACCEPT' => 'application/json',
         ], $extra), $body);
     }
 

@@ -11,7 +11,7 @@ use Illuminate\Support\Facades\Http;
  * 나머지는 OPS_SITES(.env JSON)에 적힌 주소의 요약 API 를 서명해서 읽는다.
  *
  * ⏱️ 한 곳이 느리거나 죽어도 페이지가 멈추지 않게 — 사이트마다 timeout 4초, 결과는 5분 캐시(실패도 1분 캐시해 매번 4초씩 기다리지 않게).
- * 🔏 서명 = OpsSignature v2. 상대가 아직 v1 이면 401 뒤 한 번 v1 로 다시(전환 기간 — 상대가 전부 v2 가 되면 지운다).
+ * 🔏 서명 = OpsSignature v2(nonce 포함). 11-12 전환 당일 세 곳 모두 v2 가 되어 v1 폴백은 지웠다.
  * 🖥️ url 없는 항목(회사 GPU PC) = `"probe":"assistant"` 면 assistant:health-check(5분마다 Ollama 100.110.133.112 핑)가 캐시에 적어 둔 판정을 보여 준다 — 그 PC 에 API 를 두지 않고도 「살아 있나」가 보인다.
  */
 class OpsHub
@@ -71,34 +71,23 @@ class OpsHub
         }
         $path = (string) ($site['path'] ?? self::PATH);
         $url = rtrim((string) $site['url'], '/').$path;
-        foreach ([2, 1] as $version) {   // v2 → (401 이면) v1 한 번 — 전환 기간
-            try {
-                $res = Http::timeout(4)->connectTimeout(3)->acceptJson()
-                    ->withHeaders(OpsSignature::headers('GET', $path, [], '', $secret, $version))->get($url);
-            } catch (\Throwable $e) {
-                return ['ok' => false, 'data' => null, 'error' => '응답 없음 — '.mb_substr($e->getMessage(), 0, 120), 'fetched_at' => $at];
-            }
-            if ($res->status() === 401 && $version === 2) {
-                continue;
-            }
-            if ($res->status() === 404) {
-                return ['ok' => false, 'data' => null, 'error' => '미연결(요약 API 없음)', 'fetched_at' => $at];
-            }
-            if ($res->status() === 401) {
-                return ['ok' => false, 'data' => null, 'error' => '인증 거부 — 두 서버 OPS_HMAC_SECRET 확인', 'fetched_at' => $at];
-            }
-            if (! $res->successful() || ! is_array($res->json('server'))) {
-                return ['ok' => false, 'data' => null, 'error' => 'HTTP '.$res->status(), 'fetched_at' => $at];
-            }
-            $data = $res->json();
-            if ($version === 1) {
-                $data['signature_v1'] = true;   // 화면에 「아직 v1」 표시용 — 전환이 끝나면 사라진다
-            }
-
-            return ['ok' => true, 'data' => $data, 'error' => null, 'fetched_at' => $at];
+        try {
+            $res = Http::timeout(4)->connectTimeout(3)->acceptJson()
+                ->withHeaders(OpsSignature::headers('GET', $path, [], '', $secret))->get($url);
+        } catch (\Throwable $e) {
+            return ['ok' => false, 'data' => null, 'error' => '응답 없음 — '.mb_substr($e->getMessage(), 0, 120), 'fetched_at' => $at];
+        }
+        if ($res->status() === 404) {
+            return ['ok' => false, 'data' => null, 'error' => '미연결(요약 API 없음)', 'fetched_at' => $at];
+        }
+        if ($res->status() === 401) {
+            return ['ok' => false, 'data' => null, 'error' => '인증 거부 — 두 서버 OPS_HMAC_SECRET 확인(서명 v2)', 'fetched_at' => $at];
+        }
+        if (! $res->successful() || ! is_array($res->json('server'))) {
+            return ['ok' => false, 'data' => null, 'error' => 'HTTP '.$res->status(), 'fetched_at' => $at];
         }
 
-        return ['ok' => false, 'data' => null, 'error' => '인증 거부', 'fetched_at' => $at];
+        return ['ok' => true, 'data' => $res->json(), 'error' => null, 'fetched_at' => $at];
     }
 
     /** 회사 GPU PC — assistant:health-check 캐시(ollama_ok·ollama_down_since·index_mtime·checked_at). 캐시가 없으면 감시 자체가 안 도는 것. */
