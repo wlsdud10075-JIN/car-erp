@@ -63,7 +63,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         unset($this->logs);
     }
 
-    /** 주의 필요(미도달·실패) 전체 확인 처리. */
+    /** 머리줄 「확인 필요 (N)」 — 누르면 아래 목록이 확인을 눌러야 하는 행만으로 걸러진다(jin 11-12 «전체확인보다 확인할 내용만 찾아서 보여주기»). 「주의 필요만」 체크와 같은 필터. */
+    public function toggleAttention(): void
+    {
+        $this->onlyAttention = ! $this->onlyAttention;
+        $this->resetPage();
+    }
+
+    /** 주의 필요(미도달·실패) 전체 확인 처리 — 「확인 필요」 필터를 켠 상태에서만 보인다(실수로 다 지우지 않게). */
     public function acknowledgeAll(): void
     {
         abort_unless(auth()->user()?->isSuperAdmin(), 403);
@@ -116,11 +123,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             <p class="mt-0.5 text-xs text-gray-500">{{ __('log.at_subtitle', ['count' => $this->logs->total()]) }}</p>
         </div>
         <div class="flex items-center gap-2">
-            @if($this->attentionCount > 0)
-            <button type="button" wire:click="acknowledgeAll"
+            @if($this->attentionCount > 0 || $onlyAttention)
+            <button type="button" wire:click="toggleAttention" data-attention-toggle
+                    class="rounded-md px-3 py-1.5 text-xs font-medium {{ $onlyAttention ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-50 text-red-700 hover:bg-red-100' }}">
+                {{ __('log.at_attention_open') }} ({{ $this->attentionCount }})
+            </button>
+            @endif
+            @if($onlyAttention && $this->attentionCount > 0)
+            <button type="button" wire:click="acknowledgeAll" data-attention-ack-all
                     wire:confirm="{{ __('log.at_ack_all') }}?"
-                    class="rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100">
-                {{ __('log.at_ack_all') }} ({{ $this->attentionCount }})
+                    class="rounded-md border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50">
+                {{ __('log.at_ack_all') }}
             </button>
             @endif
             <select wire:model.live="perPage" class="input-base w-auto">
