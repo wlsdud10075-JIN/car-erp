@@ -67,6 +67,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 목록 필터 `?b2b=1` = 관리대상만 — 사이드바 「B2B 파트너스」 메뉴가 이 링크다. */
     #[Url(as: 'b2b')] public string $b2bFilter = '';
 
+    /** 🆕 신규 바이어만(jin 11-12 «신규 뱃지 버튼축으로 필터») — 배지와 같은 기준(Buyer::scopeNewBuyers). ⚠️ 메서드명 ≠ 프로퍼티명(§8 #32) */
+    #[Url(as: 'new')] public bool $newOnly = false;
+
     public bool   $is_b2b_partner = false;
     public string $website = '';
     public string $office_address = '';
@@ -358,6 +361,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    public function toggleNewOnly(): void
+    {
+        $this->newOnly = ! $this->newOnly;
+        unset($this->buyers, $this->newBuyerCount);
+        $this->resetPage();
+    }
+
+    /** 버튼 숫자 = 지금 조건(이 버튼 제외)에서 신규 바이어 수 */
+    #[Computed]
+    public function newBuyerCount(): int
+    {
+        return $this->buyerQuery()->newBuyers()->count();
+    }
+
     public function updatedPerPage(): void
     {
         if (! in_array($this->perPage, [10, 30, 50, 100], true)) {
@@ -381,6 +398,27 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function buyers()
     {
+        return $this->buyerQuery()
+            ->when($this->newOnly, fn ($q) => $q->newBuyers())
+            ->with(['country', 'salesman'])
+            // 🏷️ DP/FD 는 차량(거래)에 있다 — 바이어 목록은 **센 개수**만(요청서 02 ↔ 03 모순을 이렇게 닫음, 출처 하나).
+            ->withCount([
+                'vehicles as dp_count' => fn ($q) => $q->where('deal_type', 'DP'),
+                'vehicles as fd_count' => fn ($q) => $q->where('deal_type', 'FD'),
+            ])
+            // 회의확장씬 #2 (2026-05-23) — 영업담당자별 그룹 정렬 (담당자별 묶음 + 이름순).
+            ->orderByRaw('salesman_id IS NULL ASC')   // NULL 마지막
+            ->orderBy('salesman_id')
+            ->orderBy('name')
+            // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
+            //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
+            ->orderBy('id')
+            ->paginate($this->perPage);
+    }
+
+    /** 목록 조건(권한 범위·담당자·B2B·검색) — 목록과 「신규」 버튼 숫자가 같이 쓴다(갈리면 숫자와 목록이 어긋난다) */
+    private function buyerQuery()
+    {
         // 회의확장씬 #11 + #2 (2026-05-22) — 영업/[관리] 본인 바이어 솔팅.
         // E-2 보강 (2026-05-22) — buyers.salesman_id 직접 관계 우선 + vehicles 간접 fallback (운영 호환).
         //   - 직접: buyer.salesman_id IN ids
@@ -393,12 +431,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
         return Buyer::query()
-            ->with(['country', 'salesman'])
-            // 🏷️ DP/FD 는 차량(거래)에 있다 — 바이어 목록은 **센 개수**만(요청서 02 ↔ 03 모순을 이렇게 닫음, 출처 하나).
-            ->withCount([
-                'vehicles as dp_count' => fn ($q) => $q->where('deal_type', 'DP'),
-                'vehicles as fd_count' => fn ($q) => $q->where('deal_type', 'FD'),
-            ])
             ->when($this->b2bFilter === '1' && Setting::b2bPartnersEnabled(), fn ($q) => $q->where('is_b2b_partner', true))
             ->when($restrictToOwnSalesman, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('salesman_id', $user->salesman->id)
@@ -417,15 +449,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when(SearchTerm::of($this->search), fn ($q) => $q->where(fn ($q2) => $q2->where('name', 'like', SearchTerm::like($this->search))
                 ->orWhere('contact_email', 'like', SearchTerm::like($this->search))
                 ->orWhere('contact_name', 'like', SearchTerm::like($this->search))
-            ))
-            // 회의확장씬 #2 (2026-05-23) — 영업담당자별 그룹 정렬 (담당자별 묶음 + 이름순).
-            ->orderByRaw('salesman_id IS NULL ASC')   // NULL 마지막
-            ->orderBy('salesman_id')
-            ->orderBy('name')
-            // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
-            //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
-            ->orderBy('id')
-            ->paginate($this->perPage);
+            ));
     }
 
     // 회의확장씬 #5-1 (2026-05-22) — 바이어 폼 영업담당자 select 옵션.
@@ -1647,6 +1671,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     </select>
     @endif
     <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+    {{-- 🆕 신규 버튼축(jin 11-12 — 차량관리 「운항중」 버튼과 같은 모양) — 누르면 배지 붙은 바이어만, 다시 누르면 해제 --}}
+    <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3" data-new-only-filter>
+        <button type="button" wire:click="toggleNewOnly" aria-pressed="{{ $newOnly ? 'true' : 'false' }}" title="{{ __('buyer.new_filter_hint') }}"
+                class="h-9 rounded-full px-2.5 text-xs transition sm:h-7 {{ $newOnly ? 'bg-rose-600 text-white shadow-sm font-semibold' : 'bg-rose-100 text-rose-700 hover:bg-rose-200 font-medium' }}">
+            {{ $newOnly ? '✓ ' : '' }}{{ __('buyer.new_badge') }} ({{ number_format($this->newBuyerCount) }})
+        </button>
+    </div>
 </div>
 
 {{-- 테이블 --}}

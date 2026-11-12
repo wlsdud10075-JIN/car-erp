@@ -108,4 +108,33 @@ class BuyerNewBadgeAndReceivableToggleTest extends TestCase
 
         $c->call('toggleTask', 'buyer_undecided')->assertSet('taskFilter', '');
     }
+
+    public function test_new_only_button_filters_the_list_like_the_sailing_pill(): void
+    {
+        Carbon::setTestNow('2026-11-12 10:00:00');
+        $this->buyerAt('NEW ONE', '2026-11-10 09:00:00');
+        $this->buyerAt('NEW TWO', '2026-11-01 09:00:00');
+        $this->buyerAt('OLD BUYER', '2026-06-01 09:00:00');
+        $this->actingAs(User::factory()->create(['permission' => 'admin', 'email_verified_at' => now()]));
+
+        $c = Volt::test('erp.buyers.index');
+        $this->assertSame(2, $c->instance()->newBuyerCount);
+        $this->assertStringContainsString('OLD BUYER', $c->html());
+        $this->assertMatchesRegularExpression('/data-new-only-filter[\s\S]*?신규 \(2\)/u', $c->html());
+
+        $c->call('toggleNewOnly');
+        $names = $c->instance()->buyers->pluck('name')->all();
+        sort($names);
+        $this->assertSame(['NEW ONE', 'NEW TWO'], $names, '배지와 같은 기준(Buyer::scopeNewBuyers)');
+        $this->assertStringNotContainsString('OLD BUYER', $c->html());
+
+        $c->call('toggleNewOnly');   // 다시 누르면 해제
+        $this->assertCount(3, $c->instance()->buyers);
+
+        $this->assertSame(
+            Buyer::all()->filter->isNewBuyer()->pluck('id')->sort()->values()->all(),
+            Buyer::newBuyers()->pluck('id')->sort()->values()->all(),
+            '배지와 필터가 같은 바이어를 고른다'
+        );
+    }
 }

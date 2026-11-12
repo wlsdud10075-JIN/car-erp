@@ -74,9 +74,20 @@ class Buyer extends Model
         if (! $this->created_at) {
             return false;
         }
-        $from = now()->subDays(self::NEW_BADGE_DAYS)->max(Carbon::parse(self::NEW_BADGE_SINCE));
 
-        return $this->created_at->gte($from);
+        return $this->created_at->gte(self::newBadgeFrom());
+    }
+
+    /** 「신규」 배지가 붙는 시작 시각 — 배지(isNewBuyer)와 목록 필터(scopeNewBuyers)가 같이 쓴다 */
+    public static function newBadgeFrom(): Carbon
+    {
+        return now()->subDays(self::NEW_BADGE_DAYS)->max(Carbon::parse(self::NEW_BADGE_SINCE));
+    }
+
+    /** 바이어 목록 「🆕 신규」 버튼(jin 11-12 «차량관리 운항중 버튼처럼») — 배지가 붙은 바이어만 */
+    public function scopeNewBuyers($query)
+    {
+        return $query->where('created_at', '>=', self::newBadgeFrom());
     }
 
     /**

@@ -13,6 +13,7 @@ return [
     'empty' => '바이어가 없습니다.',
     'delete_confirm' => ':name 바이어를 삭제하시겠습니까?',
     'new_badge' => '신규',
+    'new_filter_hint' => '등록 후 30일 안 바이어(「신규」 배지)만 봅니다. 다시 누르면 해제.',
     'new_badge_hint' => ':date 등록 — 등록 후 30일 동안 표시됩니다.',
     'delete_confirm_simple' => '이 바이어를 삭제할까요? 되돌릴 수 없습니다.',
     'saved' => '바이어 정보가 저장됐습니다.',
