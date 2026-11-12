@@ -176,6 +176,10 @@ class OpsControlCenterTest extends TestCase
         $gpu = substr($etc, strpos($etc, 'data-ops-site="gpu"'));
         $this->assertLessThan(strpos($gpu, 'data-ops-notes="gpu"'), strpos($gpu, '<details'), 'GPU PC 메모·점검도 접힘 안 — 카드 높이 통일(jin 11-12)');
         $this->assertStringContainsString('Ollama 응답 정상 · 확인', substr($gpu, 0, strpos($gpu, '<details')), '접힌 머리줄엔 Ollama 응답·확인 시각 한 줄');
+        $this->assertSame(2, substr_count($html, 'data-ops-chip="gpu"'), '칩 = 보드 접힘 줄 + ETC 줄 접힘 자리, 두 군데(jin 11-12 「접어도 다 보이게」)');
+        $this->assertStringContainsString('data-ops-sites-toggle', $html);
+        $this->assertSame(3, substr_count($html, 'data-ops-fold='), 'ERP·BOARD·ETC 줄마다 접기 버튼');
+        $this->assertStringContainsString('Ollama 정상', substr($html, strpos($html, 'data-ops-board-strip')), 'GPU 칩은 Ollama 판정');
         $this->assertStringNotContainsString('요약 API 없음 — 메모만</span>', substr($html, strpos($html, 'data-ops-anomalies')), 'GPU PC(메모만)는 이상 감지에 안 오른다');
 
         $c = Volt::actingAs($jin)->test('admin.control')->call('pickSite', 'heyman-erp');
