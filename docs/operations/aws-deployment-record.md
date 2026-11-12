@@ -935,6 +935,11 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-12 — master `e1da09ff` · 마이그 1 (jin «배포해줘», 오전)
+- 카톡 ② 차량 이어받기 + ERP 카드 · ③ 미등록·ERP 점검·ERP 처리됨 자동 완료(dev `394b2d3e`·`2590df27`). 새 표 `kakao_message_vehicles`.
+- deploy run 43133267391 잡 5개 success · 서버 SHA ssancarerp·heymanerp `e1da09ff` 확인.
+- 소급 `kakao:link-vehicles` dry-run: ssancarerp 1,432건(차 있는 글 208 · 이어받기 예상 29) / heymanerp 283건(24 · 0). `--apply` 는 운영 쓰기라 자동 모드에서 막힘 → jin 몫(미실행).
+
 ## 2026-11-11 (3) — master `ef3c4ecd` · 마이그 2 (jin «배포하면서 정리해주라», 18시대)
 
 dev `62afa420`·`1f165f6f`·`098b0580`·`d780f8bf` → master `705ccdc4`~`ef3c4ecd`(cherry-pick 4, 충돌 0).
