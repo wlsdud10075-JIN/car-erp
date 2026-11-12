@@ -935,6 +935,10 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-12 (13) — master `b2218140` · 마이그 0 (jin «배포해줘» — board 배차 루프 확인 뒤)
+- board 탁송 배차 ERP 4건(dev `c1301619`·`074ce8b0`·`0b354b10`): 보관위치 GET/POST(`/api/internal/board/vehicles/{id}/stock-location`, 덮어쓰기·감사·stockLocations() 422·본인 차 403·options) · purchase-sync 보관위치 동봉(빈 칸만, 목록 밖은 그 칸만) · board 요청 note → erp_board_request #{요청내역} 한 줄(금액→계좌→배차) · 감사 라벨 「보관위치 비고」. 스펙 = `docs/integration/board-portal-api.md §16`. board 는 같은 날 먼저 배포(board master 9a1dc25).
+- 결과: run 43229558458 잡 5 success · 3사 SHA `b2218140` · /login 200×3 · 새 경로 무서명 401×3.
+
 ## 2026-11-12 (12) — master `88db9608` · 마이그 0 (jin «현재까지 먼저 배포해주고»)
 - 알림톡 로그 「확인 필요 (N)」 = 목록 필터(머리줄 버튼, 전체 확인은 필터 켠 뒤에만)(dev `759c0567`·`ed15d2c3`) · 모바일 390px 점검 1차 — 기능 불가 5 + 보기 흉함 14(관제 3D pan-y·정산 카드 뱃지/버튼·사내직원관리 버튼 줄·월정산 헤더·승인 링크 금액·바이어 탭/적립금·카톡·수출 탭·루틴 표, dev `ffc3b98e`, 정본 `docs/design/mobile-audit-2026-11-12.md`). 전체 3,837 통과.
 - 결과: run 43217939385 잡 5 success · 3사 SHA `88db9608` · /login 200×3. CI 가 npm run build(새 유틸 클래스).
