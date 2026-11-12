@@ -240,7 +240,7 @@ class KakaoRoom extends Model
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'kakao_room_users', 'room_id', 'user_id')
-            ->withPivot('my_name', 'selected', 'last_seen_at')->withTimestamps();
+            ->withPivot('my_name', 'selected', 'last_seen_at', 'last_result', 'last_result_ok', 'last_result_at')->withTimestamps();
     }
 
     public function messages(): HasMany
