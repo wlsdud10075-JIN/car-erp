@@ -29,7 +29,7 @@
 - `GET /api/internal/ops/summary` · 본문 없음.
 - 서명 **v2**(jin 11-12 결정 — nonce 를 서명 안에): `METHOD\npath?query\nts\nnonce\nbody`(query 는 ksort + http_build_query, 여기선 빈 값) → `hash_hmac('sha256', …, OPS_HMAC_SECRET)`. 단일 출처 = `App\Services\Ops\OpsSignature::canonicalV2`.
   헤더 = `X-Timestamp`(초, ±300) · `X-Nonce`(1회용) · `X-Board-Signature: sha256=<hex>`.
-  전환(11-12~): 받는 쪽은 v2 먼저, 안 맞으면 v1(`METHOD\npath?query\nts\nbody`)도 받는다. 허브는 v2 로 보내고 401 이면 v1 로 한 번 더(화면에 「서명 v1(전환 전)」). board·ssancar.com 이 v2 를 받으면 **양쪽 v1 삭제**.
+  전환은 11-12 당일 끝났다: board(faebd7a)·ssancar.com(5b0d26cd)이 v2 를 먼저 받고 → ERP `1ec946c8` 가 v2 로 보냄(실측 7칸 전부 v2) → jin «전달해줘» 로 세 곳 v1 삭제 통보. ERP 는 v1 대조·폴백을 지웠다(다음 배포). 🚫 v1 을 다시 받지 말 것.
 - 시크릿이 비면 **401**(fail-closed). 없는 경로면 허브가 「미연결」로 그린다.
 - 응답(JSON) 최소 = `server.version`(짧은 SHA) + `anomalies[]`. 나머지 키는 비워도 된다.
   ```
