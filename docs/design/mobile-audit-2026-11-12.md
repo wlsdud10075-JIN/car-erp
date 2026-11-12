@@ -2,6 +2,12 @@
 
 팬아웃 4갈래(정산처리 / 사내직원·내수직원 월정산 / 바이어·B2B / 신규 탭·관제) 조사 결과를 main 이 취합. 실측 = Playwright 390×844(DPR2, 터치), 로컬 8001 샘플 DB. 기준 = SKILLS §8 #98·#116 부류. 원 보고서·스크린샷 = 세션 scratchpad `pw/` (`settle-mobile-report.md` · `payout-mobile-report.md` · `mobile-nov-report.md` · buyers 스크린샷).
 
+## ✅ 처리 (11-12 밤, 1차 = 🔴 5 + 🟠 14 전부 — jin «오케이 진행해줘. 천천히 제대로»)
+- 고침안 그대로 적용(데스크탑 무변경 — `sm:` 되돌리기). 예외 = B8 적립금 거래표 `whitespace-nowrap`(데스크탑도 함께), B9 메모 폰 전문은 `min-w-[160px]` 로 행 높이 억제.
+- A2·A3 정산처리 모바일 카드 = 뱃지 줄(`data-mobile-badges`) + 버튼 줄(`data-mobile-actions`, 확정·2차 완료·재조정·예외 등록/해제·삭제) — 데스크탑 작업 칸과 같은 `@if`·같은 메서드. 2차 판정은 카드 `@php` 에서 다시 계산(`$mSecondary*`).
+- 실측(390px, 빌드 뒤): 정산 합계 카드 366px 1열·토글 22×25 · 사내직원관리 버튼 줄 접힘(scrollWidth 390) · 월정산 뱃지 한 줄 · 바이어 탭 바 `overflow-x: auto`(424/390) · 적립금 게이지 156px · 관제 루틴 첫 열 180px · 3D `touch-action: pan-y` · 콘솔 오류 0.
+- `npm run build` 로 새 유틸(`sm:basis-0`·`sm:col-span-1`·`sm:py-0`·`sm:my-0`·`min-w-[150px]`·`min-w-[160px]`) CSS 확인. 🟡 는 그대로 2차.
+
 ## 🔴 기능 불가 (폰에서 할 수 없는 것)
 
 | # | 화면 | 위치 | 증상 | 고침안 |
