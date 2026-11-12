@@ -250,6 +250,15 @@
 - ⚠️ **전용 엔드포인트(§14-2)는 덮어쓰기** — 두 경로의 규칙이 다르다. board 는 won 전엔 동봉, won 뒤엔 전용 엔드포인트(Q2-12).
 - 감사 = `AUDITED_COLUMNS`(+ `remitter_id` 는 `MASKED_COLUMNS`). 🚫 응답·읽기 API 에 `remitter_id` 를 싣지 않는다.
 - 가드(착수 때) = `PurchaseSyncReceiverTest` 에 동봉 저장 · 재전송 `already_set` · 빈 문자열 무시 · 감사 가림 4건.
+## 연동 B — 보관위치 동봉 (2026-11-12 탁송 배차, board 기획 §11 ② · ✅ 구현 dev — 가드 `PurchaseSyncReceiverTest::test_stock_location_*` 2건)
+
+> 정본 기획 = board `meetings/plan-transport-2026-11.md §11`. 전용 읽기·쓰기 엔드포인트는 `board-portal-api.md` **§16** 이 권위 — 여기는 **동봉 경로만**.
+
+- **`contract_version` 상향 없음**(모르는 필드 무시). payload 선택 필드 2개: `stock_location`(string ≤20, 값 = `Vehicle::stockLocations()` 회사별 3종) · `stock_location_note`(string ≤200).
+- **빈 칸만 채운다**(신규·재전송 모두). 이미 있으면 `fields_skipped.stock_location = 'already_set'`(비고도 같음). 목록 밖 값은 **세트 통째 422 가 아니라 그 칸만** 건너뛴다 — 재전송 응답 `fields_skipped.stock_location = 'invalid'`, 신규 경로는 조용히 안 넣는다(응답에 skipped 칸이 없다).
+- ⚠️ **전용 엔드포인트(§16-1)는 덮어쓰기** — 두 경로의 규칙이 다르다(송금인 §14 와 같은 구조).
+- 감사 = `AUDITED_COLUMNS`(보관위치·비고).
+
 ## 연동 B — 딜러 서류 OCR 동봉: 법인명·대표자·휴대폰 (2026-11 주말 기획 ④, jin 10-28 결정 · ✅ 2026-10-29 구현, dev — `PurchaseSyncController::composePurchaseFrom`, 가드 `PurchaseSyncReceiverTest::test_seller_documents_*` 3건)
 
 > 정본 기획 = board `meetings/plan-2026-11-weekend-freight-passport.md` ④. board 가 구매확정 첨부 5장(사업자등록증·명함)을 OCR 해 영업이 드로어에서 후보를 [적용]하면 purchase-sync 에 동봉한다. **ERP 는 OCR 을 하지 않는다**(비전 클라이언트 없음, 확인 주체 = 영업).

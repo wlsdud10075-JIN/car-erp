@@ -853,3 +853,36 @@ OCR(MRZ, 후보 제시만 · 자동 기입 ❌) · 이미지 폐기 · Name·ID 
 - 규칙: **기각(`declined`)은 금액과 무관하게 0 으로 저장**(jin «0원은 기각»). 바이어 = 본문 `buyer_id` → 없으면 그 차의 바이어 → 둘 다 없으면 **422** `{status:'rejected', message:'ERP 에서 이 차의 바이어를 먼저 정해 주세요…'}`(저장 ❌).
 - 멱등: 같은 `board_claim_id` — `revision` 이 더 크면 갱신(200 `updated`), 같으면 그대로(200 `unchanged`), 더 작으면 **409** `stale`. 새 건 = **201** `created`. 응답 `{erp_claim_id, status}`.
 - ERP 저장 = `vehicle_claims` · 바이어 드로어 **「클레임」 탭**(횟수 · 인정/기각 · 통화별 인정 금액 합 · 목록). 🚫 적립금·미수·정산 무관(기록만). 감사 `board_claim_received`.
+
+## 16. 보관위치 읽기·쓰기 — 탁송 배차 (2026-11-12 board 기획 `meetings/plan-transport-2026-11.md §11`, jin «착수» · ✅ 구현 dev — `InternalPortalController::stockLocation`·`stockLocationShow`, 가드 `BoardPortalApiTest::test_stock_location_*` 2 · `PurchaseSyncReceiverTest::test_stock_location_*` 2 · `BoardRequestAlimtalkTest::test_request_note_*` 1)
+
+> 보내는 쪽(board 탁송 탭)은 board 정본 §11 — 여기는 **받는 쪽**만. board 는 이 경로가 없어도 돌게 만들고(탭에 「ERP 연동 대기」), 배포되면 붙인다 — 배포 순서 제약 없음.
+
+### 16-1. `POST /vehicles/{id}/stock-location` — 쓰기(덮어쓰기)
+
+prefix `/api/internal/board`, 인증·서명·replay = §1, 스코프 = §2(`salesman_email` 본인 차만 — 남의 차·없는 차·지운 차 = **403**, 존재 비노출).
+
+```jsonc
+{ "salesman_email": "sales@example.com", "stock_location": "야드", "stock_location_note": "B동 앞" }
+```
+- `stock_location` 필수 — 값은 **`Vehicle::stockLocations()`**(회사별 3종: 공통 홈플·화물·야드 / karaba 쇼링·항입고·야드) 밖이면 **422**. 목록은 16-3 응답 `options` 로 받아 버튼을 그린다(상수 복사 금지 — §8 #45).
+- `stock_location_note` 선택(≤200) — **키가 오면 그 값**(빈 문자열 = 비움), **안 오면 그대로**.
+- **덮어쓰기 + 감사**(board 가 ERP 현재값을 보여 주고 확인창 뒤에만 보낸다 — purchase-sync 동봉 16-2 는 빈 칸만. §14 와 같은 구조). 같은 값은 감사 0.
+- 응답 `200 { vehicle_id, stock_location, stock_location_note, previous: { stock_location, note }, updated: [...] }` — `updated` 는 실제로 바뀐 칸만.
+- 감사 = `AUDITED_COLUMNS`(`stock_location` 10-23 부터 · `stock_location_note` 11-12 추가), 행위자 = `salesman_email` 의 User(§8 #56). 재고관리 화면 저장과 같은 훅이라 두 경로의 기록이 한 줄에 섞여 보인다(감사로그 라벨 「보관위치」·「보관위치 비고」).
+
+### 16-2. purchase-sync 동봉 — `purchase-sync-receiver.md` 「보관위치 동봉」(ERP 차량이 아직 없는 차, 빈 칸만, 목록 밖 값은 그 칸만 건너뜀)
+
+### 16-3. `GET /vehicles/{id}/stock-location?salesman_email=` — 읽기(탁송 탭 열 때 ERP 현재값)
+
+응답 `200 { vehicle_id, stock_location, stock_location_note, updated_at, updated_by_name, options: ["홈플","화물","야드"] }`
+- `updated_at`(ISO8601)·`updated_by_name` = 감사 행(보관위치·비고)의 **마지막 것** — 11-12 이전에 적힌 값이나 세션 없는 경로는 null 일 수 있다. 스코프·코드 = 16-1 과 같다(403).
+
+### 16-4. board 요청 `note` → 알림톡 `#{요청내역}` 한 줄 (§11 ④)
+
+`POST /requests` 의 `note`(≤200)가 있으면 `erp_board_request` 본문의 차량 줄 아래 **한 줄**(개행은 공백으로, 200자)로 실린다. 템플릿 고정문 불변·변수 내용만이라 **BizM 재승인 없음**(board 확인). board 는 매입잔금 요청에 「배차: 업체 · 기사전화(가운데 마스킹) · 배차일시」를 싣는다 — 🚫 전화번호 원문을 note 에 넣지 않는다(카톡 본문·alimtalk_logs 에 그대로 남는다).
+
+### 16-5. 흡수 금지
+- 🚫 ERP 가 배차(업체·기사·일시)를 저장하지 않는다 — 그건 board 탁송 탭. ERP 는 보관위치·비고(기존 칸)와 알림톡 한 줄뿐.
+- 🚫 보관위치 목록을 board 에 복사하지 않는다(16-3 `options`).
+
