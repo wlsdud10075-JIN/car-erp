@@ -167,7 +167,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                 @if($s['ok'] && empty($site['url']) && empty($site['self']))
                                     <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $d['generated_at'] ?? '' ? '감시 '.\Carbon\Carbon::parse($d['generated_at'])->format('m/d H:i') : '' }}</span>
                                 @elseif($s['ok'])
-                                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $srv['version'] ?? '—' }} · 대기 마이그 {{ $srv['pending_migrations'] ?? '—' }} · 오류 오늘 {{ $srv['errors_today'] ?? '—' }} · 디스크 {{ isset($srv['disk_used_pct']) ? $srv['disk_used_pct'].'%' : '—' }}{{ ! empty($d['signature_v1']) ? ' · 서명 v1(전환 전)' : '' }}</span>
+                                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $srv['version'] ?? '—' }} · 대기 마이그 {{ $srv['pending_migrations'] ?? '—' }} · 오류 오늘 {{ $srv['errors_today'] ?? '—' }} · 디스크 {{ isset($srv['disk_used_pct']) ? $srv['disk_used_pct'].'%' : '—' }}</span>
                                     <span style="font-size: 12px; color: {{ $mine ? '#ffb38a' : '#3dffaa' }}">{{ $mine ? '이상 '.count($mine).'건' : '이상 없음' }}</span>
                                 @else
                                     <span style="font-size: 12px; color: #9aa6bd">{{ $s['error'] }}</span>

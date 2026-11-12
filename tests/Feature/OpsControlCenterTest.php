@@ -42,9 +42,18 @@ class OpsControlCenterTest extends TestCase
         Storage::fake('local');   // 이 PC 의 brain.json(세컨드 브레인)이 끼어들지 않게
     }
 
-    private function signed(string $path = '/api/internal/ops/summary', ?string $secret = null, int $version = 2): array
+    private function signed(string $path = '/api/internal/ops/summary', ?string $secret = null): array
     {
-        return OpsSignature::headers('GET', $path, [], '', $secret ?? self::SECRET, $version);
+        return OpsSignature::headers('GET', $path, [], '', $secret ?? self::SECRET);
+    }
+
+    /** v1(nonce 밖) 서명 — 11-12 전환 뒤 거부돼야 한다 */
+    private function signedV1(string $path = '/api/internal/ops/summary'): array
+    {
+        $ts = now()->timestamp;
+
+        return ['X-Timestamp' => (string) $ts, 'X-Nonce' => (string) Str::uuid(),
+            'X-Board-Signature' => 'sha256='.hash_hmac('sha256', VerifyErpPeerHmac::canonical('GET', $path, [], $ts), self::SECRET)];
     }
 
     public function test_only_the_owner_super_account_opens_it(): void
@@ -73,7 +82,7 @@ class OpsControlCenterTest extends TestCase
 
         $res = $this->withHeaders($this->signed() + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertOk();
         $this->assertSame(['generated_at', 'company', 'server', 'routines', 'health', 'links', 'anomalies'], array_keys($res->json()));
-        $this->withHeaders($this->signed(version: 1) + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertOk();   // 전환 기간 — v1 도 아직 받는다
+        $this->withHeaders($this->signedV1() + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertStatus(401);   // v1(nonce 밖)은 11-12 전환 뒤 거부
 
         // v2 = nonce 가 서명 안(jin 11-12) — nonce 만 바꾼 재전송은 서명이 안 맞아 401
         $h = $this->signed();
@@ -141,30 +150,10 @@ class OpsControlCenterTest extends TestCase
         });
         config(['services.ops.sites' => json_encode([['key' => 'heyman-erp', 'name' => 'heymanerp', 'kind' => 'erp', 'url' => 'https://heysellcar.test']])]);
         $this->assertTrue(OpsHub::collect()[0]['ok']);
-        $this->assertArrayNotHasKey('signature_v1', OpsHub::collect()[0]['data']);
 
         // 허브가 붙인 헤더를 그대로 받는 쪽 라우트에 넣으면 통과해야 한다(두 쪽이 같은 정규 문자열)
         $headers = collect(['X-Timestamp', 'X-Nonce', 'X-Board-Signature'])->mapWithKeys(fn ($h) => [$h => $sent->header($h)[0]])->all();
         $this->withHeaders($headers + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertOk();   // getJson 은 빈 본문 [] 을 실어 서명 대상이 달라진다 — 허브처럼 본문 없이
-    }
-
-    public function test_hub_falls_back_to_v1_while_a_site_still_rejects_v2(): void
-    {
-        $calls = [];
-        Http::fake(function ($req) use (&$calls) {
-            $calls[] = $req;
-            $ts = (int) $req->header('X-Timestamp')[0];
-            $sig = substr($req->header('X-Board-Signature')[0], 7);
-            $v1 = hash_hmac('sha256', VerifyErpPeerHmac::canonical('GET', '/api/internal/ops/summary', [], $ts), self::SECRET);
-
-            return hash_equals($v1, $sig) ? Http::response(['server' => ['version' => 'old'], 'anomalies' => []]) : Http::response(['error' => 'unauthorized'], 401);   // v1 만 받는 옛 상대
-        });
-        config(['services.ops.sites' => json_encode([['key' => 'heyman-erp', 'name' => 'heymanerp', 'kind' => 'erp', 'url' => 'https://heysellcar.test']])]);
-
-        $r = OpsHub::collect()[0];
-        $this->assertTrue($r['ok']);
-        $this->assertTrue($r['data']['signature_v1']);
-        $this->assertCount(2, $calls, 'v2 → 401 → v1 한 번');
     }
 
     public function test_page_shows_sites_anomalies_and_version_mismatch(): void
