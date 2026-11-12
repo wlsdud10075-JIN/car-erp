@@ -826,6 +826,8 @@ class Vehicle extends Model
         'deregistration_notice_phone',
         // 2026-11 ② (jin 10-28) — 송금인 Name·ID. board 전용 엔드포인트가 **덮어쓰는** 칸이라 누가 언제 바꿨는지 남긴다(ID 는 MASKED).
         'remitter_name', 'remitter_id',
+        // 2026-11-12 탁송 배차(board 기획 §11) — 보관위치 비고(보관위치 자체는 10-23 부터 아래에 있다). board 가 전용 엔드포인트로 **덮어쓰는** 칸이라 함께 남긴다.
+        'stock_location_note',
         'deal_type',   // 2026-11-01 — DP/FD 지정·해제는 돈 표시 규칙이라 흔적을 남긴다
         // 2026-09-17 (jin) — B/L 번호. 차량관리 「번호 일괄 기입」으로 **수십 대를 한 번에** 바꾸는
         //   입구가 생겼다. 07-28 에 shipping_date·eta_date 를 같은 이유로 등재한 것과 같다

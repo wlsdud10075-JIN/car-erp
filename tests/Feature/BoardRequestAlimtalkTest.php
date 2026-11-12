@@ -118,6 +118,27 @@ class BoardRequestAlimtalkTest extends TestCase
         $this->assertStringContainsString($v->vehicle_number, $sent);
     }
 
+    /** 2026-11-12 탁송 배차 ④ — 요청 note 가 #{요청내역} 에 한 줄로 실린다(개행은 공백, 200자). 변수 안이라 BizM 재승인 없음. */
+    public function test_request_note_is_carried_in_the_alimtalk_body_as_one_line(): void
+    {
+        Carbon::setTestNow('2026-08-11 10:00:00');
+        $this->manager('010-1111-1111');
+        $sm = $this->salesman();
+        $v = $this->vehicle($sm->id);
+
+        $this->signedPost('/api/internal/board/requests', [
+            'salesman_email' => 'a@ex.com',
+            'type' => BoardRequest::TYPE_PURCHASE_DEPOSIT,
+            'vehicle_ids' => [$v->id],
+            'amount_krw' => 3_000_000,
+            'note' => "배차: 대한탁송 · 기사 010-****-5678\n11/13 09:00",
+        ])->assertStatus(201);
+
+        $sent = Http::recorded()[0][0]->data()[0]['msg'] ?? '';
+        $this->assertStringContainsString('  배차: 대한탁송 · 기사 010-****-5678 11/13 09:00', $sent, 'note 가 금액 줄 아래 한 줄로');
+        $this->assertStringContainsString('3,000,000원', $sent);
+    }
+
     /**
      * 🇰🇷 구분 라벨은 앱 locale 과 무관하게 한글 (2026-10-13) — API 그룹은 SetLocale 을 안 타서 `.env APP_LOCALE` 을
      * 따르는데 운영 heymanerp·ssancarerp 가 `en` 이라 「Balance / Deposit / Pay req.」 로 나갔다.

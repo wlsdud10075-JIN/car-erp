@@ -112,6 +112,10 @@ class PurchaseSyncController extends Controller
             // 2026-11 ② — 송금인 Name·ID 동봉(won 전에 적은 경우). 저장·화면·검색 = board-portal-api.md §14. 빈 칸만.
             'remitter_name' => ['nullable', 'string', 'max:100'],
             'remitter_id' => ['nullable', 'string', 'max:64'],   // 숫자만 오는 게 계약이지만 하이픈이 섞여도 PhoneFormat 이 걸러낸다(세트 통째 422 는 과하다)
+            // 2026-11-12 탁송 배차(board 기획 §11 ②) — 보관위치 동봉(ERP 차량이 아직 없는 차). 빈 칸만. 목록(Vehicle::stockLocations()) 밖 값은
+            //   세트 통째 422 가 아니라 그 칸만 건너뛴다(재전송 응답 fields_skipped.stock_location='invalid'). 권위 = purchase-sync-receiver.md 「보관위치 동봉」.
+            'stock_location' => ['nullable', 'string', 'max:20'],
+            'stock_location_note' => ['nullable', 'string', 'max:200'],
             // 연동 B v5 — 재고매입(바이어 미정). board 가 「바이어를 일부러 안 정하고 사 두는 매입」임을
             //   명시한다. 🚫 `buyer_id` 가 비었다는 사실만으로는 대신할 수 없다 — 그러면 **실수로 빠뜨린
             //   차**와 구분이 안 되고, 그 구분이 이 플래그의 존재 이유다(vehicles/index.blade.php:4629).
@@ -269,6 +273,14 @@ class PurchaseSyncController extends Controller
             if (trim((string) ($data[$col] ?? '')) !== '') {
                 $vehicle->{$col} = trim((string) $data[$col]);
             }
+        }
+        // 2026-11-12 탁송 배차 — 보관위치 동봉(신규 차). 목록 밖 값은 안 넣는다(그 칸만).
+        $loc = trim((string) ($data['stock_location'] ?? ''));
+        if ($loc !== '' && in_array($loc, Vehicle::stockLocations(), true)) {
+            $vehicle->stock_location = $loc;
+        }
+        if (($locNote = trim((string) ($data['stock_location_note'] ?? ''))) !== '') {
+            $vehicle->stock_location_note = mb_substr($locNote, 0, 200);
         }
 
         // ── NICE 차량조회로 VIN·차량정보 채우기 ─────────────────────────
@@ -668,6 +680,26 @@ class PurchaseSyncController extends Controller
             }
         }
 
+        // 2026-11-12 탁송 배차 — 보관위치 동봉도 빈 칸만(전용 엔드포인트 §16-1 은 덮어쓰기). 목록 밖 값 = fields_skipped 'invalid'.
+        $loc = trim((string) ($data['stock_location'] ?? ''));
+        if ($loc !== '') {
+            if (! in_array($loc, Vehicle::stockLocations(), true)) {
+                $skipped['stock_location'] = 'invalid';
+            } elseif (trim((string) $vehicle->stock_location) !== '') {
+                $skipped['stock_location'] = 'already_set';
+            } else {
+                $vehicle->stock_location = $loc;
+                $filled[] = 'stock_location';
+            }
+        }
+        if (($locNote = trim((string) ($data['stock_location_note'] ?? ''))) !== '') {
+            if (trim((string) $vehicle->stock_location_note) !== '') {
+                $skipped['stock_location_note'] = 'already_set';
+            } else {
+                $vehicle->stock_location_note = mb_substr($locNote, 0, 200);
+                $filled[] = 'stock_location_note';
+            }
+        }
         // 2026-11 ② — 송금인 동봉도 빈 칸만(⚠️ 전용 엔드포인트 §14-2 는 덮어쓰기 — 경로마다 규칙이 다르다).
         foreach (['remitter_name', 'remitter_id'] as $col) {
             $incoming = trim((string) ($data[$col] ?? ''));

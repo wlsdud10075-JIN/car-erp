@@ -903,6 +903,54 @@ class BoardPortalApiTest extends TestCase
         $this->assertSame($user->id, $rows->last()->user_id, '행위자 = salesman_email 의 User(§8 #56)');
     }
 
+    // ── 2026-11-12 탁송 배차 — 보관위치 GET/POST (§16) ──
+
+    public function test_stock_location_endpoint_overwrites_audits_and_returns_previous(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $user = User::factory()->create(['email' => 'me@a.com', 'permission' => 'user', 'role' => '영업', 'name' => '김영업']);
+        $v = $this->exportVehicle($me->id, '61가6101');
+        $v->forceFill(['stock_location' => '홈플', 'stock_location_note' => '처음'])->save();
+
+        $res = $this->signedPost('/api/internal/board/vehicles/'.$v->id.'/stock-location', ['salesman_email' => 'me@a.com', 'stock_location' => '야드', 'stock_location_note' => ' 2열 끝 '])->assertOk();
+        $res->assertJsonPath('stock_location', '야드')->assertJsonPath('stock_location_note', '2열 끝')
+            ->assertJsonPath('previous.stock_location', '홈플')->assertJsonPath('previous.note', '처음')
+            ->assertJsonPath('updated', ['stock_location', 'stock_location_note']);
+        $v->refresh();
+        $this->assertSame('야드', $v->stock_location, '동봉과 달리 덮어쓴다');
+
+        // 비고 키를 안 보내면 그대로 · 빈 문자열이면 비움
+        $this->signedPost('/api/internal/board/vehicles/'.$v->id.'/stock-location', ['salesman_email' => 'me@a.com', 'stock_location' => '화물'])->assertOk()->assertJsonPath('stock_location_note', '2열 끝');
+        $this->signedPost('/api/internal/board/vehicles/'.$v->id.'/stock-location', ['salesman_email' => 'me@a.com', 'stock_location' => '화물', 'stock_location_note' => ''])->assertOk()->assertJsonPath('stock_location_note', null)->assertJsonPath('updated', ['stock_location_note']);
+
+        $rows = AuditLog::where('auditable_id', $v->id)->whereIn('column_name', ['stock_location', 'stock_location_note'])->orderBy('id')->get();
+        // 픽스처 저장 2 + POST① 2 + POST② 1(보관위치만) + POST③ 1(비고 비움) — 같은 값은 안 남는다
+        $this->assertEqualsCanonicalizing(['stock_location', 'stock_location_note', 'stock_location', 'stock_location_note', 'stock_location', 'stock_location_note'], $rows->pluck('column_name')->all(), '감사 = 실제로 바뀐 칸만(한 저장 안의 순서는 AUDITED_COLUMNS 순)');
+        $this->assertSame($user->id, $rows->last()->user_id, '행위자 = salesman_email 의 User');
+
+        // GET — 현재값 + 마지막 변경자 + 이 회사의 목록
+        $get = $this->signedGet('/api/internal/board/vehicles/'.$v->id.'/stock-location', ['salesman_email' => 'me@a.com'])->assertOk();
+        $get->assertJsonPath('stock_location', '화물')->assertJsonPath('stock_location_note', null)->assertJsonPath('updated_by_name', '김영업')->assertJsonPath('options', Vehicle::stockLocations());
+        $this->assertNotNull($get->json('updated_at'));
+    }
+
+    /** 목록 밖 값 = 422 · 남의 차 = 403(GET/POST 둘 다) · 감사 전 차의 GET 은 updated_at null. */
+    public function test_stock_location_endpoint_validation_and_scope(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $mine = $this->exportVehicle($me->id, '61가6102');
+        $theirs = $this->exportVehicle($other->id, '61가6103');
+
+        $this->signedPost('/api/internal/board/vehicles/'.$mine->id.'/stock-location', ['salesman_email' => 'me@a.com', 'stock_location' => '없는곳'])->assertStatus(422);
+        $this->signedPost('/api/internal/board/vehicles/'.$theirs->id.'/stock-location', ['salesman_email' => 'me@a.com', 'stock_location' => '야드'])->assertStatus(403);
+        $this->signedGet('/api/internal/board/vehicles/'.$theirs->id.'/stock-location', ['salesman_email' => 'me@a.com'])->assertStatus(403);
+        $this->assertNull($theirs->fresh()->stock_location);
+
+        $this->signedGet('/api/internal/board/vehicles/'.$mine->id.'/stock-location', ['salesman_email' => 'me@a.com'])->assertOk()
+            ->assertJsonPath('stock_location', null)->assertJsonPath('updated_at', null)->assertJsonPath('updated_by_name', null);
+    }
+
     /** 같은 값이면 no-op — updated [] · 감사 행 0. */
     public function test_remitter_endpoint_same_values_are_a_noop(): void
     {
