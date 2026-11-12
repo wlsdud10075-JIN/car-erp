@@ -83,7 +83,33 @@ new #[Layout('components.layouts.app')] class extends Component
 
         $brain = OpsBrain::index();
 
+        $linksSum = ['sent' => 0, 'failed' => 0, 'claude' => 0, 'missing' => [], 'gpu' => '—'];
+        foreach ($sites as $s) {
+            $d = $s['data'] ?? [];
+            if (($s['site']['kind'] ?? '') === 'erp' && $s['ok']) {
+                $linksSum['sent'] += (int) ($d['links']['alimtalk_sent_today'] ?? 0);
+                $linksSum['failed'] += (int) ($d['links']['alimtalk_failed_today'] ?? 0);
+                $linksSum['claude'] += (int) ($d['links']['claude_cost_today_krw'] ?? 0);
+                foreach ((array) ($d['links']['keys'] ?? []) as $k => $on) {
+                    if (! $on) {
+                        $linksSum['missing'][] = $s['site']['name'].' — '.(['anthropic' => 'Claude 키', 'nice' => 'NICE 토큰', 'holiday' => '공휴일 키', 'board_sync' => 'board 연동 시크릿', 'erp_peer' => 'ERP 끼리 시크릿'][$k] ?? $k).' 없음';
+                    }
+                }
+            }
+            if (($s['site']['probe'] ?? '') === 'assistant' && $s['ok']) {
+                $linksSum['gpu'] = ($d['health'][0]['ok'] ?? false) ? '응답 정상' : '응답 없음';
+            }
+        }
+        $deployed = collect($sites)->first(fn ($s) => ! empty($s['site']['self']))['data']['server']['version'] ?? null;
+        $codebase = [
+            'deployed' => $deployed, 'dev_head' => $brain['repo_head'] ?? null,
+            'tests' => (int) ($brain['clusters']['tests']['count'] ?? 0), 'skills' => (int) ($brain['clusters']['skills']['count'] ?? 0), 'memory' => (int) ($brain['clusters']['memory']['count'] ?? 0),
+            'docs' => (int) (($brain['clusters']['design']['count'] ?? 0) + ($brain['clusters']['spec']['count'] ?? 0) + ($brain['clusters']['ops']['count'] ?? 0) + ($brain['clusters']['meet']['count'] ?? 0)),
+        ];
+
         return [
+            'linksSum' => $linksSum,
+            'codebase' => $codebase,
             'brain' => $brain,
             'brainClusters' => $brain ? array_values(array_map(fn ($c) => ['key' => $c['key'], 'label' => $c['label'], 'color' => $c['color'], 'count' => $c['count'],
                 'items' => array_map(fn ($i) => ['id' => $i['id'], 'no' => $i['no'], 'title' => $i['title'], 'meta' => $i['meta'], 'path' => $i['path'] ?? ''], $c['items'])], $brain['clusters'])) : [],
@@ -217,7 +243,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
         <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: stretch">
             {{-- 이상 감지 --}}
-            <div style="flex: 1 1 380px; min-width: 0; border: 1px solid rgba(255,120,90,.45); border-radius: 14px; background: rgba(40,14,8,.45); padding: 16px; display: flex; flex-direction: column; gap: 10px" data-ops-anomalies>
+            <div style="flex: 1 1 300px; min-width: 0; border: 1px solid rgba(255,120,90,.45); border-radius: 14px; background: rgba(40,14,8,.45); padding: 16px; display: flex; flex-direction: column; gap: 10px" data-ops-anomalies>
                 <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px">
                     <span style="font-family: 'Orbitron', sans-serif; font-size: 12px; letter-spacing: 2px; color: #ff9b6a">ANOMALY <span style="font-family: 'Noto Sans KR', sans-serif; letter-spacing: 0; color: #ffc7a8">· 이상 감지 — {{ $siteFilter === '' ? '전체 사이트' : collect($sites)->firstWhere('site.key', $siteFilter)['site']['name'] ?? $siteFilter }}</span></span>
                     @if($siteFilter !== '')
@@ -238,78 +264,114 @@ new #[Layout('components.layouts.app')] class extends Component
                 @endforelse
             </div>
 
-            {{-- 예약 작업 --}}
-            <div style="flex: 2 1 560px; min-width: 0; {{ $panel }} display: flex; flex-direction: column; gap: 8px" data-ops-routines>
-                <span style="{{ $head }}">ROUTINES <span style="{{ $sub }}">· 예약 작업 — 사이트별 마지막 실행 (11-12 부터 기록)</span></span>
-                @if($routines === [])
-                    <span style="font-size: 12px; color: #8fb0cc">아직 기록이 없습니다 — 다음 정기 작업부터 쌓입니다.</span>
-                @else
-                    <div style="overflow-x: auto">
-                        <table style="width: 100%; min-width: 620px; border-collapse: collapse; font-size: 12px">
-                            <thead><tr style="color: #8fb0cc; text-align: left">
-                                <th style="padding: 6px 6px 6px 0; font-weight: 500">작업</th>
-                                @foreach($erpSites as $s)<th style="padding: 6px; font-weight: 500">{{ $s['site']['name'] }}</th>@endforeach
-                            </tr></thead>
-                            <tbody style="font-family: 'JetBrains Mono', monospace">
-                                @foreach($routines as $cmd => $r)
-                                    <tr style="border-top: 1px solid rgba(127,231,255,.12)">
-                                        <td style="padding: 6px 6px 6px 0">{{ $cmd }} <span style="color: #7d98b3">{{ $r['expression'] }}</span></td>
-                                        @foreach($erpSites as $s)
-                                            @php $x = $r['by'][$s['site']['key']] ?? null; @endphp
-                                            <td style="padding: 6px; color: {{ ! $x ? '#5f6b80' : ($x['status'] === 'failed' ? '#ff7a7a' : ($x['status'] === 'running' ? '#ffcf86' : '#3dffaa')) }}" title="{{ $x['error'] ?? '' }}">
-                                                {{ $x ? ($x['status'] === 'failed' ? '실패 ' : ($x['status'] === 'running' ? '도는 중 ' : '')).$fmtAt($x['started_at']) : '—' }}
-                                            </td>
-                                        @endforeach
-                                    </tr>
-                                @endforeach
-                            </tbody>
-                        </table>
+                    {{-- 세컨드 브레인 (3단계, jin 11-12) — 개발 PC 의 ops:brain-sync --push 가 올린 목록. 지도는 브라우저에서만 그린다(서버 무관). 끌면 전체가 3D 로 돌고, 구를 누르면 목록 --}}
+                    <div style="flex: 2 1 520px; min-width: 0; {{ $panel }} display: flex; flex-direction: column; gap: 12px; box-shadow: 0 0 40px rgba(60,140,255,.15)" data-ops-brain
+                         x-data='opsBrain({!! json_encode($brainClusters, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP) !!})' x-init="init()">
+                        <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px">
+                            <span style="{{ $head }}">SECOND BRAIN <span style="{{ $sub }}">· 설계·결정·교훈 지도 — 끌면 회전 · 구를 누르면 목록{{ $brain ? ' · '.\Carbon\Carbon::parse($brain['generated_at'])->format('m/d H:i').' 기준' : '' }}</span></span>
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8fb0cc">찾기
+                                <input type="search" x-model="q" placeholder="미수 공식 · departed · 알림톡 반려" style="height: 36px; width: 230px; max-width: 55vw; border-radius: 10px; border: 1px solid rgba(127,231,255,.35); background: rgba(5,10,20,.8); color: #eaf6ff; padding: 0 10px; font: inherit; font-size: 12px"></label>
+                        </div>
+                        @if(! $brain)
+                            <span style="font-size: 12px; color: #ffcf86">아직 목록이 없습니다 — 개발 PC 에서 <code style="font-family: 'JetBrains Mono', monospace">php artisan ops:brain-sync --push={{ rtrim(config('app.url'), '/') }}</code> 를 돌리면 채워집니다.</span>
+                        @else
+                            <div x-ref="stage" @pointerdown="down($event)" @pointermove="move($event)" @pointerup="up($event)" @pointerleave="drag = null"
+                                 style="position: relative; height: 460px; border-radius: 12px; overflow: hidden; cursor: grab; touch-action: none; background: radial-gradient(circle at 50% 50%, rgba(40,90,180,.25), rgba(3,6,14,.9) 70%)">
+                                <canvas x-ref="cv" role="img" aria-label="문서 지도 — 덩어리 7개가 CLAUDE.md 를 중심으로 도는 3D 그림" style="position: absolute; inset: 0; width: 100%; height: 100%"></canvas>
+                            </div>
+                            <div style="display: flex; flex-wrap: wrap; gap: 6px">
+                                <template x-for="c in clusters" :key="c.key">
+                                    <button type="button" @click="pick = (pick === c.key ? null : c.key)" :aria-pressed="pick === c.key" :data-brain-chip="c.key"
+                                            :style="'height: 36px; padding: 0 10px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 12px; color: #eaf6ff; border: 1px solid ' + c.color + (pick === c.key ? '' : '66') + '; background: ' + c.color + (pick === c.key ? '33' : '10')"
+                                            x-text="c.label + ' ' + c.count"></button>
+                                </template>
+                            </div>
+                            <div x-show="pick || q.length > 0" x-cloak style="border: 1px solid rgba(127,231,255,.3); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; background: rgba(5,10,22,.85); max-height: 320px; overflow-y: auto" data-brain-list>
+                                <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px">
+                                    <span style="font-size: 13px; font-weight: 700; color: #eaf6ff" x-text="listTitle()"></span>
+                                    <button type="button" @click="pick = null; q = ''" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(127,231,255,.35); background: rgba(127,231,255,.06); color: #c9f6ff; font: inherit; font-size: 12px; cursor: pointer">닫기</button>
+                                </div>
+                                <template x-for="it in visible()" :key="it.cluster + '|' + it.id">
+                                    <div style="display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; border-top: 1px solid rgba(127,231,255,.12); padding-top: 6px; font-size: 12px">
+                                        <span style="font-family: 'JetBrains Mono', monospace; color: #7fe7ff; min-width: 54px" x-text="it.no"></span>
+                                        <span style="flex: 1 1 240px; min-width: 0" x-text="it.title"></span>
+                                        <span style="color: #7d98b3" x-text="it.meta"></span>
+                                        <template x-if="it.hasBody">
+                                            <button type="button" @click="$wire.openDoc(it.cluster, it.id)" style="height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid rgba(127,231,255,.35); background: transparent; color: #7fe7ff; font: inherit; font-size: 12px; cursor: pointer">본문 열기</button>
+                                        </template>
+                                    </div>
+                                </template>
+                                <span x-show="visible().length === 0" style="font-size: 12px; color: #8fb0cc">맞는 항목이 없습니다.</span>
+                                <span x-show="visible().length >= 200" style="font-size: 11px; color: #8fb0cc">앞 200건만 — 찾기로 좁히세요.</span>
+                            </div>
+                        @endif
                     </div>
-                @endif
+            {{-- 오른쪽 기둥 — 코드 현황 · 외부 연동 · 스킬 (목업 그대로) --}}
+            <div style="flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 14px">
+                <div style="{{ $panel }} display: flex; flex-direction: column; gap: 10px" data-ops-codebase>
+                    <span style="{{ $head }}">CODEBASE <span style="{{ $sub }}">· 코드 현황</span></span>
+                    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px">
+                        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #8fb0cc">운영 ERP 버전</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 18px; color: #3dffaa">{{ $codebase['deployed'] ?? '—' }}</span></div>
+                        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #8fb0cc">dev HEAD(목록 기준)</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 18px; color: #eaf6ff">{{ $codebase['dev_head'] ?? '—' }}</span></div>
+                        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #8fb0cc">가드 테스트 파일</span><span style="font-family: 'Orbitron', sans-serif; font-size: 20px; color: #eaf6ff">{{ number_format($codebase['tests']) }}</span></div>
+                        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #8fb0cc">예약 작업(기록된 것)</span><span style="font-family: 'Orbitron', sans-serif; font-size: 20px; color: #eaf6ff">{{ count($routines) }}</span></div>
+                        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #8fb0cc">교훈 · 메모리</span><span style="font-family: 'Orbitron', sans-serif; font-size: 20px; color: #b28cff">{{ $codebase['skills'] }} · {{ $codebase['memory'] }}</span></div>
+                        <div style="display: flex; flex-direction: column; gap: 2px"><span style="font-size: 11px; color: #8fb0cc">설계·연동·운영·회의</span><span style="font-family: 'Orbitron', sans-serif; font-size: 20px; color: #3dffaa">{{ $codebase['docs'] }}</span></div>
+                    </div>
+                </div>
+                <div style="{{ $panel }} display: flex; flex-direction: column; gap: 8px" data-ops-links>
+                    <span style="{{ $head }}">LINKS <span style="{{ $sub }}">· 외부 연동 — ERP 3사 오늘</span></span>
+                    <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; font-size: 12px">
+                        <span>알림톡 보냄 · 실패</span><span style="font-family: 'JetBrains Mono', monospace">{{ $linksSum['sent'] }} · <span style="color: {{ $linksSum['failed'] ? '#ff9b7a' : '#d8e6f5' }}">{{ $linksSum['failed'] }}</span></span>
+                        <span>Claude API 사용액(ssancar+heyman 같은 키)</span><span style="font-family: 'JetBrains Mono', monospace">{{ number_format($linksSum['claude']) }}원</span>
+                        <span>GPU PC Ollama</span><span style="font-family: 'JetBrains Mono', monospace">{{ $linksSum['gpu'] }}</span>
+                        <span>공휴일 API 키 만료</span><span style="font-family: 'JetBrains Mono', monospace">2028-08-10</span>
+                    </div>
+                    @foreach($linksSum['missing'] as $m)
+                        <span style="font-size: 11px; color: #ffcf86">{{ $m }}</span>
+                    @endforeach
+                </div>
+                <div style="flex: 1 1 auto; {{ $panel }} display: flex; flex-direction: column; gap: 8px" data-ops-skills>
+                    <span style="{{ $head }}">SKILLS <span style="{{ $sub }}">· 스킬</span></span>
+                    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 12px">
+                        @foreach([['적재양식 import', 'xlsx → 차량 일괄'], ['컨사이니 import', '바이어·컨사이니'], ['라운드테이블 회의', '6부서 검토'], ['교차 검증', 'Codex·Gemini']] as [$t, $d])
+                            <div style="border: 1px solid rgba(127,231,255,.2); border-radius: 10px; padding: 8px; background: rgba(127,231,255,.04)"><b style="color: #eaf6ff">{{ $t }}</b><div style="color: #8fb0cc">{{ $d }}</div></div>
+                        @endforeach
+                    </div>
+                </div>
             </div>
         </div>
 
-        {{-- 세컨드 브레인 (3단계, jin 11-12) — 개발 PC 의 ops:brain-sync --push 가 올린 목록. 지도는 브라우저에서만 그린다(서버 무관). 끌면 전체가 3D 로 돌고, 구를 누르면 목록 --}}
-        <div style="{{ $panel }} display: flex; flex-direction: column; gap: 12px; box-shadow: 0 0 40px rgba(60,140,255,.15)" data-ops-brain
-             x-data="opsBrain({!! json_encode($brainClusters, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) !!})" x-init="init()">
-            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px">
-                <span style="{{ $head }}">SECOND BRAIN <span style="{{ $sub }}">· 설계·결정·교훈 지도 — 끌면 회전 · 구를 누르면 목록{{ $brain ? ' · '.\Carbon\Carbon::parse($brain['generated_at'])->format('m/d H:i').' 기준' : '' }}</span></span>
-                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8fb0cc">찾기
-                    <input type="search" x-model="q" placeholder="미수 공식 · departed · 알림톡 반려" style="height: 36px; width: 230px; max-width: 55vw; border-radius: 10px; border: 1px solid rgba(127,231,255,.35); background: rgba(5,10,20,.8); color: #eaf6ff; padding: 0 10px; font: inherit; font-size: 12px"></label>
-            </div>
-            @if(! $brain)
-                <span style="font-size: 12px; color: #ffcf86">아직 목록이 없습니다 — 개발 PC 에서 <code style="font-family: 'JetBrains Mono', monospace">php artisan ops:brain-sync --push={{ rtrim(config('app.url'), '/') }}</code> 를 돌리면 채워집니다.</span>
+        <div style="display: flex; flex-wrap: wrap; gap: 14px">
+        {{-- 예약 작업 --}}
+        <div style="{{ $panel }} display: flex; flex-direction: column; gap: 8px" data-ops-routines>
+            <span style="{{ $head }}">ROUTINES <span style="{{ $sub }}">· 예약 작업 — 사이트별 마지막 실행 (11-12 부터 기록)</span></span>
+            @if($routines === [])
+                <span style="font-size: 12px; color: #8fb0cc">아직 기록이 없습니다 — 다음 정기 작업부터 쌓입니다.</span>
             @else
-                <div x-ref="stage" @pointerdown="down($event)" @pointermove="move($event)" @pointerup="up($event)" @pointerleave="drag = null"
-                     style="position: relative; height: 460px; border-radius: 12px; overflow: hidden; cursor: grab; touch-action: none; background: radial-gradient(circle at 50% 50%, rgba(40,90,180,.25), rgba(3,6,14,.9) 70%)">
-                    <canvas x-ref="cv" role="img" aria-label="문서 지도 — 덩어리 7개가 CLAUDE.md 를 중심으로 도는 3D 그림" style="position: absolute; inset: 0; width: 100%; height: 100%"></canvas>
-                </div>
-                <div style="display: flex; flex-wrap: wrap; gap: 6px">
-                    <template x-for="c in clusters" :key="c.key">
-                        <button type="button" @click="pick = (pick === c.key ? null : c.key)" :aria-pressed="pick === c.key" :data-brain-chip="c.key"
-                                :style="'height: 36px; padding: 0 10px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 12px; color: #eaf6ff; border: 1px solid ' + c.color + (pick === c.key ? '' : '66') + '; background: ' + c.color + (pick === c.key ? '33' : '10')"
-                                x-text="c.label + ' ' + c.count"></button>
-                    </template>
-                </div>
-                <div x-show="pick || q.length > 0" x-cloak style="border: 1px solid rgba(127,231,255,.3); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; background: rgba(5,10,22,.85); max-height: 320px; overflow-y: auto" data-brain-list>
-                    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px">
-                        <span style="font-size: 13px; font-weight: 700; color: #eaf6ff" x-text="listTitle()"></span>
-                        <button type="button" @click="pick = null; q = ''" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(127,231,255,.35); background: rgba(127,231,255,.06); color: #c9f6ff; font: inherit; font-size: 12px; cursor: pointer">닫기</button>
-                    </div>
-                    <template x-for="it in visible()" :key="it.cluster + '|' + it.id">
-                        <div style="display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; border-top: 1px solid rgba(127,231,255,.12); padding-top: 6px; font-size: 12px">
-                            <span style="font-family: 'JetBrains Mono', monospace; color: #7fe7ff; min-width: 54px" x-text="it.no"></span>
-                            <span style="flex: 1 1 240px; min-width: 0" x-text="it.title"></span>
-                            <span style="color: #7d98b3" x-text="it.meta"></span>
-                            <template x-if="it.hasBody">
-                                <button type="button" @click="$wire.openDoc(it.cluster, it.id)" style="height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid rgba(127,231,255,.35); background: transparent; color: #7fe7ff; font: inherit; font-size: 12px; cursor: pointer">본문 열기</button>
-                            </template>
-                        </div>
-                    </template>
-                    <span x-show="visible().length === 0" style="font-size: 12px; color: #8fb0cc">맞는 항목이 없습니다.</span>
-                    <span x-show="visible().length >= 200" style="font-size: 11px; color: #8fb0cc">앞 200건만 — 찾기로 좁히세요.</span>
+                <div style="overflow-x: auto">
+                    <table style="width: 100%; min-width: 620px; border-collapse: collapse; font-size: 12px">
+                        <thead><tr style="color: #8fb0cc; text-align: left">
+                            <th style="padding: 6px 6px 6px 0; font-weight: 500">작업</th>
+                            @foreach($erpSites as $s)<th style="padding: 6px; font-weight: 500">{{ $s['site']['name'] }}</th>@endforeach
+                        </tr></thead>
+                        <tbody style="font-family: 'JetBrains Mono', monospace">
+                            @foreach($routines as $cmd => $r)
+                                <tr style="border-top: 1px solid rgba(127,231,255,.12)">
+                                    <td style="padding: 6px 6px 6px 0">{{ $cmd }} <span style="color: #7d98b3">{{ $r['expression'] }}</span></td>
+                                    @foreach($erpSites as $s)
+                                        @php $x = $r['by'][$s['site']['key']] ?? null; @endphp
+                                        <td style="padding: 6px; color: {{ ! $x ? '#5f6b80' : ($x['status'] === 'failed' ? '#ff7a7a' : ($x['status'] === 'running' ? '#ffcf86' : '#3dffaa')) }}" title="{{ $x['error'] ?? '' }}">
+                                            {{ $x ? ($x['status'] === 'failed' ? '실패 ' : ($x['status'] === 'running' ? '도는 중 ' : '')).$fmtAt($x['started_at']) : '—' }}
+                                        </td>
+                                    @endforeach
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
                 </div>
             @endif
+        </div>
         </div>
 
         {{-- 본문 창 --}}
