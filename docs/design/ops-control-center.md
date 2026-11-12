@@ -12,8 +12,8 @@
 | 단계 | 내용 | 상태 |
 |---|---|---|
 | 1 | 예약 작업 실행 기록 `scheduled_task_runs`(리스너 `RecordScheduledTaskRun`, 90일 보관) | ✅ 3사 배포 11-12 `6cfb09b0` |
-| 2 | 사이트 요약 API + `/admin/control` 화면(사이트 6칸·이상 감지·예약 작업) | dev `0d9beb1b` |
-| 3 | 세컨드 브레인(교훈·메모리·문서 지도, 밤마다 목록 업로드) | 착수 전 |
+| 2 | 사이트 요약 API + `/admin/control` 화면(사이트 7칸·이상 감지·예약 작업) | ✅ 3사 배포 11-12 `07cdab26` → `417fbb1a`(ETC 줄·path) |
+| 3 | 세컨드 브레인 — `ops:brain-sync --push` (개발 PC) → `POST /api/internal/ops/brain` → 3D 지도·목록·찾기·본문 | dev 커밋(미배포). 목록은 이 PC 에서 올린다(밤마다 자동은 후속) |
 
 ## 3. 설정(.env)
 | 키 | 어디에 | 값 |
@@ -45,7 +45,10 @@
 판매가 단위 의심(외화 판매가×환율 > 매입가×10, 11-02·11-09 실례) · 환율 범위 밖(USD 800~2,500 · EUR 900~3,000) · 미수 스냅샷 하루 ±20억 · 삭제된 바이어/컨사이니를 가리키는 차 · 마지막 정기 작업 실패 · 최근 30일 차종 빈 차 · 카톡 읽다 멈춘 방. 허브가 덧붙이는 것 = 사이트 연결 실패 · ERP 3사 버전 어긋남.
 
 ## 6. 남은 것
-- board 요약 API — board dev `95b1070` 구현 완료(11-12), board master 배포 + 두 박스 `OPS_HMAC_SECRET` 투입은 jin 허락 뒤(board 세션). 붙기 전엔 「미연결」.
+- ✅ board 요약 API — board master `801b381` 두 박스 배포 + 시크릿 투입(11-12) → 허브에서 읽힘.
+- 🔔 **nonce 를 서명에 넣을지** — jin 11-12 «셋 다 붙고 얘기해줘». 이제 ERP·board·ssancar.com 전부 붙었다 → jin 결정 대기(바꾸면 3곳 같은 날).
+- 세컨드 브레인 목록 자동 갱신(이 PC 작업 스케줄러로 밤마다 `ops:brain-sync --push`) — 후속.
+- ✅ ssancar.com 요약 API 운영 반영(11-12 14:25, jin 직접) — 허브에서 읽힘(6b1e9164, health 13줄). 아래는 경위:
 - ssancar.com 요약 API — 11-12 ssancar 세션 착수. 경로 `https://www.ssancar.com/page/api_ops_summary.php`(그쪽 제안 — `_ops/` 는 문서 폴더, 기존 서명 API 가 `page/` 에 있음 · `ssancar.com` 은 www 로 301). 허브 나가는 IP 54.116.7.83 은 그쪽 지오게이트 통과 목록에 이미 있음. 시크릿 = 그 서버 `/opt/bitnami/ssancar_secrets/ops_control.json` {"hmac_secret"} (jin 이 넣음, 운영은 수동 업로드). 1차 응답 = version·php·disk · health(ERP 미러 소스별 마지막 성공) · anomalies(미러 13h 없음·미러 실패·디스크 90%). ⚠️ ssancar 지적: nonce 가 서명 대상 밖이라 ±300초 안 nonce 만 바꾼 재전송이 가능(HTTPS·읽기 전용 GET — 바꿀지는 jin 판단, 바꾸면 3곳 동시).
 - 루틴 표에 「마지막 성공」 열 · 「N시간 넘게 running」 규칙(기록이 쌓인 뒤 결정).
 - 3단계 세컨드 브레인.
