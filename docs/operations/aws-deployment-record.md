@@ -935,6 +935,12 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-12 (5) — master `07cdab26` · 마이그 0 (jin «.env 넣고 배포해줘. 금액은 남겨줘»)
+- 관제센터 2단계 — 요약 API `GET /api/internal/ops/summary`(VerifyOpsHmac) + `/admin/control`(super + OPS_OWNER_EMAILS) (dev `0d9beb1b`).
+- 운영 .env(배포 전, 백업 `.env.bak-20261112-ops`): 3사 `OPS_HMAC_SECRET`(같은 값) · ssancarerp 에만 `OPS_OWNER_EMAILS=wlsdud10074@naver.com` + `OPS_SITES`(6 사이트).
+- run 43156048572 잡 5 success · ssancarerp SHA `07cdab26` · config 에 6 sites·owner 읽힘 · /login 200 · 서명 없는 API 401.
+- jin 결정: 「미수 하루 급변」 이상 줄의 금액(±N억)은 그대로 둔다.
+
 ## 2026-11-12 (4) — master `6cfb09b0` · 마이그 1 (jin «배포해주고, 다음단계 진행해줘»)
 - 관제센터 1단계 — 예약 작업 실행 기록 `scheduled_task_runs`(시작·끝·성공/실패·이유, 90일 보관 04:50 model:prune) (dev `df70d412`).
 - run 43153095566 잡 5 success · ssancarerp SHA `6cfb09b0` · 마이그 Ran · /login 200.

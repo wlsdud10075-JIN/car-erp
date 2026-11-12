@@ -22,7 +22,7 @@
 | `OPS_OWNER_EMAILS` | ssancarerp(허브)만 | `wlsdud10074@naver.com` (쉼표로 여럿) |
 | `OPS_SITES` | ssancarerp(허브)만 | JSON 배열 — 아래 |
 
-`OPS_SITES` 항목 = `{"key","name","kind":"erp|board|gpu","url"|"self":true,"host","notes":[…],"ssh"}`. 허브 자신은 `"self":true`(HTTP 없이 직접 계산). url 이 없으면 「미설치」(GPU PC 는 notes 만 보여 준다).
+`OPS_SITES` 항목 = `{"key","name","kind":"erp|board|etc","url"|"self":true,"path"(기본 `/api/internal/ops/summary` — 그누보드처럼 다른 경로면 지정),"host","notes":[…],"ssh"}`. 줄 셋 = ERP / BOARD / ETC(GPU PC · ssancar.com, jin 11-12). 허브 자신은 `"self":true`. url 이 없으면 「요약 API 없음 — 메모만」(GPU PC 는 notes 만 보여 주고 이상 감지에 안 오른다).
 ⚠️ 운영은 배포 때 `config:cache` — **env 를 먼저 넣고 배포**하거나, 나중에 넣었으면 `php artisan config:cache` 를 다시.
 
 ## 4. 요약 API 계약 (board 도 같은 것을 붙이면 저절로 들어온다)
@@ -45,6 +45,7 @@
 판매가 단위 의심(외화 판매가×환율 > 매입가×10, 11-02·11-09 실례) · 환율 범위 밖(USD 800~2,500 · EUR 900~3,000) · 미수 스냅샷 하루 ±20억 · 삭제된 바이어/컨사이니를 가리키는 차 · 마지막 정기 작업 실패 · 최근 30일 차종 빈 차 · 카톡 읽다 멈춘 방. 허브가 덧붙이는 것 = 사이트 연결 실패 · ERP 3사 버전 어긋남.
 
 ## 6. 남은 것
-- board 요약 API(board 세션 몫, §4 계약) — 붙기 전엔 board 칸 「미연결」.
+- board 요약 API — board dev `95b1070` 구현 완료(11-12), board master 배포 + 두 박스 `OPS_HMAC_SECRET` 투입은 jin 허락 뒤(board 세션). 붙기 전엔 「미연결」.
+- ssancar.com 요약 API — 11-12 ssancar 세션 착수. 경로 `https://www.ssancar.com/page/api_ops_summary.php`(그쪽 제안 — `_ops/` 는 문서 폴더, 기존 서명 API 가 `page/` 에 있음 · `ssancar.com` 은 www 로 301). 허브 나가는 IP 54.116.7.83 은 그쪽 지오게이트 통과 목록에 이미 있음. 시크릿 = 그 서버 `/opt/bitnami/ssancar_secrets/ops_control.json` {"hmac_secret"} (jin 이 넣음, 운영은 수동 업로드). 1차 응답 = version·php·disk · health(ERP 미러 소스별 마지막 성공) · anomalies(미러 13h 없음·미러 실패·디스크 90%). ⚠️ ssancar 지적: nonce 가 서명 대상 밖이라 ±300초 안 nonce 만 바꾼 재전송이 가능(HTTPS·읽기 전용 GET — 바꿀지는 jin 판단, 바꾸면 3곳 동시).
 - 루틴 표에 「마지막 성공」 열 · 「N시간 넘게 running」 규칙(기록이 쌓인 뒤 결정).
 - 3단계 세컨드 브레인.
