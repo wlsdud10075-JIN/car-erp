@@ -50,6 +50,12 @@ class KakaoMessage extends Model
         return $this->belongsTo(Vehicle::class, 'vehicle_id');
     }
 
+    /** 이 글이 말한 차들(여러 대·이어받기 포함) — KakaoVehicleLinks */
+    public function vehicleLinks(): HasMany
+    {
+        return $this->hasMany(KakaoMessageVehicle::class, 'message_id');
+    }
+
     public function items(): HasMany
     {
         return $this->hasMany(KakaoItem::class, 'message_id');

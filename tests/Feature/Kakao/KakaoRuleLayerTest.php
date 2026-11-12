@@ -306,7 +306,7 @@ TXT;
 
     public function test_vehicle_identifiers_ignore_amounts(): void
     {
-        $this->assertSame(['P:48조5021', 'V:012555'], KakaoIngestService::vehicleIdentifiers("차량번호:   48조5021\n차대번호   WVWZZZAUZLW012555\n차량대금:   1,700만원 ⏎ 500000원"));
+        $this->assertSame(['P:48조5021', 'VIN:WVWZZZAUZLW012555', 'V:012555'], KakaoIngestService::vehicleIdentifiers("차량번호:   48조5021\n차대번호   WVWZZZAUZLW012555\n차량대금:   1,700만원 ⏎ 500000원"));
         $this->assertSame(['V:131538'], KakaoIngestService::vehicleIdentifiers('131538로 들어왔는데 확인 부탁드립니다'));
         $this->assertSame([], KakaoIngestService::vehicleIdentifiers('계약금 300 부탁드립니다 1480€ / 1320$ 500,000원'));
         $this->assertSame(['P:55두8855'], KakaoIngestService::vehicleIdentifiers('헤이55두8855'));

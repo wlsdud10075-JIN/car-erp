@@ -120,6 +120,7 @@ class KakaoIngestService
                 $row = $existing->get($m['msg_key']);
                 if ($row && strlen($m['body']) > strlen($row->body) && str_starts_with($m['body'], $row->body)) {
                     $row->update(['body' => $m['body']]);   // 다음 읽기에 이어지는 줄이 더 잡힌 경우
+                    KakaoVehicleLinks::linkSelf(collect([$row]));   // 늘어난 줄에 차가 더 있을 수 있다
                 }
             }
             $rows = [];
@@ -138,6 +139,7 @@ class KakaoIngestService
                 ]);
             }
             $room->forceFill(['last_read_at' => now()])->save();
+            KakaoVehicleLinks::linkSelf(collect($rows));   // 본문의 차(여러 대) — 분류와 무관하게 저장 때(jin 11-11 §14 ②)
 
             return collect($rows);
         });
@@ -373,6 +375,7 @@ class KakaoIngestService
                 $lastChunkSeconds = microtime(true) - $chunkStarted;
                 $this->apply($room, $slice, $open, $result['items'], $sides);
                 $this->autoResolveByVehicle($room, $slice);   // 모델이 못 이은 「같은 차량 처리 보고」를 식별자로 잇는다(jin 11-11)
+                KakaoVehicleLinks::linkInherited($slice);     // 차 없는 짧은 요청 → 30분 안 앞 글의 차(§14 ②)
                 foreach ($usage as $k => $v) {
                     $usage[$k] += (int) ($result['usage'][$k] ?? 0);
                 }
@@ -460,7 +463,7 @@ class KakaoIngestService
     }
 
     /**
-     * 본문에서 차량 식별자 — 차량번호(12가3456 · 123가4567, 공백·「헤이」 접두 무시) · 차대번호 끝 6자리(17자 VIN 의 끝, 또는 공백 없는 6자리 숫자 토큰).
+     * 본문에서 차량 식별자 — 차량번호(12가3456 · 123가4567, 공백·「헤이」 접두 무시) · 17자 차대번호 전체(VIN:) · 차대번호 끝 6자리(17자 VIN 의 끝, 또는 공백 없는 6자리 숫자 토큰).
      * 금액(「500000원」「1,730」)은 안 잡힌다 — 6자리는 단독 토큰일 때만.
      *
      * @return array<int, string>
@@ -479,10 +482,11 @@ class KakaoIngestService
                 $ids[] = 'P:'.preg_replace('/\s+/u', '', $p);
             }
         }
-        if (preg_match_all('/\b[A-HJ-NPR-Z0-9]{17}\b/', $body, $m)) {
+        if (preg_match_all('/\b[A-HJ-NPR-Z0-9]{17}\b/i', $body, $m)) {
             foreach ($m[0] as $vin) {
-                if (preg_match('/[A-Z]/', $vin)) {
-                    $ids[] = 'V:'.substr($vin, -6);
+                if (preg_match('/[A-Z]/i', $vin)) {
+                    $ids[] = 'VIN:'.strtoupper($vin);   // 17자 전체 — ERP 연결은 VIN 우선(말소 뒤 번호판이 바뀌어도 남는다, jin 11-11)
+                    $ids[] = 'V:'.strtoupper(substr($vin, -6));
                 }
             }
         }

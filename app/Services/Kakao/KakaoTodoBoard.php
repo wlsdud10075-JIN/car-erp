@@ -43,14 +43,17 @@ class KakaoTodoBoard
                 ->withMax('resolvedBy', 'sent_at')   // 답이 달린 시각 — 「오늘 끝난 것」을 오늘 닫힌 것만으로
                 ->orderByDesc('sent_at')
                 ->get();
+            $erp = KakaoErpCards::for($messages);   // ERP 카드·미등록·ERP 처리됨 — 묶음 쿼리(§14 ②③)
 
             foreach ($messages as $m) {
                 $item = $m->items->first();
+                $e = $erp[$m->id] ?? null;
                 $direction = KakaoDirection::of($m->sender, $m->judgmentFor($item), $sides[$m->room_id] ?? [], $myName[$m->room_id] ?? '');
                 // 담당 분야 — 내 편에게 온 요청이라도 내 분야가 아니면 「팀 동료 진행 중」으로(@나 로 콕 집은 것은 분야 무관 내 일)
                 $offTopic = $direction === KakaoDirection::MINE
                     && ! KakaoDirection::mentions($m->mention, $myName[$m->room_id] ?? '', $sides[$m->room_id] ?? [])
-                    && ! KakaoTopics::isMine($picked, $m->topic);
+                    && ! KakaoTopics::isMine($picked, $m->topic)
+                    && ! (($e['flag'] ?? null) === 'unregistered' && KakaoTopics::isMine($picked, '등록'));   // 미등록 서식은 등록 담당에게도(원 분야 담당에게서 빼지 않는다)
                 if ($offTopic) {
                     $direction = KakaoDirection::TEAMMATE;
                 }
@@ -58,16 +61,27 @@ class KakaoTodoBoard
                 if ($offTopic && $b['bucket'] === 'teammate') {
                     $b['reason'] = '다른 분야('.$m->topic.')';
                 }
-                if ($b['bucket'] === 'done' && $b['auto'] && ! $allDone) {   // 답 달림 자동 완료 — 답이 오늘 온 것만(완료 박기, jin 11-11)
-                    $replyAt = $m->resolved_by_max_sent_at ? Carbon::parse($m->resolved_by_max_sent_at) : null;
-                    if (! $replyAt || ! $replyAt->isSameDay($now)) {
+                $doneAt = $m->resolved_by_max_sent_at ? Carbon::parse($m->resolved_by_max_sent_at) : null;   // 답 달림 자동 완료 = 답이 온 시각
+                // ERP 가 처리했다(요청 뒤 말소서류·계약금·B/L) · 서식의 차가 그 뒤 ERP 에 등록됨 → 자동 완료 후보(jin 11-11 — 지우지 않고 「오늘 끝난 것」으로).
+                //   [다시 할 일로] 되돌린 건(state=todo) 은 다시 닫지 않는다. 동료 요청은 답 달림과 같이 목록에서 내린다.
+                $erpDone = $e === null ? null : ($e['processed'] ? [$e['processed']['at'], 'ERP 처리됨 — '.$e['processed']['what']]
+                    : (($e['flag'] ?? null) === 'registered' ? [$e['flag_at'] ? Carbon::parse($e['flag_at']) : null, 'ERP 등록됨'] : null));
+                if ($erpDone && $item?->state !== 'todo' && in_array($b['bucket'], ['missed', 'now', 'today', 'waiting', 'teammate'], true)) {
+                    if ($b['bucket'] === 'teammate') {
+                        continue;
+                    }
+                    $b = ['bucket' => 'done', 'reason' => $erpDone[1], 'auto' => true];
+                    $doneAt = $erpDone[0];
+                }
+                if ($b['bucket'] === 'done' && $b['auto'] && ! $allDone) {   // 자동 완료 — 그 일이 오늘 끝난 것만(완료 박기, jin 11-11)
+                    if (! $doneAt || ! $doneAt->isSameDay($now)) {
                         continue;
                     }
                 }
                 if ($b['bucket'] === null) {
                     continue;
                 }
-                $buckets[$b['bucket']][] = self::row($m, $item, $direction, $b, $now, $people[$m->room_id] ?? []);
+                $buckets[$b['bucket']][] = self::row($m, $item, $direction, $b, $now, $people[$m->room_id] ?? [], $e);
             }
             // 놓쳤을 가능성·지금 할 일은 오래된 것부터, 나머지는 최신부터
             foreach (['missed', 'now', 'today', 'waiting'] as $k) {
@@ -88,7 +102,7 @@ class KakaoTodoBoard
         ];
     }
 
-    private static function row(KakaoMessage $m, $item, string $direction, array $b, CarbonInterface $now, array $people = []): array
+    private static function row(KakaoMessage $m, $item, string $direction, array $b, CarbonInterface $now, array $people = [], ?array $erp = null): array
     {
         $first = KakaoExportParser::firstLine($m->body);
 
@@ -116,6 +130,7 @@ class KakaoTodoBoard
             'snooze_until' => $item?->snooze_until?->format('m/d H:i'),
             'snooze_reason' => $item?->snooze_reason,
             'has_reply' => (bool) $m->resolved_by_exists,
+            'erp' => $erp,   // KakaoErpCards — 카드·요약·이어받음·미등록/점검
         ];
     }
 
