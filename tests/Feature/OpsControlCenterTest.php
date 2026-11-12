@@ -4,6 +4,8 @@ namespace Tests\Feature;
 
 use App\Console\Commands\AssistantHealthCheck;
 use App\Http\Middleware\VerifyErpPeerHmac;
+use App\Models\Buyer;
+use App\Models\Consignee;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\Ops\OpsHub;
@@ -13,6 +15,7 @@ use App\Services\Ops\OpsSummary;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -100,6 +103,44 @@ class OpsControlCenterTest extends TestCase
         foreach (['receivable', 'unpaid', 'sale_price', 'purchase_price', 'payout', 'margin'] as $word) {
             $this->assertStringNotContainsString($word, $json, "요약에 돈 칸({$word})이 실리면 안 된다");
         }
+    }
+
+    public function test_dangling_consignee_skips_excel_imported_vehicles_but_dangling_buyer_does_not(): void
+    {
+        $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
+        $con = Consignee::create(['buyer_id' => $buyer->id, 'name' => '0.5', 'is_active' => true]);
+        $deadBuyer = Buyer::create(['name' => 'AP Bilar ehf.', 'is_active' => true]);
+        $base = ['sales_channel' => 'export', 'currency' => 'USD', 'purchase_price' => 1_000_000, 'buyer_id' => $buyer->id, 'consignee_id' => $con->id];
+        Vehicle::create(['vehicle_number' => '적재차', 'imported_at' => now()] + $base);
+        Vehicle::create(['vehicle_number' => '손입력차'] + $base);
+        Vehicle::create(['vehicle_number' => '적재차바이어끊김', 'imported_at' => now(), 'buyer_id' => $deadBuyer->id] + $base);
+        $con->delete();
+        $deadBuyer->delete();
+
+        $hits = collect(OpsSummary::anomalies())->where('kind', '끊긴 참조')->values();
+        $byText = $hits->mapWithKeys(fn ($h) => [Str::contains($h['text'], '컨사이니') ? 'con' : 'buyer' => $h['count']]);
+        $this->assertSame(1, $byText['con'], '적재 차(imported_at)는 끊긴 컨사이니에서 뺀다 — 손입력 차 1대만');
+        $this->assertSame(1, $byText['buyer'], '끊긴 바이어는 적재 차여도 센다(돈에 걸린다)');
+        $this->assertStringContainsString('엑셀 적재 차 제외', $hits->first(fn ($h) => Str::contains($h['text'], '컨사이니'))['text'] ?? '');
+    }
+
+    public function test_mark_imported_finds_minute_bursts_and_stamps_them_only_with_apply(): void
+    {
+        $base = ['sales_channel' => 'export', 'currency' => 'USD', 'purchase_price' => 1_000_000, 'buyer_undecided' => true];
+        foreach (range(1, 3) as $i) {   // 같은 분에 3대 = 적재 묶음
+            $v = Vehicle::create(['vehicle_number' => "적재{$i}"] + $base);
+            DB::table('vehicles')->where('id', $v->id)->update(['created_at' => '2026-08-28 13:48:3'.$i]);
+        }
+        $hand = Vehicle::create(['vehicle_number' => '손입력'] + $base);
+        DB::table('vehicles')->where('id', $hand->id)->update(['created_at' => '2026-09-17 10:00:00']);
+
+        $this->artisan('vehicles:mark-imported', ['--min' => 3])->expectsOutputToContain('dry-run — 3대')->assertExitCode(0);
+        $this->assertSame(0, Vehicle::whereNotNull('imported_at')->count(), 'dry-run 은 안 찍는다');
+
+        $this->artisan('vehicles:mark-imported', ['--min' => 3, '--apply' => true])->expectsOutputToContain('3대 imported_at 표식')->assertExitCode(0);
+        $this->assertSame(3, Vehicle::whereNotNull('imported_at')->count());
+        $this->assertNull($hand->fresh()->imported_at, '혼자 만들어진 차는 안 찍는다');
+        $this->assertSame('2026-08-28 13:48:31', Vehicle::where('vehicle_number', '적재1')->value('imported_at')?->format('Y-m-d H:i:s'), 'imported_at = created_at');
     }
 
     public function test_the_63bu3056_shape_is_flagged_as_a_unit_error(): void

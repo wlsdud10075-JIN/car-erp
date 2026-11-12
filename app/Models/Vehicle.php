@@ -225,7 +225,7 @@ class Vehicle extends Model
         'bl_loading_location', 'vessel_name', 'bl_document', 'checkbill_document', 'bl_type', 'bl_issue_date', 'document_deadline_date',
         'dhl_recipient_name', 'dhl_recipient_address', 'dhl_recipient_phone',
         'dhl_sender_name', 'dhl_sender_address', 'dhl_weight', 'dhl_dimensions',
-        'dhl_request', 'memo',
+        'dhl_request', 'memo', 'imported_at',
         // 탭별 메모 5칸 (2026-08-11) — 목록은 self::TAB_MEMOS 단일 출처.
         'memo_purchase', 'memo_sale', 'memo_clearance', 'memo_shipping', 'memo_bl',
         // Phase 3 서류 자동기입 (2026-05-24) — NICE 원본 보관 + 말소일 + 기통수
@@ -255,6 +255,7 @@ class Vehicle extends Model
         'nice_inspection_start' => 'date',
         'nice_inspection_end' => 'date',
         'deregistration_date' => 'date',
+        'imported_at' => 'datetime',   // 엑셀 적재로 들어온 차(vehicles:import 신규 생성 때 · 소급 = vehicles:mark-imported) — 관제 「끊긴 참조」 제외 기준
         'nice_raw' => 'array',
         'purchase_date' => 'date',
         'warehouse_out_date' => 'date',
