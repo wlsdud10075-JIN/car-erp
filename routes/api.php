@@ -20,7 +20,9 @@ use App\Http\Middleware\VerifyKakaoCollectorToken;
 use App\Http\Middleware\VerifyOpsHmac;
 use App\Http\Middleware\VerifyPortalReadHmac;
 use App\Http\Middleware\VerifyPurchaseSyncHmac;
+use App\Services\Ops\OpsBrain;
 use App\Services\Ops\OpsSummary;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -44,6 +46,24 @@ Route::middleware([VerifyPurchaseSyncHmac::class, 'throttle:30,1'])
 Route::middleware([VerifyOpsHmac::class, 'throttle:30,1'])
     ->get('/internal/ops/summary', fn () => response()->json(OpsSummary::collect()))
     ->name('api.internal.ops.summary');
+
+// 🛰️ 관제센터 세컨드 브레인 받기(jin 2026-11-12) — 개발 PC 의 ops:brain-sync --push 가 gzip JSON 을 서명 POST. 서명은 압축된 본문 그대로.
+Route::middleware([VerifyOpsHmac::class, 'throttle:10,1'])
+    ->post('/internal/ops/brain', function (Request $request) {
+        $raw = $request->getContent();
+        if (strlen($raw) > OpsBrain::MAX_BYTES) {
+            return response()->json(['error' => 'too large'], 413);
+        }
+        $json = str_contains((string) $request->header('Content-Type'), 'gzip') ? @gzdecode($raw) : $raw;
+        if (! is_string($json) || $json === '') {
+            return response()->json(['error' => 'bad body'], 422);
+        }
+        try {
+            return response()->json(OpsBrain::store($json));
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['error' => $e->getMessage()], 422);
+        }
+    })->name('api.internal.ops.brain');
 
 Route::middleware([VerifyErpPeerHmac::class, 'throttle:30,1'])
     ->get('/internal/peer/payouts', [PeerPayoutController::class, 'payouts'])
