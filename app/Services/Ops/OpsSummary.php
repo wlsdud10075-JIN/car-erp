@@ -153,9 +153,11 @@ class OpsSummary
         if ($deadBuyer > 0) {
             $a[] = ['level' => 2, 'kind' => '끊긴 참조', 'count' => $deadBuyer, 'text' => "삭제된 바이어를 가리키는 차 {$deadBuyer}대"];
         }
-        $deadCon = DB::table('vehicles as v')->join('consignees as c', 'c.id', '=', 'v.consignee_id')->whereNull('v.deleted_at')->whereNotNull('c.deleted_at')->count();
+        // 컨사이니는 엑셀 적재 차(imported_at)를 뺀다 — 적재가 만든 쓰레기 컨사이니(「0.5」·「103」)를 지운 흔적이라 알고 있는 것(ssancarerp 222대 전부, jin 11-12 «적재로 넣은 건 포함되지 않게»).
+        //   바이어는 안 뺀다 — 바이어는 돈(미수·정산현황)에 걸리므로 적재 차여도 끊기면 고쳐야 한다(11-12 AP Bilar 3대 재연결).
+        $deadCon = DB::table('vehicles as v')->join('consignees as c', 'c.id', '=', 'v.consignee_id')->whereNull('v.deleted_at')->whereNull('v.imported_at')->whereNotNull('c.deleted_at')->count();
         if ($deadCon > 0) {
-            $a[] = ['level' => 2, 'kind' => '끊긴 참조', 'count' => $deadCon, 'text' => "삭제된 컨사이니를 가리키는 차 {$deadCon}대"];
+            $a[] = ['level' => 2, 'kind' => '끊긴 참조', 'count' => $deadCon, 'text' => "삭제된 컨사이니를 가리키는 차 {$deadCon}대 (엑셀 적재 차 제외)"];
         }
 
         // ⑤ 정기 작업 실패(마지막 실행이 실패)

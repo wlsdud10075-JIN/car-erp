@@ -68,4 +68,21 @@ class ImportVehiclesRestoreTest extends TestCase
         // 중복 생성 안 함 (같은 id 유지)
         $this->assertSame(1, Vehicle::withTrashed()->count(), '중복 차량 생성됨');
     }
+
+    public function test_import_stamps_imported_at_on_new_vehicles_only(): void
+    {
+        Salesman::create(['name' => 'TESTMAN', 'type' => 'employee', 'is_active' => true]);
+        $old = Vehicle::create(['vehicle_number' => 'OLD-PLATE', 'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1, 'dhl_request' => false, 'nice_reg_vin' => 'TESTVIN999', 'purchase_price' => 1_000_000]);
+        $this->assertNull($old->imported_at);
+
+        foreach ([['NEW-PLATE', 'TESTVINNEW'], ['OLD-PLATE', 'TESTVIN999']] as [$plate, $vin]) {
+            $path = $this->makeFixture($plate, $vin, 'TESTMAN', 2_000_000);
+            $this->artisan('vehicles:import', ['path' => $path, '--force' => true])->assertExitCode(0);
+            @unlink($path);
+        }
+
+        $this->assertNotNull(Vehicle::where('vehicle_number', 'NEW-PLATE')->value('imported_at'), '적재가 새로 만든 차는 imported_at(관제 끊긴 참조 제외 기준, jin 11-12)');
+        $this->assertNull($old->fresh()->imported_at, '이미 있던 차를 갱신한 것은 적재 표식을 안 찍는다');
+        $this->assertSame(2_000_000, (int) $old->fresh()->purchase_price, '갱신 자체는 됐다');
+    }
 }

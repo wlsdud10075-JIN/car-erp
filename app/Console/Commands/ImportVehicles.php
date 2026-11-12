@@ -354,7 +354,8 @@ class ImportVehicles extends Command
                         $stats['updated']++;
                     } else {
                         $vehicle = new Vehicle;
-                        $vehicle->forceFill(array_merge(['vehicle_number' => $row['vehicle_number']], $attrs));
+                        // 적재 표식(jin 11-12) — 관제 「끊긴 참조」가 적재 차(쓰레기 컨사이니 알고 있는 것)를 세지 않게. 신규 생성 때만.
+                        $vehicle->forceFill(array_merge(['vehicle_number' => $row['vehicle_number'], 'imported_at' => now()], $attrs));
                         $vehicle->save();
                         $stats['new']++;
                     }
