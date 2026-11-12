@@ -125,14 +125,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="flex items-center gap-2">
             @if($this->attentionCount > 0 || $onlyAttention)
             <button type="button" wire:click="toggleAttention" data-attention-toggle
-                    class="rounded-md px-3 py-1.5 text-xs font-medium {{ $onlyAttention ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-50 text-red-700 hover:bg-red-100' }}">
+                    class="whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium {{ $onlyAttention ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-50 text-red-700 hover:bg-red-100' }}">
                 {{ __('log.at_attention_open') }} ({{ $this->attentionCount }})
             </button>
             @endif
             @if($onlyAttention && $this->attentionCount > 0)
             <button type="button" wire:click="acknowledgeAll" data-attention-ack-all
                     wire:confirm="{{ __('log.at_ack_all') }}?"
-                    class="rounded-md border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50">
+                    class="whitespace-nowrap rounded-md border border-red-200 px-3 py-1.5 text-xs text-red-700 hover:bg-red-50">
                 {{ __('log.at_ack_all') }}
             </button>
             @endif
