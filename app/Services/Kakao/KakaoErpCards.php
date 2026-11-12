@@ -78,7 +78,11 @@ class KakaoErpCards
             if ($rows->isEmpty()) {
                 continue;
             }
-            $out[$m->id] = self::one($m, $rows, $late, $vehicles, $sources, $audits);
+            $one = self::one($m, $rows, $late, $vehicles, $sources, $audits);
+            if ($one['cards'] === [] && $one['flag'] === null && $one['summary'] === null) {
+                continue;   // 식별자는 있는데 ERP 에 없는 한 줄 언급 — 빈 상자를 띄우지 않는다(「이어받음」만 남는 것도 같이)
+            }
+            $out[$m->id] = $one;
         }
 
         return $out;
