@@ -322,3 +322,11 @@ jin 안: 말소 = 차량등록 + 매입 완납 / 판매완료 = 차량등록 + �
 - board 클레임 첫 [ERP 로 보내기] 1건이 바이어 「클레임」 탭에 들어오는지 확인(claim-management.md §10, board-portal-api.md §15).
 - 리액션(1·2·3·✔ = 사람별 확인 표시, 한 방만 씀)은 보조 신호로 보류(§13-2·13-3).
 
+### 14-1. ②③ 구현 — 11-12 dev (미배포)
+- 표 `kakao_message_vehicles`(message_id · vehicle_id null 가능 · ident `VIN:`/`P:`/`V:` · via self|inherit · from_message_id). 마이그 1. 기존 `kakao_messages.vehicle_id` 는 그대로(링크 없는 옛 글은 카드가 그걸로 폴백).
+- `KakaoVehicleLinks` — self = 저장 때(`ingestLocked` 트랜잭션, 분류와 무관) · inherit = 조각 분류 뒤(`autoResolveByVehicle` 옆). 서식 판정 `isForm`(라벨 줄 2개 이상, 콜론 유무 둘 다) · 짧은 요청 = 요청/질문 · 서식 아님 · 자기 식별자 없음 · 40자 이하 · 원천 = 30분 안 「차량번호만 있는 짧은 글」(남은 글자 10 이하) 또는 「같은 사람의 서식(차량번호·VIN 있음)」. VIN 은 전체 17자 우선(대소문자 무시), 그다음 차량번호·끝 6자리. `vehicleIdentifiers` 에 `VIN:` 추가(같은 출처).
+- `KakaoErpCards` — 보드 render 마다 묶음 쿼리 고정(links 1 · 못 찾은 식별자 재조회 ≤3 · 차량+관계 5 · 감사로그 1). 숫자 = accessor 만. 카드·요약(2대 이상)·이어받음 표시·flag(unregistered / registered / check)·processed(말소서류 감사로그 · 계약금 PBP down confirmed_at · B/L 감사로그 — 메시지 시각 **뒤**, 연결된 차 전부).
+- 보드: 미등록 서식은 「등록」 담당에게도 내 일(원 분야 담당에게서 빼지 않음) · ERP 처리됨/등록됨 = 「오늘 끝난 것」 자동 완료(사건이 오늘일 때만, [지난 날 끝난 것도 보기]로 전부) · `state=todo`(되돌림)면 안 닫음 · 동료 요청은 목록에서 내림. **박지 않고 매번 계산**(§13-4 의 「박는 방식 통일」은 안 함 — 보이는 결과는 같다).
+- 소급 명령 `kakao:link-vehicles {--days=7} {--apply}`(dry-run 기본, 모델 호출 없음·비용 0) — **운영 미실행, jin 승인 대기**. 안 돌려도 새로 읽는 글부터 채워지고, 옛 글은 모델이 고른 1대로 카드가 나온다(여러 대·이어받기·미등록만 빠짐).
+- 가드 = `KakaoVehicleLinkTest`(9) · `KakaoErpCardTest`(12, N+1 쿼리 수 단언 포함 — eager load 를 빼면 빨개지는 것 확인).
+
