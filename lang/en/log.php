@@ -52,6 +52,10 @@ return [
     'at_ack' => 'Acknowledge',
     'at_ack_all' => 'Acknowledge all undelivered',
     'at_acked' => 'Acknowledged',
+    'at_attention_open' => 'Needs attention',
+    'at_attention_title' => 'Needs attention — undelivered · failed',
+    'at_attention_hint' => 'Only items waiting for acknowledgement. Check the reason and acknowledge one by one, or all at the bottom.',
+    'at_attention_empty' => 'Nothing to acknowledge.',
     'at_col' => [
         'time' => 'Sent at',
         'template' => 'Template',

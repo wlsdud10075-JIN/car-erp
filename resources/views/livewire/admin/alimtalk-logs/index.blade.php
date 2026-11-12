@@ -17,6 +17,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     public bool $onlyAttention = false;
     #[Url] public int $perPage = 30;
 
+    /** 「확인 필요」 드로어 — 확인을 눌러야 하는 것만 모아 보여 준다(jin 11-12 «전체확인보다 확인할 내용만 드로어에 뜨게 찾기»). */
+    public bool $showAttention = false;
+
+    public string $attentionSearch = '';
+
     public function mount(): void
     {
         abort_unless(auth()->user()?->isSuperAdmin(), 403);
@@ -60,10 +65,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($log) {
             $log->forceFill(['acknowledged_at' => now(), 'acknowledged_by' => auth()->id()])->save();
         }
-        unset($this->logs);
+        unset($this->logs, $this->attentionLogs);
     }
 
-    /** 주의 필요(미도달·실패) 전체 확인 처리. */
+    /** 주의 필요(미도달·실패) 전체 확인 처리 — 드로어 맨 아래에서만(머리줄 버튼은 드로어를 연다, jin 11-12). */
     public function acknowledgeAll(): void
     {
         abort_unless(auth()->user()?->isSuperAdmin(), 403);
@@ -73,6 +78,39 @@ new #[Layout('components.layouts.app')] class extends Component {
             'acknowledged_by' => auth()->id(),
         ]);
         unset($this->logs);
+    }
+
+    public function openAttention(): void
+    {
+        $this->showAttention = true;
+    }
+
+    public function closeAttention(): void
+    {
+        $this->showAttention = false;
+        $this->attentionSearch = '';
+    }
+
+    /** 드로어 안 찾기 — 버튼·Enter 로만(치는 동안 조회 금지, 다른 검색칸과 같다). */
+    public function searchAttention(): void
+    {
+        unset($this->attentionLogs);
+    }
+
+    /** 확인을 눌러야 하는 것 전부(최대 200) — 페이지가 아니라 한 목록. 사유(reasonLabel)가 같이 보여야 「왜 안 갔나」를 보고 확인한다. */
+    #[Computed]
+    public function attentionLogs()
+    {
+        return AlimtalkLog::query()->needsAttention()
+            ->with(['vehicle:id,vehicle_number'])
+            ->when(SearchTerm::of($this->attentionSearch), function ($q) {
+                $term = SearchTerm::like($this->attentionSearch);
+                $q->where(fn ($q2) => $q2->where('phone', 'like', $term)
+                    ->orWhere('template_code', 'like', $term)
+                    ->orWhereHas('vehicle', fn ($v) => $v->where('vehicle_number', 'like', $term)));
+            })
+            ->orderByDesc('created_at')->orderByDesc('id')
+            ->limit(200)->get();
     }
 
     #[Computed]
@@ -117,10 +155,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         <div class="flex items-center gap-2">
             @if($this->attentionCount > 0)
-            <button type="button" wire:click="acknowledgeAll"
-                    wire:confirm="{{ __('log.at_ack_all') }}?"
+            <button type="button" wire:click="openAttention" data-attention-open
                     class="rounded-md bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100">
-                {{ __('log.at_ack_all') }} ({{ $this->attentionCount }})
+                {{ __('log.at_attention_open') }} ({{ $this->attentionCount }})
             </button>
             @endif
             <select wire:model.live="perPage" class="input-base w-auto">
@@ -252,4 +289,48 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div>{{ $this->logs->links() }}</div>
 
 </div>
+
+{{-- ══ 확인 필요 드로어 — 확인을 눌러야 하는 미도달·실패만, 사유와 함께 (jin 11-12) ══ --}}
+@if($showAttention)
+<div class="fixed inset-0 z-40 bg-black/40" wire:click="closeAttention"></div>
+<div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[480px]" data-attention-drawer>
+    <div class="flex items-center justify-between border-b px-5 py-4">
+        <div>
+            <h2 class="text-base font-bold text-gray-800">{{ __('log.at_attention_title') }} <span class="text-sm font-normal text-gray-500">({{ $this->attentionLogs->count() }})</span></h2>
+            <p class="text-xs text-gray-500">{{ __('log.at_attention_hint') }}</p>
+        </div>
+        <button type="button" wire:click="closeAttention" class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100">
+            <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+    </div>
+    <div class="flex items-center gap-2 border-b px-5 py-3">
+        <input wire:model="attentionSearch" wire:keydown.enter="searchAttention" type="text" placeholder="{{ __('log.at_search') }}" class="input-base w-full" />
+        <button type="button" wire:click="searchAttention" class="btn-search">{{ __('common.search') }}</button>
+    </div>
+    <div class="flex-1 overflow-y-auto px-5 py-3 divide-y divide-gray-100">
+        @forelse($this->attentionLogs as $log)
+            <div class="flex items-start justify-between gap-3 py-2.5" wire:key="att-{{ $log->id }}" data-attention-row>
+                <div class="min-w-0 space-y-0.5">
+                    <div class="flex flex-wrap items-center gap-x-2 text-xs text-gray-500">
+                        <span>{{ $log->created_at?->format('m/d H:i') }}</span>
+                        <span class="text-gray-700">{{ $log->template_code }}</span>
+                        <span class="text-gray-700">{{ $log->phone }}</span>
+                        @if($log->vehicle)<span class="font-medium text-gray-800">{{ $log->vehicle->vehicle_number }}</span>@endif
+                        <span class="badge {{ $log->status === 'failed' ? 'badge-red' : 'badge-amber' }} text-[10px]">{{ $log->status === 'failed' ? __('log.at_status.failed') : __('log.at_report.undelivered') }}</span>
+                    </div>
+                    <div class="text-xs text-red-600 break-words">{{ $log->reasonLabel() ?? \Illuminate\Support\Str::limit((string) ($log->error ?: $log->message), 80) }}</div>
+                </div>
+                <button type="button" wire:click="acknowledge({{ $log->id }})" class="shrink-0 rounded border border-gray-300 px-2 py-1 text-xs text-gray-600 hover:bg-gray-100">{{ __('log.at_ack') }}</button>
+            </div>
+        @empty
+            <div class="py-12 text-center text-sm text-gray-400">{{ __('log.at_attention_empty') }}</div>
+        @endforelse
+    </div>
+    @if($this->attentionLogs->isNotEmpty())
+    <div class="border-t px-5 py-3">
+        <button type="button" wire:click="acknowledgeAll" wire:confirm="{{ __('log.at_ack_all') }}?" class="w-full rounded-md bg-red-50 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-100">{{ __('log.at_ack_all') }} ({{ $this->attentionCount }})</button>
+    </div>
+    @endif
+</div>
+@endif
 </div>

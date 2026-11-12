@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AlimtalkLog;
 use App\Models\Setting;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -197,5 +198,43 @@ class AlimtalkReportPollTest extends TestCase
             ->call('acknowledgeAll');
 
         $this->assertSame(0, AlimtalkLog::query()->needsAttention()->count());
+    }
+
+    /** jin 11-12 — 머리줄 버튼은 전체 확인이 아니라 「확인 필요」 드로어를 연다. 드로어 = 확인할 것만 + 사유 + 찾기 + 맨 아래 전부 확인. */
+    public function test_attention_drawer_lists_only_unacknowledged_with_reason_and_search(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        $v = Vehicle::create(['vehicle_number' => '11노3152', 'sales_channel' => 'export', 'currency' => 'USD', 'purchase_price' => 1, 'buyer_undecided' => true]);
+        $dead = AlimtalkLog::create(['template_code' => 'erp_purchase_paid_v3', 'phone' => '01023489777', 'vehicle_id' => $v->id, 'status' => 'sent', 'msgid' => 'M1', 'report_status' => 'undelivered',
+            'report_raw' => ['code' => 'success', 'message' => 'M505:착신가입자 없음', 'originMessage' => 'K119:MessageNoUserException']]);
+        AlimtalkLog::create(['template_code' => 'erp_vehicle_new', 'phone' => '01082167973', 'status' => 'failed', 'error' => 'bizmsg fail — K101:NotAvailableSendMessage']);
+        AlimtalkLog::create(['template_code' => 'erp_vehicle_new', 'phone' => '01000000001', 'status' => 'failed', 'error' => 'x', 'acknowledged_at' => now()]);   // 이미 확인
+        AlimtalkLog::create(['template_code' => 'erp_vehicle_new', 'phone' => '01000000002', 'status' => 'sent', 'msgid' => 'M2', 'report_status' => 'delivered']);   // 정상
+
+        $c = Volt::actingAs($super)->test('admin.alimtalk-logs.index')->assertOk()
+            ->assertSee('확인 필요 (2)')->assertDontSee('data-attention-drawer', false)
+            ->call('openAttention')->assertSee('data-attention-drawer', false);
+        $html = $c->html();
+        $drawer = substr($html, strpos($html, 'data-attention-drawer'));
+        $this->assertSame(2, substr_count($drawer, 'data-attention-row'), '확인 안 한 미도달·실패만');
+        $this->assertStringContainsString('11노3152', $drawer);
+        $this->assertStringContainsString('K119', $drawer, '사유가 같이 보인다');
+        $this->assertStringNotContainsString('01000000001', $drawer, '이미 확인한 것은 없다');
+        $this->assertStringNotContainsString('01000000002', $drawer, '정상 전달은 없다');
+
+        $c->set('attentionSearch', '11노')->call('searchAttention');
+        $html = $c->html();
+        $drawer = substr($html, strpos($html, 'data-attention-drawer'));
+        $this->assertSame(1, substr_count($drawer, 'data-attention-row'), '드로어 안 찾기');
+        $this->assertStringNotContainsString('01082167973', $drawer);
+
+        $c->call('acknowledge', $dead->id);
+        $html = $c->html();
+        $this->assertSame(0, substr_count(substr($html, strpos($html, 'data-attention-drawer')), 'data-attention-row'), '확인하면 드로어에서 빠진다');
+        $this->assertSame(1, AlimtalkLog::query()->needsAttention()->count());
+
+        $c->set('attentionSearch', '')->call('searchAttention')->call('acknowledgeAll');
+        $this->assertSame(0, AlimtalkLog::query()->needsAttention()->count());
+        $c->call('closeAttention')->assertDontSee('data-attention-drawer', false);
     }
 }
