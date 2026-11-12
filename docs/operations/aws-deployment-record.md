@@ -935,6 +935,11 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-12 (6) — master `417fbb1a` · 마이그 0 (jin «배포해줘» — ssancar.com 추가)
+- 관제센터 사이트 줄 ERP / BOARD / ETC(GPU PC·ssancar.com) + 사이트별 path (dev `546a1f2d`). ssancarerp `.env` `OPS_SITES` 7개로 교체(백업 `.env.bak-20261112-ops2`).
+- 같은 날 board master `801b381` 두 박스 배포 + OPS_HMAC_SECRET 투입(board 세션) → 허브에서 board 2곳 읽힘 확인. ssancar.com 은 그쪽 `page/api_ops_summary.php` 미배포(jin 승인 대기) → 「미연결」.
+- run 43159447597 잡 5 success · ssancarerp SHA `417fbb1a`.
+
 ## 2026-11-12 (5) — master `07cdab26` · 마이그 0 (jin «.env 넣고 배포해줘. 금액은 남겨줘»)
 - 관제센터 2단계 — 요약 API `GET /api/internal/ops/summary`(VerifyOpsHmac) + `/admin/control`(super + OPS_OWNER_EMAILS) (dev `0d9beb1b`).
 - 운영 .env(배포 전, 백업 `.env.bak-20261112-ops`): 3사 `OPS_HMAC_SECRET`(같은 값) · ssancarerp 에만 `OPS_OWNER_EMAILS=wlsdud10074@naver.com` + `OPS_SITES`(6 사이트).
