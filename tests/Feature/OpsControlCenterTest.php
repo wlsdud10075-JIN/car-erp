@@ -2,15 +2,18 @@
 
 namespace Tests\Feature;
 
+use App\Console\Commands\AssistantHealthCheck;
 use App\Http\Middleware\VerifyErpPeerHmac;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\Ops\OpsHub;
+use App\Services\Ops\OpsSignature;
 use App\Services\Ops\OpsSummary;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -32,18 +35,16 @@ class OpsControlCenterTest extends TestCase
             ['key' => 'ssancar-erp', 'name' => 'ssancarerp', 'kind' => 'erp', 'self' => true, 'host' => 'heymancar.com'],
             ['key' => 'heyman-erp', 'name' => 'heymanerp', 'kind' => 'erp', 'url' => 'https://heysellcar.test', 'host' => 'heysellcar.com'],
             ['key' => 'ssancar-board', 'name' => 'ssancarboard', 'kind' => 'board', 'url' => 'https://board.test', 'host' => 'board.heymancar.com'],
-            ['key' => 'gpu', 'name' => '회사 GPU PC', 'kind' => 'etc', 'notes' => ['Tailscale 100.110.133.112'], 'ssh' => 'ssh SSANCAR@100.110.133.112'],
+            ['key' => 'gpu', 'name' => '회사 GPU PC', 'kind' => 'etc', 'probe' => 'assistant', 'notes' => ['Tailscale 100.110.133.112'], 'ssh' => 'ssh SSANCAR@100.110.133.112'],
             ['key' => 'ssancar-web', 'name' => 'ssancar.com', 'kind' => 'etc', 'url' => 'https://ssancar.test', 'path' => '/_ops/summary.php', 'host' => 'ssancar.com'],
         ])]);
         Cache::flush();
+        Storage::fake('local');   // 이 PC 의 brain.json(세컨드 브레인)이 끼어들지 않게
     }
 
-    private function signed(string $path = '/api/internal/ops/summary', ?string $secret = null): array
+    private function signed(string $path = '/api/internal/ops/summary', ?string $secret = null, int $version = 2): array
     {
-        $ts = now()->timestamp;
-
-        return ['X-Timestamp' => (string) $ts, 'X-Nonce' => (string) Str::uuid(),
-            'X-Board-Signature' => 'sha256='.hash_hmac('sha256', VerifyErpPeerHmac::canonical('GET', $path, [], $ts), $secret ?? self::SECRET)];
+        return OpsSignature::headers('GET', $path, [], '', $secret ?? self::SECRET, $version);
     }
 
     public function test_only_the_owner_super_account_opens_it(): void
@@ -72,6 +73,12 @@ class OpsControlCenterTest extends TestCase
 
         $res = $this->withHeaders($this->signed() + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertOk();
         $this->assertSame(['generated_at', 'company', 'server', 'routines', 'health', 'links', 'anomalies'], array_keys($res->json()));
+        $this->withHeaders($this->signed(version: 1) + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertOk();   // 전환 기간 — v1 도 아직 받는다
+
+        // v2 = nonce 가 서명 안(jin 11-12) — nonce 만 바꾼 재전송은 서명이 안 맞아 401
+        $h = $this->signed();
+        $h['X-Nonce'] = (string) Str::uuid();
+        $this->withHeaders($h + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertStatus(401);
 
         config(['services.ops.hmac_secret' => '']);
         $this->withHeaders($this->signed() + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertStatus(401);   // 시크릿 비면 fail-closed
@@ -115,7 +122,13 @@ class OpsControlCenterTest extends TestCase
         $this->assertFalse($by['heyman-erp']['ok']);
         $this->assertStringContainsString('응답 없음', $by['heyman-erp']['error']);
         $this->assertSame('미연결(요약 API 없음)', $by['ssancar-board']['error']);
-        $this->assertSame('요약 API 없음 — 메모만', $by['gpu']['error']);
+        $this->assertStringContainsString('감시 기록 없음', $by['gpu']['error']);   // probe=assistant 인데 캐시가 없다
+
+        Cache::put(AssistantHealthCheck::CACHE_KEY, ['checked_at' => time() - 60, 'ollama_ok' => false, 'ollama_down_since' => time() - 3600, 'index_mtime' => time() - 7200, 'problems' => []], 1800);
+        $gpu = collect(OpsHub::collect(true))->keyBy('site.key')['gpu'];
+        $this->assertTrue($gpu['ok']);
+        $this->assertSame('GPU PC 응답 없음', $gpu['data']['anomalies'][0]['kind']);
+        $this->assertFalse($gpu['data']['health'][0]['ok']);
     }
 
     public function test_hub_signature_is_accepted_by_the_receiving_side(): void
@@ -128,10 +141,30 @@ class OpsControlCenterTest extends TestCase
         });
         config(['services.ops.sites' => json_encode([['key' => 'heyman-erp', 'name' => 'heymanerp', 'kind' => 'erp', 'url' => 'https://heysellcar.test']])]);
         $this->assertTrue(OpsHub::collect()[0]['ok']);
+        $this->assertArrayNotHasKey('signature_v1', OpsHub::collect()[0]['data']);
 
         // 허브가 붙인 헤더를 그대로 받는 쪽 라우트에 넣으면 통과해야 한다(두 쪽이 같은 정규 문자열)
         $headers = collect(['X-Timestamp', 'X-Nonce', 'X-Board-Signature'])->mapWithKeys(fn ($h) => [$h => $sent->header($h)[0]])->all();
         $this->withHeaders($headers + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertOk();   // getJson 은 빈 본문 [] 을 실어 서명 대상이 달라진다 — 허브처럼 본문 없이
+    }
+
+    public function test_hub_falls_back_to_v1_while_a_site_still_rejects_v2(): void
+    {
+        $calls = [];
+        Http::fake(function ($req) use (&$calls) {
+            $calls[] = $req;
+            $ts = (int) $req->header('X-Timestamp')[0];
+            $sig = substr($req->header('X-Board-Signature')[0], 7);
+            $v1 = hash_hmac('sha256', VerifyErpPeerHmac::canonical('GET', '/api/internal/ops/summary', [], $ts), self::SECRET);
+
+            return hash_equals($v1, $sig) ? Http::response(['server' => ['version' => 'old'], 'anomalies' => []]) : Http::response(['error' => 'unauthorized'], 401);   // v1 만 받는 옛 상대
+        });
+        config(['services.ops.sites' => json_encode([['key' => 'heyman-erp', 'name' => 'heymanerp', 'kind' => 'erp', 'url' => 'https://heysellcar.test']])]);
+
+        $r = OpsHub::collect()[0];
+        $this->assertTrue($r['ok']);
+        $this->assertTrue($r['data']['signature_v1']);
+        $this->assertCount(2, $calls, 'v2 → 401 → v1 한 번');
     }
 
     public function test_page_shows_sites_anomalies_and_version_mismatch(): void
@@ -140,9 +173,10 @@ class OpsControlCenterTest extends TestCase
         $peer['server']['version'] = 'deadbeef';   // 3사 버전이 어긋남
         Http::fake(['heysellcar.test/*' => Http::response($peer), 'board.test/*' => Http::response([], 404), 'ssancar.test/*' => Http::response([], 500)]);
         $jin = User::factory()->create(['permission' => 'super', 'email' => 'jin@example.com', 'email_verified_at' => now()]);
+        Cache::put(AssistantHealthCheck::CACHE_KEY, ['checked_at' => time() - 60, 'ollama_ok' => true, 'ollama_down_since' => null, 'index_mtime' => time() - 7200, 'problems' => []], 1800);
 
         $html = Volt::actingAs($jin)->test('admin.control')->html();
-        foreach (['ssancarerp', 'heymanerp', 'ssancarboard', '회사 GPU PC', 'ssancar.com', 'heymancar.com 열기', 'ssh SSANCAR@100.110.133.112', 'Tailscale 100.110.133.112', '버전 어긋남', '미연결', 'HTTP 500'] as $txt) {
+        foreach (['ssancarerp', 'heymanerp', 'ssancarboard', '회사 GPU PC', 'ssancar.com', 'heymancar.com 열기', 'ssh SSANCAR@100.110.133.112', 'Tailscale 100.110.133.112', '버전 어긋남', '미연결', 'HTTP 500', 'data-ops-notes="gpu"', 'Ollama 응답 정상'] as $txt) {
             $this->assertStringContainsString($txt, $html);
         }
         $this->assertSame(1, substr_count($html, '>ETC</span> 회사 GPU PC'), 'GPU PC 는 ETC 줄');

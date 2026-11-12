@@ -164,14 +164,27 @@ new #[Layout('components.layouts.app')] class extends Component
                                     <span class="{{ ! $s['ok'] ? '' : ($worst >= 3 ? 'ops-bad' : 'ops-ok') }}" style="width: 8px; height: 8px; border-radius: 50%; background: {{ $dot }}"></span>
                                     <span style="font-size: 10px; letter-spacing: 1px; color: {{ $rowColor }}">{{ $rowLabel }}</span> {{ $site['name'] }}
                                 </span>
-                                @if($s['ok'])
-                                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $srv['version'] ?? '—' }} · 대기 마이그 {{ $srv['pending_migrations'] ?? '—' }} · 오류 오늘 {{ $srv['errors_today'] ?? '—' }} · 디스크 {{ isset($srv['disk_used_pct']) ? $srv['disk_used_pct'].'%' : '—' }}</span>
+                                @if($s['ok'] && empty($site['url']) && empty($site['self']))
+                                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $d['generated_at'] ?? '' ? '감시 '.\Carbon\Carbon::parse($d['generated_at'])->format('m/d H:i') : '' }}</span>
+                                @elseif($s['ok'])
+                                    <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $srv['version'] ?? '—' }} · 대기 마이그 {{ $srv['pending_migrations'] ?? '—' }} · 오류 오늘 {{ $srv['errors_today'] ?? '—' }} · 디스크 {{ isset($srv['disk_used_pct']) ? $srv['disk_used_pct'].'%' : '—' }}{{ ! empty($d['signature_v1']) ? ' · 서명 v1(전환 전)' : '' }}</span>
                                     <span style="font-size: 12px; color: {{ $mine ? '#ffb38a' : '#3dffaa' }}">{{ $mine ? '이상 '.count($mine).'건' : '이상 없음' }}</span>
                                 @else
                                     <span style="font-size: 12px; color: #9aa6bd">{{ $s['error'] }}</span>
                                 @endif
                             </button>
-                            <details style="border-top: 1px solid rgba(127,231,255,.14); padding-top: 6px">
+                            @if(empty($site['url']) && empty($site['self']))
+                                {{-- 메모 항목(GPU PC) — 접지 않고 바로 보인다(jin 11-12 «내용이 안 뜨는 것 같다») --}}
+                                <div style="display: flex; flex-direction: column; gap: 3px; border-top: 1px solid rgba(127,231,255,.14); padding-top: 6px; font-size: 11px" data-ops-notes="{{ $site['key'] }}">
+                                    @foreach((array) ($d['health'] ?? []) as $h)
+                                        <span style="color: {{ ($h['ok'] ?? true) ? '#3dffaa' : '#ffcf86' }}">{{ ($h['ok'] ?? true) ? '✓' : '✗' }} {{ $h['detail'] }}</span>
+                                    @endforeach
+                                    @foreach((array) ($site['notes'] ?? []) as $note)
+                                        <span style="font-family: 'JetBrains Mono', monospace; color: #c9dcee">{{ $note }}</span>
+                                    @endforeach
+                                </div>
+                            @endif
+                            <details style="border-top: 1px solid rgba(127,231,255,.14); padding-top: 6px" @if(empty($site['url']) && empty($site['self'])) hidden @endif>
                                 <summary style="cursor: pointer; font-size: 12px; color: #9cc3e0; min-height: 32px; display: flex; align-items: center">▸ 서버 · 연결</summary>
                                 <div style="display: flex; flex-direction: column; gap: 3px; padding-top: 4px; font-size: 11px">
                                     @foreach((array) ($site['notes'] ?? []) as $note)
