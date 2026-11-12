@@ -146,6 +146,9 @@ new #[Layout('components.layouts.app')] class extends Component
         @keyframes opsPulse { 0% { box-shadow: 0 0 0 0 rgba(61,255,170,.7) } 70% { box-shadow: 0 0 0 8px rgba(61,255,170,0) } 100% { box-shadow: 0 0 0 0 rgba(61,255,170,0) } }
         @keyframes opsPulseBad { 0% { box-shadow: 0 0 0 0 rgba(255,90,90,.75) } 70% { box-shadow: 0 0 0 9px rgba(255,90,90,0) } 100% { box-shadow: 0 0 0 0 rgba(255,90,90,0) } }
         .ops-ok { animation: opsPulse 2s infinite } .ops-bad { animation: opsPulseBad 1.2s infinite }
+        /* 사이트 줄 = 왼쪽 머리칸(ERP·BOARD·ETC) + 회사 3칸 가로(목업 그대로, jin 11-12). 폰에서는 머리칸이 한 줄 차지 */
+        .ops-row { display: grid; grid-template-columns: 78px repeat(3, minmax(0, 1fr)); gap: 10px; align-items: start }
+        @media (max-width: 760px) { .ops-row { grid-template-columns: minmax(0, 1fr) } }
         [data-ops-control] details > summary { list-style: none } [data-ops-control] details > summary::-webkit-details-marker { display: none }
     </style>
     <div aria-hidden="true" style="position: absolute; inset: 0; background-image: linear-gradient(rgba(80,160,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(80,160,255,.06) 1px, transparent 1px); background-size: 40px 40px; pointer-events: none"></div>
@@ -175,7 +178,8 @@ new #[Layout('components.layouts.app')] class extends Component
             <span style="{{ $head }}">SITES <span style="{{ $sub }}">· 이름을 누르면 「이상 감지」가 그 사이트만 · 「서버 · 연결」을 누르면 펼침</span></span>
             @foreach($rows as [$rowLabel, $rowColor, $rowSites])
                 @if($rowSites !== [])
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; align-items: start">
+                <div class="ops-row" data-ops-row="{{ $rowLabel }}">
+                    <span style="font-family: 'Orbitron', 'Noto Sans KR', sans-serif; font-size: 13px; letter-spacing: 2px; color: {{ $rowColor }}; padding-top: 12px">{{ $rowLabel }}</span>
                     @foreach($rowSites as $s)
                         @php
                             $site = $s['site']; $d = $s['data'] ?? []; $srv = $d['server'] ?? [];
@@ -188,7 +192,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             <button type="button" wire:click="pickSite('{{ $site['key'] }}')" style="all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 4px; min-height: 44px">
                                 <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #eaf6ff">
                                     <span class="{{ ! $s['ok'] ? '' : ($worst >= 3 ? 'ops-bad' : 'ops-ok') }}" style="width: 8px; height: 8px; border-radius: 50%; background: {{ $dot }}"></span>
-                                    <span style="font-size: 10px; letter-spacing: 1px; color: {{ $rowColor }}">{{ $rowLabel }}</span> {{ $site['name'] }}
+                                    {{ $site['name'] }}
                                 </span>
                                 @if($s['ok'] && empty($site['url']) && empty($site['self']))
                                     <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $d['generated_at'] ?? '' ? '감시 '.\Carbon\Carbon::parse($d['generated_at'])->format('m/d H:i') : '' }}</span>
