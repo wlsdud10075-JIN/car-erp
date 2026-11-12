@@ -20,6 +20,7 @@ use App\Services\SalesmanResolver;
 use App\Services\SavingsLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 /**
  * board 영업 포털 ④ 재무 읽기 API (읽기전용).
@@ -543,6 +544,68 @@ class InternalPortalController extends Controller
         $updated = array_values(array_filter(['remitter_name', 'remitter_id'], fn (string $c) => $vehicle->wasChanged($c)));
 
         return response()->json(['vehicle_id' => $vehicle->id, 'updated' => $updated, 'had_previous' => $hadPrevious]);
+    }
+
+    /**
+     * 2026-11-12 탁송 배차(board 기획 §11 ①, jin «착수») — 보관위치 쓰기. 권위 = §16.
+     *
+     * - **덮어쓰기 + 감사**(board 가 ERP 현재값을 보여 주고 확인창 뒤에만 보낸다) — purchase-sync 동봉(§16-2)은 빈 칸만. 경로마다 규칙이 다르다(§14 와 같은 구조).
+     * - 값은 `Vehicle::stockLocations()`(회사별 3종) 밖이면 422. `stock_location_note` 는 키가 오면 그 값(빈 문자열 = 비움), 안 오면 그대로.
+     * - 스코프 = §2 본인 차만. 남의 차·없는 차·지운 차 = 403. 행위자 = `salesman_email` 의 User(§8 #56). 같은 값은 감사 0(`AuditLog::isRealChange`).
+     */
+    public function stockLocation(Request $request, int $id): JsonResponse
+    {
+        $email = (string) ($request->input('salesman_email') ?? $request->query('salesman_email', ''));
+        $sid = SalesmanResolver::resolveActiveOrFail($email)->id;
+        $vehicle = $this->ownVehicles($sid)->whereKey($id)->first();
+        abort_if($vehicle === null, 403);
+
+        $data = $request->validate([
+            'stock_location' => ['required', 'string', Rule::in(Vehicle::stockLocations())],
+            'stock_location_note' => ['nullable', 'string', 'max:200'],
+        ]);
+        $previous = ['stock_location' => $vehicle->stock_location, 'note' => $vehicle->stock_location_note];
+        $vehicle->stock_location = $data['stock_location'];
+        if ($request->has('stock_location_note')) {
+            $note = trim((string) ($data['stock_location_note'] ?? ''));
+            $vehicle->stock_location_note = $note === '' ? null : $note;
+        }
+
+        $userId = User::where('email', $email)->value('id');
+        AuditLog::actingAs($userId, fn () => $vehicle->save());
+        $updated = array_values(array_filter(['stock_location', 'stock_location_note'], fn (string $c) => $vehicle->wasChanged($c)));
+
+        return response()->json([
+            'vehicle_id' => $vehicle->id,
+            'stock_location' => $vehicle->stock_location,
+            'stock_location_note' => $vehicle->stock_location_note,
+            'previous' => $previous,
+            'updated' => $updated,
+        ]);
+    }
+
+    /**
+     * 2026-11-12 탁송 배차(board 기획 §11 ③) — 보관위치 읽기(탁송 탭을 열 때 ERP 현재값·마지막 변경자). 권위 = §16-3.
+     * `updated_at`·`updated_by_name` 은 감사 행(stock_location·note)의 마지막 것 — 감사 전(11-12 이전) 값은 null. `options` = 이 회사의 보관위치 목록(버튼 그리기용).
+     */
+    public function stockLocationShow(Request $request, int $id): JsonResponse
+    {
+        $sid = SalesmanResolver::resolveActiveOrFail((string) $request->query('salesman_email', ''))->id;
+        $vehicle = $this->ownVehicles($sid)->whereKey($id)->first();
+        abort_if($vehicle === null, 403);
+
+        $last = AuditLog::query()->where('auditable_id', $vehicle->id)
+            ->whereIn('column_name', ['stock_location', 'stock_location_note'])
+            ->with('user:id,name')->latest('id')->first();
+
+        return response()->json([
+            'vehicle_id' => $vehicle->id,
+            'stock_location' => $vehicle->stock_location,
+            'stock_location_note' => $vehicle->stock_location_note,
+            'updated_at' => $last?->created_at?->toIso8601String(),
+            'updated_by_name' => $last?->user?->name,
+            'options' => Vehicle::stockLocations(),
+        ]);
     }
 
     /**

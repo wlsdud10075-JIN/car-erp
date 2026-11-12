@@ -940,6 +940,34 @@ class PurchaseSyncReceiverTest extends TestCase
     // ── 2026-11 ② 송금인 Name·ID 동봉 (jin 10-28) — 빈 칸만 · remitter_id 암호화 · 감사 가림 ──
 
     /** 신규 생성에 동봉되면 그대로 저장. remitter_id 는 DB 에 평문으로 남지 않는다(encrypted cast). */
+    // ── 2026-11-12 탁송 배차 — 보관위치 동봉(빈 칸만 · 목록 밖은 그 칸만 건너뜀) ──
+
+    public function test_stock_location_is_stored_on_create_and_invalid_values_are_dropped(): void
+    {
+        $id = $this->postSigned($this->validPayload(['vehicle_number' => '43오4301', 'stock_location' => '야드', 'stock_location_note' => ' B동 앞 ']))->assertStatus(201)->json('vehicle_id');
+        $v = Vehicle::find($id);
+        $this->assertSame('야드', $v->stock_location);
+        $this->assertSame('B동 앞', $v->stock_location_note);
+
+        $id2 = $this->postSigned($this->validPayload(['vehicle_number' => '43오4302', 'stock_location' => '없는곳']))->assertStatus(201)->json('vehicle_id');
+        $this->assertNull(Vehicle::find($id2)->stock_location, '목록(Vehicle::stockLocations()) 밖 값은 넣지 않는다 — 세트 통째 422 는 아님');
+    }
+
+    public function test_stock_location_on_resend_fills_only_empty_and_reports_invalid(): void
+    {
+        Salesman::create(['name' => '김영업', 'email' => 'sales@car-erp.test', 'type' => 'freelance', 'is_active' => true]);
+        $id = $this->postSigned($this->validPayload(['vehicle_number' => '43오4303']))->json('vehicle_id');
+
+        $this->postSigned($this->validPayload(['vehicle_number' => '43오4303', 'stock_location' => '홈플']))->assertStatus(200)->assertJsonFragment(['fields_filled' => ['stock_location']]);
+        $this->postSigned($this->validPayload(['vehicle_number' => '43오4303', 'stock_location' => '야드', 'stock_location_note' => '뒤쪽']))->assertStatus(200)
+            ->assertJsonPath('fields_skipped.stock_location', 'already_set')->assertJsonFragment(['fields_filled' => ['stock_location_note']]);
+        $this->postSigned($this->validPayload(['vehicle_number' => '43오4303', 'stock_location' => '없는곳']))->assertStatus(200)->assertJsonPath('fields_skipped.stock_location', 'invalid');
+
+        $v = Vehicle::find($id);
+        $this->assertSame('홈플', $v->stock_location, '동봉은 덮어쓰지 않는다(덮어쓰기는 전용 엔드포인트 §16-1)');
+        $this->assertSame('뒤쪽', $v->stock_location_note);
+    }
+
     public function test_remitter_is_stored_on_create_and_id_is_encrypted(): void
     {
         $res = $this->postSigned($this->validPayload(['vehicle_number' => '42오4201', 'remitter_name' => ' JOHN DOE ', 'remitter_id' => 'AB1234567']));
