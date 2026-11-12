@@ -937,7 +937,7 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 
 ## 2026-11-12 (8) — master `7e70a743` · 마이그 0 (jin «배포해줘»)
 - 관제센터 3D 지도 안 그려지던 것(x-data 쌍따옴표 ↔ JSON 따옴표 충돌 — Playwright 실측으로 잡음) + 목업 3기둥 배치 복원(dev `a1a2e632`) · 관제 서명 v1 대조·폴백 삭제(dev `c917faed`, board aa0202c·ssancar.com 21217181 도 같은 날 삭제).
-- 배포 런·서버 확인은 백그라운드(jin 11-12 피드백) — 결과는 아래 줄에 추기.
+- 결과(백그라운드 확인): 배포 잡 3개 success(테스트 게이트 통과) · ssancarerp SHA `7e70a743` · 허브 7칸 전부 ok(ERP 3사 7e70a743 · board aa0202c · ssancar.com 21217181 · GPU 감시 ok) · /login 200.
 
 ## 2026-11-12 (7) — master `1ec946c8` · 마이그 0 (jin «좋아. 배포하자»)
 - 관제센터 3단계 세컨드 브레인(dev `2cdaf605`) + 관제 서명 v2(nonce 포함, jin 결정)·GPU PC 감시 카드(dev `07e27491`). ssancarerp `OPS_SITES` 재교체(gpu probe, 백업 `.env.bak-20261112-ops3`).
