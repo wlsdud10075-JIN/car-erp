@@ -637,6 +637,71 @@ new #[Layout('components.layouts.app')] class extends Component
                                     @if($r['amount']) <span class="badge badge-amber">{{ $r['amount'] }}</span> @endif
                                     @if($r['ref']) <span class="badge badge-teal">{{ $r['ref'] }}</span> @endif
                                 </div>
+                                {{-- ERP 카드(jin 11-11 §14 ②③) — 차 1대면 한 줄, 여러 대면 요약 + 대별 보기(Alpine, 서버 왕복 없음) --}}
+                                @if(! empty($r['erp']))
+                                    @php($e = $r['erp'])
+                                    <div class="mt-1 rounded bg-slate-50 px-2 py-1 text-xs text-gray-700" x-data="{ more: false }" data-erp-card="{{ $r['id'] }}">
+                                        @if($e['flag'])
+                                            <span class="badge {{ $e['flag'] === 'unregistered' ? 'badge-red' : ($e['flag'] === 'registered' ? 'badge-green' : 'badge-amber') }}" data-erp-flag="{{ $e['flag'] }}">{{ $e['flag_note'] }}</span>
+                                        @endif
+                                        @if($e['inherit'])
+                                            <span class="text-gray-500" data-erp-inherit>{{ __('kakao.erp_inherit', ['sender' => $e['inherit']['sender'], 'at' => $e['inherit']['at'], 'title' => $e['inherit']['title']]) }}</span>
+                                        @endif
+                                        @if($e['summary'])
+                                            <div class="mt-0.5 flex flex-wrap items-center gap-2">
+                                                <span class="font-medium" data-erp-summary>{{ __('kakao.erp_label') }}: {{ $e['summary'] }}</span>
+                                                @if(count($e['cards']) > 0)
+                                                    <button type="button" @click="more = !more" class="h-9 rounded border border-gray-300 bg-white px-2 text-xs text-gray-700 sm:h-7" x-text="more ? '{{ __('kakao.erp_collapse') }}' : '{{ __('kakao.erp_expand') }}'">{{ __('kakao.erp_expand') }}</button>
+                                                @endif
+                                            </div>
+                                            <div x-show="more" x-cloak class="mt-1 overflow-x-auto">
+                                                <table class="min-w-[560px] text-xs">
+                                                    <thead><tr class="text-left text-gray-500">
+                                                        <th class="pr-3">{{ __('kakao.erp_col_vehicle') }}</th><th class="pr-3">{{ __('kakao.erp_col_stage') }}</th><th class="pr-3">{{ __('kakao.erp_col_method') }}</th>
+                                                        <th class="pr-3">{{ __('kakao.erp_col_forwarder') }}</th><th class="pr-3">VSL</th><th class="pr-3">{{ __('kakao.erp_col_blank') }}</th><th class="pr-3">{{ __('kakao.erp_col_paid') }}</th><th></th>
+                                                    </tr></thead>
+                                                    <tbody>
+                                                        @foreach($e['cards'] as $c)
+                                                            <tr class="border-t border-gray-100" data-erp-vehicle="{{ $c['id'] }}">
+                                                                <td class="pr-3 whitespace-nowrap">{{ $c['number'] }} <span class="text-gray-400">{{ $c['model'] }}</span></td>
+                                                                <td class="pr-3 whitespace-nowrap">{{ $c['stage'] }}</td>
+                                                                <td class="pr-3">{{ $c['method'] ?? '—' }}</td>
+                                                                <td class="pr-3">{{ $c['forwarder'] ?? '—' }}</td>
+                                                                <td class="pr-3">{{ $c['vessel'] ?: '—' }}</td>
+                                                                <td class="pr-3 text-amber-700">{{ implode('·', $c['blank']) ?: '—' }}</td>
+                                                                <td class="pr-3">{{ $c['sale_empty'] ? __('kakao.erp_sale_empty') : ($c['paid_pct'] !== null ? $c['paid_pct'].'%' : '—') }}</td>
+                                                                <td><a href="{{ route('erp.vehicles.index', ['openVehicle' => $c['id']]) }}" wire:navigate class="text-blue-700 underline">{{ __('kakao.btn_open_vehicle') }}</a></td>
+                                                            </tr>
+                                                        @endforeach
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        @else
+                                            @foreach($e['cards'] as $c)
+                                                <div class="mt-0.5 flex flex-wrap gap-x-2" data-erp-vehicle="{{ $c['id'] }}">
+                                                    <span class="font-medium">{{ __('kakao.erp_label') }}: {{ $c['number'] }}</span>
+                                                    @if($c['model'] !== '') <span>{{ $c['model'] }}</span> @endif
+                                                    <span>{{ $c['stage'] }}</span>
+                                                    <span>{{ $c['purchase'] }}</span>
+                                                    @if($c['sale_empty'])
+                                                        <span class="text-amber-700">{{ __('kakao.erp_sale_empty') }}</span>
+                                                    @elseif($c['sale_paid'])
+                                                        <span class="text-green-700">{{ __('kakao.erp_sale_paid') }}</span>
+                                                    @else
+                                                        <span>{{ __('kakao.erp_unpaid', ['currency' => $c['currency'], 'amount' => number_format((float) $c['sale_unpaid'], $c['currency'] === 'KRW' ? 0 : 2)]) }}@if($c['paid_pct'] !== null) ({{ __('kakao.erp_paid_pct', ['pct' => $c['paid_pct']]) }})@endif</span>
+                                                    @endif
+                                                    <span>{{ $c['dereg'] }}</span>
+                                                    @if($c['method']) <span>{{ $c['method'] }}</span> @endif
+                                                    @if($c['forwarder']) <span>{{ $c['forwarder'] }}</span> @endif
+                                                    @if($c['blank'] !== []) <span class="text-amber-700">{{ __('kakao.erp_blank', ['fields' => implode('·', $c['blank'])]) }}</span> @endif
+                                                    @if($c['declaration']) <span>{{ __('kakao.erp_declaration') }}</span> @endif
+                                                    @if($c['bl']) <span>{{ __('kakao.erp_bl') }}</span> @endif
+                                                    <a href="{{ route('erp.vehicles.index', ['openVehicle' => $c['id']]) }}" wire:navigate class="text-blue-700 underline">{{ __('kakao.btn_open_vehicle') }}</a>
+                                                </div>
+                                            @endforeach
+                                        @endif
+                                    </div>
+                                @endif
                             </div>
                             <div class="flex flex-wrap items-center gap-1">
                                 @if(in_array($key, ['missed', 'now', 'today', 'snoozed', 'review', 'none', 'teammate']))
