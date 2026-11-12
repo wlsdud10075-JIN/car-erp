@@ -13,6 +13,7 @@ return [
     'empty' => 'No buyers.',
     'delete_confirm' => 'Delete buyer :name?',
     'new_badge' => 'New',
+    'new_filter_hint' => 'Show only buyers registered in the last 30 days ("New" badge). Click again to clear.',
     'new_badge_hint' => 'Registered :date — shown for 30 days after registration.',
     'delete_confirm_simple' => 'Delete this buyer? This cannot be undone.',
     'saved' => 'Buyer saved.',
