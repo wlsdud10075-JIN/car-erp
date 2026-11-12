@@ -935,6 +935,10 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-12 (12) — master `88db9608` · 마이그 0 (jin «현재까지 먼저 배포해주고»)
+- 알림톡 로그 「확인 필요 (N)」 = 목록 필터(머리줄 버튼, 전체 확인은 필터 켠 뒤에만)(dev `759c0567`·`ed15d2c3`) · 모바일 390px 점검 1차 — 기능 불가 5 + 보기 흉함 14(관제 3D pan-y·정산 카드 뱃지/버튼·사내직원관리 버튼 줄·월정산 헤더·승인 링크 금액·바이어 탭/적립금·카톡·수출 탭·루틴 표, dev `ffc3b98e`, 정본 `docs/design/mobile-audit-2026-11-12.md`). 전체 3,837 통과.
+- 결과: run 43217939385 잡 5 success · 3사 SHA `88db9608` · /login 200×3. CI 가 npm run build(새 유틸 클래스).
+
 ## 2026-11-12 (11) — master `baf14084` · 마이그 1 (jin «배포해줘»)
 - `vehicles.imported_at`(엑셀 적재 차 표식) + 관제 「끊긴 컨사이니」에서 적재 차 제외 + `vehicles:mark-imported`(같은 분 20대 이상 = 적재, dry-run/apply)(dev `076c2501`). 배포 전 ssancarerp 바이어 3대 #400→#172 재연결(`buyers:check-dangling --rebind --apply`).
 - 결과: run 43204521943 잡 5 success · 3사 SHA `baf14084` · 마이그 Ran×3 · /login 200×3.
