@@ -2,6 +2,7 @@
 
 use App\Services\Ops\OpsBrain;
 use App\Services\Ops\OpsHub;
+use App\Services\Ops\OpsRoutines;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
 
@@ -124,6 +125,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'anomalies' => $anomalies,
             'shownAnomalies' => $this->siteFilter === '' ? $anomalies : array_values(array_filter($anomalies, fn ($a) => $a['site_key'] === $this->siteFilter)),
             'routines' => $routines,
+            'routineTable' => OpsRoutines::rows($sites),
             'online' => count(array_filter($sites, fn ($s) => $s['ok'])),
             'urgent' => count(array_filter($anomalies, fn ($a) => $a['level'] >= 3)),
         ];
@@ -346,36 +348,40 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
         </div>
 
-        <div style="display: flex; flex-wrap: wrap; gap: 14px">
-        {{-- 예약 작업 --}}
+        {{-- 루틴 — 예약 작업을 한글 묶음·시각·사이트별 마지막 결과로(목업 그대로, jin 11-12 «영어로 돼 있어 뭘 뜻하는지 모르겠다»). 데이터 = OpsRoutines --}}
         <div style="{{ $panel }} display: flex; flex-direction: column; gap: 8px" data-ops-routines>
-            <span style="{{ $head }}">ROUTINES <span style="{{ $sub }}">· 예약 작업 — 사이트별 마지막 실행 (11-12 부터 기록)</span></span>
-            @if($routines === [])
-                <span style="font-size: 12px; color: #8fb0cc">아직 기록이 없습니다 — 다음 정기 작업부터 쌓입니다.</span>
-            @else
-                <div style="overflow-x: auto">
-                    <table style="width: 100%; min-width: 620px; border-collapse: collapse; font-size: 12px">
-                        <thead><tr style="color: #8fb0cc; text-align: left">
-                            <th style="padding: 6px 6px 6px 0; font-weight: 500">작업</th>
-                            @foreach($erpSites as $s)<th style="padding: 6px; font-weight: 500">{{ $s['site']['name'] }}</th>@endforeach
-                        </tr></thead>
-                        <tbody style="font-family: 'JetBrains Mono', monospace">
-                            @foreach($routines as $cmd => $r)
-                                <tr style="border-top: 1px solid rgba(127,231,255,.12)">
-                                    <td style="padding: 6px 6px 6px 0">{{ $cmd }} <span style="color: #7d98b3">{{ $r['expression'] }}</span></td>
-                                    @foreach($erpSites as $s)
-                                        @php $x = $r['by'][$s['site']['key']] ?? null; @endphp
-                                        <td style="padding: 6px; color: {{ ! $x ? '#5f6b80' : ($x['status'] === 'failed' ? '#ff7a7a' : ($x['status'] === 'running' ? '#ffcf86' : '#3dffaa')) }}" title="{{ $x['error'] ?? '' }}">
-                                            {{ $x ? ($x['status'] === 'failed' ? '실패 ' : ($x['status'] === 'running' ? '도는 중 ' : '')).$fmtAt($x['started_at']) : '—' }}
-                                        </td>
-                                    @endforeach
-                                </tr>
-                            @endforeach
-                        </tbody>
-                    </table>
-                </div>
-            @endif
-        </div>
+            <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px">
+                <span style="{{ $head }}">ROUTINES <span style="{{ $sub }}">· 예약 작업 — 무엇이 언제 돌고, 사이트별 마지막 결과 (11-12 부터 기록)</span></span>
+                <span style="font-size: 11px; color: #8fb0cc">초록 = 성공 · 빨강 = 실패(마우스를 올리면 이유) · 회색 = 아직 기록 없음</span>
+            </div>
+            <div style="overflow-x: auto">
+                <table style="width: 100%; min-width: 760px; border-collapse: collapse; font-size: 12px">
+                    <thead><tr style="color: #8fb0cc; text-align: left">
+                        <th style="padding: 6px 8px 6px 0; font-weight: 500">작업</th>
+                        <th style="padding: 6px 8px; font-weight: 500">시각</th>
+                        @foreach($routineTable['columns'] as $col)<th style="padding: 6px 8px; font-weight: 500">{{ $col['name'] }}</th>@endforeach
+                    </tr></thead>
+                    <tbody>
+                        @foreach($routineTable['rows'] as $r)
+                            <tr style="border-top: 1px solid rgba(127,231,255,.12)" data-routine-row="{{ $r['label'] }}">
+                                <td style="padding: 7px 8px 7px 0; color: #eaf6ff">{{ $r['label'] }}</td>
+                                <td style="padding: 7px 8px; font-family: 'JetBrains Mono', monospace; color: #9cc3e0; white-space: nowrap">{{ $r['when'] }}</td>
+                                @foreach($routineTable['columns'] as $col)
+                                    @php($c = $r['by'][$col['key']])
+                                    <td style="padding: 7px 8px; white-space: nowrap; font-family: 'JetBrains Mono', monospace; color: {{ ['ok' => '#3dffaa', 'failed' => '#ff7a7a', 'running' => '#ffcf86'][$c['state']] ?? '#5f6b80' }}" title="{{ $c['title'] }}">{{ $c['text'] }}</td>
+                                @endforeach
+                            </tr>
+                        @endforeach
+                        @foreach(\App\Services\Ops\OpsRoutines::EXTERNAL as $e)
+                            <tr style="border-top: 1px solid rgba(127,231,255,.12); color: #7d98b3">
+                                <td style="padding: 7px 8px 7px 0">{{ $e['label'] }}</td>
+                                <td style="padding: 7px 8px; font-family: 'JetBrains Mono', monospace; white-space: nowrap">{{ $e['when'] }}</td>
+                                <td style="padding: 7px 8px" colspan="{{ max(1, count($routineTable['columns'])) }}">{{ $e['note'] }}</td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            </div>
         </div>
 
         {{-- 본문 창 --}}

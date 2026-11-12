@@ -7,6 +7,7 @@ use App\Http\Middleware\VerifyErpPeerHmac;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\Ops\OpsHub;
+use App\Services\Ops\OpsRoutines;
 use App\Services\Ops\OpsSignature;
 use App\Services\Ops\OpsSummary;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -176,5 +177,45 @@ class OpsControlCenterTest extends TestCase
 
         $c = Volt::actingAs($jin)->test('admin.control')->call('pickSite', 'heyman-erp');
         $this->assertSame('heyman-erp', $c->get('siteFilter'));
+    }
+
+    public function test_every_scheduled_command_has_a_korean_routine_label(): void
+    {
+        $src = (string) file_get_contents(base_path('routes/console.php'));
+        preg_match_all("/Schedule::command\('([a-z0-9:_\-]+)'/", $src, $m);
+        $commands = $m[1];
+        if (preg_match("/foreach \(\[([^\]]+)\] as \\\$daily\)/", $src, $f)) {   // alimtalk:{$daily} 묶음
+            foreach (array_map(fn ($x) => trim($x, " '"), explode(',', $f[1])) as $d) {
+                $commands[] = 'alimtalk:'.$d;
+            }
+        }
+        $known = array_merge(OpsRoutines::HIDDEN, ...array_map(fn ($g) => $g['commands'], array_values(OpsRoutines::GROUPS)));
+        $missing = array_values(array_diff(array_unique($commands), $known));
+        $this->assertSame([], $missing, 'routes/console.php 의 커맨드가 OpsRoutines::GROUPS 에 없다(한글 이름 없이 영어로 뜬다)');
+        $this->assertNotEmpty($commands);
+    }
+
+    public function test_routine_table_groups_commands_in_korean(): void
+    {
+        $peer = OpsSummary::collect();
+        $peer['routines'] = [
+            ['command' => 'db:backup', 'expression' => '0 3 * * *', 'status' => 'ok', 'started_at' => '2026-11-12T03:00:00+09:00', 'finished_at' => '2026-11-12T03:00:40+09:00', 'duration_ms' => 40000, 'error' => null, 'last_ok_at' => '2026-11-12T03:00:40+09:00'],
+            ['command' => 'alimtalk:pickup', 'expression' => '0 9 * * 1-5', 'status' => 'failed', 'started_at' => '2026-11-12T09:00:00+09:00', 'finished_at' => '2026-11-12T09:00:03+09:00', 'duration_ms' => 3000, 'error' => 'BizM 401', 'last_ok_at' => null],
+            ['command' => 'alimtalk:daily-summary', 'expression' => '0 9 * * 1-5', 'status' => 'ok', 'started_at' => '2026-11-12T09:00:00+09:00', 'finished_at' => '2026-11-12T09:00:05+09:00', 'duration_ms' => 5000, 'error' => null, 'last_ok_at' => '2026-11-12T09:00:05+09:00'],
+            ['command' => 'new:thing', 'expression' => '0 1 * * *', 'status' => 'ok', 'started_at' => '2026-11-12T01:00:00+09:00', 'finished_at' => '2026-11-12T01:00:01+09:00', 'duration_ms' => 1000, 'error' => null, 'last_ok_at' => null],
+        ];
+        Http::fake(['heysellcar.test/*' => Http::response($peer), 'board.test/*' => Http::response(['server' => ['version' => 'b1'], 'anomalies' => []]), 'ssancar.test/*' => Http::response([], 404)]);
+        $jin = User::factory()->create(['permission' => 'super', 'email' => 'jin@example.com', 'email_verified_at' => now()]);
+
+        $html = Volt::actingAs($jin)->test('admin.control')->html();
+        $t = substr($html, strpos($html, 'data-ops-routines'));
+        $this->assertStringContainsString('DB 백업', $t);
+        $this->assertStringContainsString('알림톡 정기 발송 9종(평일)', $t);
+        $this->assertStringContainsString('성공 11/12 03:00', $t);
+        $this->assertStringContainsString('실패 1/2 · 11/12 09:00', $t, '묶음 안 하나라도 실패면 실패');
+        $this->assertStringContainsString('BizM 401', $t, '이유는 title 로');
+        $this->assertStringContainsString('new:thing (이름 미등록)', $t, '묶음에 없는 새 커맨드도 숨기지 않는다');
+        $this->assertStringContainsString('세컨드 브레인 목록 올리기', $t);
+        $this->assertStringNotContainsString('inspire', $t);
     }
 }
