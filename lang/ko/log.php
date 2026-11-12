@@ -52,10 +52,6 @@ return [
     'at_ack' => '확인',
     'at_ack_all' => '미도달 전체 확인',
     'at_acked' => '확인됨',
-    'at_attention_open' => '확인 필요',
-    'at_attention_title' => '확인 필요 — 미도달·실패',
-    'at_attention_hint' => '확인을 눌러야 하는 것만 모았습니다. 사유를 보고 한 건씩 확인하거나, 맨 아래에서 전부 확인합니다.',
-    'at_attention_empty' => '확인할 것이 없습니다.',
     'at_col' => [
         'time' => '발송시각',
         'template' => '템플릿',
