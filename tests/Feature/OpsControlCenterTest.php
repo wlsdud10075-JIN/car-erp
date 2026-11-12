@@ -32,7 +32,8 @@ class OpsControlCenterTest extends TestCase
             ['key' => 'ssancar-erp', 'name' => 'ssancarerp', 'kind' => 'erp', 'self' => true, 'host' => 'heymancar.com'],
             ['key' => 'heyman-erp', 'name' => 'heymanerp', 'kind' => 'erp', 'url' => 'https://heysellcar.test', 'host' => 'heysellcar.com'],
             ['key' => 'ssancar-board', 'name' => 'ssancarboard', 'kind' => 'board', 'url' => 'https://board.test', 'host' => 'board.heymancar.com'],
-            ['key' => 'gpu', 'name' => '회사 GPU PC', 'kind' => 'gpu', 'notes' => ['Tailscale 100.110.133.112'], 'ssh' => 'ssh SSANCAR@100.110.133.112'],
+            ['key' => 'gpu', 'name' => '회사 GPU PC', 'kind' => 'etc', 'notes' => ['Tailscale 100.110.133.112'], 'ssh' => 'ssh SSANCAR@100.110.133.112'],
+            ['key' => 'ssancar-web', 'name' => 'ssancar.com', 'kind' => 'etc', 'url' => 'https://ssancar.test', 'path' => '/_ops/summary.php', 'host' => 'ssancar.com'],
         ])]);
         Cache::flush();
     }
@@ -103,15 +104,18 @@ class OpsControlCenterTest extends TestCase
         Http::fake([
             'heysellcar.test/*' => fn () => throw new ConnectionException('timed out'),
             'board.test/*' => Http::response(['message' => 'Not Found'], 404),
+            'ssancar.test/_ops/summary.php' => Http::response(['server' => ['version' => '2026-11-12'], 'anomalies' => []]),
         ]);
         $by = collect(OpsHub::collect())->keyBy('site.key');
+        $this->assertTrue($by['ssancar-web']['ok'], '경로가 다른 사이트(그누보드)는 path 로 읽는다');
+        $this->assertSame('2026-11-12', $by['ssancar-web']['data']['server']['version']);
 
         $this->assertTrue($by['ssancar-erp']['ok']);
         $this->assertArrayHasKey('server', $by['ssancar-erp']['data']);
         $this->assertFalse($by['heyman-erp']['ok']);
         $this->assertStringContainsString('응답 없음', $by['heyman-erp']['error']);
         $this->assertSame('미연결(요약 API 없음)', $by['ssancar-board']['error']);
-        $this->assertSame('미설치', $by['gpu']['error']);
+        $this->assertSame('요약 API 없음 — 메모만', $by['gpu']['error']);
     }
 
     public function test_hub_signature_is_accepted_by_the_receiving_side(): void
@@ -134,13 +138,16 @@ class OpsControlCenterTest extends TestCase
     {
         $peer = OpsSummary::collect();
         $peer['server']['version'] = 'deadbeef';   // 3사 버전이 어긋남
-        Http::fake(['heysellcar.test/*' => Http::response($peer), 'board.test/*' => Http::response([], 404)]);
+        Http::fake(['heysellcar.test/*' => Http::response($peer), 'board.test/*' => Http::response([], 404), 'ssancar.test/*' => Http::response([], 500)]);
         $jin = User::factory()->create(['permission' => 'super', 'email' => 'jin@example.com', 'email_verified_at' => now()]);
 
         $html = Volt::actingAs($jin)->test('admin.control')->html();
-        foreach (['ssancarerp', 'heymanerp', 'ssancarboard', '회사 GPU PC', 'heymancar.com 열기', 'ssh SSANCAR@100.110.133.112', 'Tailscale 100.110.133.112', '버전 어긋남', '미연결'] as $txt) {
+        foreach (['ssancarerp', 'heymanerp', 'ssancarboard', '회사 GPU PC', 'ssancar.com', 'heymancar.com 열기', 'ssh SSANCAR@100.110.133.112', 'Tailscale 100.110.133.112', '버전 어긋남', '미연결', 'HTTP 500'] as $txt) {
             $this->assertStringContainsString($txt, $html);
         }
+        $this->assertSame(1, substr_count($html, '>ETC</span> 회사 GPU PC'), 'GPU PC 는 ETC 줄');
+        $this->assertSame(1, substr_count($html, '>ETC</span> ssancar.com'), 'ssancar.com 도 ETC 줄');
+        $this->assertStringNotContainsString('요약 API 없음 — 메모만</span>', substr($html, strpos($html, 'data-ops-anomalies')), 'GPU PC(메모만)는 이상 감지에 안 오른다');
 
         $c = Volt::actingAs($jin)->test('admin.control')->call('pickSite', 'heyman-erp');
         $this->assertSame('heyman-erp', $c->get('siteFilter'));

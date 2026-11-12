@@ -49,7 +49,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     $anomalies[] = $a + ['site' => $s['site']['name'], 'site_key' => $key, 'site_kind' => $s['site']['kind'] ?? 'erp'];
                 }
             }
-            if (! $s['ok'] && ($s['site']['kind'] ?? '') !== 'gpu' && ($s['error'] ?? '') !== '미설치') {
+            if (! $s['ok'] && (! empty($s['site']['url']) || ! empty($s['site']['self']))) {   // url 없는 메모 항목(GPU PC)은 연결 실패가 아니다
                 $anomalies[] = ['level' => 2, 'kind' => '연결', 'count' => 1, 'text' => (string) $s['error'], 'site' => $s['site']['name'], 'site_key' => $key, 'site_kind' => $s['site']['kind'] ?? 'erp'];
             }
             foreach ((array) ($d['routines'] ?? []) as $r) {
@@ -68,7 +68,12 @@ new #[Layout('components.layouts.app')] class extends Component
         return [
             'sites' => $sites,
             'erpSites' => array_values(array_filter($sites, fn ($s) => ($s['site']['kind'] ?? 'erp') === 'erp')),
-            'otherSites' => array_values(array_filter($sites, fn ($s) => ($s['site']['kind'] ?? 'erp') !== 'erp')),
+            // 줄 셋 = ERP / BOARD / ETC(GPU PC·ssancar.com — jin 11-12 «erp / board / etc 로 할걸»). 모르는 kind 는 ETC 로.
+            'rows' => [
+                ['ERP', '#7fe7ff', array_values(array_filter($sites, fn ($s) => ($s['site']['kind'] ?? 'erp') === 'erp'))],
+                ['BOARD', '#b28cff', array_values(array_filter($sites, fn ($s) => ($s['site']['kind'] ?? '') === 'board'))],
+                ['ETC', '#e0c27a', array_values(array_filter($sites, fn ($s) => ! in_array($s['site']['kind'] ?? 'erp', ['erp', 'board'], true)))],
+            ],
             'anomalies' => $anomalies,
             'shownAnomalies' => $this->siteFilter === '' ? $anomalies : array_values(array_filter($anomalies, fn ($a) => $a['site_key'] === $this->siteFilter)),
             'routines' => $routines,
@@ -121,7 +126,7 @@ new #[Layout('components.layouts.app')] class extends Component
         {{-- 사이트 칸 --}}
         <div style="{{ $panel }} display: flex; flex-direction: column; gap: 12px">
             <span style="{{ $head }}">SITES <span style="{{ $sub }}">· 이름을 누르면 「이상 감지」가 그 사이트만 · 「서버 · 연결」을 누르면 펼침</span></span>
-            @foreach([['ERP', '#7fe7ff', $erpSites], ['BOARD · GPU', '#b28cff', $otherSites]] as [$rowLabel, $rowColor, $rowSites])
+            @foreach($rows as [$rowLabel, $rowColor, $rowSites])
                 @if($rowSites !== [])
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; align-items: start">
                     @foreach($rowSites as $s)
@@ -136,7 +141,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             <button type="button" wire:click="pickSite('{{ $site['key'] }}')" style="all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 4px; min-height: 44px">
                                 <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #eaf6ff">
                                     <span class="{{ ! $s['ok'] ? '' : ($worst >= 3 ? 'ops-bad' : 'ops-ok') }}" style="width: 8px; height: 8px; border-radius: 50%; background: {{ $dot }}"></span>
-                                    <span style="font-size: 10px; letter-spacing: 1px; color: {{ $rowColor }}">{{ strtoupper($site['kind'] ?? 'erp') }}</span> {{ $site['name'] }}
+                                    <span style="font-size: 10px; letter-spacing: 1px; color: {{ $rowColor }}">{{ $rowLabel }}</span> {{ $site['name'] }}
                                 </span>
                                 @if($s['ok'])
                                     <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $srv['version'] ?? '—' }} · 대기 마이그 {{ $srv['pending_migrations'] ?? '—' }} · 오류 오늘 {{ $srv['errors_today'] ?? '—' }} · 디스크 {{ isset($srv['disk_used_pct']) ? $srv['disk_used_pct'].'%' : '—' }}</span>
@@ -188,7 +193,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 @forelse($shownAnomalies as $a)
                     <div style="display: flex; flex-direction: column; gap: 2px; border-top: 1px solid rgba(255,155,106,.18); padding-top: 8px">
                         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11px">
-                            <span style="padding: 2px 8px; border-radius: 999px; font-weight: 700; color: #0b0f1a; background: {{ $a['site_kind'] === 'board' ? '#c4a8ff' : ($a['site_kind'] === 'gpu' ? '#e0c27a' : '#7fe7ff') }}">{{ $a['site'] }}</span>
+                            <span style="padding: 2px 8px; border-radius: 999px; font-weight: 700; color: #0b0f1a; background: {{ $a['site_kind'] === 'board' ? '#c4a8ff' : ($a['site_kind'] === 'erp' ? '#7fe7ff' : '#e0c27a') }}">{{ $a['site'] }}</span>
                             <span style="color: {{ $lvColor[$a['level']] ?? '#9cc3e0' }}">{{ $lvName[$a['level']] ?? '' }}</span>
                             <span style="color: #a98d80">{{ $a['kind'] }}</span>
                         </div>
