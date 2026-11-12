@@ -2,12 +2,11 @@
 
 namespace App\Console\Commands;
 
-use App\Http\Middleware\VerifyErpPeerHmac;
 use App\Services\Ops\BrainCatalog;
 use App\Services\Ops\OpsBrain;
+use App\Services\Ops\OpsSignature;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 
 /**
  * 세컨드 브레인 목록 만들기·올리기 — 개발 PC 에서 돈다 (관제센터 3단계, jin 2026-11-12).
@@ -51,12 +50,8 @@ class OpsBrainSync extends Command
         }
         $body = gzencode($json, 6);
         $path = '/api/internal/ops/brain';
-        $ts = now()->timestamp;
-        $sig = hash_hmac('sha256', VerifyErpPeerHmac::canonical('POST', $path, [], $ts, $body), $secret);
-        $res = Http::timeout(60)->withHeaders([
-            'X-Timestamp' => (string) $ts, 'X-Nonce' => (string) Str::uuid(), 'X-Board-Signature' => 'sha256='.$sig,
-            'Content-Type' => 'application/gzip',
-        ])->withBody($body, 'application/gzip')->post(rtrim($push, '/').$path);
+        $res = Http::timeout(60)->withHeaders(OpsSignature::headers('POST', $path, [], $body, $secret) + ['Content-Type' => 'application/gzip'])
+            ->withBody($body, 'application/gzip')->post(rtrim($push, '/').$path);
         if (! $res->successful()) {
             $this->error('올리기 실패 HTTP '.$res->status().' '.mb_substr($res->body(), 0, 200));
 
