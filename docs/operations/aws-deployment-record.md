@@ -935,6 +935,10 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-12 (4) — master `6cfb09b0` · 마이그 1 (jin «배포해주고, 다음단계 진행해줘»)
+- 관제센터 1단계 — 예약 작업 실행 기록 `scheduled_task_runs`(시작·끝·성공/실패·이유, 90일 보관 04:50 model:prune) (dev `df70d412`).
+- run 43153095566 잡 5 success · ssancarerp SHA `6cfb09b0` · 마이그 Ran · /login 200.
+
 ## 2026-11-12 (3) — master `b6c706fe` · 마이그 0 (jin «신규 버튼 배포해줘»)
 - 바이어 목록 「신규 (N)」 버튼 — 배지와 같은 기준(Buyer::scopeNewBuyers), 차량관리 운항중 버튼 모양 (dev `add377b5`).
 - run 43149002109 잡 5 success · ssancarerp SHA `b6c706fe` · /login 200.

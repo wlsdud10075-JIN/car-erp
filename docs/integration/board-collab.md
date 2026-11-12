@@ -28,6 +28,7 @@ board (앞단: 매입·검차·경매)  ──연동 B──▶  car-erp (재고
 | **연동 B** 매입 sync | `docs/integration/purchase-sync-receiver.md` ← **받는 쪽 권위** | `SKILLS.md §12` ← **보내는 쪽 권위** |
 | 포털 읽기 API | `docs/integration/board-portal-api.md` | `meetings/handoff-car-erp-board-portal.md` |
 | 전자서명 | `docs/integration/handoff-board-esignature.md` | `meetings/handoff-car-erp-board-sales-contract.md` |
+| 관제센터 요약 API (2026-11-12) | `docs/design/ops-control-center.md` §4 ← **계약 권위** | (board 가 붙일 때 그쪽 인계문서) |
 | 그 밖의 긴 스펙·인계 | (주제별 `docs/integration/*.md`) | `meetings/handoff-*.md` (20여 건) |
 
 🚫 **상호링크만 하고 복사하지 않는다**(drift). 스펙을 옮겨 적으면 한쪽만 고쳐져 조용히 갈린다.
@@ -55,6 +56,8 @@ board (앞단: 매입·검차·경매)  ──연동 B──▶  car-erp (재고
 ## 3. 결정 로그 (최신이 위)
 
 > 형식: `YYYY-MM-DD` · **무엇** — 왜 · 근거(`파일:줄`·실측값) · 상태(jin 승인 / 승인 대기 / 접음)
+
+- **2026-11-12** · **관제센터 요약 API 를 board 도 붙여 달라** — jin 전용 관제 화면(ERP·BOARD·GPU PC 한곳)에 board 칸이 「미연결」로 남는다. 계약 = `docs/design/ops-control-center.md` §4(같은 서명 규칙, 새 시크릿 `OPS_HMAC_SECRET`). 상태 = jin 착수 승인(11-12 «다음단계 진행»), board 구현은 board 세션 몫.
 
 - **2026-09-17** · **대표계약금(`purchase_deposit_ceo`) 신설** — 입금요청 알림톡이 시각 규칙을 타서
   근무시간엔 담당자에게만 간다. 담당자가 휴가·외근이면 요청이 거기 멈춰 jin 이 손으로 확인해 줘야 했다.
