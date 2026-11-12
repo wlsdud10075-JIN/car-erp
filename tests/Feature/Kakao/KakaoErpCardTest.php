@@ -236,7 +236,11 @@ class KakaoErpCardTest extends TestCase
     {
         $m = $this->message('48조5021 저당 없습니다', '2026-11-12 10:00:00', '정보');
 
-        $this->assertNull(KakaoErpCards::for(collect([$m]))[$m->id]['flag']);
+        $this->assertArrayNotHasKey($m->id, KakaoErpCards::for(collect([$m])), 'ERP 에 없는 차의 한 줄 언급 = 카드도 표시도 없음');
+        $req = $this->message('48조5021 서류 부탁드립니다');   // 할 일 행으로 올라오는 요청도 빈 회색 상자를 달지 않는다
+        $html = Volt::actingAs($this->me)->test('erp.kakao.index')->html();
+        $this->assertStringContainsString('data-row="'.$req->id.'"', $html);
+        $this->assertStringNotContainsString('data-erp-card="'.$req->id.'"', $html);
     }
 
     public function test_vehicle_registered_later_closes_the_form_today_only(): void
