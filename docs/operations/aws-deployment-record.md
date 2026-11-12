@@ -938,7 +938,7 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 ## 2026-11-12 — master `e1da09ff` · 마이그 1 (jin «배포해줘», 오전)
 - 카톡 ② 차량 이어받기 + ERP 카드 · ③ 미등록·ERP 점검·ERP 처리됨 자동 완료(dev `394b2d3e`·`2590df27`). 새 표 `kakao_message_vehicles`.
 - deploy run 43133267391 잡 5개 success · 서버 SHA ssancarerp·heymanerp `e1da09ff` 확인.
-- 소급 `kakao:link-vehicles` dry-run: ssancarerp 1,432건(차 있는 글 208 · 이어받기 예상 29) / heymanerp 283건(24 · 0). `--apply` 는 운영 쓰기라 자동 모드에서 막힘 → jin 몫(미실행).
+- 소급 `kakao:link-vehicles` dry-run: ssancarerp 1,432건(차 있는 글 208 · 이어받기 예상 29) / heymanerp 283건(24 · 0). `--apply` 는 jin «소급 돌려줘» 뒤 실행 — ssancarerp self 301줄 · 이어받은 글 29건(전체 336줄 중 차 찾음 304, 글 237건) / heymanerp self 44줄 · 0건.
 
 ## 2026-11-11 (3) — master `ef3c4ecd` · 마이그 2 (jin «배포하면서 정리해주라», 18시대)
 
