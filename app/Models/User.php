@@ -108,6 +108,16 @@ class User extends Authenticatable
         return $this->permission === 'super';
     }
 
+    /**
+     * 🛰️ 관제센터를 열 수 있나 (jin 2026-11-12 «관제센터는 오직 나만») — 시스템관리자 **그리고** OPS_OWNER_EMAILS 에 적힌 계정.
+     * super 를 나중에 하나 더 만들어도 저절로 열리지 않게 두 겹. 목록이 비면 아무도 못 연다.
+     */
+    public function isOpsOwner(): bool
+    {
+        return $this->isSuperAdmin()
+            && in_array(strtolower((string) $this->email), (array) config('services.ops.owner_emails', []), true);
+    }
+
     public function isAdmin(): bool
     {
         return in_array($this->permission, ['super', 'admin'], true);

@@ -17,8 +17,10 @@ use App\Http\Controllers\Webhook\PurchaseSyncController;
 use App\Http\Middleware\VerifyBoardReadHmac;
 use App\Http\Middleware\VerifyErpPeerHmac;
 use App\Http\Middleware\VerifyKakaoCollectorToken;
+use App\Http\Middleware\VerifyOpsHmac;
 use App\Http\Middleware\VerifyPortalReadHmac;
 use App\Http\Middleware\VerifyPurchaseSyncHmac;
+use App\Services\Ops\OpsSummary;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -38,6 +40,11 @@ Route::middleware([VerifyPurchaseSyncHmac::class, 'throttle:30,1'])
 | 🔗 ERP ↔ ERP 읽기 (2026-11-04) — 승인된 사내직원 월정산의 사람별 실지급. ssancarerp 「헤이맨 정산 가져오기」가 heymanerp 를 읽는다.
 | 인증 = VerifyErpPeerHmac(ERP_PEER_HMAC_SECRET, 없으면 401). 읽기 전용.
 */
+// 🛰️ 관제센터 요약(jin 2026-11-12) — 허브(ssancarerp)가 서명해서 읽는다. 시스템 신호만(돈 숫자 없음). 시크릿 비면 401.
+Route::middleware([VerifyOpsHmac::class, 'throttle:30,1'])
+    ->get('/internal/ops/summary', fn () => response()->json(OpsSummary::collect()))
+    ->name('api.internal.ops.summary');
+
 Route::middleware([VerifyErpPeerHmac::class, 'throttle:30,1'])
     ->get('/internal/peer/payouts', [PeerPayoutController::class, 'payouts'])
     ->name('api.internal.peer.payouts');

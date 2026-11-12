@@ -235,6 +235,8 @@ Route::middleware(['auth', 'verified'])->prefix('admin')->name('admin.')->group(
 // 기능 설정 — super만
 Route::middleware(['auth', 'verified', 'super-admin'])->prefix('admin')->name('admin.')->group(function () {
     Volt::route('settings', 'admin.settings')->name('settings');
+    // 🛰️ 관제센터 (jin 2026-11-12) — super 중에서도 OPS_OWNER_EMAILS 만(화면 mount 가 404). 메뉴도 그 사람에게만.
+    Volt::route('control', 'admin.control')->name('control');
 });
 
 // 월정산 엑셀 (2026-11-04) — 사내직원·내수직원 두 화면이 같이 쓰므로 그룹 밖. 받을 사람 판정은 컨트롤러(화면과 같은 게이트).
