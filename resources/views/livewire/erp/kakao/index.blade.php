@@ -92,7 +92,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'order' => KakaoBuckets::ORDER,
             'labels' => KakaoBuckets::LABELS,
             'hints' => KakaoBuckets::HINTS,
-            'allRooms' => $user->kakaoRooms()->orderByPivot('selected', 'desc')->orderByPivot('last_seen_at', 'desc')->get()
+            'allRooms' => $user->kakaoRooms()->withCount('messages')->orderBy('kakao_rooms.name')->get()   // 이름순 고정 — 체크하면 자리가 바뀌어 누르기 힘들었다(jin 11-12)
                 ->filter(fn ($r) => KakaoRoom::isRoomTitle($r->name))->values(),   // 수집기가 보고한 방 전부(체크 여부 포함) — 저장 창·그림자 창으로 등록돼 버린 것은 숨김(11-11)
             'capReached' => $board['cost_today'] >= Setting::kakaoDailyCostCapKrw(),   // 오늘 비용 상한 — 새 글은 저장만 되고 분류는 미뤄진다
             'needSetup' => $board['rooms']->filter(fn ($r) => (trim((string) $r->pivot->my_name) === '' || ! $r->isSetUp()) && $r->messages()->exists())->values(),
@@ -330,6 +330,13 @@ new #[Layout('components.layouts.app')] class extends Component
         KakaoTopics::save($user, $cur);
     }
 
+    /** 처음 고르기 창 [저장] — 창 안에서 여러 개를 고른 뒤 한 번에(jin 11-12 «하나만 클릭하면 없어지더라 — 다중선택하고 없어져야»). 「전체」가 있으면 그것만 */
+    public function saveTopics(array $topics): void
+    {
+        $topics = array_values(array_intersect(KakaoTopics::PICKABLE, array_map('strval', $topics)));
+        KakaoTopics::save(auth()->user(), in_array('전체', $topics, true) ? ['전체'] : $topics);
+    }
+
     /** 처음 고르기 창 [나중에] — 빈 선택 = 지금처럼 전부 내 일. 창은 다시 안 뜬다(칩으로 언제든 고른다). */
     public function skipTopics(): void
     {
@@ -347,6 +354,38 @@ new #[Layout('components.layouts.app')] class extends Component
         $pivot = auth()->user()->kakaoRooms()->where('kakao_rooms.id', $roomId)->first()?->pivot;
         abort_unless($pivot, 403);
         auth()->user()->kakaoRooms()->updateExistingPivot($roomId, ['selected' => ! $pivot->selected]);
+    }
+
+    /** 「전체 체크」·「전체 해제」(jin 11-12) — 목록에 보이는 방(방 제목인 것)만 */
+    public function setAllRooms(bool $on): void
+    {
+        $ids = auth()->user()->kakaoRooms()->get()->filter(fn ($r) => KakaoRoom::isRoomTitle($r->name))->pluck('id')->all();
+        foreach ($ids as $id) {
+            auth()->user()->kakaoRooms()->updateExistingPivot($id, ['selected' => $on]);
+        }
+    }
+
+    /**
+     * 읽기가 끝난 뒤 화면이 넘기는 에이전트 진행 줄(「10:41 [방 이름] 이유」) → 방별 마지막 결과(jin 11-12 — 서버에 안 온 방의 이유가 PC 로그에만 있었다).
+     * 성공 판정은 문구가 아니라 사실로 = 이 읽기 동안 서버에 그 방의 읽기 회차가 생겼나. 방마다 마지막 줄을 남긴다.
+     */
+    public function recordReadResults(array $lines, string $startedAt = ''): void
+    {
+        $user = auth()->user();
+        $since = $startedAt !== '' && strtotime($startedAt) ? \Carbon\Carbon::parse($startedAt)->subMinute() : now()->subMinutes(30);
+        $last = [];
+        foreach (array_slice($lines, 0, 300) as $line) {
+            if (is_string($line) && preg_match('/^\d{1,2}:\d{2} \[(.+?)\] (.+)$/u', trim($line), $m) && ! str_contains($m[2], '엽니다…')) {
+                $last[$m[1]] = $m[2];
+            }
+        }
+        $rooms = $user->kakaoRooms()->whereIn('kakao_rooms.name', array_keys($last))->get();
+        foreach ($rooms as $room) {
+            $ok = $room->reads()->where('user_id', $user->id)->where('created_at', '>=', $since)->exists();
+            $user->kakaoRooms()->updateExistingPivot($room->id, [
+                'last_result' => mb_substr($last[$room->name], 0, 200), 'last_result_ok' => $ok, 'last_result_at' => now(),
+            ]);
+        }
     }
 
     public function unsubscribeRoom(int $roomId): void
@@ -400,19 +439,21 @@ new #[Layout('components.layouts.app')] class extends Component
         <span class="basis-full text-[11px] text-gray-500">{{ empty($myTopics) || in_array('전체', $myTopics ?? [], true) ? __('kakao.topics_all') : __('kakao.topics_some') }}</span>
     </div>
     @if($myTopics === null && $board['rooms']->isNotEmpty())
-        <div x-data="{ open: true }" x-show="open" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="kakao-topic-title" data-kakao-topic-picker>
+        <div x-data="{ picks: [], toggle(t) { if (t === '전체') { this.picks = this.picks.includes('전체') ? [] : ['전체']; return } this.picks = this.picks.filter(p => p !== '전체'); this.picks = this.picks.includes(t) ? this.picks.filter(p => p !== t) : [...this.picks, t] } }" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-labelledby="kakao-topic-title" data-kakao-topic-picker>
             <div class="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-2xl">
                 <div id="kakao-topic-title" class="text-lg font-bold text-gray-800">{{ __('kakao.topics_pick_title') }}</div>
                 <p class="mt-2 text-sm text-gray-600">{{ __('kakao.topics_pick_body') }}</p>
                 <div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
                     @foreach(\App\Services\Kakao\KakaoTopics::PICKABLE as $t)
-                        <button type="button" wire:click="toggleTopic('{{ $t }}')" class="flex min-h-11 items-center gap-2 rounded-lg border border-gray-300 px-3 text-left text-sm hover:bg-violet-50">
+                        <button type="button" @click="toggle('{{ $t }}')" :aria-pressed="picks.includes('{{ $t }}')" :class="picks.includes('{{ $t }}') ? 'border-violet-500 bg-violet-50' : 'border-gray-300'" class="flex min-h-11 items-center gap-2 rounded-lg border px-3 text-left text-sm hover:bg-violet-50" data-topic-pick="{{ $t }}">
+                            <span class="w-4 text-violet-700" x-text="picks.includes('{{ $t }}') ? '✓' : ''"></span>
                             <span class="font-semibold text-gray-800">{{ $t }}</span><span class="text-xs text-gray-500">{{ \App\Services\Kakao\KakaoTopics::HINTS[$t] }}</span>
                         </button>
                     @endforeach
                 </div>
-                <div class="mt-5 flex justify-end">
+                <div class="mt-5 flex flex-wrap items-center justify-end gap-2">
                     <button type="button" wire:click="skipTopics" class="h-10 rounded-lg border border-gray-300 bg-white px-4 text-sm text-gray-700">{{ __('kakao.topics_later') }}</button>
+                    <button type="button" @click="$wire.saveTopics(picks)" :disabled="picks.length === 0" class="btn-primary h-10 px-4 text-sm disabled:opacity-50" data-topic-save>{{ __('kakao.topics_save') }}</button>
                 </div>
             </div>
         </div>
@@ -487,6 +528,10 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="card-tight mb-4" data-kakao-rooms>
             <div class="section-header"><span class="section-dot bg-violet-500"></span><span class="section-title">{{ __('kakao.rooms_pick_title') }}</span>
                 <span class="ml-2 text-xs text-gray-400">{{ __('kakao.rooms_pick_hint') }}</span></div>
+            <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <button type="button" wire:click="setAllRooms(true)" class="h-9 rounded border border-gray-300 px-2 text-gray-700 sm:h-7" data-rooms-all="1">{{ __('kakao.rooms_select_all') }}</button>
+                <button type="button" wire:click="setAllRooms(false)" class="h-9 rounded border border-gray-300 px-2 text-gray-700 sm:h-7" data-rooms-all="0">{{ __('kakao.rooms_select_none') }}</button>
+            </div>
             <div class="mt-2 flex flex-wrap gap-2">
                 @foreach($allRooms as $room)
                     @php($seen = $room->pivot->last_seen_at ? \Carbon\Carbon::parse($room->pivot->last_seen_at) : null)
@@ -494,10 +539,25 @@ new #[Layout('components.layouts.app')] class extends Component
                         <input type="checkbox" wire:click="toggleRoom({{ $room->id }})" @checked($room->pivot->selected) class="h-4 w-4">
                         <span class="truncate" title="{{ $room->name }}">{{ $room->name }}</span>
                         @if(in_array($room->name, $openRooms, true) || ($openRooms === [] && $seen && $seen->gt(now()->subHours(6)))) <span class="badge badge-green">{{ __('kakao.room_open') }}</span> @endif
-                        @if($room->pivot->selected && trim((string) $room->pivot->my_name) === '') <span class="badge badge-amber">{{ __('kakao.room_need_me') }}</span> @endif
+                        @if($room->pivot->selected && $room->pivot->last_result_ok !== null && ! (bool) $room->pivot->last_result_ok)
+                            <span class="badge badge-red" data-room-failed="{{ $room->id }}">{{ __('kakao.room_read_failed') }}</span>
+                        @elseif($room->pivot->selected && (int) $room->messages_count === 0)
+                            <span class="badge badge-gray" data-room-empty="{{ $room->id }}">{{ __('kakao.room_no_messages_badge') }}</span>
+                        @elseif($room->pivot->selected && trim((string) $room->pivot->my_name) === '')
+                            <span class="badge badge-amber">{{ __('kakao.room_need_me') }}</span>
+                        @endif
                     </label>
                 @endforeach
             </div>
+            {{-- 못 읽은 방의 이유(에이전트가 남긴 말 그대로) — 툴팁이 아니라 글로(폰엔 호버가 없다) --}}
+            @php($failedRooms = $allRooms->filter(fn ($r) => $r->pivot->selected && $r->pivot->last_result_ok !== null && ! (bool) $r->pivot->last_result_ok))
+            @if($failedRooms->isNotEmpty())
+                <ul class="mt-2 space-y-0.5 text-xs text-red-700" data-rooms-failed-list>
+                    @foreach($failedRooms as $room)
+                        <li>{{ __('kakao.room_failed_line', ['room' => $room->name, 'reason' => $room->pivot->last_result, 'at' => \Carbon\Carbon::parse($room->pivot->last_result_at)->format('m/d H:i')]) }}</li>
+                    @endforeach
+                </ul>
+            @endif
         </div>
     @endif
 
@@ -882,6 +942,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     clearInterval(polling); polling = null;
                     if (b) b.disabled = false;
                     overlay(false);
+                    try { await $wire.recordReadResults(r.body.lines || [], r.body.started_at || ''); } catch (e) {}   // 방별 결과 — 못 읽은 방의 이유를 화면에 남긴다(11-12)
                     await $wire.$refresh();
                     await loadRooms();
                     await continueLoop();   // 큰 방은 한 요청에 분류가 못 끝난다(partial) — 남은 게 0 이 될 때까지 이어서
