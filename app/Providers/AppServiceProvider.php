@@ -3,12 +3,14 @@
 namespace App\Providers;
 
 use App\Listeners\NotifyScheduledTaskOutcome;
+use App\Listeners\RecordScheduledTaskRun;
 use App\Services\Assistant\OllamaClient;
 use App\Services\Kakao\AnthropicKakaoClient;
 use App\Services\Kakao\KakaoClassifierClient;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Console\Events\ScheduledTaskFailed;
 use Illuminate\Console\Events\ScheduledTaskFinished;
+use Illuminate\Console\Events\ScheduledTaskStarting;
 use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
@@ -56,6 +58,10 @@ class AppServiceProvider extends ServiceProvider
         // 🚨 Finished 는 exit code 검사 「전」에 발행된다(리스너 docblock) — 성공으로 단정하지 말 것.
         Event::listen(ScheduledTaskFailed::class, [NotifyScheduledTaskOutcome::class, 'onFailed']);
         Event::listen(ScheduledTaskFinished::class, [NotifyScheduledTaskOutcome::class, 'onFinished']);
+        // 예약 작업 실행 기록(jin 2026-11-12 관제센터 「루틴」) — 매번 한 줄. 위 텔레그램과 따로(그쪽은 상태 전이만).
+        Event::listen(ScheduledTaskStarting::class, [RecordScheduledTaskRun::class, 'onStarting']);
+        Event::listen(ScheduledTaskFinished::class, [RecordScheduledTaskRun::class, 'onFinished']);
+        Event::listen(ScheduledTaskFailed::class, [RecordScheduledTaskRun::class, 'onFailed']);
 
         // board 영업 포털 읽기 API — board 단일 IP 라 영업별(salesman_email) 키로 제한
         // (by(IP) 면 전 영업이 한 한도 공유). HMAC 으로 이미 인증되므로 상한은 넉넉히.
