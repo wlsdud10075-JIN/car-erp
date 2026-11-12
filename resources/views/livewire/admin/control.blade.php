@@ -1,5 +1,6 @@
 <?php
 
+use App\Services\Ops\OpsBrain;
 use App\Services\Ops\OpsHub;
 use Livewire\Attributes\Layout;
 use Livewire\Volt\Component;
@@ -13,6 +14,9 @@ use Livewire\Volt\Component;
 new #[Layout('components.layouts.app')] class extends Component
 {
     public string $siteFilter = '';
+
+    /** 세컨드 브레인 「본문 열기」 — {cluster, no, title, path, body} | null (3단계, jin 11-12) */
+    public ?array $docOpen = null;
 
     public function mount(): void
     {
@@ -28,6 +32,18 @@ new #[Layout('components.layouts.app')] class extends Component
     public function pickSite(string $key): void
     {
         $this->siteFilter = $this->siteFilter === $key ? '' : $key;
+    }
+
+    public function openDoc(string $cluster, string $id): void
+    {
+        abort_unless(auth()->user()?->isOpsOwner(), 404);
+        $doc = OpsBrain::body($cluster, $id);
+        $this->docOpen = $doc ? ['cluster' => $cluster, 'no' => $doc['no'] ?? '', 'title' => $doc['title'] ?? '', 'path' => $doc['path'] ?? '', 'body' => (string) ($doc['body'] ?? '')] : null;
+    }
+
+    public function closeDoc(): void
+    {
+        $this->docOpen = null;
     }
 
     public function with(): array
@@ -65,7 +81,12 @@ new #[Layout('components.layouts.app')] class extends Component
         usort($anomalies, fn ($a, $b) => $b['level'] <=> $a['level']);
         ksort($routines);
 
+        $brain = OpsBrain::index();
+
         return [
+            'brain' => $brain,
+            'brainClusters' => $brain ? array_values(array_map(fn ($c) => ['key' => $c['key'], 'label' => $c['label'], 'color' => $c['color'], 'count' => $c['count'],
+                'items' => array_map(fn ($i) => ['id' => $i['id'], 'no' => $i['no'], 'title' => $i['title'], 'meta' => $i['meta'], 'path' => $i['path'] ?? ''], $c['items'])], $brain['clusters'])) : [],
             'sites' => $sites,
             'erpSites' => array_values(array_filter($sites, fn ($s) => ($s['site']['kind'] ?? 'erp') === 'erp')),
             // 줄 셋 = ERP / BOARD / ETC(GPU PC·ssancar.com — jin 11-12 «erp / board / etc 로 할걸»). 모르는 kind 는 ETC 로.
@@ -235,9 +256,133 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
         </div>
 
-        <div style="{{ $panel }} display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px">
-            <span style="{{ $head }}">SECOND BRAIN <span style="{{ $sub }}">· 설계·결정·교훈 지도 — 3단계에서 이 자리에 들어옵니다</span></span>
-            <a href="https://claude.ai/artifact/MSFdABnHjthGcxcP5Wq46u" target="_blank" rel="noopener" style="font-size: 12px">목업 보기 ↗</a>
+        {{-- 세컨드 브레인 (3단계, jin 11-12) — 개발 PC 의 ops:brain-sync --push 가 올린 목록. 지도는 브라우저에서만 그린다(서버 무관). 끌면 전체가 3D 로 돌고, 구를 누르면 목록 --}}
+        <div style="{{ $panel }} display: flex; flex-direction: column; gap: 12px; box-shadow: 0 0 40px rgba(60,140,255,.15)" data-ops-brain
+             x-data="opsBrain({!! json_encode($brainClusters, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) !!})" x-init="init()">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px">
+                <span style="{{ $head }}">SECOND BRAIN <span style="{{ $sub }}">· 설계·결정·교훈 지도 — 끌면 회전 · 구를 누르면 목록{{ $brain ? ' · '.\Carbon\Carbon::parse($brain['generated_at'])->format('m/d H:i').' 기준' : '' }}</span></span>
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #8fb0cc">찾기
+                    <input type="search" x-model="q" placeholder="미수 공식 · departed · 알림톡 반려" style="height: 36px; width: 230px; max-width: 55vw; border-radius: 10px; border: 1px solid rgba(127,231,255,.35); background: rgba(5,10,20,.8); color: #eaf6ff; padding: 0 10px; font: inherit; font-size: 12px"></label>
+            </div>
+            @if(! $brain)
+                <span style="font-size: 12px; color: #ffcf86">아직 목록이 없습니다 — 개발 PC 에서 <code style="font-family: 'JetBrains Mono', monospace">php artisan ops:brain-sync --push={{ rtrim(config('app.url'), '/') }}</code> 를 돌리면 채워집니다.</span>
+            @else
+                <div x-ref="stage" @pointerdown="down($event)" @pointermove="move($event)" @pointerup="up($event)" @pointerleave="drag = null"
+                     style="position: relative; height: 460px; border-radius: 12px; overflow: hidden; cursor: grab; touch-action: none; background: radial-gradient(circle at 50% 50%, rgba(40,90,180,.25), rgba(3,6,14,.9) 70%)">
+                    <canvas x-ref="cv" role="img" aria-label="문서 지도 — 덩어리 7개가 CLAUDE.md 를 중심으로 도는 3D 그림" style="position: absolute; inset: 0; width: 100%; height: 100%"></canvas>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px">
+                    <template x-for="c in clusters" :key="c.key">
+                        <button type="button" @click="pick = (pick === c.key ? null : c.key)" :aria-pressed="pick === c.key" :data-brain-chip="c.key"
+                                :style="'height: 36px; padding: 0 10px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 12px; color: #eaf6ff; border: 1px solid ' + c.color + (pick === c.key ? '' : '66') + '; background: ' + c.color + (pick === c.key ? '33' : '10')"
+                                x-text="c.label + ' ' + c.count"></button>
+                    </template>
+                </div>
+                <div x-show="pick || q.length > 0" x-cloak style="border: 1px solid rgba(127,231,255,.3); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; background: rgba(5,10,22,.85); max-height: 320px; overflow-y: auto" data-brain-list>
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px">
+                        <span style="font-size: 13px; font-weight: 700; color: #eaf6ff" x-text="listTitle()"></span>
+                        <button type="button" @click="pick = null; q = ''" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(127,231,255,.35); background: rgba(127,231,255,.06); color: #c9f6ff; font: inherit; font-size: 12px; cursor: pointer">닫기</button>
+                    </div>
+                    <template x-for="it in visible()" :key="it.cluster + '|' + it.id">
+                        <div style="display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; border-top: 1px solid rgba(127,231,255,.12); padding-top: 6px; font-size: 12px">
+                            <span style="font-family: 'JetBrains Mono', monospace; color: #7fe7ff; min-width: 54px" x-text="it.no"></span>
+                            <span style="flex: 1 1 240px; min-width: 0" x-text="it.title"></span>
+                            <span style="color: #7d98b3" x-text="it.meta"></span>
+                            <template x-if="it.hasBody">
+                                <button type="button" @click="$wire.openDoc(it.cluster, it.id)" style="height: 32px; padding: 0 8px; border-radius: 8px; border: 1px solid rgba(127,231,255,.35); background: transparent; color: #7fe7ff; font: inherit; font-size: 12px; cursor: pointer">본문 열기</button>
+                            </template>
+                        </div>
+                    </template>
+                    <span x-show="visible().length === 0" style="font-size: 12px; color: #8fb0cc">맞는 항목이 없습니다.</span>
+                    <span x-show="visible().length >= 200" style="font-size: 11px; color: #8fb0cc">앞 200건만 — 찾기로 좁히세요.</span>
+                </div>
+            @endif
         </div>
+
+        {{-- 본문 창 --}}
+        @if($docOpen)
+            <div class="fixed inset-0 z-50 flex items-center justify-center p-4" style="background: rgba(0,0,0,.6)" role="dialog" aria-modal="true" aria-labelledby="ops-doc-title" data-ops-doc>
+                <div class="max-h-[90vh] w-full max-w-4xl overflow-y-auto" style="border-radius: 14px; border: 1px solid rgba(127,231,255,.35); background: #0b1222; color: #d8e6f5; padding: 20px; box-shadow: 0 0 40px rgba(60,140,255,.25)">
+                    <div style="display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 8px">
+                        <div style="min-width: 0">
+                            <div id="ops-doc-title" style="font-size: 15px; font-weight: 700; color: #eaf6ff">{{ $docOpen['no'] }} {{ $docOpen['title'] }}</div>
+                            <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8fb0cc">{{ $docOpen['path'] }}</div>
+                        </div>
+                        <button type="button" wire:click="closeDoc" style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(127,231,255,.35); background: rgba(127,231,255,.06); color: #c9f6ff; font: inherit; font-size: 12px; cursor: pointer">닫기</button>
+                    </div>
+                    <pre style="margin: 12px 0 0; white-space: pre-wrap; word-break: break-word; font-family: 'Noto Sans KR', system-ui, sans-serif; font-size: 13px; line-height: 1.6; color: #d8e6f5">{{ $docOpen['body'] }}</pre>
+                </div>
+            </div>
+        @endif
+</div>
     </div>
 </div>
+
+    @script
+    <script>
+    Alpine.data('opsBrain', (clusters) => ({
+        clusters, pick: null, q: '', drag: null, moved: 0, yaw: 0.3, pitch: -0.25, vy: 0.12, vp: 0, last: 0, proj: [], raf: 0, pts: [], core: [],
+        POS: { skills: [-1.0, -0.45, 0.35], memory: [0.95, -0.40, -0.30], tests: [0.05, -0.95, -0.55], ops: [-0.85, 0.55, -0.55], design: [-0.15, 0.85, 0.75], meet: [0.75, 0.70, 0.45], spec: [1.05, 0.15, 0.85] },
+        all() { return this.clusters.flatMap((c) => c.items.map((i) => ({ ...i, cluster: c.key, label: c.label, hasBody: c.key !== 'tests' }))); },
+        visible() {
+            const q = this.q.trim().toLowerCase();
+            let rows = this.all().filter((i) => (!this.pick || i.cluster === this.pick) && (q === '' || (i.title + ' ' + i.no + ' ' + (i.path || '')).toLowerCase().includes(q)));
+            return rows.slice(0, 200);
+        },
+        listTitle() {
+            const c = this.clusters.find((x) => x.key === this.pick);
+            return (c ? c.label + ' — ' + c.count + '건' : '전체 ' + this.all().length + '건') + (this.q ? ' · 「' + this.q + '」' : '');
+        },
+        init() {
+            const sph = (n, jitter) => { const a = []; for (let i = 0; i < n; i++) { const u = Math.random() * 2 - 1, t = Math.random() * Math.PI * 2, s = Math.sqrt(1 - u * u), rr = jitter ? 0.7 + Math.random() * 0.3 : 1; a.push([s * Math.cos(t) * rr, u * rr, s * Math.sin(t) * rr]); } return a; };
+            const max = Math.max(1, ...this.clusters.map((c) => c.count));
+            this.geo = this.clusters.map((c, i) => ({ key: c.key, label: c.label, color: c.color, count: c.count, p: this.POS[c.key] || [Math.cos(i) , Math.sin(i), 0], r: 0.17 + 0.17 * Math.sqrt(c.count / max), pts: sph(110 + Math.round(190 * Math.sqrt(c.count / max)), false) }));
+            this.core = sph(420, true);
+            if (!this.$refs.cv) return;
+            const step = (ts) => { if (!document.contains(this.$refs.cv)) return; if (!document.hidden) this.draw(ts || 0); this.raf = requestAnimationFrame(step); };
+            this.raf = requestAnimationFrame(step);
+        },
+        down(e) { this.drag = { x: e.clientX, y: e.clientY, at: performance.now() }; this.moved = 0; this.vy = 0; this.vp = 0; },
+        move(e) { if (!this.drag) return; const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y, now = performance.now(), d = Math.max(0.008, (now - this.drag.at) / 1000); this.moved += Math.abs(dx) + Math.abs(dy); this.yaw += dx * 0.008; this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch + dy * 0.008)); this.vy = dx * 0.008 / d; this.vp = dy * 0.008 / d; this.drag = { x: e.clientX, y: e.clientY, at: now }; },
+        up(e) {
+            if (this.drag && this.moved < 6 && this.$refs.cv) { const r = this.$refs.cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; let best = null; this.proj.forEach((p) => { const d = Math.hypot(p.x - x, p.y - y); if (d <= p.r && (!best || p.z > best.z)) best = p; }); if (best) this.pick = (this.pick === best.k ? null : best.k); }
+            this.drag = null;
+        },
+        draw(ts) {
+            const cv = this.$refs.cv; const box = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+            const W = Math.max(1, Math.round(box.width)), H = Math.max(1, Math.round(box.height));
+            if (cv.width !== W * dpr || cv.height !== H * dpr) { cv.width = W * dpr; cv.height = H * dpr; }
+            const g = cv.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+            const t = ts / 1000, dt = this.last ? Math.min(0.05, t - this.last) : 0; this.last = t;
+            if (!this.drag) { this.yaw += this.vy * dt; this.pitch += this.vp * dt; this.vy = this.vy * 0.97 + 0.12 * 0.03; this.vp *= 0.95; this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch)); }
+            const cy0 = Math.cos(this.yaw), sy0 = Math.sin(this.yaw), cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
+            const world = (v) => { const x1 = v[0] * cy0 + v[2] * sy0, z1 = -v[0] * sy0 + v[2] * cy0; return [x1, v[1] * cp - z1 * sp, v[1] * sp + z1 * cp]; };
+            const S = Math.min(W, H) * 0.36, cx = W / 2, cy = H / 2, D = 3.2;
+            const toScreen = (v) => { const f = D / (D - v[2]); return [cx + v[0] * S * f, cy + v[1] * S * f, f, v[2]]; };
+            const spin = (p, a) => { const c = Math.cos(a), s = Math.sin(a); return [p[0] * c + p[2] * s, p[1], -p[0] * s + p[2] * c]; };
+            const centers = this.geo.map((c) => toScreen(world(c.p)));
+            centers.forEach((q, i) => { const c = this.geo[i]; const grad = g.createLinearGradient(cx, cy, q[0], q[1]); grad.addColorStop(0, 'rgba(127,231,255,0.35)'); grad.addColorStop(1, c.color + '66'); g.strokeStyle = grad; g.lineWidth = 1; g.beginPath(); g.moveTo(cx, cy); g.lineTo(q[0], q[1]); g.stroke(); const k = (t * 0.6 + i * 0.37) % 1; g.fillStyle = c.color; g.beginPath(); g.arc(cx + (q[0] - cx) * k, cy + (q[1] - cy) * k, 2.2, 0, Math.PI * 2); g.fill(); });
+            const order = [{ z: 0, core: true }].concat(centers.map((q, i) => ({ z: q[3], i }))); order.sort((a, b) => a.z - b.z);
+            this.proj = [];
+            order.forEach((o) => {
+                if (o.core) {
+                    const R0 = S * 0.42; const halo = g.createRadialGradient(cx, cy, 0, cx, cy, R0 * 1.7); halo.addColorStop(0, 'rgba(127,231,255,0.28)'); halo.addColorStop(1, 'rgba(127,231,255,0)'); g.fillStyle = halo; g.beginPath(); g.arc(cx, cy, R0 * 1.7, 0, Math.PI * 2); g.fill();
+                    this.core.forEach((p) => { const w = world(spin(p, t * 0.25)); const q = toScreen([w[0] * 0.42, w[1] * 0.42, w[2] * 0.42]); g.fillStyle = 'rgba(160,236,255,' + (0.25 + 0.6 * (w[2] + 1) / 2).toFixed(3) + ')'; g.fillRect(q[0], q[1], 1.6 * q[2], 1.6 * q[2]); });
+                    g.font = '700 13px Orbitron, sans-serif'; g.textAlign = 'center'; g.fillStyle = '#ffffff'; g.shadowColor = '#7fe7ff'; g.shadowBlur = 12; g.fillText('CLAUDE.md', cx, cy + 4); g.shadowBlur = 0;
+                    return;
+                }
+                const c = this.geo[o.i], hl = this.pick === c.key, q0 = centers[o.i], rad = c.r * S * q0[2];
+                const gl = g.createRadialGradient(q0[0], q0[1], 0, q0[0], q0[1], rad * 1.6); gl.addColorStop(0, c.color + (hl ? '70' : '30')); gl.addColorStop(1, c.color + '00'); g.fillStyle = gl; g.beginPath(); g.arc(q0[0], q0[1], rad * 1.6, 0, Math.PI * 2); g.fill();
+                g.fillStyle = c.color;
+                c.pts.forEach((p) => { const sp2 = spin(p, t * (0.5 + o.i * 0.06)); const w = world([c.p[0] + sp2[0] * c.r, c.p[1] + sp2[1] * c.r, c.p[2] + sp2[2] * c.r]); const q = toScreen(w); g.globalAlpha = Math.max(0.12, Math.min(1, 0.35 + w[2] * 0.45)); g.fillRect(q[0], q[1], 1.8 * q[2], 1.8 * q[2]); });
+                g.globalAlpha = 1;
+                if (hl) { g.strokeStyle = c.color; g.lineWidth = 1.5; g.beginPath(); g.arc(q0[0], q0[1], rad + 10 + Math.sin(t * 3) * 3, 0, Math.PI * 2); g.stroke(); }
+                g.textAlign = 'center'; g.shadowColor = '#000'; g.shadowBlur = 6;
+                g.font = '700 12px "Noto Sans KR", sans-serif'; g.fillStyle = '#eaf6ff'; g.fillText(c.label, q0[0], q0[1] - 2);
+                g.font = '700 16px Orbitron, sans-serif'; g.fillStyle = c.color; g.fillText(String(c.count), q0[0], q0[1] + 16); g.shadowBlur = 0;
+                this.proj.push({ k: c.key, x: q0[0], y: q0[1], r: Math.max(rad, 28), z: q0[3] });
+            });
+        }
+    }));
+    </script>
+    @endscript
