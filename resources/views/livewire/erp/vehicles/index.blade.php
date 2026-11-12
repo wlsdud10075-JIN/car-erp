@@ -11217,7 +11217,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 </div>
                 <div><label class="label-base">{{ __('vehicle.field.container_number') }}</label><input wire:model="container_number" type="text" class="input-base" /></div>
                 <div><label class="label-base">ETA</label><input wire:model="eta_date" type="text" data-date class="input-base" /></div>
-                <div class="flex items-end">
+                <div class="col-span-2 flex items-end sm:col-span-1">{{-- 폰: 169px 칸에선 「통관 완/료」로 쪼개진다(11-12 B12) --}}
                     <label class="flex items-center gap-2 text-sm cursor-pointer">
                         <input wire:model="is_export_cleared" type="checkbox" class="rounded" /> {{ __('vehicle.field.export_cleared') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span>
                     </label>

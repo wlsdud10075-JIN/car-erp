@@ -337,7 +337,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             <span style="font-size: 12px; color: #ffcf86">아직 목록이 없습니다 — 개발 PC 에서 <code style="font-family: 'JetBrains Mono', monospace">php artisan ops:brain-sync --push={{ rtrim(config('app.url'), '/') }}</code> 를 돌리면 채워집니다.</span>
                         @else
                             <div x-ref="stage" @pointerdown="down($event)" @pointermove="move($event)" @pointerup="up($event)" @pointerleave="drag = null"
-                                 style="position: relative; height: 460px; border-radius: 12px; overflow: hidden; cursor: grab; touch-action: none; background: radial-gradient(circle at 50% 50%, rgba(40,90,180,.25), rgba(3,6,14,.9) 70%)">
+                                 style="position: relative; height: 460px; border-radius: 12px; overflow: hidden; cursor: grab; touch-action: pan-y; background: radial-gradient(circle at 50% 50%, rgba(40,90,180,.25), rgba(3,6,14,.9) 70%)">
                                 <canvas x-ref="cv" role="img" aria-label="문서 지도 — 덩어리 7개가 CLAUDE.md 를 중심으로 도는 3D 그림" style="position: absolute; inset: 0; width: 100%; height: 100%"></canvas>
                             </div>
                             <div style="display: flex; flex-wrap: wrap; gap: 6px">
@@ -407,7 +407,7 @@ new #[Layout('components.layouts.app')] class extends Component
         <div style="{{ $panel }} display: flex; flex-direction: column; gap: 8px" data-ops-routines>
             <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px">
                 <span style="{{ $head }}">ROUTINES <span style="{{ $sub }}">· 예약 작업 — 무엇이 언제 돌고, 사이트별 마지막 결과 (11-12 부터 기록)</span></span>
-                <span style="font-size: 11px; color: #8fb0cc">초록 = 성공 · 빨강 = 실패(마우스를 올리면 이유) · 회색 = 아직 기록 없음</span>
+                <span style="font-size: 11px; color: #8fb0cc">초록 = 성공 · 빨강 = 실패(이유는 칸 안에) · 회색 = 아직 기록 없음</span>
             </div>
             <div style="overflow-x: auto">
                 <table style="width: 100%; min-width: 760px; border-collapse: collapse; font-size: 12px">
@@ -419,11 +419,11 @@ new #[Layout('components.layouts.app')] class extends Component
                     <tbody>
                         @foreach($routineTable['rows'] as $r)
                             <tr style="border-top: 1px solid rgba(127,231,255,.12)" data-routine-row="{{ $r['label'] }}">
-                                <td style="padding: 7px 8px 7px 0; color: #eaf6ff">{{ $r['label'] }}</td>
+                                <td style="padding: 7px 8px 7px 0; color: #eaf6ff; min-width: 180px">{{ $r['label'] }}</td>
                                 <td style="padding: 7px 8px; font-family: 'JetBrains Mono', monospace; color: #9cc3e0; white-space: nowrap">{{ $r['when'] }}</td>
                                 @foreach($routineTable['columns'] as $col)
                                     @php($c = $r['by'][$col['key']])
-                                    <td style="padding: 7px 8px; white-space: nowrap; font-family: 'JetBrains Mono', monospace; color: {{ ['ok' => '#3dffaa', 'failed' => '#ff7a7a', 'running' => '#ffcf86'][$c['state']] ?? '#5f6b80' }}" title="{{ $c['title'] }}">{{ $c['text'] }}</td>
+                                    <td style="padding: 7px 8px; white-space: nowrap; font-family: 'JetBrains Mono', monospace; color: {{ ['ok' => '#3dffaa', 'failed' => '#ff7a7a', 'running' => '#ffcf86'][$c['state']] ?? '#5f6b80' }}" title="{{ $c['title'] }}">{{ $c['text'] }}@if($c['state'] === 'failed' && $c['title'] !== '')<span style="display: block; font-size: 10px; color: #ff9b8a; white-space: normal; max-width: 260px">{{ $c['title'] }}</span>@endif</td>
                                 @endforeach
                             </tr>
                         @endforeach

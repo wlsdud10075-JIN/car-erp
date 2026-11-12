@@ -2705,7 +2705,8 @@ new #[Layout('components.layouts.app')] class extends Component
     @if($showSummaries)
         @php $isKaraba = \App\Models\Setting::isKaraba(); @endphp
         @if(!empty($this->salesmanSummaries))
-        <div class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+        {{-- 폰은 1열(11-12 모바일 점검 B1 — 2열이면 이름이 14px 로 눌려 「[H…」) · sm 이상 종전 --}}
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
             @foreach($this->salesmanSummaries as $summary)
             {{-- 접힌 카드 = 이름 + 실지급액. 자세히는 개별 펼치기(값은 이미 계산돼 있어 Alpine 으로 충분). --}}
             @php $focused = $focusSalesmanId > 0 && (int) $summary['salesman_id'] === $focusSalesmanId; @endphp
@@ -2726,7 +2727,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     @endif
                     <span class="shrink-0 font-mono text-xs font-semibold text-violet-700">{{ number_format($summary['actual_payout_sum']) }}</span>
                     <button type="button" @click="open = !open"
-                            class="shrink-0 text-[11px] text-gray-400 hover:text-violet-700"
+                            class="shrink-0 px-2 py-1 -my-1 text-[11px] text-gray-400 hover:text-violet-700 sm:px-0 sm:py-0 sm:my-0"
                             :aria-expanded="open" aria-label="{{ __('settlement.summary_detail_toggle') }}">
                         <span x-text="open ? '−' : '+'">+</span>
                     </button>
@@ -3055,6 +3056,18 @@ new #[Layout('components.layouts.app')] class extends Component
             'confirmed' => 'badge-green', 'paid' => 'badge-gray', default => 'badge-gray',
         };
         $statusLabel = __('settlement.status.'.$s->settlement_status);
+        // 2차 뱃지·마감 가능 — 데스크탑 행(위)과 같은 판정. 11-12 모바일 점검 A3: 카드에 뱃지가 없어 필터를 걸어도 이유가 안 보였다.
+        $mSecondaryKey = match(true) {
+            $s->secondary_status === 'pending' && $s->secondary_ready_at !== null => 'ready',
+            $s->secondary_status === 'pending' => 'waiting',
+            $s->secondary_status === 'closed' => 'closed',
+            default => null,
+        };
+        $mSecondaryLabel = $mSecondaryKey ? __('settlement.secondary.'.$mSecondaryKey) : null;
+        $mSecondaryBadge = ['ready' => 'badge-green', 'waiting' => 'badge-amber', 'closed' => 'badge-gray'][$mSecondaryKey] ?? '';
+        $mCanCloseSecondary = $s->secondary_status === 'pending' && (auth()->user()?->isAdmin() || in_array(auth()->user()?->role, ['재무', '관리'], true));
+        $mPa = $s->latestPayApproval;
+        $mCanFinance = auth()->user()->canConfirmFinance();
     @endphp
     <div class="card-tight cursor-pointer" wire:click="openEdit({{ $s->id }})">
         <div class="flex items-center justify-between">
@@ -3068,12 +3081,41 @@ new #[Layout('components.layouts.app')] class extends Component
             <div>{{ \App\Models\Setting::isKaraba() ? __('settlement.label_operating_profit') : __('settlement.mobile_total_margin') }}: ₩{{ number_format($s->display_margin) }}</div>
             <div class="font-semibold text-gray-700">{{ __('settlement.mobile_actual') }}: ₩{{ number_format($s->actual_payout) }}</div>
         </div>
-        @if(in_array($s->settlement_status, ['pending', 'calculating'], true) && auth()->user()->canConfirmFinance())
-        <button wire:click.stop="confirmSettlement({{ $s->id }})"
-                wire:confirm="{{ __('settlement.confirm_confirm') }}"
-                class="mt-3 w-full rounded-md border border-emerald-500 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50">
-            {{ __('settlement.btn_confirm') }}</button>
+        {{-- 폰에도 같은 뱃지(지급보류·게이트 예외·지급 대상 아님·승인·2차) — 테이블 칸과 같은 @if (11-12 A3) --}}
+        @if($s->isPayoutExcludedBySalesman() || $s->isPayoutHeldByUnpaid() || $s->hasGateOverride() || ($mPa && in_array($mPa->status, ['pending', 'rejected'], true)) || $mSecondaryLabel)
+        <div class="mt-2 flex flex-wrap items-center gap-1 text-[11px]" data-mobile-badges>
+            @if($s->isPayoutExcludedBySalesman())<span class="badge badge-gray">{{ __('settlement.payout_excluded.badge') }}</span>@endif
+            @if($s->isPayoutHeldByUnpaid())<span class="badge badge-red">{{ __('settlement.held.badge') }}</span><span class="text-gray-500">{{ __('settlement.held.tooltip', ['amount' => number_format($s->vehicle?->sale_unpaid_amount ?? 0)]) }}</span>@endif
+            @if($s->hasGateOverride())<span class="badge badge-amber">{{ __('settlement.gate.badge') }}</span>@endif
+            @if($mPa && $mPa->status === 'pending')<span class="badge badge-amber">{{ __('settlement.approval_pending') }}</span>
+            @elseif($mPa && $mPa->status === 'rejected')<span class="badge badge-red">{{ __('settlement.approval_rejected') }}</span>@endif
+            @if($mSecondaryLabel)<span class="badge {{ $mSecondaryBadge }}">{{ $mSecondaryLabel }}</span>@endif
+        </div>
         @endif
+        {{-- 작업 버튼 — 데스크탑 작업 칸(위 테이블)과 같은 조건·같은 메서드. 11-12 A2: 폰엔 [확정]뿐이라 삭제·재조정·예외 등록을 할 길이 없었다 --}}
+        <div class="mt-3 flex flex-wrap gap-2" data-mobile-actions>
+            @if(in_array($s->settlement_status, ['pending', 'calculating'], true) && $mCanFinance)
+            <button wire:click.stop="confirmSettlement({{ $s->id }})" wire:confirm="{{ __('settlement.confirm_confirm') }}"
+                    class="flex-1 rounded-md border border-emerald-500 py-2 text-xs font-medium text-emerald-700 hover:bg-emerald-50">{{ __('settlement.btn_confirm') }}</button>
+            @endif
+            @if($mCanCloseSecondary)
+            <button wire:click.stop="closeSecondarySettlement({{ $s->id }})" wire:confirm="{{ __('settlement.confirm_close_secondary') }}"
+                    class="flex-1 rounded-md border border-violet-400 py-2 text-xs font-medium text-violet-700 hover:bg-violet-50">{{ __('settlement.btn_close_secondary') }}</button>
+            @endif
+            @if($s->secondary_status === 'closed' && $s->vehicle && auth()->user()->canUnlockLedger($s->vehicle))
+            <button wire:click.stop="openReadjustModal({{ $s->id }})"
+                    class="flex-1 rounded-md border border-amber-400 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50">🔓 {{ __('settlement.btn_readjust') }}</button>
+            @endif
+            @if($s->isPayoutHeldByUnpaid() && $mCanFinance)
+            <button wire:click.stop="startGateOverrideForSettlement({{ $s->id }})"
+                    class="flex-1 rounded-md border border-amber-400 py-2 text-xs font-medium text-amber-700 hover:bg-amber-50">{{ __('settlement.gate.apply_btn') }}</button>
+            @elseif($s->hasGateOverride() && $mCanFinance)
+            <button wire:click.stop="releaseGateOverride({{ $s->id }})" wire:confirm="{{ __('settlement.gate.confirm_release') }}"
+                    class="flex-1 rounded-md border border-gray-300 py-2 text-xs text-gray-500 hover:bg-gray-50">{{ __('settlement.gate.release_btn') }}</button>
+            @endif
+            <button wire:click.stop="delete({{ $s->id }})" wire:confirm="{{ __('settlement.confirm_delete') }}"
+                    class="ml-auto rounded-md border border-red-200 px-3 py-2 text-xs text-red-500 hover:bg-red-50">{{ __('common.delete') }}</button>
+        </div>
     </div>
     @empty
     <div class="py-12 text-center text-sm text-gray-400">{{ __('settlement.empty') }}</div>
@@ -3151,9 +3193,9 @@ new #[Layout('components.layouts.app')] class extends Component
                         <span class="ml-1 badge badge-teal">{{ __('settlement.gate.same_as_freight') }}</span>
                         @endif
                     </td>
-                    <td class="py-2 pr-3">
+                    <td class="py-2 pr-3 min-w-[150px]">
                         @foreach($row['blockers'] as $b)
-                        <span class="badge badge-amber">{{ __('settlement.gate.blocker.'.$b) }}</span>
+                        <span class="badge badge-amber whitespace-nowrap">{{ __('settlement.gate.blocker.'.$b) }}</span>
                         @endforeach
                     </td>
                     <td class="py-2 text-right">

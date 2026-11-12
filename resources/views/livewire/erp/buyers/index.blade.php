@@ -1827,7 +1827,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
 
     {{-- 탭 --}}
-    <div class="flex border-b px-5">
+    {{-- 폰: 5탭 404px > 390 이라 「클레임」 끝이 잘렸다(11-12 모바일 점검 B6) → 가로 스크롤 --}}
+    <div class="flex overflow-x-auto border-b px-5">
         {{-- 현금 탭은 토글 ON 인 회사에만 뜬다 — 목록 자체를 갈아서 「보이는데 안 되는」 상태를 안 만든다. --}}
         @foreach($this->cashEnabled ? ['basic','consignees','savings','cash','claims'] : ['basic','consignees','savings','claims'] as $k)
         <button @click="tab='{{ $k }}'"
@@ -2491,7 +2492,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </div>
                         <span class="w-28 shrink-0 text-right font-medium tabular-nums {{ $textColor }}">{{ number_format($bal, 2) }}</span>
                         {{-- 원화 병기 (jin 2026-07-29) — 적립 시점 환율 × 선입선출 잔여분 --}}
-                        <span class="w-32 shrink-0 text-right text-[11px] tabular-nums text-gray-500">
+                        <span class="hidden w-32 shrink-0 text-right text-[11px] tabular-nums text-gray-500 sm:block">
                             @if($k && ($k['krw'] > 0 || $k['unrated'] <= 0))
                                 ≈ {{ number_format($k['krw']) }}{{ __('buyer.savings.won') }}
                             @else
@@ -2499,6 +2500,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endif
                         </span>
                     </div>
+                    {{-- 폰: 원화 병기는 아랫줄로(위 줄에 두면 게이지가 20px 로 찌그러진다 — 11-12 B7) --}}
+                    <div class="mt-0.5 pl-12 text-[11px] tabular-nums text-gray-500 sm:hidden">{{ ($k && ($k['krw'] > 0 || $k['unrated'] <= 0)) ? '≈ '.number_format($k['krw']).__('buyer.savings.won') : '—' }}</div>
                     {{-- 다음에 나갈 적립분 — 금액까지 보여야 쓸 때마다 줄어드는 게 보인다(jin 2026-07-29).
                          잘 안 보인다는 피드백으로 10px 회색 → 칩 형태로 키움. --}}
                     @if($next)
@@ -2573,7 +2576,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="overflow-x-auto rounded-lg border border-gray-200">
                 <table class="w-full text-xs">
                     <thead>
-                        <tr class="bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                        <tr class="bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 whitespace-nowrap">
                             <th class="px-2 py-2">{{ __('buyer.savings.col_date') }}</th>
                             <th class="px-2 py-2">{{ __('buyer.savings.col_by') }}</th>
                             <th class="px-2 py-2">{{ __('buyer.savings.currency') }}</th>
@@ -2603,8 +2606,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <tr class="even:bg-gray-50/60">
                             <td class="px-2 py-1.5 text-gray-400 whitespace-nowrap">{{ $t['created_at'] }}</td>
                             <td class="px-2 py-1.5 whitespace-nowrap text-gray-600" data-savings-by>{{ $t['by'] !== '' ? $t['by'] : '-' }}</td>
-                            <td class="px-2 py-1.5 font-mono">{{ $t['currency'] }}</td>
-                            <td class="px-2 py-1.5 {{ $typeColor }} font-medium">{{ $typeLabel }}</td>
+                            <td class="px-2 py-1.5 font-mono whitespace-nowrap">{{ $t['currency'] }}</td>
+                            <td class="px-2 py-1.5 {{ $typeColor }} font-medium whitespace-nowrap">{{ $typeLabel }}</td>
                             <td class="px-2 py-1.5 text-right font-mono {{ $t['savings'] >= 0 ? 'text-green-600' : 'text-red-500' }}">
                                 {{ $t['savings'] >= 0 ? '+' : '' }}{{ number_format($t['savings'], 2) }}
                             </td>
@@ -2649,7 +2652,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{-- 메모가 길면 잘리는데 호버해도 안 보였다(jin 2026-08-20).
                                  title 은 브라우저가 그려서 **슬라이드 패널 밖으로도 안 잘린다** —
                                  CSS 툴팁(absolute)을 쓰면 패널 overflow 에 갇힌다. --}}
-                            <td class="px-2 py-1.5 text-gray-400 max-w-[120px] truncate" title="{{ $t['note'] }}">{{ $t['note'] }}</td>
+                            <td class="px-2 py-1.5 text-gray-400"><div class="hidden max-w-[120px] truncate sm:block" title="{{ $t['note'] }}">{{ $t['note'] }}</div><div class="min-w-[160px] whitespace-normal sm:hidden">{{ $t['note'] }}</div></td>
                             <td class="px-2 py-1.5">
                                 @if($t['transaction_type'] !== 'CANCELLED')
                                 <button wire:click="cancelSavingsTransaction({{ $t['id'] }})"
@@ -2838,7 +2841,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <div class="whitespace-nowrap text-[10px] text-gray-400" data-cash-by>{{ __('buyer.cash.col_by') }} {{ $r['by'] ?: '-' }}</div>
                                 @if($r['note'] !== '')
                                 {{-- 메모는 열이 아니라 여기 붙인다. 잘려도 호버로 전문이 보인다. --}}
-                                <div class="max-w-[130px] truncate text-[10px] text-gray-400" title="{{ $r['note'] }}">{{ $r['note'] }}</div>
+                                <div class="hidden max-w-[130px] truncate text-[10px] text-gray-400 sm:block" title="{{ $r['note'] }}">{{ $r['note'] }}</div><div class="min-w-[160px] whitespace-normal text-[10px] text-gray-400 sm:hidden">{{ $r['note'] }}</div>
                                 @endif
                             </td>
                             <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono text-gray-700">
@@ -2916,7 +2919,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 </div>
                                 <div class="whitespace-nowrap text-[10px] text-gray-400" data-cash-fee-by>{{ __('buyer.cash.col_by') }} {{ $f['by'] ?: '-' }}</div>
                                 @if($f['note'])
-                                <div class="max-w-[130px] truncate text-[10px] text-gray-400" title="{{ $f['note'] }}">{{ $f['note'] }}</div>
+                                <div class="hidden max-w-[130px] truncate text-[10px] text-gray-400 sm:block" title="{{ $f['note'] }}">{{ $f['note'] }}</div><div class="min-w-[160px] whitespace-normal text-[10px] text-gray-400 sm:hidden">{{ $f['note'] }}</div>
                                 @endif
                             </td>
                             <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono text-amber-700">
@@ -2925,7 +2928,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </td>
                             <td class="px-2 py-1.5 text-[11px] text-gray-600">
                                 {{-- title 은 **자르는 요소 자체**에 붙인다 — 부모에 붙이면 가드가 잡는다(호버 위치도 어긋난다). --}}
-                                <div class="max-w-[150px] truncate" title="{{ $f['from'] }}">{{ $f['from'] ?: '-' }}</div>
+                                <div class="hidden max-w-[150px] truncate sm:block" title="{{ $f['from'] }}">{{ $f['from'] ?: '-' }}</div><div class="min-w-[160px] whitespace-normal sm:hidden">{{ $f['from'] ?: '-' }}</div>
                             </td>
                             <td class="px-2 py-1.5">
                                 @if($this->canManageCash)
@@ -3006,7 +3009,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono {{ $u['amount'] < 0 ? 'text-violet-700' : 'text-emerald-700' }}">
                                     {{ number_format($u['amount'], 2) }} <span class="text-[10px] text-gray-400">{{ $u['currency'] }}</span>
                                 </td>
-                                <td class="px-2 py-1.5 text-[11px] text-gray-500"><div class="max-w-[180px] truncate" title="{{ $u['note'] }}">{{ $u['note'] }}</div></td>
+                                <td class="px-2 py-1.5 text-[11px] text-gray-500"><div class="hidden max-w-[180px] truncate sm:block" title="{{ $u['note'] }}">{{ $u['note'] }}</div><div class="min-w-[160px] whitespace-normal sm:hidden">{{ $u['note'] }}</div></td>
                             </tr>
                             @empty
                             <tr><td colspan="4" class="py-4 text-center text-gray-400">{{ __('buyer.cash.savings_no_use') }}</td></tr>
