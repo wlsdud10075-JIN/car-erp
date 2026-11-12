@@ -49,3 +49,12 @@
 ## 5. 흡수 금지
 - 🚫 샘플 HTML 을 ERP 레포에 복사하지 않는다 — CSS·틀만 가져오고 씬 내용은 ERP 실측으로.
 - 🚫 씬 문서를 스펙 권위로 쓰지 않는다 — 스펙은 종전 권위 문서(`board-portal-api.md`·`purchase-sync-receiver.md` 등), 씬은 **그 스펙이 실제로 어떻게 보이는가**의 기록.
+
+## 6. 게시 방식 = C안 (jin 11-12 확정, board 전언 — 기획만, 코드 착수는 주말·jin 별도 지시)
+
+- **각 앱 안에서 로그인 뒤 보기.** 사이드바 「업무 가이드」 탭이 외부 Notion 링크 대신 **앱 내 `/guides` 목록(전 직원)** 으로 바뀐다.
+- 흐름도 HTML + PNG 는 `resources/guides/{slug}/` 에 **코드와 함께 배포**(public 아님 — 컨트롤러가 로그인 확인 뒤 서빙, `noindex`).
+- Notion 기능 카드엔 요약 + 「업무 가이드 → 씬 이름」 링크. **티스토리는 안 씀**(이미지·보호글 미구현, 비번 의존).
+- ERP 도 같은 구조(`/guides`, 같은 slug 규칙) — 정본 = board `meetings/plan-scene-walkthrough-2026-11.md §3-1`. ⚠️ ERP 착수 시점·우선순위는 jin 이 따로 지시 — **그 전엔 아무것도 만들지 않는다.**
+- ERP 쪽 영향(착수 때 볼 것): 사이드바 `nav.menu` 「업무 가이드」 링크 교체 · `erp` 미들웨어 뒤 `/guides` 라우트 · `.md` 아닌 HTML/PNG 라 master 에 포함(dev-only 제외 규칙과 구분) · 챗봇 카드(`scripts/notion-cards/cards.json`) 요약+링크 갱신(📖 가이드 동기화 규칙).
+
