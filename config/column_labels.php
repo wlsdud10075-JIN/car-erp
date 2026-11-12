@@ -185,6 +185,7 @@ return [
         'deal_type' => '거래 유형 (DP/FD)',   // 2026-11-01 B2B 파트너스 — 거래별 뱃지
         'cancel_status' => '매입취소 상태',
         'stock_location' => '보관위치',
+        'stock_location_note' => '보관위치 비고',   // 2026-11-12 탁송 배차 — board 전용 엔드포인트가 덮어쓰는 칸
         'memo' => '메모',
         'deregistration_date' => '말소일',
         'cancel_loss_settled_at' => '취소 손실 반영일',

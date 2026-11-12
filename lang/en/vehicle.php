@@ -521,8 +521,6 @@ return [
         'salesman' => 'Salesman',
         'remitter_name' => 'Remitter name',
         'remitter_id' => 'Remitter ID (from board)',
-        'stock_location' => 'Stock location',
-        'stock_location_note' => 'Stock location note',
         'deal_type' => 'Deal type (DP/FD)',
         'vin' => 'VIN',
         'engine_no' => 'Engine Type',

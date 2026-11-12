@@ -534,8 +534,6 @@ return [
         'salesman' => '영업담당자',
         'remitter_name' => '송금인 이름',
         'remitter_id' => '송금인 ID (board 기록)',
-        'stock_location' => '보관위치',
-        'stock_location_note' => '보관위치 비고',
         'deal_type' => '거래 유형 (DP/FD)',
         'vin' => '차대번호',
         'engine_no' => '원동기형식',
