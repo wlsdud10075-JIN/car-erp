@@ -935,6 +935,11 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-12 (7) — master `1ec946c8` · 마이그 0 (jin «좋아. 배포하자»)
+- 관제센터 3단계 세컨드 브레인(dev `2cdaf605`) + 관제 서명 v2(nonce 포함, jin 결정)·GPU PC 감시 카드(dev `07e27491`). ssancarerp `OPS_SITES` 재교체(gpu probe, 백업 `.env.bak-20261112-ops3`).
+- 같은 날 board master `faebd7a`·ssancar.com `5b0d26cd` 가 v2·v1 둘 다 받게 먼저 반영 → 허브 v2 전환. 며칠 뒤 세 곳 v1 삭제 예정.
+- run 43164819703 잡 5 success. 세컨드 브레인 목록은 개발 PC 에서 `ops:brain-sync --push` 로 올림.
+
 ## 2026-11-12 (6) — master `417fbb1a` · 마이그 0 (jin «배포해줘» — ssancar.com 추가)
 - 관제센터 사이트 줄 ERP / BOARD / ETC(GPU PC·ssancar.com) + 사이트별 path (dev `546a1f2d`). ssancarerp `.env` `OPS_SITES` 7개로 교체(백업 `.env.bak-20261112-ops2`).
 - 같은 날 board master `801b381` 두 박스 배포 + OPS_HMAC_SECRET 투입(board 세션) → 허브에서 board 2곳 읽힘 확인. ssancar.com 은 그쪽 `page/api_ops_summary.php` 미배포(jin 승인 대기) → 「미연결」.
