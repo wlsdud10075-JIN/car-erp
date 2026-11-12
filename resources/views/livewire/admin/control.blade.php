@@ -176,12 +176,65 @@ new #[Layout('components.layouts.app')] class extends Component
         @endif
 
         {{-- 사이트 칸 --}}
-        <div style="{{ $panel }} display: flex; flex-direction: column; gap: 12px">
-            <span style="{{ $head }}">SITES <span style="{{ $sub }}">· 이름을 누르면 「이상 감지」가 그 사이트만 · 「▸」를 누르면 서버·연결 API·메모 펼침</span></span>
+        @php
+            // 칩 = 접힌 상태의 한 줄 요약(jin 11-12 «접는 것 말고 색다른 방식» → 접으면 사라지는 게 아니라 신호등 한 줄로 압축). 줄·보드 두 군데서 같은 칩을 쓴다.
+            $chips = [];
+            foreach ($rows as [$rl, $rc, $rs]) {
+                foreach ($rs as $s) {
+                    $site = $s['site']; $d = $s['data'] ?? []; $srv = $d['server'] ?? [];
+                    $mine = array_filter($anomalies, fn ($a) => $a['site_key'] === $site['key']);
+                    $worst = $mine === [] ? 0 : max(array_column($mine, 'level'));
+                    $memo = empty($site['url']) && empty($site['self']);
+                    if (! $s['ok']) {
+                        $text = $memo ? '감시 없음' : '응답 없음';
+                    } elseif ($memo) {
+                        $text = ($d['health'][0]['ok'] ?? false) ? 'Ollama 정상' : 'Ollama 없음';
+                    } else {
+                        $text = ($srv['version'] ?? '') ? substr((string) $srv['version'], 0, 8).' · ' : '';
+                        $text .= $mine ? '이상 '.count($mine) : '이상 없음';
+                    }
+                    $chips[$rl][] = [
+                        'key' => $site['key'], 'name' => $site['name'], 'text' => $text, 'color' => $rc,
+                        'dot' => ! $s['ok'] ? '#6b7790' : ($worst >= 3 ? '#ff5a5a' : ($worst === 2 ? '#ffb040' : '#3dffaa')),
+                        'pulse' => ! $s['ok'] ? '' : ($worst >= 3 ? 'ops-bad' : ''),
+                        'title' => $s['ok'] ? implode(' / ', array_map(fn ($a) => $a['kind'], $mine)) : (string) $s['error'],
+                    ];
+                }
+            }
+            $chipStyle = 'all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 9px; border-radius: 999px; border: 1px solid rgba(127,231,255,.22); background: rgba(10,20,40,.6); font-size: 11px; color: #eaf6ff; white-space: nowrap';
+        @endphp
+        <div style="{{ $panel }} display: flex; flex-direction: column; gap: 12px" data-ops-sites
+             x-data='{ board: true, rows: { ERP: true, BOARD: true, ETC: true },
+                 init() { try { const s = JSON.parse(localStorage.getItem("ops_sites_fold_v1") || "null"); if (s) { this.board = s.board !== false; Object.assign(this.rows, s.rows || {}); } } catch (e) {} this.$watch("board", () => this.save()); this.$watch("rows", () => this.save()); },
+                 save() { try { localStorage.setItem("ops_sites_fold_v1", JSON.stringify({ board: this.board, rows: this.rows })); } catch (e) {} },
+                 openRow(r) { this.board = true; this.rows[r] = true; } }'>
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px">
+                <button type="button" @click="board = !board" data-ops-sites-toggle style="all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-height: 32px" :title="board ? 'SITES 보드 접기' : 'SITES 보드 펼치기'">
+                    <span style="{{ $head }}"><span x-text="board ? '▾' : '▸'" style="color: #8fb0cc">▾</span> SITES <span x-show="board" style="{{ $sub }}">· 이름을 누르면 「이상 감지」가 그 사이트만 · 줄 이름(ERP·BOARD·ETC)을 누르면 그 줄 접기 · 「▸」를 누르면 서버·연결 API·메모 펼침</span></span>
+                </button>
+                {{-- 보드를 접으면 7개 칩이 이 줄에 남는다 --}}
+                <div x-show="!board" x-cloak style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px" data-ops-board-strip>
+                    @foreach($rows as [$rowLabel, $rowColor, $rowSites])
+                        @if(($chips[$rowLabel] ?? []) !== [])
+                            <span style="font-family: 'Orbitron', sans-serif; font-size: 10px; letter-spacing: 2px; color: {{ $rowColor }}">{{ $rowLabel }}</span>
+                            @foreach($chips[$rowLabel] as $c)
+                                <button type="button" @click="openRow('{{ $rowLabel }}')" title="{{ $c['title'] }}" data-ops-chip="{{ $c['key'] }}" style="{{ $chipStyle }}"><span class="{{ $c['pulse'] }}" style="width: 7px; height: 7px; border-radius: 50%; background: {{ $c['dot'] }}"></span><b style="font-weight: 600">{{ $c['name'] }}</b><span style="font-family: 'JetBrains Mono', monospace; color: #9cc3e0">{{ $c['text'] }}</span></button>
+                            @endforeach
+                        @endif
+                    @endforeach
+                </div>
+            </div>
+            <div x-show="board" style="display: flex; flex-direction: column; gap: 12px">
             @foreach($rows as [$rowLabel, $rowColor, $rowSites])
                 @if($rowSites !== [])
                 <div class="ops-row" data-ops-row="{{ $rowLabel }}">
-                    <span style="font-family: 'Orbitron', 'Noto Sans KR', sans-serif; font-size: 13px; letter-spacing: 2px; color: {{ $rowColor }}; padding-top: 12px">{{ $rowLabel }}</span>
+                    <button type="button" @click="rows['{{ $rowLabel }}'] = !rows['{{ $rowLabel }}']" data-ops-fold="{{ $rowLabel }}" style="all: unset; cursor: pointer; font-family: 'Orbitron', 'Noto Sans KR', sans-serif; font-size: 13px; letter-spacing: 2px; color: {{ $rowColor }}; padding-top: 12px; align-self: start; min-height: 32px" :title="rows['{{ $rowLabel }}'] ? '{{ $rowLabel }} 줄 접기' : '{{ $rowLabel }} 줄 펼치기'">{{ $rowLabel }}</button>
+                    {{-- 줄을 접으면 카드 자리에 칩 한 줄 --}}
+                    <div x-show="!rows['{{ $rowLabel }}']" x-cloak style="grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding-top: 6px" data-ops-row-strip="{{ $rowLabel }}">
+                        @foreach($chips[$rowLabel] ?? [] as $c)
+                            <button type="button" @click="openRow('{{ $rowLabel }}')" title="{{ $c['title'] }}" data-ops-chip="{{ $c['key'] }}" style="{{ $chipStyle }}"><span class="{{ $c['pulse'] }}" style="width: 7px; height: 7px; border-radius: 50%; background: {{ $c['dot'] }}"></span><b style="font-weight: 600">{{ $c['name'] }}</b><span style="font-family: 'JetBrains Mono', monospace; color: #9cc3e0">{{ $c['text'] }}</span></button>
+                        @endforeach
+                    </div>
                     @foreach($rowSites as $s)
                         @php
                             $site = $s['site']; $d = $s['data'] ?? []; $srv = $d['server'] ?? [];
@@ -190,7 +243,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             $dot = ! $s['ok'] ? '#6b7790' : ($worst >= 3 ? '#ff5a5a' : ($worst === 2 ? '#ffb040' : '#3dffaa'));
                             $sel = $siteFilter === $site['key'];
                         @endphp
-                        <div wire:key="site-{{ $site['key'] }}" data-ops-site="{{ $site['key'] }}" style="border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; border: 1px solid {{ $sel ? $rowColor : 'rgba(127,231,255,.22)' }}; background: {{ $sel ? 'rgba(127,231,255,.10)' : 'rgba(10,20,40,.6)' }}">
+                        <div wire:key="site-{{ $site['key'] }}" data-ops-site="{{ $site['key'] }}" x-show="rows['{{ $rowLabel }}']" style="border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 6px; border: 1px solid {{ $sel ? $rowColor : 'rgba(127,231,255,.22)' }}; background: {{ $sel ? 'rgba(127,231,255,.10)' : 'rgba(10,20,40,.6)' }}">
                             <button type="button" wire:click="pickSite('{{ $site['key'] }}')" style="all: unset; cursor: pointer; display: flex; flex-direction: column; gap: 4px; min-height: 44px">
                                 <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: #eaf6ff">
                                     <span class="{{ ! $s['ok'] ? '' : ($worst >= 3 ? 'ops-bad' : 'ops-ok') }}" style="width: 8px; height: 8px; border-radius: 50%; background: {{ $dot }}"></span>
@@ -246,6 +299,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 </div>
                 @endif
             @endforeach
+            </div>
         </div>
 
         <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: stretch">
