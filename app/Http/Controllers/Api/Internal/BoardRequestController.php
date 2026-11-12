@@ -256,15 +256,15 @@ class BoardRequestController extends Controller
                 if ($r->amount_krw !== null) {
                     $lines[] = '  '.number_format($r->amount_krw).'원';
                 }
-                // 2026-11-12 탁송 배차(board 기획 §11 ④) — 요청 note(200자)를 한 줄로. 변수 안이라 BizM 재승인 없음(board 확인).
-                //   board 는 매입잔금 요청에 「배차: 업체 · 기사전화(가운데 마스킹) · 배차일시」를 싣는다. 개행은 공백으로(한 줄).
-                if (($note = trim((string) $r->note)) !== '') {
-                    $lines[] = '  '.mb_substr(preg_replace('/\s+/u', ' ', $note), 0, 200);
-                }
                 if ($showPayee) {
                     $lines[] = '  '.$this->payeeLine($v);
                     // 계좌번호는 카톡 본문엔 실려야 하지만 alimtalk_logs 에는 남기지 않는다(암호화 컬럼).
                     $secrets[] = (string) ($v?->purchase_seller_account ?? '');
+                }
+                // 2026-11-12 탁송 배차(board 기획 §11 ④) — 요청 note(200자)를 한 줄로. 변수 안이라 BizM 재승인 없음(board 확인).
+                //   board 는 매입잔금 요청에 「배차: 업체 · 기사전화(가운데 마스킹) · 배차일시」를 싣는다. 개행은 공백으로(한 줄). 순서 = 금액 → 계좌 → 배차(board 흐름도와 같게).
+                if (($note = trim((string) $r->note)) !== '') {
+                    $lines[] = '  '.mb_substr(preg_replace('/\s+/u', ' ', $note), 0, 200);
                 }
             }
 
