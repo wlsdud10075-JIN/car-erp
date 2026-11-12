@@ -969,12 +969,13 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="flex h-full flex-col gap-4 p-3 md:p-6">
 
 {{-- 헤더 --}}
-<div class="flex items-center justify-between">
+{{-- 폰: 버튼 4개가 601px 라 급여대장·평가수수료 업로드가 화면 밖으로 나갔다(11-12 모바일 점검 A4) → 접는다 --}}
+<div class="flex flex-wrap items-center justify-between gap-2">
     <div>
         <h1 class="text-xl font-bold text-gray-800">{{ __('salesman.title') }}</h1>
         <p class="mt-0.5 text-xs text-gray-500">{{ __('salesman.total', ['count' => $this->salesmen->total()]) }}</p>
     </div>
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2">
         <select wire:model.live="perPage" class="input-filter">
             <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>
             <option value="30">{{ __('common.per_page', ['count' => 30]) }}</option>
@@ -1509,8 +1510,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         @if($this->holdLedger->isNotEmpty())
         @php $canHold = \App\Models\SettlementPayoutBatch::canEditAdjustments(auth()->user()); @endphp
         <div class="rounded-lg border border-slate-300 bg-slate-50 p-3" data-hold-panel>
-            <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-semibold text-gray-800">{{ __('salesman.hold.ledger_title') }}</span>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+                <span class="shrink-0 whitespace-nowrap text-sm font-semibold text-gray-800">{{ __('salesman.hold.ledger_title') }}</span>
                 <span class="text-[11px] text-gray-500">{{ __('salesman.hold.ledger_hint') }}</span>
             </div>
             @foreach([[\App\Models\PayoutHold::KIND_HOLD, $this->openHolds, 'holdResolveAmount'], [\App\Models\PayoutHold::KIND_EXTRA, $this->openExtras, 'extraResolveAmount']] as [$kind, $rows, $field])
@@ -1541,7 +1542,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @if($canHold)
                 <div class="mt-2 flex flex-wrap items-center justify-end gap-2">
                     <label class="flex items-center gap-1.5 text-[11px] text-gray-600" data-{{ $kind }}-amount>
-                        <span>{{ __('salesman.hold.amount_label') }}</span>
+                        <span class="whitespace-nowrap">{{ __('salesman.hold.amount_label') }}</span>
                         <input type="text" inputmode="numeric" data-money data-money-signed wire:model="{{ $field }}" wire:key="{{ $kind }}-resolve-{{ $this->editingId }}"
                                placeholder="{{ number_format($total) }}" title="{{ __('salesman.hold.amount_hint') }}"
                                class="input-base h-9 w-32 text-right font-mono text-xs sm:h-7">
@@ -1641,7 +1642,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         <div class="rounded-lg border border-violet-200 bg-violet-50 p-3" data-payroll
              x-data="{ total() { const vals = [...Object.values($wire.payrollItems || {}), ...Object.values($wire.payrollCustom || {}).map((r) => r ? r.amount : '')]; let t = 0; vals.forEach((v) => { const s = String(v ?? '').trim(); const n = parseInt(s.replace(/[^0-9]/g, ''), 10) || 0; t += s.startsWith('-') ? -n : n; }); return t.toLocaleString('en-US'); } }">
             <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-semibold text-gray-800">{{ __('salesman.payroll.title') }}</span>
+                <span class="whitespace-nowrap text-sm font-semibold text-gray-800">{{ __('salesman.payroll.title') }}</span>
                 <select wire:model.live="payrollMonth" class="input-base w-auto py-1 text-xs text-gray-800" aria-label="{{ __('salesman.payroll.month') }}">
                     @foreach($this->payrollMonthOptions() as $m)
                     <option value="{{ $m }}">{{ $m }}</option>

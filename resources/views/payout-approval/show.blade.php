@@ -12,7 +12,7 @@
         .card { background:#fff; border:1px solid #e5e7eb; border-radius:12px; padding:16px; margin-bottom:12px; }
         .row { display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed #eee; font-size:15px; }
         .row:last-child { border-bottom:0; }
-        .row .k { color:#6b7280; } .row .v { font-weight:600; color:#111827; }
+        .row .k { color:#6b7280; } .row .v { font-weight:600; color:#111827; white-space:nowrap; flex-shrink:0; margin-left:8px; } /* 11-12 폰: 긴 라벨 줄에서 금액이 「20,381,250 / 원」 2줄로 꺾였다 */
         .total { font-size:18px; }
         .total .v { color:#4c3fb1; }
         h1 { font-size:18px; margin:0 0 4px; color:#111827; }

@@ -356,16 +356,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             <div class="card-tight">
                 {{-- 헤더 --}}
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
-                    <button type="button" wire:click="toggle({{ $b->id }})" class="flex flex-1 items-center gap-2 text-left">
+                    {{-- 폰: 뱃지가 세로 글자로 쪼개졌다(11-12 모바일 점검 B4) → 줄 통째 + 접기, sm 이상 종전 --}}
+                    <button type="button" wire:click="toggle({{ $b->id }})" class="flex flex-1 basis-full flex-wrap items-center gap-2 text-left sm:basis-0">
                         <span class="whitespace-nowrap font-semibold text-gray-800">{{ $b->month }}</span>
                         {{-- 🚪 퇴사 정산 (2026-10-15) — 달을 닫지 않는 한 사람 배치. 월정산과 한눈에 갈리게 --}}
-                        @if($b->isDomesticBatch())<span class="badge badge-green" data-domestic-batch>{{ __('payout_batch.domestic.badge') }}</span>@endif
-                        @if($b->isLeaverBatch())<span class="badge badge-purple" data-leaver-batch>{{ __('payout_batch.leaver_label', ['name' => $b->salesman?->name ?? '-']) }}</span>@endif
-                        <span class="badge {{ $statusBadge }}">{{ __('payout_batch.status.'.$b->status) }}</span>
-                        @if($b->isFinalized())<span class="badge badge-blue" data-finalized title="{{ __('payout_batch.hold.finalize_hint') }}">✅ {{ __('payout_batch.hold.finalize_badge', ['date' => $b->finalized_at?->format('m/d'), 'name' => $b->finalizedBy?->name ?? '']) }}</span>
+                        @if($b->isDomesticBatch())<span class="badge badge-green whitespace-nowrap" data-domestic-batch>{{ __('payout_batch.domestic.badge') }}</span>@endif
+                        @if($b->isLeaverBatch())<span class="badge badge-purple whitespace-nowrap" data-leaver-batch>{{ __('payout_batch.leaver_label', ['name' => $b->salesman?->name ?? '-']) }}</span>@endif
+                        <span class="badge {{ $statusBadge }} whitespace-nowrap">{{ __('payout_batch.status.'.$b->status) }}</span>
+                        @if($b->isFinalized())<span class="badge badge-blue whitespace-nowrap" data-finalized title="{{ __('payout_batch.hold.finalize_hint') }}">✅ {{ __('payout_batch.hold.finalize_badge', ['date' => $b->finalized_at?->format('m/d'), 'name' => $b->finalizedBy?->name ?? '']) }}</span>
                         @php $finalNet = (int) ($b->breakdownForDisplay()['totals']['transfer_total'] ?? 0) - array_sum($b->heldAmountsBySalesman()) + array_sum($b->extraAmountsBySalesman()); @endphp
-                        <span class="rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800" data-final-net title="{{ __('payout_batch.hold.net_label', ['n' => count($b->heldAmountsBySalesman()), 'm' => count($b->extraAmountsBySalesman())]) }}">{{ __('payout_batch.hold.final_net_pill', ['amount' => number_format($finalNet)]) }}</span>@endif
-                        <span class="pill-count">{{ $b->isDomesticBatch() ? __('payout_batch.domestic.people', ['n' => $b->settlement_count]) : __('payout_batch.count', ['n' => $b->settlement_count]) }}</span>
+                        <span class="whitespace-nowrap rounded bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-800" data-final-net title="{{ __('payout_batch.hold.net_label', ['n' => count($b->heldAmountsBySalesman()), 'm' => count($b->extraAmountsBySalesman())]) }}">{{ __('payout_batch.hold.final_net_pill', ['amount' => number_format($finalNet)]) }}</span>@endif
+                        <span class="pill-count whitespace-nowrap">{{ $b->isDomesticBatch() ? __('payout_batch.domestic.people', ['n' => $b->settlement_count]) : __('payout_batch.count', ['n' => $b->settlement_count]) }}</span>
                         <span class="text-sm font-medium text-primary-text">₩{{ number_format($b->total_payout) }}</span>
                     </button>
                     <div class="text-xs text-gray-500">

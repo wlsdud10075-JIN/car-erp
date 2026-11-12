@@ -447,7 +447,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     @foreach(\App\Services\Kakao\KakaoTopics::PICKABLE as $t)
                         <button type="button" @click="toggle('{{ $t }}')" :aria-pressed="picks.includes('{{ $t }}')" :class="picks.includes('{{ $t }}') ? 'border-violet-500 bg-violet-50' : 'border-gray-300'" class="flex min-h-11 items-center gap-2 rounded-lg border px-3 text-left text-sm hover:bg-violet-50" data-topic-pick="{{ $t }}">
                             <span class="w-4 text-violet-700" x-text="picks.includes('{{ $t }}') ? '✓' : ''"></span>
-                            <span class="font-semibold text-gray-800">{{ $t }}</span><span class="text-xs text-gray-500">{{ \App\Services\Kakao\KakaoTopics::HINTS[$t] }}</span>
+                            <span class="shrink-0 whitespace-nowrap font-semibold text-gray-800">{{ $t }}</span><span class="text-xs text-gray-500">{{ \App\Services\Kakao\KakaoTopics::HINTS[$t] }}</span>
                         </button>
                     @endforeach
                 </div>
@@ -685,7 +685,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 @forelse($rows as $r)
                     <div class="rounded border border-gray-100 bg-white px-3 py-2" wire:key="row-{{ $key }}-{{ $r['id'] }}" data-row="{{ $r['id'] }}">
                         <div class="flex flex-wrap items-start justify-between gap-2">
-                            <div class="min-w-0 flex-1">
+                            <div class="min-w-0 flex-1 basis-full sm:basis-0">{{-- 폰: 버튼 묶음이 먼저 자리 잡아 글 칸이 90px 로 눌렸다(11-12 B10) --}}
                                 <div class="text-sm text-gray-800">@if(! empty($r['topic']) && $r['topic'] !== '기타')<span class="badge badge-purple mr-1">{{ $r['topic'] }}</span>@endif{{ $r['title'] }}</div>
                                 <div class="mt-0.5 flex flex-wrap gap-x-2 text-xs text-gray-500">
                                     <span>{{ __('kakao.from_to', ['from' => $r['sender'].(! empty($r['sender_role']) ? '('.$r['sender_role'].')' : ''), 'to' => $r['to'] ?: '—']) }}</span>
