@@ -21,7 +21,8 @@ class OpsHub
     public const CACHE_SECONDS = 300;
 
     /**
-     * 사이트 목록 — config('services.ops.sites') = [{"key":"heyman-erp","name":"heymanerp","kind":"erp","url":"https://heysellcar.com"}, …]
+     * 사이트 목록 — config('services.ops.sites') = [{"key":"heyman-erp","name":"heymanerp","kind":"erp|board|etc","url":"https://heysellcar.com","path":"/…(기본 PATH)"}, …]
+     *   kind etc = GPU PC·ssancar.com 처럼 ERP/board 가 아닌 것(jin 11-12). url 없는 항목(GPU PC)은 메모만 보여 준다. path = 그누보드처럼 경로가 다른 사이트용.
      * 허브 자신은 url 없이 "self":true.
      *
      * @return list<array>
@@ -61,18 +62,19 @@ class OpsHub
             return ['ok' => true, 'data' => OpsSummary::collect(), 'error' => null, 'fetched_at' => $at];
         }
         if (empty($site['url'])) {
-            return ['ok' => false, 'data' => null, 'error' => '미설치', 'fetched_at' => $at];
+            return ['ok' => false, 'data' => null, 'error' => '요약 API 없음 — 메모만', 'fetched_at' => $at];
         }
         $secret = (string) config('services.ops.hmac_secret');
         if ($secret === '') {
             return ['ok' => false, 'data' => null, 'error' => 'OPS_HMAC_SECRET 미설정', 'fetched_at' => $at];
         }
         $ts = now()->timestamp;
-        $sig = hash_hmac('sha256', VerifyErpPeerHmac::canonical('GET', self::PATH, [], $ts), $secret);
+        $path = (string) ($site['path'] ?? self::PATH);
+        $sig = hash_hmac('sha256', VerifyErpPeerHmac::canonical('GET', $path, [], $ts), $secret);
         try {
             $res = Http::timeout(4)->connectTimeout(3)->acceptJson()->withHeaders([
                 'X-Timestamp' => (string) $ts, 'X-Nonce' => (string) Str::uuid(), 'X-Board-Signature' => 'sha256='.$sig,
-            ])->get(rtrim((string) $site['url'], '/').self::PATH);
+            ])->get(rtrim((string) $site['url'], '/').$path);
         } catch (\Throwable $e) {
             return ['ok' => false, 'data' => null, 'error' => '응답 없음 — '.mb_substr($e->getMessage(), 0, 120), 'fetched_at' => $at];
         }
