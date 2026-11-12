@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\AlimtalkLog;
 use App\Models\Setting;
 use App\Models\User;
+use App\Models\Vehicle;
 use App\Services\BizmAlimtalkService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -197,5 +198,31 @@ class AlimtalkReportPollTest extends TestCase
             ->call('acknowledgeAll');
 
         $this->assertSame(0, AlimtalkLog::query()->needsAttention()->count());
+    }
+
+    /** jin 11-12 — 머리줄 버튼은 전체 확인이 아니라 목록을 「확인할 것만」으로 거른다. 검색은 그 목록에 그대로 먹고, 전체 확인은 필터를 켠 뒤에만. */
+    public function test_attention_button_filters_the_list_to_unacknowledged_only(): void
+    {
+        $super = User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]);
+        $v = Vehicle::create(['vehicle_number' => '11노3152', 'sales_channel' => 'export', 'currency' => 'USD', 'purchase_price' => 1, 'buyer_undecided' => true]);
+        AlimtalkLog::create(['template_code' => 'erp_purchase_paid_v3', 'phone' => '01023489777', 'vehicle_id' => $v->id, 'status' => 'sent', 'msgid' => 'M1', 'report_status' => 'undelivered',
+            'report_raw' => ['code' => 'success', 'message' => 'M505:착신가입자 없음', 'originMessage' => 'K119:MessageNoUserException']]);
+        AlimtalkLog::create(['template_code' => 'erp_vehicle_new', 'phone' => '01082167973', 'status' => 'failed', 'error' => 'bizmsg fail — K101:NotAvailableSendMessage']);
+        AlimtalkLog::create(['template_code' => 'erp_vehicle_new', 'phone' => '01000000001', 'status' => 'failed', 'error' => 'x', 'acknowledged_at' => now()]);   // 이미 확인
+        AlimtalkLog::create(['template_code' => 'erp_vehicle_new', 'phone' => '01000000002', 'status' => 'sent', 'msgid' => 'M2', 'report_status' => 'delivered']);   // 정상
+
+        $c = Volt::actingAs($super)->test('admin.alimtalk-logs.index')->assertOk()
+            ->assertSee('확인 필요 (2)')->assertSee('01000000002')->assertDontSee('data-attention-ack-all', false);
+
+        $c->call('toggleAttention')->assertSet('onlyAttention', true)
+            ->assertSee('01023489777')->assertSee('01082167973')->assertSee('K119')
+            ->assertDontSee('01000000001')->assertDontSee('01000000002')
+            ->assertSee('data-attention-ack-all', false);
+
+        $c->set('search', '11노')->call('searchNow')->assertSee('01023489777')->assertDontSee('01082167973');
+
+        $c->set('search', '')->call('searchNow')->call('acknowledgeAll');
+        $this->assertSame(0, AlimtalkLog::query()->needsAttention()->count());
+        $c->call('toggleAttention')->assertSet('onlyAttention', false)->assertSee('01000000002');
     }
 }

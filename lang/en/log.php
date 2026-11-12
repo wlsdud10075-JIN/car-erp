@@ -52,6 +52,7 @@ return [
     'at_ack' => 'Acknowledge',
     'at_ack_all' => 'Acknowledge all undelivered',
     'at_acked' => 'Acknowledged',
+    'at_attention_open' => 'Needs attention',
     'at_col' => [
         'time' => 'Sent at',
         'template' => 'Template',

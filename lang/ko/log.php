@@ -52,6 +52,7 @@ return [
     'at_ack' => '확인',
     'at_ack_all' => '미도달 전체 확인',
     'at_acked' => '확인됨',
+    'at_attention_open' => '확인 필요',
     'at_col' => [
         'time' => '발송시각',
         'template' => '템플릿',
