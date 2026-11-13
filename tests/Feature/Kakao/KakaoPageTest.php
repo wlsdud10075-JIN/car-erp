@@ -71,7 +71,7 @@ class KakaoPageTest extends TestCase
         $waiting = $this->msg($room, ['body' => '서렌더 요청드립니다', 'sender' => '수출팀A', 'to_side' => '영업']);                  // 내가 보냄 → 답 기다리는 중
         $teammate = $this->msg($room, ['body' => '명함 올려주세요', 'sender' => '수출팀B', 'to_side' => '영업']);                   // 동료 → 팀 동료 진행 중
         $review = $this->msg($room, ['body' => '뜻 모를 말', 'type' => null, 'to_side' => null]);                                   // 분류 실패 → 확인 필요
-        $this->msg($room, ['body' => '사진', 'type' => '첨부', 'to_side' => '없음']);                                                // 안 보임
+        $this->msg($room, ['body' => '사진', 'type' => '첨부', 'to_side' => '없음', 'sent_at' => now()->subHours(3)]);                // 안 보임 (요청들보다 앞선 사진 — 요청 **뒤에** 다른 부서가 올린 사진이면 「파일이 올라옴」으로 명함 요청이 닫힌다, KakaoAutoClose)
 
         $this->actingAs($me);
         $page = Volt::test('erp.kakao.index');

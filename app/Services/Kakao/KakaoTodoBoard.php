@@ -44,6 +44,7 @@ class KakaoTodoBoard
                 ->orderByDesc('sent_at')
                 ->get();
             $erp = KakaoErpCards::for($messages);   // ERP 카드·미등록·ERP 처리됨 — 묶음 쿼리(§14 ②③)
+            $auto = KakaoAutoClose::for($rooms, $since);   // 답글 연결이 놓친 글 — 이어진 글·파일·확인 답·매입 지급(jin 11-13)
 
             foreach ($messages as $m) {
                 $item = $m->items->first();
@@ -72,6 +73,15 @@ class KakaoTodoBoard
                     }
                     $b = ['bucket' => 'done', 'reason' => $erpDone[1], 'auto' => true];
                     $doneAt = $erpDone[0];
+                }
+                // 답글 연결은 없지만 대화 흐름·ERP 로 끝난 것으로 보이는 글(KakaoAutoClose) — 같은 식으로 「오늘 끝난 것」으로만 내린다.
+                $ac = $auto[$m->id] ?? null;
+                if ($ac && $item?->state !== 'todo' && in_array($b['bucket'], ['missed', 'now', 'today', 'waiting', 'teammate'], true)) {
+                    if ($b['bucket'] === 'teammate') {
+                        continue;
+                    }
+                    $b = ['bucket' => 'done', 'reason' => $ac['note'], 'auto' => true];
+                    $doneAt = $ac['at'];
                 }
                 if ($b['bucket'] === 'done' && $b['auto'] && ! $allDone) {   // 자동 완료 — 그 일이 오늘 끝난 것만(완료 박기, jin 11-11)
                     if (! $doneAt || ! $doneAt->isSameDay($now)) {
