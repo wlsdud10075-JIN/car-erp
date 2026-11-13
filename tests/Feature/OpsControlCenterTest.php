@@ -123,6 +123,8 @@ class OpsControlCenterTest extends TestCase
         $base = ['sales_channel' => 'export', 'currency' => 'USD', 'purchase_price' => 1_000_000, 'buyer_id' => $buyer->id, 'consignee_id' => $con->id];
         Vehicle::create(['vehicle_number' => '적재차', 'imported_at' => now()] + $base);
         Vehicle::create(['vehicle_number' => '손입력차'] + $base);
+        $liveCon = Consignee::create(['buyer_id' => $buyer->id, 'name' => 'B Trading', 'is_active' => true]);
+        Vehicle::create(['vehicle_number' => '수출칸정상차', 'export_consignee_id' => $liveCon->id] + $base);   // 판매 쪽만 끊김 — 서류에 쓰는 칸이 살아 있어 손볼 게 없다(jin 11-13)
         Vehicle::create(['vehicle_number' => '적재차바이어끊김', 'imported_at' => now(), 'buyer_id' => $deadBuyer->id] + $base);
         $con->delete();
         $deadBuyer->delete();
@@ -131,9 +133,10 @@ class OpsControlCenterTest extends TestCase
         $byText = $hits->mapWithKeys(fn ($h) => [Str::contains($h['text'], '컨사이니') ? 'con' : 'buyer' => $h['count']]);
         $this->assertSame(1, $byText['con'], '적재 차(imported_at)는 끊긴 컨사이니에서 뺀다 — 손입력 차 1대만');
         $this->assertSame(1, $byText['buyer'], '끊긴 바이어는 적재 차여도 센다(돈에 걸린다)');
-        $this->assertStringContainsString('엑셀 적재 차 제외', $hits->first(fn ($h) => Str::contains($h['text'], '컨사이니'))['text'] ?? '');
+        $this->assertStringContainsString('엑셀 적재 차 · 수출 컨사이니가 정상인 차 제외', $hits->first(fn ($h) => Str::contains($h['text'], '컨사이니'))['text'] ?? '');
         // 어느 차인지 같이 보인다(jin 11-13 «주의 뜬 차량이 뭔지 알 수 있게») — 대수만 말하면 찾으러 갈 수가 없다.
         $this->assertStringContainsString('— 손입력차', $hits->first(fn ($h) => Str::contains($h['text'], '컨사이니'))['text']);
+        $this->assertStringNotContainsString('수출칸정상차', $hits->first(fn ($h) => Str::contains($h['text'], '컨사이니'))['text']);
         $this->assertStringNotContainsString('적재차,', $hits->first(fn ($h) => Str::contains($h['text'], '컨사이니'))['text']);
         $this->assertStringContainsString('— 적재차바이어끊김', $hits->first(fn ($h) => Str::contains($h['text'], '바이어'))['text']);
     }
