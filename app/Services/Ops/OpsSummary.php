@@ -151,15 +151,18 @@ class OpsSummary
         }
 
         // ④ 끊긴 참조 — 지운 바이어·컨사이니를 가리키는 차
-        $deadBuyer = DB::table('vehicles as v')->join('buyers as b', 'b.id', '=', 'v.buyer_id')->whereNull('v.deleted_at')->whereNotNull('b.deleted_at')->count();
+        // 🔎 2026-11-13 (jin «주의 뜬 차량이 뭔지 알 수 있게») — 대수만 말하면 찾으러 갈 수가 없다. 차량번호를 몇 대까지 같이 싣는다.
+        $deadBuyerQ = DB::table('vehicles as v')->join('buyers as b', 'b.id', '=', 'v.buyer_id')->whereNull('v.deleted_at')->whereNotNull('b.deleted_at');
+        $deadBuyer = (clone $deadBuyerQ)->count();
         if ($deadBuyer > 0) {
-            $a[] = ['level' => 2, 'kind' => '끊긴 참조', 'count' => $deadBuyer, 'text' => "삭제된 바이어를 가리키는 차 {$deadBuyer}대"];
+            $a[] = ['level' => 2, 'kind' => '끊긴 참조', 'count' => $deadBuyer, 'text' => "삭제된 바이어를 가리키는 차 {$deadBuyer}대".self::plates($deadBuyerQ, $deadBuyer)];
         }
         // 컨사이니는 엑셀 적재 차(imported_at)를 뺀다 — 적재가 만든 쓰레기 컨사이니(「0.5」·「103」)를 지운 흔적이라 알고 있는 것(ssancarerp 222대 전부, jin 11-12 «적재로 넣은 건 포함되지 않게»).
         //   바이어는 안 뺀다 — 바이어는 돈(미수·정산현황)에 걸리므로 적재 차여도 끊기면 고쳐야 한다(11-12 AP Bilar 3대 재연결).
-        $deadCon = DB::table('vehicles as v')->join('consignees as c', 'c.id', '=', 'v.consignee_id')->whereNull('v.deleted_at')->whereNull('v.imported_at')->whereNotNull('c.deleted_at')->count();
+        $deadConQ = DB::table('vehicles as v')->join('consignees as c', 'c.id', '=', 'v.consignee_id')->whereNull('v.deleted_at')->whereNull('v.imported_at')->whereNotNull('c.deleted_at');
+        $deadCon = (clone $deadConQ)->count();
         if ($deadCon > 0) {
-            $a[] = ['level' => 2, 'kind' => '끊긴 참조', 'count' => $deadCon, 'text' => "삭제된 컨사이니를 가리키는 차 {$deadCon}대 (엑셀 적재 차 제외)"];
+            $a[] = ['level' => 2, 'kind' => '끊긴 참조', 'count' => $deadCon, 'text' => "삭제된 컨사이니를 가리키는 차 {$deadCon}대 (엑셀 적재 차 제외)".self::plates($deadConQ, $deadCon)];
         }
 
         // ⑤ 정기 작업 실패(마지막 실행이 실패)
@@ -170,10 +173,11 @@ class OpsSummary
         }
 
         // ⑥ 빈 칸 — 차종 비어 있음(최근 30일 등록)
-        $noModel = DB::table('vehicles')->whereNull('deleted_at')->where('created_at', '>=', now()->subDays(30))
-            ->where(fn ($q) => $q->whereNull('model_type')->orWhere('model_type', ''))->count();
+        $noModelQ = DB::table('vehicles as v')->whereNull('v.deleted_at')->where('v.created_at', '>=', now()->subDays(30))
+            ->where(fn ($q) => $q->whereNull('v.model_type')->orWhere('v.model_type', ''));
+        $noModel = (clone $noModelQ)->count();
         if ($noModel > 0) {
-            $a[] = ['level' => 1, 'kind' => '빈 칸', 'count' => $noModel, 'text' => "최근 30일 등록 차 중 차종 빈 차 {$noModel}대"];
+            $a[] = ['level' => 1, 'kind' => '빈 칸', 'count' => $noModel, 'text' => "최근 30일 등록 차 중 차종 빈 차 {$noModel}대".self::plates($noModelQ, $noModel)];
         }
 
         // ⑦ 카톡 — 읽다 멈춘 방
@@ -187,6 +191,17 @@ class OpsSummary
         usort($a, fn ($x, $y) => $y['level'] <=> $x['level']);
 
         return $a;
+    }
+
+    /** 「 — 12가3456, 34나5678 외 2대」 — 이상 줄에 붙이는 차량번호(최근 수정 순 5대까지). 쿼리는 vehicles 별칭 v. */
+    private static function plates($query, int $total, int $show = 5): string
+    {
+        $nos = (clone $query)->orderByDesc('v.updated_at')->limit($show)->pluck('v.vehicle_number')->filter()->all();
+        if ($nos === []) {
+            return '';
+        }
+
+        return ' — '.implode(', ', $nos).($total > count($nos) ? ' 외 '.($total - count($nos)).'대' : '');
     }
 
     private static function gitSha(): ?string
