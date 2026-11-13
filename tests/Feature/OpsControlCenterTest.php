@@ -141,6 +141,23 @@ class OpsControlCenterTest extends TestCase
         $this->assertStringContainsString('— 적재차바이어끊김', $hits->first(fn ($h) => Str::contains($h['text'], '바이어'))['text']);
     }
 
+    /** 차종 빈 칸은 등록 후 15일이 지나도 비어 있을 때만 — 갓 등록한 차(바이어 미정·원부조회 전)는 정상이다 (jin 11-13). */
+    public function test_empty_model_is_flagged_only_after_fifteen_days(): void
+    {
+        $base = ['sales_channel' => 'export', 'currency' => 'USD', 'purchase_price' => 1_000_000];
+        Vehicle::create(['vehicle_number' => '어제등록'] + $base);
+        $old = Vehicle::create(['vehicle_number' => '오래빈차'] + $base);
+        DB::table('vehicles')->where('id', $old->id)->update(['created_at' => now()->subDays(16)]);
+        $filled = Vehicle::create(['vehicle_number' => '오래채운차', 'model_type' => 'E220d'] + $base);
+        DB::table('vehicles')->where('id', $filled->id)->update(['created_at' => now()->subDays(40)]);
+
+        $hit = collect(OpsSummary::anomalies())->firstWhere('kind', '빈 칸');
+        $this->assertSame(1, $hit['count']);
+        $this->assertStringContainsString('15일 넘도록', $hit['text']);
+        $this->assertStringContainsString('오래빈차', $hit['text']);
+        $this->assertStringNotContainsString('어제등록', $hit['text']);
+    }
+
     public function test_mark_imported_finds_minute_bursts_and_stamps_them_only_with_apply(): void
     {
         $base = ['sales_channel' => 'export', 'currency' => 'USD', 'purchase_price' => 1_000_000, 'buyer_undecided' => true];
