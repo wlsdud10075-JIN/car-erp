@@ -105,6 +105,43 @@ class SettlementExportTest extends TestCase
         $this->assertStringContainsString('VIN000001', $sheets['무사백'], '차대번호 값 누락');
     }
 
+    /**
+     * 🧾 비용합계가 무엇의 합인지 엑셀에서 본다 (jin 2026-11-12) — 화면에 있는 10칸이 비용합계 **바로 앞**에,
+     * 없으면 0, **접힌 채로**(비용합계 위 [+] 로 펼침). 옛 4칸은 일부러 뺀다(Σ10 == 비용합계는 옛 칸이 0일 때만).
+     */
+    public function test_cost_items_sit_collapsed_right_before_the_cost_total(): void
+    {
+        $this->settlement('무사백', '2026-07', ['vehicle' => ['cost_towing' => 120_000, 'cost_parking' => 30_000]]);
+
+        $res = $this->actingAs($this->financeUser())
+            ->get(route('erp.settlements.export', ['month' => '2026-07']))->assertOk();
+        $path = sys_get_temp_dir().'/settle_cost_'.uniqid().'.xlsx';
+        file_put_contents($path, $res->streamedContent());
+        $sheet = IOFactory::load($path)->getSheetByName('무사백');
+        @unlink($path);
+
+        $header = array_map(fn ($v) => (string) $v, $sheet->rangeToArray('A1:'.$sheet->getHighestColumn().'1')[0]);
+        $totalAt = array_search('비용합계', $header, true);
+        $labels = array_map(fn ($c) => Vehicle::costLabel($c), Vehicle::DISPLAY_COST_FIELDS);
+        $this->assertSame($labels, array_slice($header, $totalAt - 10, 10), '비용 10칸이 비용합계 바로 앞에 화면 순서대로 있어야 한다');
+        $this->assertSame('판매금액', $header[$totalAt - 11]);
+
+        $row = $sheet->rangeToArray('A2:'.$sheet->getHighestColumn().'2', null, true, false)[0];
+        $items = array_slice($row, $totalAt - 10, 10);
+        $this->assertNotContains(null, $items, '없는 비용은 빈칸이 아니라 0');
+        $this->assertSame(150_000, (int) array_sum($items));
+        $this->assertSame(150_000, (int) $row[$totalAt], '옛 칸이 0인 차는 10칸 합 = 비용합계');
+
+        foreach (range($totalAt - 10, $totalAt - 1) as $i) {
+            $dim = $sheet->getColumnDimensionByColumn($i + 1);
+            $this->assertSame(1, $dim->getOutlineLevel());
+            $this->assertFalse($dim->getVisible(), '기본은 접힘');
+        }
+        $this->assertTrue($sheet->getColumnDimensionByColumn($totalAt + 1)->getCollapsed());
+        $this->assertTrue($sheet->getColumnDimensionByColumn($totalAt + 1)->getVisible());
+        $this->assertTrue($sheet->getShowSummaryRight(), '[+] 는 비용합계 위(그룹 오른쪽)');
+    }
+
     /** 실지급액은 확정 전이면 예정값 — 라벨로 구분되어야(급여 확정치로 오독 방지). */
     public function test_payout_column_is_labelled_as_preview(): void
     {
