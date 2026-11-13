@@ -3,6 +3,7 @@
 use App\Http\Controllers\BuyerAccountExportController;
 use App\Http\Controllers\BuyerDocumentController;
 use App\Http\Controllers\CapitalReportController;
+use App\Http\Controllers\GuideController;
 use App\Http\Controllers\KakaoInstallerController;
 use App\Http\Controllers\PayoutApprovalController;
 use App\Http\Controllers\PayoutBatchExportController;
@@ -224,6 +225,13 @@ Route::middleware(['auth', 'verified', 'super-admin'])->prefix('admin')->name('a
     Volt::route('alimtalk-logs', 'admin.alimtalk-logs.index')->name('alimtalk-logs.index');
     // 알림톡 안내 카탈로그 (2026-07-23) — 누가·언제·어떤 내용을 받는지 한눈에 (읽기 전용).
     Volt::route('alimtalk-catalog', 'admin.alimtalk-catalog.index')->name('alimtalk-catalog.index');
+});
+
+// 📖 업무 가이드 (jin 2026-11-13) — 로그인한 전 직원. 본문·그림은 resources/guides 에서 컨트롤러가 내보낸다(public 아님).
+Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('guides', [GuideController::class, 'index'])->name('guides.index');
+    Route::get('guides/{slug}', [GuideController::class, 'show'])->where('slug', '[a-z0-9-]+')->name('guides.show');
+    Route::get('guides/{slug}/{file}', [GuideController::class, 'asset'])->where('slug', '[a-z0-9-]+')->name('guides.asset');
 });
 
 // 회의확장씬 2026-05-22 — 항구 마스터는 admin + [관리] (canManagePorts).
