@@ -5313,6 +5313,27 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function updatedDeregistrationBuyerPhone(): void
     {
         $this->deregistrationBuyerPhone = \App\Support\PhoneFormat::format($this->deregistrationBuyerPhone) ?? '';
+        // 📵 2026-11-13 (jin) — 휴대폰 형식이 아니면 칸 아래에 바로 알린다. 저장은 막지 않는다(유선번호를 적어 둔 차가 있다).
+        $this->resetErrorBag('deregistrationBuyerPhone');
+        if ($this->deregistrationBuyerPhone !== '' && ! \App\Support\PhoneFormat::isMobile($this->deregistrationBuyerPhone)) {
+            $this->addError('deregistrationBuyerPhone', __('vehicle.deregnotice.bad_phone'));
+        }
+    }
+
+    /**
+     * 📵 딜러 번호가 휴대폰 형식이 아니면 발송을 막고 경고창을 띄운다 — 세 발송 버튼(말소등록증·세금계산서·입금완료) 공통.
+     * BizM 은 틀린 번호도 접수(sent)하고 나중에야 미도달로 돌려줘서, 보내는 사람은 성공으로 알고 지나간다(jin 2026-11-13).
+     */
+    private function dealerPhoneBlocksSend(string $phone): bool
+    {
+        if ($phone === '' || \App\Support\PhoneFormat::isMobile($phone)) {
+            return false;
+        }
+        $msg = __('vehicle.deregnotice.bad_phone_send', ['phone' => $phone]);
+        $this->addError('deregistrationBuyerPhone', __('vehicle.deregnotice.bad_phone'));
+        $this->js('alert('.json_encode($msg, JSON_UNESCAPED_UNICODE).')');
+
+        return true;
     }
 
     // 국내 바이어에게 말소등록증 전달 알림톡 발송 (수동 버튼). 만료 서명 링크(3일)를 본문에 담아 보낸다.
@@ -5338,6 +5359,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($phone === '') {
             $this->dispatch('notify', message: __('vehicle.deregnotice.no_phone'), type: 'error');
 
+            return;
+        }
+        if ($this->dealerPhoneBlocksSend($phone)) {
             return;
         }
 
@@ -5400,6 +5424,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($phone === '') {
             $this->dispatch('notify', message: __('vehicle.taxinvoice.no_phone'), type: 'error');
 
+            return;
+        }
+        if ($this->dealerPhoneBlocksSend($phone)) {
             return;
         }
 
@@ -5469,6 +5496,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
 
         $phone = trim($this->deregistrationBuyerPhone);
+        if ($this->dealerPhoneBlocksSend($phone)) {
+            return;
+        }
 
         // 금액 — 화면 draft 가 아니라 **DB 의 확정 행**에서 읽는다(저장 전 입력값을 보내면 거짓 통지).
         if ($kind === 'down') {
@@ -10356,6 +10386,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                                     class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.taxinvoice.send_btn') }}</button>
                             @endif
                         </div>
+                        @error('deregistrationBuyerPhone')<p class="mt-1 text-xs font-semibold text-red-600">{{ $message }}</p>@enderror
                     </div>
                 </div>
                 @endif
