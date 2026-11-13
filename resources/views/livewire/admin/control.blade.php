@@ -276,7 +276,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                             <span style="color: {{ $on ? '#c9dcee' : '#7d8aa3' }}">{{ $on ? '● ' : '○ ' }}{{ ['anthropic' => 'Claude API 키', 'nice' => 'NICE 조회 토큰', 'holiday' => '공휴일 API 키', 'board_sync' => 'board 매입 연동 시크릿', 'erp_peer' => 'ERP 끼리 정산 시크릿'][$k] ?? $k }}</span>
                                         @endforeach
                                         @if(($d['links'] ?? []) !== [])
-                                            <span style="color: #c9dcee">알림톡 오늘 {{ $d['links']['alimtalk_sent_today'] ?? '—' }}건 · 실패 {{ $d['links']['alimtalk_failed_today'] ?? '—' }} · Claude 오늘 {{ isset($d['links']['claude_cost_today_krw']) ? number_format($d['links']['claude_cost_today_krw']).'원' : '—' }}</span>
+                                            <span style="color: #c9dcee">알림톡 오늘 {{ $d['links']['alimtalk_sent_today'] ?? '—' }}건 · 확인 필요 {{ $d['links']['alimtalk_failed_today'] ?? '—' }} · Claude 오늘 {{ isset($d['links']['claude_cost_today_krw']) ? number_format($d['links']['claude_cost_today_krw']).'원' : '—' }}</span>
                                         @endif
                                         @foreach((array) ($d['health'] ?? []) as $h)
                                             <span style="color: {{ ($h['ok'] ?? true) ? '#9cc3e0' : '#ffcf86' }}">{{ ($h['ok'] ?? true) ? '✓' : '✗' }} {{ __('health.item.'.$h['key']) !== 'health.item.'.$h['key'] ? __('health.item.'.$h['key']) : $h['key'] }} — {{ $h['detail'] }}</span>
@@ -383,7 +383,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 <div style="{{ $panel }} display: flex; flex-direction: column; gap: 8px" data-ops-links>
                     <span style="{{ $head }}">LINKS <span style="{{ $sub }}">· 외부 연동 — ERP 3사 오늘</span></span>
                     <div style="display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; font-size: 12px">
-                        <span>알림톡 보냄 · 실패</span><span style="font-family: 'JetBrains Mono', monospace">{{ $linksSum['sent'] }} · <span style="color: {{ $linksSum['failed'] ? '#ff9b7a' : '#d8e6f5' }}">{{ $linksSum['failed'] }}</span></span>
+                        <span>알림톡 오늘 보냄 · 확인 필요</span><span style="font-family: 'JetBrains Mono', monospace">{{ $linksSum['sent'] }} · <span style="color: {{ $linksSum['failed'] ? '#ff9b7a' : '#d8e6f5' }}">{{ $linksSum['failed'] }}</span></span>
                         <span>Claude API 사용액(ssancar+heyman 같은 키)</span><span style="font-family: 'JetBrains Mono', monospace">{{ number_format($linksSum['claude']) }}원</span>
                         <span>GPU PC Ollama</span><span style="font-family: 'JetBrains Mono', monospace">{{ $linksSum['gpu'] }}</span>
                         <span>공휴일 API 키 만료</span><span style="font-family: 'JetBrains Mono', monospace">2028-08-10</span>

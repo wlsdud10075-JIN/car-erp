@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Console\Commands\AssistantHealthCheck;
 use App\Http\Middleware\VerifyErpPeerHmac;
+use App\Models\AlimtalkLog;
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\User;
@@ -103,6 +104,15 @@ class OpsControlCenterTest extends TestCase
         foreach (['receivable', 'unpaid', 'sale_price', 'purchase_price', 'payout', 'margin'] as $word) {
             $this->assertStringNotContainsString($word, $json, "요약에 돈 칸({$word})이 실리면 안 된다");
         }
+    }
+
+    public function test_alimtalk_failure_count_drops_when_acknowledged(): void
+    {
+        $failed = AlimtalkLog::create(['template_code' => 'erp_daily_summary', 'phone' => '01000000000', 'status' => 'failed', 'error' => 'K108']);
+        $this->assertSame(1, OpsSummary::links()['alimtalk_failed_today']);
+
+        $failed->forceFill(['acknowledged_at' => now()])->save();
+        $this->assertSame(0, OpsSummary::links()['alimtalk_failed_today'], '확인 처리한 실패는 관제센터 숫자에서 빠진다(jin 11-13)');
     }
 
     public function test_dangling_consignee_skips_excel_imported_vehicles_but_dangling_buyer_does_not(): void
