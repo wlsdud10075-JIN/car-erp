@@ -145,9 +145,13 @@ class OpsControlCenterTest extends TestCase
     public function test_empty_model_is_flagged_only_after_fifteen_days(): void
     {
         $base = ['sales_channel' => 'export', 'currency' => 'USD', 'purchase_price' => 1_000_000];
+        $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
+        $base['buyer_id'] = $buyer->id;
         Vehicle::create(['vehicle_number' => '어제등록'] + $base);
         $old = Vehicle::create(['vehicle_number' => '오래빈차'] + $base);
-        DB::table('vehicles')->where('id', $old->id)->update(['created_at' => now()->subDays(16)]);
+        $stock = Vehicle::create(['vehicle_number' => '재고미정차', 'buyer_id' => null, 'buyer_undecided' => true] + $base);   // 바이어 미정 재고 — 찾지 않는다(jin 11-13)
+        $noBuyer = Vehicle::create(['vehicle_number' => '바이어없는차', 'buyer_id' => null] + $base);
+        DB::table('vehicles')->whereIn('id', [$old->id, $stock->id, $noBuyer->id])->update(['created_at' => now()->subDays(16)]);
         $filled = Vehicle::create(['vehicle_number' => '오래채운차', 'model_type' => 'E220d'] + $base);
         DB::table('vehicles')->where('id', $filled->id)->update(['created_at' => now()->subDays(40)]);
 
@@ -156,6 +160,8 @@ class OpsControlCenterTest extends TestCase
         $this->assertStringContainsString('15일 넘도록', $hit['text']);
         $this->assertStringContainsString('오래빈차', $hit['text']);
         $this->assertStringNotContainsString('어제등록', $hit['text']);
+        $this->assertStringNotContainsString('재고미정차', $hit['text']);
+        $this->assertStringNotContainsString('바이어없는차', $hit['text']);
     }
 
     public function test_mark_imported_finds_minute_bursts_and_stamps_them_only_with_apply(): void
