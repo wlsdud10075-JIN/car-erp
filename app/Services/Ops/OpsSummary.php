@@ -94,7 +94,9 @@ class OpsSummary
         $today = now()->toDateString();
 
         return [
-            'alimtalk_failed_today' => AlimtalkLog::whereDate('created_at', $today)->where('status', 'failed')->count(),
+            // 🔀 2026-11-13 (jin «처리했으면 0건이 되어야») — 「오늘 실패 누적」이 아니라 아직 확인 안 한 실패·미도달(전 기간).
+            //   점검줄(SystemHealthReport alimtalk_failed)과 같은 scope 라 두 숫자가 같이 움직인다. 키 이름은 3사 응답 호환으로 그대로.
+            'alimtalk_failed_today' => AlimtalkLog::needsAttention()->count(),
             'alimtalk_sent_today' => AlimtalkLog::whereDate('created_at', $today)->where('status', 'sent')->count(),
             'claude_cost_today_krw' => Schema::hasTable('kakao_reads') ? round((float) KakaoRead::whereDate('created_at', $today)->sum('cost_krw')) : null,
             'keys' => [
