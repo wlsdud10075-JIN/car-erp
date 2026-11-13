@@ -935,6 +935,17 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-13 (2) — master `064b008a` · 마이그 0 (jin «배포해줘»)
+- 딜러 알림톡 번호 형식 차단(dev `bc1d1bdc`) — 매입 탭 딜러 번호가 휴대폰 형식이 아니면(010 은 11자리) 칸 아래 안내 + 말소등록증·세금계산서·입금완료 발송 차단·경고창(`PhoneFormat::isMobile`, 저장은 안 막음) · 알림톡 로그 검색 하이픈 무시. 계기 = ssancarerp 에서 한 자리 빠진 번호(수기 입력)로 입금완료 2통 미도달. 가드 = `DealerPhoneFormatGuardTest`.
+- 정산 엑셀 「비용합계」 앞 비용 10칸 접힘(dev `e2fa78e0`) — `DISPLAY_COST_FIELDS` 만, 없으면 0, 옛 4칸 제외(jin 확정 — 그 값이 남은 차는 10칸 합 < 비용합계).
+- 통관 SET 말소증 차종 K8 「승용」 고정 → 승용·승합·화물·특수(dev `7ffd28f1`) — 양식 6개(3사 × Ver.1·2) 흰칸 리터럴 비움(`scripts/fix-clearance-deregistration-vehicle-kind.php`) + 매핑 `'말소증!K8'`. NICE 없는 차는 빈칸. 전체 3,850 통과(병렬).
+- 결과: run 43355336076 잡 5 success · /login 200×3 · ssancarerp SHA `064b008a` + 서버 양식 `--verify` 6개 OK(heymanerp·karabaerp 는 배포 잡 성공으로만 확인).
+- 남은 것(실무자): ssancarerp 딜러 번호 형식 오류 16대 중 자릿수 오타 4대 정정. 유선번호 12대는 알림톡이 원래 못 간다.
+
+## 2026-11-13 (1) — master `004da9b3` · 마이그 0 (jin «배포해줘»)
+- 관제센터 알림톡 숫자 = 「오늘 실패 누적」 → 확인 안 한 실패·미도달(`AlimtalkLog::needsAttention`, 점검줄과 같은 scope, dev `cffe7118`) — 알림톡 로그에서 확인 처리하면 「지금 갱신」에 바로 빠진다. 라벨 「알림톡 오늘 보냄 · 확인 필요」. 응답 키 이름은 그대로. 전체 3,843 통과(병렬).
+- 결과: run 43349105494 잡 5 success · /login 200×3 · ssancarerp SHA `004da9b3`.
+
 ## 2026-11-12 (13) — master `b2218140` · 마이그 0 (jin «배포해줘» — board 배차 루프 확인 뒤)
 - board 탁송 배차 ERP 4건(dev `c1301619`·`074ce8b0`·`0b354b10`): 보관위치 GET/POST(`/api/internal/board/vehicles/{id}/stock-location`, 덮어쓰기·감사·stockLocations() 422·본인 차 403·options) · purchase-sync 보관위치 동봉(빈 칸만, 목록 밖은 그 칸만) · board 요청 note → erp_board_request #{요청내역} 한 줄(금액→계좌→배차) · 감사 라벨 「보관위치 비고」. 스펙 = `docs/integration/board-portal-api.md §16`. board 는 같은 날 먼저 배포(board master 9a1dc25).
 - 결과: run 43229558458 잡 5 success · 3사 SHA `b2218140` · /login 200×3 · 새 경로 무서명 401×3.
