@@ -106,6 +106,11 @@ class GuidesPageTest extends TestCase
         $this->assertSame('vehicle-register', $near['prev']['slug']);
         $this->assertSame('sale-register', $near['next']['slug'], '한 바퀴 다음은 판매 등록 — 사이의 다른 씬을 건너뛴다');
         $this->assertSame(3, $near['lapTotal']);
+        $this->assertSame(2, $near['lapPos']);
+        // 화면 순번은 볼 수 있는 씬끼리 — 일부만 올라온 동안 config 순번을 찍으면 「6 / 4」가 된다
+        $this->scene('monthly-payout', '<p>본문</p>');   // config 로는 여섯째 — 지금 볼 수 있는 한 바퀴 씬은 넷
+        $this->actingAs($this->staff())->get('/guides/monthly-payout')->assertOk()->assertSee('한 바퀴 4 / 4')->assertDontSee('한 바퀴 6 / 4');
+        $this->assertNull(GuideCatalog::neighbours('buyer-account')['lapPos']);
 
         $this->assertSame('sale-register', GuideCatalog::neighbours('buyer-account')['prev']['slug'] ?? null);   // 한 바퀴 밖은 목록 순서
     }
