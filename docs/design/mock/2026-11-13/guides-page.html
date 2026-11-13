@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>업무 가이드 화면 목업 — car-erp</title>
+<style>
+*{box-sizing:border-box}
+:root{--pri:#7c6fcd;--pri-soft:#ece9f8;--pri-text:#4c3fb1;--line:#e5e7eb;--muted:#6b7280;--text:#1f2937}
+body{margin:0;font-family:"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;font-size:13px;color:var(--text);background:#f5f6f8}
+.mocknote{background:#111827;color:#e5e7eb;font-size:12px;padding:6px 14px;display:flex;gap:14px;flex-wrap:wrap;align-items:center}
+.mocknote b{color:#fff}
+.mocknote button{font:inherit;font-size:12px;border:1px solid #4b5563;background:#1f2937;color:#e5e7eb;border-radius:5px;padding:3px 9px;cursor:pointer}
+.mocknote button.on{background:#fff;color:#111827}
+.app{display:flex;min-height:calc(100vh - 34px)}
+.sb{width:200px;flex-shrink:0;background:#16162a;color:rgba(255,255,255,.6);padding:14px 8px}
+.sb .logo{color:#fff;font-weight:700;font-size:14px;padding:2px 10px 14px}
+.sb .grp{font-size:11px;color:rgba(255,255,255,.72);padding:10px 10px 4px}
+.sb a{display:block;padding:7px 10px;border-radius:6px;font-size:12.5px}
+.sb a.act{background:rgba(124,111,205,.25);color:#cfc8f3;font-weight:700}
+.main{flex:1;min-width:0;padding:20px 24px}
+h1{font-size:20px;margin:0}
+h2{font-size:15px;margin:0}
+h3{font-size:13px;margin:0}
+.sub{color:var(--muted);font-size:12.5px;margin-top:4px}
+.card{background:#fff;border:1px solid var(--line);border-radius:10px}
+.searchbar{display:flex;gap:10px;align-items:center;padding:12px 14px;margin:14px 0 10px}
+.searchbar input{flex:1;border:1px solid #d1d5db;border-radius:8px;padding:10px 12px;font:inherit;font-size:14px}
+.searchbar input:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 1px var(--pri)}
+.count{background:var(--pri-soft);color:var(--pri-text);border-radius:99px;padding:3px 10px;font-size:12px;font-weight:700;white-space:nowrap}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;align-items:center}
+.chip{border:1px solid #d1d5db;background:#fff;border-radius:99px;padding:5px 12px;font:inherit;font-size:12.5px;cursor:pointer;color:#374151}
+.chip.on{background:var(--pri);border-color:var(--pri);color:#fff;font-weight:700}
+.chips .sep{width:1px;height:18px;background:#d1d5db;margin:0 4px}
+.chips .lbl{font-size:12px;color:var(--muted)}
+table{width:100%;border-collapse:collapse}
+th{background:#fafafa;color:var(--muted);font-weight:600;font-size:12px;text-align:left;padding:9px 12px;border-bottom:1px solid var(--line)}
+td{padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr.row{cursor:pointer}
+tr.row:hover td{background:#faf9fe}
+tr.row.wait{cursor:default}
+tr.row.wait td{color:#6b7280}
+tr.row.wait:hover td{background:transparent}
+tr.grp td{background:#f3f4f6;font-size:12px;font-weight:700;color:#4b5563;padding:6px 12px}
+.no{color:#6b7280;font-variant-numeric:tabular-nums;width:34px}
+.ttl{font-weight:700;font-size:13.5px}
+.sum{color:var(--muted);font-size:12.5px;margin-top:2px}
+tr.wait .ttl{font-weight:600}
+.hit{margin-top:5px;font-size:12px;color:#374151;background:#fffbea;border-left:3px solid #f59e0b;padding:4px 8px;border-radius:0 4px 4px 0}
+mark{background:#fde68a;color:inherit;padding:0 1px;border-radius:2px}
+.who{display:inline-block;font-size:11.5px;background:#f3f4f6;color:#4b5563;border-radius:4px;padding:2px 6px;margin:0 3px 3px 0;white-space:nowrap}
+.st{display:inline-block;font-size:11.5px;font-weight:700;border-radius:99px;padding:2px 9px;white-space:nowrap}
+.st.ok{background:#dcfce7;color:#15803d}.st.new{background:#dbeafe;color:#1d4ed8}.st.wait{background:#f3f4f6;color:#4b5563}
+.btn{border:0;background:var(--pri);color:#fff;border-radius:6px;padding:6px 14px;font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;white-space:nowrap}
+.btn.ghost{background:#fff;color:#374151;border:1px solid #d1d5db}
+.empty{padding:36px 14px;text-align:center;color:var(--muted)}
+.lap{display:flex;gap:10px;align-items:center;padding:12px 14px;margin-bottom:12px;background:linear-gradient(90deg,#f5f3ff,#fff);flex-wrap:wrap}
+.lap .steps{display:flex;gap:4px;flex-wrap:wrap;align-items:center}
+.lap .steps button{border:1px solid #c4b5fd;background:#fff;color:var(--pri-text);border-radius:6px;padding:5px 9px;font:inherit;font-size:12px;cursor:pointer}
+.lap .steps span{color:#6d28d9}
+/* 씬 보기 */
+.viewer{position:fixed;inset:0;background:#f5f6f8;z-index:50;display:none;flex-direction:column}
+.viewer.open{display:flex}
+.vhead{background:#fff;border-bottom:1px solid var(--line);padding:10px 18px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.vhead .t{flex:1;min-width:200px}
+.vbody{flex:1;overflow:auto;padding:18px}
+.scene{max-width:980px;margin:0 auto}
+.lane{display:grid;grid-template-columns:110px 1fr;gap:14px;margin-bottom:14px}
+.lane .who2{font-size:12px;font-weight:700;color:#fff;border-radius:8px;padding:8px 6px;text-align:center;align-self:start;position:sticky;top:0}
+.l-erp{background:#7c6fcd}.l-talk{background:#f59e0b}.l-out{background:#0d9488}.l-board{background:#2563eb}
+.step{padding:14px}
+.step .n{font-size:11.5px;color:var(--muted);font-weight:700}
+.step p{margin:6px 0 0;line-height:1.6}
+.shot{margin-top:10px;border:1px dashed #c7ccd4;border-radius:8px;background:repeating-linear-gradient(45deg,#fafafa,#fafafa 10px,#f3f4f6 10px,#f3f4f6 20px);height:150px;display:flex;align-items:center;justify-content:center;color:#6b7280;font-size:12px;text-align:center;padding:10px}
+.bubble{margin-top:10px;max-width:320px;background:#fee500;border-radius:4px 14px 14px 14px;padding:10px 12px;font-size:12.5px;line-height:1.6;color:#1f2937;white-space:pre-line}
+.bubble small{display:block;margin-top:6px;color:#6b5a00;font-size:11px}
+details{margin-top:10px;font-size:12px;color:#4b5563}
+details summary{cursor:pointer;color:var(--muted)}
+details pre{background:#111827;color:#e5e7eb;border-radius:6px;padding:10px;overflow:auto;font-size:11.5px;margin:6px 0 0}
+.check{padding:14px;border-color:#fcd34d;background:#fffbeb}
+.check li{margin:3px 0}
+.vfoot{background:#fff;border-top:1px solid var(--line);padding:10px 18px;display:flex;justify-content:space-between;gap:10px;align-items:center}
+/* 폰 */
+body.phone .app{max-width:390px;margin:0 auto;border-left:1px solid #d1d5db;border-right:1px solid #d1d5db;background:#f5f6f8}
+body.phone .sb{display:none}
+body.phone .main{padding:14px 12px}
+body.phone thead,body.phone .c-who,body.phone .c-date,body.phone .c-no{display:none}
+body.phone table,body.phone tbody,body.phone tr,body.phone td{display:block;width:100%}
+body.phone tr.row{border-bottom:1px solid var(--line);padding:10px 12px;position:relative}
+body.phone tr.row td{border:0;padding:0}
+body.phone .c-st{margin-top:6px;display:flex;gap:8px;align-items:center}
+body.phone .c-go{position:absolute;right:12px;top:10px;width:auto}
+body.phone .c-ttl{padding-right:64px}
+body.phone .lane{grid-template-columns:1fr}
+body.phone .lane .who2{position:static;display:inline-block;justify-self:start;padding:4px 10px}
+body.phone .viewer{max-width:390px;margin:0 auto}
+@media(max-width:760px){.sb{display:none}}
+</style>
+</head>
+<body>
+<div class="mocknote">
+  <span><b>목업</b> · 업무 가이드 화면 UX 확인용 · 실제 ERP 아님 · 2026-11-13</span>
+  <button id="tgPhone">폰 화면으로 보기</button>
+  <span>검색 예: <b>이체확인증</b> · <b>게이트</b> · <b>환율</b> · <b>[+]</b></span>
+</div>
+
+<div class="app">
+  <aside class="sb">
+    <div class="logo">SSANCAR ERP</div>
+    <div class="grp">ERP</div><a>업무 대시보드</a><a>차량관리</a><a>재고관리</a><a>채권관리</a>
+    <div class="grp">정산</div><a>정산관리</a><a>월정산</a>
+    <div class="grp">도움말</div><a class="act">업무 가이드</a>
+  </aside>
+
+  <main class="main">
+    <h1>업무 가이드</h1>
+    <div class="sub">기능 하나를 처음부터 끝까지 실제로 눌러 본 기록입니다. 화면 캡처와 오가는 알림톡을 순서대로 봅니다.</div>
+
+    <div class="card searchbar">
+      <input id="q" type="search" placeholder="찾는 말을 입력하세요 — 제목뿐 아니라 가이드 본문 안의 말도 찾습니다 (예: 이체확인증, 게이트, 환율)" autocomplete="off">
+      <span class="count" id="cnt"></span>
+    </div>
+
+    <div class="chips" id="chips"></div>
+
+    <div class="card lap" id="lap">
+      <div><h2>처음이라면 — 한 바퀴 6장</h2><div class="sub">같은 차 한 대로 매입부터 정산까지 이어서 봅니다.</div></div>
+      <div class="steps" id="lapSteps"></div>
+    </div>
+
+    <div class="card" style="overflow:hidden">
+      <table>
+        <thead><tr><th class="c-no">#</th><th>기능</th><th class="c-who">누가 쓰나</th><th>상태</th><th class="c-date">갱신일</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+      <div class="empty" id="empty" style="display:none">찾는 말이 들어간 가이드가 없습니다. 다른 말로 찾아 보세요.</div>
+    </div>
+  </main>
+</div>
+
+<!-- 씬 보기 -->
+<div class="viewer" id="viewer">
+  <div class="vhead">
+    <button class="btn ghost" id="vBack">← 목록</button>
+    <div class="t"><h2 id="vTitle"></h2><div class="sub" id="vSub"></div></div>
+    <span class="st ok" id="vSt"></span>
+  </div>
+  <div class="vbody"><div class="scene" id="vScene"></div></div>
+  <div class="vfoot">
+    <button class="btn ghost" id="vPrev"></button>
+    <span class="sub" id="vPos"></span>
+    <button class="btn" id="vNext"></button>
+  </div>
+</div>
+
+<script>
+const G = ['매입','판매·입금','수출통관','채권·정산','관리'];
+// [번호, 묶음, 제목, 요약, 누가, 상태(ok|new|wait), 갱신일, 본문(검색 대상)]
+const S = [
+[1,0,'차량 등록','원부조회로 차량 정보를 불러오고 매입 탭을 채워 저장합니다','관리','ok','11-21','차량번호를 넣고 원부조회를 누르면 차대번호·연식·차종이 자동으로 들어옵니다. 매입가·매도비·구입처·딜러 번호를 적고 저장하면 진행상태가 매입중으로 시작됩니다.'],
+[2,0,'board 매입 확정 → 차량 자동 생성','board에서 매입을 확정하면 ERP에 차량이 만들어집니다','관리','wait','','board에서 넘어온 차는 첨부·송금인·보관위치가 함께 들어오고 재고관리에 나타납니다.'],
+[3,0,'board 매입잔금·계약금 요청 처리','board가 보낸 지급 요청을 차량 패널에서 확인하거나 거절합니다','재무·관리','wait','','요청 알림톡이 오면 차량 패널의 board 요청 칸에서 금액과 계좌를 보고 확인합니다.'],
+[4,0,'매입 지급과 딜러 입금완료 알림','계약금·잔금을 넣고 확정한 뒤 딜러에게 입금완료 알림톡을 보냅니다','재무','ok','11-21','매입 탭에서 잔금 줄을 추가하고 금액·지급일을 넣은 뒤 확정합니다. 확정한 줄 옆 딜러알림을 누르면 이체확인증을 붙여 넣는 창이 뜨고, 보내면 딜러와 담당 영업에게 알림톡이 갑니다. 딜러 번호가 휴대폰 형식이 아니면 경고창이 뜨고 보내지지 않습니다.'],
+[5,0,'말소와 말소등록증 전달','말소증을 올리고 딜러에게 말소등록증·세금계산서 요청을 보냅니다','수출통관·재무','wait','','말소 체크와 말소증 파일이 둘 다 있어야 말소완료로 넘어갑니다.'],
+[6,0,'매입취소와 미수 마감','매입을 취소하고 위약금을 받은 뒤 미수를 마감합니다','관리·재무','wait','','위약금이 다 들어오면 거래완료로 끝납니다. 마감 뒤 돈이 들어오면 마감 취소를 누릅니다.'],
+[7,1,'판매 등록','바이어·통화·환율·판매가를 넣고 인보이스를 뽑습니다','관리','ok','11-21','판매 탭에서 바이어를 고르고 통화와 환율, 판매가를 넣습니다. 판매가를 넣으면 바이어와 판매일, 환율이 필수입니다. 저장하면 진행상태가 판매중이 되고 서류 탭에서 인보이스를 내려받을 수 있습니다.'],
+[8,1,'판매 입금','입금을 넣고 확정하면 미수율과 진행상태가 바뀝니다','재무','ok','11-21','판매 탭 입금현황에 계약금·중도금·잔금을 넣고 확정합니다. 확정한 입금만 미수에서 빠집니다. 완납되면 판매완료가 되고 목록의 미납 게이지가 사라집니다.'],
+[9,1,'board 판매대금확인 요청','board가 보낸 입금 확인 요청을 처리합니다','재무','wait','','통장에서 입금을 확인한 뒤 판매 탭에 넣고 요청을 확인 처리합니다.'],
+[10,1,'바이어 정산현황','바이어가 보낸 현금을 차량별 잔금으로 나눕니다','재무','wait','','한 번 들어온 돈이 여러 차에 나뉘어 들어갈 수 있습니다. 차량별로 보기로 바꾸면 그 차의 잔금이 어느 입금에서 왔는지 봅니다.'],
+[11,1,'적립금 적립과 사용','적립금을 쌓고 다음 차 잔금에 씁니다','재무','wait','','적립금을 쓰면 그 차의 미수에서 빠지고 바이어 잔액이 줄어듭니다.'],
+[12,1,'바이어 미정으로 되돌리기','바이어가 구매를 취소했을 때 판매를 무릅니다','관리','wait','','판매가·판매일·운임비를 함께 비워야 바이어를 비울 수 있습니다.'],
+[13,1,'판매계약서 전자서명','서명 링크를 보내고 서명 상태를 봅니다','관리','wait','','링크를 받은 바이어가 서명하면 차량 패널의 서명 칩이 완료로 바뀝니다.'],
+[14,2,'수출 탭 — 위에서 아래로','반입지·신고서·선적일·ETA·통관 체크 순서로 채웁니다','수출통관','ok','11-21','수출 탭은 실무 순서대로 놓여 있습니다. 반입지나 신고서를 넣으면 선적중, 선적일을 넣으면 선적완료, ETA까지 넣으면 통관중, 통관 체크를 하면 통관완료가 됩니다. 배가 떠난 뒤에는 운항중·도착예정 뱃지가 따로 붙습니다.'],
+[15,2,'입금률 게이트에 막혔을 때','선적이 막히면 미입금 우회 승인을 요청합니다','수출통관·관리','new','11-24','입금률이 회사 기준에 못 미치면 반입지를 넣을 때 게이트가 막습니다. 승인 요청을 올리면 관리 이상이 사유를 보고 승인하고, 승인되면 다시 저장할 수 있습니다.'],
+[16,2,'B/L 발급과 거래완료','완납된 차에 B/L을 올리면 거래가 끝납니다','수출통관','wait','','B/L 파일은 잔금이 모두 들어와야 올릴 수 있습니다.'],
+[17,2,'서류 발송 — EMS·DHL','발송 번호와 금액을 넣거나 엑셀로 한 번에 올립니다','수출통관','wait','','발송비는 정산에 반영됩니다. 회사 부담분은 금액 0으로 넣습니다.'],
+[18,2,'서류 만들기','통관 SET과 선적 서류를 여러 대 한 번에 만듭니다','수출통관','wait','','목록에서 차를 체크하고 선적 서류 버튼을 누르면 한 파일에 여러 대가 들어갑니다. 말소증 탭 차종은 승용·화물로 들어갑니다.'],
+[19,2,'선적일·ETA·번호 일괄 기입','같은 배에 탄 차들의 날짜와 번호를 한 번에 넣습니다','수출통관','wait','','필터로 추린 차 전체에 선적일과 ETA를 한 번에 적용합니다.'],
+[20,2,'선적요청','board 선적 묶음에서 B/L 요청과 변경요청을 처리합니다','수출통관','wait','','묶음별로 컨테이너와 운임비를 확인합니다.'],
+[21,2,'재고관리 — 보관위치·출고일','차가 어디 서 있는지와 나간 날을 적습니다','수출통관·관리','wait','','위치 버튼을 고르고 적용을 눌러야 저장됩니다.'],
+[22,3,'채권관리','회수 기록을 남기고 위험도를 봅니다','재무','wait','','받을 수단이 사라진 차는 심각, 판매 후 오래된 차는 위험으로 올라갑니다.'],
+[23,3,'월정산 — 제출부터 최종 확정까지','정산을 확정하고 결재를 올려 지급까지 마칩니다','재무·업무관리자','ok','11-21','정산관리에서 확정한 뒤 제출 창에서 결재선을 고릅니다. 결재자는 알림톡의 승인 링크에서 내역을 보고 승인합니다. 대표 승인 뒤 지급하고 최종 확정하면 그 달이 닫힙니다. 엑셀의 비용합계 위 [+] 를 누르면 비용 10칸이 펼쳐집니다.'],
+[24,3,'2차 정산','명세서 비용을 넣고 마감하면 차액이 다음 달로 넘어갑니다','재무','new','11-24','지급 뒤 실제 탁송비·면허비 명세서를 일괄 기입하고 2차 마감을 누릅니다. 달라진 금액은 다음 달 정산에 이월로 붙습니다.'],
+[25,3,'마감 뒤 회계 재조정','마감된 차에 운임비를 넣고 새 미수를 받습니다','재무·관리','wait','','정산 화면의 회계 재조정을 누르면 한 번만 금액을 고칠 수 있습니다.'],
+[26,3,'퇴사자 정산 · 내수직원 월정산','따로 결재하는 두 가지 정산입니다','업무관리자','wait','','내수직원은 평가수수료 엑셀을 올려 따로 결재합니다.'],
+[27,3,'통장 잔액과 자금 보고','계좌별 마감 잔액을 넣으면 자금 보고에 반영됩니다','재무','wait','','원화·달러·유로 계좌를 각각 넣습니다.'],
+[28,4,'클레임 처리','바이어 클레임을 인정하거나 기각합니다','관리','wait','','바이어 드로어의 클레임 탭에서 처리합니다.'],
+[29,4,'카톡 자동화','카톡방을 읽어 할 일로 정리합니다','관리','wait','','읽은 메시지가 차량 번호와 연결되면 ERP 카드가 붙습니다.'],
+];
+const LAP = [1,4,7,8,14,23];
+const stName = {ok:'사용 중', new:'새로 올라옴', wait:'준비 중'};
+let grp = -1, role = '', cur = null;
+const $ = s => document.querySelector(s);
+const norm = s => s.toLowerCase().replace(/\s+/g,'');
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function mark(text, q){               // 띄어쓰기를 무시하고 찾은 자리를 원문에 칠한다
+  if(!q) return esc(text);
+  const nq = norm(q); let map = [], n = '';
+  for(let i=0;i<text.length;i++){ if(!/\s/.test(text[i])){ map.push(i); n += text[i].toLowerCase(); } }
+  const at = n.indexOf(nq); if(at < 0) return esc(text);
+  const a = map[at], b = map[at+nq.length-1]+1;
+  return esc(text.slice(0,a)) + '<mark>' + esc(text.slice(a,b)) + '</mark>' + esc(text.slice(b));
+}
+function snippet(body, q){
+  const sents = body.split(/(?<=[.다])\s+/); const nq = norm(q);
+  const s = sents.find(x => norm(x).includes(nq)); return s ? mark(s, q) : '';
+}
+function chips(){
+  const roles = ['관리','재무','수출통관','업무관리자'];
+  $('#chips').innerHTML = '<span class="lbl">업무</span>' +
+    ['전체',...G].map((g,i)=>`<button class="chip ${grp===i-1?'on':''}" onclick="setGrp(${i-1})">${g}</button>`).join('') +
+    '<span class="sep"></span><span class="lbl">내 역할</span>' +
+    roles.map(r=>`<button class="chip ${role===r?'on':''}" onclick="setRole('${r}')">${r}</button>`).join('');
+}
+window.setGrp = g => { grp = g; chips(); render(); };
+window.setRole = r => { role = role===r ? '' : r; chips(); render(); };
+function render(){
+  const q = $('#q').value.trim(), nq = norm(q);
+  let list = S.filter(s => (grp<0 || s[1]===grp) && (!role || s[4].includes(role)));
+  if(nq) list = list.filter(s => norm(s[2]+s[3]+s[4]+s[7]).includes(nq));
+  // 준비 중은 아래로 — 검색 중에는 묶음 머리 없이 한 줄로
+  const ready = list.filter(s=>s[5]!=='wait'), wait = list.filter(s=>s[5]==='wait');
+  const row = s => {
+    const inHead = nq && norm(s[2]+s[3]+s[4]).includes(nq);
+    const hit = nq && !inHead ? `<div class="hit">본문: ${snippet(s[7], q)}</div>` : '';
+    const w = s[5]==='wait';
+    return `<tr class="row ${w?'wait':''}" ${w?'':`onclick="openScene(${s[0]})"`}>
+      <td class="no c-no">${s[0]}</td>
+      <td class="c-ttl"><div class="ttl">${mark(s[2],q)}</div><div class="sum">${mark(s[3],q)}</div>${hit}</td>
+      <td class="c-who">${s[4].split('·').map(x=>`<span class="who">${x}</span>`).join('')}</td>
+      <td class="c-st"><span class="st ${s[5]}">${stName[s[5]]}</span></td>
+      <td class="c-date" style="color:#6b7280;white-space:nowrap">${s[6]||'—'}</td>
+      <td class="c-go" style="text-align:right">${w?'':'<button class="btn">보기</button>'}</td></tr>`;
+  };
+  let html = '';
+  if(nq){ html = [...ready,...wait].map(row).join(''); }
+  else {
+    G.forEach((g,i)=>{ const r = ready.filter(s=>s[1]===i); if(r.length) html += `<tr class="grp"><td colspan="6">${g}</td></tr>` + r.map(row).join(''); });
+    if(wait.length) html += `<tr class="grp"><td colspan="6">준비 중 ${wait.length}개 — 만들어지는 대로 위로 올라옵니다</td></tr>` + wait.map(row).join('');
+  }
+  $('#rows').innerHTML = html;
+  $('#empty').style.display = list.length ? 'none' : 'block';
+  $('#cnt').textContent = nq || grp>=0 || role ? `${list.length}개 찾음` : `볼 수 있는 가이드 ${S.filter(s=>s[5]!=='wait').length}개 · 전체 ${S.length}개`;
+  $('#lap').style.display = nq || grp>=0 || role ? 'none' : 'flex';
+}
+$('#lapSteps').innerHTML = LAP.map((n,i)=>{ const s=S.find(x=>x[0]===n); return (i?'<span>→</span>':'') + `<button onclick="openScene(${n})">${i+1}. ${s[2].split(' — ')[0]}</button>`; }).join('');
+
+// ── 씬 보기 ──
+const DEMO4 = `
+<div class="lane"><div class="who2 l-erp">ERP · 재무</div><div class="card step"><div class="n">1단계</div><h3>잔금 줄을 넣고 확정합니다</h3>
+<p>차량관리에서 차를 열고 「매입」 탭으로 갑니다. 잔금 [+ 추가]를 눌러 금액과 지급일을 넣고 저장한 뒤 [확정]을 누릅니다. 확정한 줄에만 [📨 딜러알림] 버튼이 생깁니다.</p>
+<div class="shot">화면 캡처 자리<br>매입 탭 — 잔금 2,000,000원 줄에 [확정] · [📨 딜러알림]</div></div></div>
+<div class="lane"><div class="who2 l-erp">ERP · 재무</div><div class="card step"><div class="n">2단계</div><h3>이체확인증을 붙이고 보냅니다</h3>
+<p>[📨 딜러알림]을 누르면 창이 뜹니다. 이체확인증을 캡처해 붙여넣거나 파일을 고르고 [보내기]를 누릅니다. 확인증 없이 보낼 수도 있습니다.</p>
+<p><b>번호가 틀리면</b> — 「국내 딜러 알림톡」 칸의 번호가 휴대폰 형식이 아니면(010은 11자리) 경고창이 뜨고 보내지지 않습니다. 번호를 고친 뒤 다시 누릅니다.</p>
+<div class="shot">화면 캡처 자리<br>이체확인증 붙여넣기 창 · 번호 오류 경고창</div></div></div>
+<div class="lane"><div class="who2 l-talk">알림톡</div><div class="card step"><div class="n">3단계</div><h3>딜러와 담당 영업이 이 알림톡을 받습니다</h3>
+<div class="bubble">[매입대금 입금 안내]
+
+차량번호: 12가3456
+입금액: 2,000,000원
+입금계좌: 국민 ****-**-**1234
+
+아래 버튼에서 이체확인증을 볼 수 있습니다.<small>싼카 · 2026-11-21 로컬 실측 · [이체확인증 보기] 버튼</small></div>
+<p>딜러 번호를 비워 두면 담당 영업에게만 갑니다.</p>
+<details><summary>개발 상세 (접힘 — 검색에 안 잡힙니다)</summary><pre>template erp_purchase_paid_v3 · AlimtalkLog status=sent
+purchase_balance_payments.confirmed_at SET · audit: payment_confirmed</pre></details></div></div>
+<div class="card check"><h3>알아 둘 것</h3><ul>
+<li>확정하지 않은 지급은 알림을 보낼 수 없습니다.</li>
+<li>잔금을 나눠 지급했으면 알림은 줄마다 그 금액만 나갑니다.</li>
+<li>회사마다 받는 사람 설정이 다를 수 있습니다 (싼카 · 2026-11-21 기준).</li></ul></div>`;
+const order = () => S.filter(s=>s[5]!=='wait').map(s=>s[0]);
+window.openScene = n => {
+  cur = n; const s = S.find(x=>x[0]===n);
+  $('#vTitle').textContent = s[2]; $('#vSub').textContent = s[3] + ' · ' + s[4] + ' · 갱신 ' + s[6];
+  $('#vSt').textContent = stName[s[5]]; $('#vSt').className = 'st ' + s[5];
+  $('#vScene').innerHTML = n===4 ? DEMO4 : `<div class="card step"><h3>이 목업에서는 4번 「매입 지급과 딜러 입금완료 알림」만 본문을 채웠습니다</h3><p>실제로는 여기에 「${esc(s[2])}」의 단계별 화면 캡처와 알림톡이 같은 모양으로 들어갑니다.</p><p style="color:#6b7280">${esc(s[7])}</p></div>`;
+  const o = order(), i = o.indexOf(n), lapI = LAP.indexOf(n);
+  const prev = lapI>0 ? LAP[lapI-1] : o[i-1], next = lapI>=0 && lapI<LAP.length-1 ? LAP[lapI+1] : o[i+1];
+  const nm = k => S.find(x=>x[0]===k)[2].split(' — ')[0];
+  $('#vPrev').style.visibility = prev ? 'visible':'hidden'; $('#vNext').style.visibility = next ? 'visible':'hidden';
+  if(prev){ $('#vPrev').textContent = '← ' + nm(prev); $('#vPrev').onclick = () => openScene(prev); }
+  if(next){ $('#vNext').textContent = '다음: ' + nm(next) + ' →'; $('#vNext').onclick = () => openScene(next); }
+  $('#vPos').textContent = lapI>=0 ? `한 바퀴 ${lapI+1} / ${LAP.length}` : '';
+  $('#viewer').classList.add('open'); document.querySelector('.vbody').scrollTop = 0;
+};
+$('#vBack').onclick = () => $('#viewer').classList.remove('open');
+$('#q').addEventListener('input', render);
+$('#tgPhone').onclick = e => { document.body.classList.toggle('phone'); e.target.classList.toggle('on'); };
+chips(); render();
+</script>
+</body>
+</html>

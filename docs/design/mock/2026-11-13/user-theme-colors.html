@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>사용자 테마 목업 — car-erp</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:"Malgun Gothic","Apple SD Gothic Neo",system-ui,sans-serif;font-size:13px;background:#eef0f3;color:#1f2937}
+h1{font-size:18px;margin:0}
+h2{font-size:14px;margin:0 0 8px}
+.wrap{max-width:1500px;margin:0 auto;padding:16px}
+.top{display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.note{color:#6b7280;font-size:12px}
+.cols{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:14px;align-items:start}
+@media(max-width:1100px){.cols{grid-template-columns:1fr}}
+.panel{background:#fff;border:1px solid #d9dde3;border-radius:10px;padding:14px;margin-bottom:14px}
+.mbtn{border:1px solid #cbd5e1;background:#fff;border-radius:6px;padding:5px 10px;font-size:12px;cursor:pointer;font-family:inherit}
+.mbtn:hover{background:#f1f5f9}
+.mbtn.on{background:#111827;color:#fff;border-color:#111827}
+.mbtn.go{background:#2563eb;color:#fff;border-color:#2563eb}
+.mbtn.warn{color:#b91c1c;border-color:#fca5a5}
+.seg{display:inline-flex;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden}
+.seg button{border:0;background:#fff;padding:6px 12px;font-size:12px;cursor:pointer;font-family:inherit}
+.seg button.on{background:#111827;color:#fff}
+.pick{display:grid;grid-template-columns:1fr auto auto;gap:6px 8px;align-items:center}
+.pick input[type=color]{width:38px;height:26px;padding:0;border:1px solid #cbd5e1;border-radius:4px;background:#fff;cursor:pointer}
+.pick code{font-size:11px;color:#6b7280}
+.derived{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.sw{display:flex;align-items:center;gap:4px;font-size:11px;color:#6b7280}
+.sw i{width:16px;height:16px;border-radius:3px;border:1px solid #cbd5e1;display:inline-block}
+.warnbox{margin-top:8px;padding:6px 8px;border-radius:6px;background:#fef3c7;color:#92400e;font-size:12px;display:none}
+.item{display:flex;align-items:center;gap:8px;padding:7px 0;border-top:1px solid #eef0f3}
+.item:first-child{border-top:0}
+.chips{display:flex;gap:2px}
+.chips i{width:14px;height:22px;display:inline-block;border:1px solid rgba(0,0,0,.12)}
+.item .nm{flex:1;min-width:0}
+.item .nm b{display:block;font-size:12.5px}
+.item .nm span{font-size:11px;color:#6b7280}
+.tag{font-size:11px;padding:1px 6px;border-radius:99px;background:#dbeafe;color:#1d4ed8;margin-left:4px}
+.tag.def{background:#dcfce7;color:#15803d}
+.hide{display:none!important}
+.log{font-size:11.5px;color:#374151;max-height:120px;overflow:auto;background:#f8fafc;border-radius:6px;padding:6px 8px}
+.log div{padding:1px 0}
+table.legend{width:100%;border-collapse:collapse;font-size:12px}
+table.legend td,table.legend th{border-top:1px solid #eef0f3;padding:5px 6px;text-align:left;vertical-align:top}
+.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+@media(max-width:900px){.flow{grid-template-columns:1fr 1fr}}
+.step{border:1px solid #d9dde3;border-radius:8px;padding:10px;background:#fafbfc}
+.step .who{font-size:11px;font-weight:700;color:#2563eb}
+.step b{display:block;margin:2px 0 4px}
+
+/* ───────── 가짜 ERP 화면 (테마 변수는 여기 안에서만) ───────── */
+.erp{display:flex;border-radius:10px;overflow:hidden;border:1px solid #c7ccd4;min-height:640px;background:var(--page-bg);color:var(--text)}
+.sb{width:190px;flex-shrink:0;background:var(--sb-bg);color:var(--sb-text);padding:12px 8px}
+.sb .logo{font-weight:700;color:var(--sb-text-strong);padding:4px 8px 12px;font-size:14px}
+.sb .grp{font-size:11px;opacity:.7;padding:10px 8px 4px;letter-spacing:.05em}
+.sb a{display:block;padding:7px 10px;border-radius:6px;color:inherit;text-decoration:none;font-size:12.5px}
+.sb a.act{background:var(--sb-active-bg);color:var(--sb-active-text);font-weight:700}
+.main{flex:1;min-width:0;padding:16px}
+.hd{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.hd h2{margin:0;font-size:18px;color:var(--text)}
+.card{background:var(--card-bg);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:12px}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.btn-primary{background:var(--accent);color:var(--on-accent);border:0;border-radius:6px;padding:7px 14px;font-size:12.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-sub{background:var(--card-bg);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:7px 12px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.inp{border:1px solid var(--border);background:var(--card-bg);color:var(--text);border-radius:6px;padding:6px 9px;font-size:12.5px;font-family:inherit;width:200px}
+.inp:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.inp.req{background:#fef3c7;border-color:#f59e0b;color:#1f2937}
+.tab{padding:5px 12px;border-radius:99px;font-size:12px;color:var(--muted);cursor:default}
+.tab.act{background:var(--accent);color:var(--on-accent);font-weight:700}
+.count{background:var(--accent-soft);color:var(--accent-text);border-radius:99px;padding:2px 9px;font-size:11.5px;font-weight:700}
+.lnk{color:var(--accent-text);font-weight:700;text-decoration:none}
+.muted{color:var(--muted)}
+table.t{width:100%;border-collapse:collapse;font-size:12.5px}
+table.t th{background:var(--th-bg);color:var(--muted);text-align:left;font-weight:600;padding:8px;border-bottom:1px solid var(--border)}
+table.t td{padding:8px;border-bottom:1px solid var(--border)}
+table.t tbody tr:hover td{background:var(--row-hover)}
+.sec{display:flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.06em;color:var(--muted);margin-bottom:8px}
+/* 잠긴 의미색 — 변수 안 씀 */
+.bd{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:600}
+.b-blue{background:#dbeafe;color:#1d4ed8}.b-purple{background:#ece9f8;color:#4c3fb1}.b-amber{background:#fef3c7;color:#b45309}
+.b-green{background:#dcfce7;color:#15803d}.b-gray{background:#f3f4f6;color:#6b7280}.b-red{background:#fee2e2;color:#b91c1c}
+.pill{padding:4px 10px;border-radius:99px;font-size:12px;border:1px solid #d1d5db;background:#fff;color:#4b5563}
+.pill.only{background:#7c6fcd;border-color:#7c6fcd;color:#fff;font-weight:700}
+.pill.ex{background:#fee2e2;border-color:#fca5a5;color:#b91c1c;text-decoration:line-through}
+.dot{width:7px;height:7px;border-radius:99px;display:inline-block}
+.todo{display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid var(--border)}
+.todo:first-of-type{border-top:0}
+.todo span.n{margin-left:auto;font-size:11px;font-weight:700;padding:1px 8px;border-radius:99px;background:#f3f4f6;color:#4b5563}
+.todo span.n.u{background:#fee2e2;color:#b91c1c}
+.banner{background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:8px;padding:8px 10px;font-size:12px}
+.gauge{height:6px;border-radius:99px;background:#e5e7eb;overflow:hidden;width:70px;display:inline-block;vertical-align:middle}
+.gauge i{display:block;height:100%;background:#ef4444}
+.grid2{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}.sb{width:130px}}
+/* 표시 모드 */
+.show-free [data-free]{outline:2px dashed #16a34a;outline-offset:2px}
+.show-lock [data-lock]{outline:2px solid #dc2626;outline-offset:2px}
+.lgd{display:inline-flex;align-items:center;gap:4px;font-size:12px;margin-right:10px}
+.lgd i{width:18px;height:10px;display:inline-block}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="top">
+  <div>
+    <h1>사용자 테마(색상 꾸미기) 목업</h1>
+    <div class="note">기획 확인용 · 실제 ERP 아님 · 오른쪽에서 색을 바꾸면 왼쪽 가짜 화면에 바로 반영됩니다 · 2026-11-13</div>
+  </div>
+  <div class="row">
+    <span class="note">역할 바꿔 보기</span>
+    <div class="seg" id="roleSeg">
+      <button data-role="user" class="on">일반사용자</button>
+      <button data-role="manager">업무관리자</button>
+      <button data-role="super">시스템관리자</button>
+    </div>
+  </div>
+</div>
+
+<div class="cols">
+<!-- ════════ 왼쪽: 가짜 ERP ════════ -->
+<div>
+  <div class="panel" style="padding:10px 14px">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <button class="mbtn" id="tgFree">바뀌는 곳 표시</button>
+        <button class="mbtn" id="tgLock">안 바뀌는 곳 표시</button>
+      </div>
+      <div>
+        <span class="lgd"><i style="border:2px dashed #16a34a"></i>바뀜 (내 테마를 따라감)</span>
+        <span class="lgd"><i style="border:2px solid #dc2626"></i>안 바뀜 (누구 화면에서나 같은 색)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="erp" id="erp">
+    <aside class="sb" data-free>
+      <div class="logo">SSANCAR ERP</div>
+      <div class="grp">ERP</div>
+      <a>업무 대시보드</a>
+      <a class="act" data-free>차량관리</a>
+      <a>재고관리</a>
+      <a>채권관리</a>
+      <div class="grp">정산</div>
+      <a>정산관리</a>
+      <a>월정산</a>
+      <div class="grp">관리</div>
+      <a>사용자 관리</a>
+      <a>설정</a>
+    </aside>
+
+    <div class="main" data-free>
+      <div class="hd">
+        <h2>차량관리 <span class="count" data-free>128건</span></h2>
+        <div class="row">
+          <button class="btn-sub" data-free>엑셀 내보내기</button>
+          <button class="btn-primary" data-free>+ 신규 등록</button>
+        </div>
+      </div>
+
+      <div class="card" data-free>
+        <div class="row" style="margin-bottom:10px">
+          <input class="inp" data-free placeholder="차량번호·차대번호 검색 (눌러 보세요)">
+          <button class="btn-primary" data-free>검색</button>
+          <span class="tab act" data-free>매입일</span><span class="tab">판매일</span><span class="tab">선적일</span>
+        </div>
+        <div class="row">
+          <span class="muted" style="font-size:11.5px">진행상태</span>
+          <span class="pill" data-lock>전체</span>
+          <span class="pill" data-lock>매입중 12</span>
+          <span class="pill only" data-lock>판매중 31 · 이것만</span>
+          <span class="pill" data-lock>선적중 9</span>
+          <span class="pill ex" data-lock>거래완료 · 제외</span>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card" data-free style="padding:0;overflow:hidden">
+          <table class="t">
+            <thead><tr data-free><th>차량번호</th><th>진행상태</th><th>입금</th><th>위험도</th><th>미수율</th><th style="text-align:right">판매가</th><th>담당자</th></tr></thead>
+            <tbody>
+              <tr><td><a class="lnk" data-free>12가3456</a></td><td><span class="bd b-blue" data-lock>매입완료</span></td><td><span class="bd b-gray" data-lock>—</span></td><td><span class="bd b-green" data-lock>안전</span></td><td><span class="gauge" data-lock><i style="width:0"></i></span></td><td style="text-align:right">—</td><td class="muted">영업 A</td></tr>
+              <tr><td><a class="lnk">34나7890</a></td><td><span class="bd b-purple" data-lock>판매중</span></td><td><span class="bd b-amber" data-lock>부분입금 40%</span></td><td><span class="bd b-amber" data-lock>주의</span></td><td><span class="gauge" data-lock><i style="width:60%"></i></span></td><td style="text-align:right">USD 12,100</td><td class="muted">영업 B</td></tr>
+              <tr><td><a class="lnk">56다1122</a></td><td><span class="bd b-amber" data-lock>선적완료</span></td><td><span class="bd b-red" data-lock>미입금</span></td><td><span class="bd b-red" data-lock>위험</span></td><td><span class="gauge" data-lock><i style="width:100%"></i></span></td><td style="text-align:right">EUR 8,400</td><td class="muted">영업 A</td></tr>
+              <tr><td><a class="lnk">78라3344</a></td><td><span class="bd b-green" data-lock>통관완료</span></td><td><span class="bd b-green" data-lock>완납</span></td><td><span class="bd b-green" data-lock>안전</span></td><td><span class="gauge" data-lock><i style="width:0"></i></span></td><td style="text-align:right">USD 9,800</td><td class="muted">영업 C</td></tr>
+              <tr><td><a class="lnk">90마5566</a></td><td><span class="bd b-gray" data-lock>거래완료</span></td><td><span class="bd b-green" data-lock>완납</span></td><td><span class="bd b-green" data-lock>안전</span></td><td><span class="gauge" data-lock><i style="width:0"></i></span></td><td style="text-align:right">USD 15,300</td><td class="muted">영업 B</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div>
+          <div class="card" data-free>
+            <div class="sec">처리 필요 항목</div>
+            <div class="todo"><span class="dot" data-lock style="background:#ef4444"></span>판매 미입금 <span class="n u" data-lock>7</span></div>
+            <div class="todo"><span class="dot" data-lock style="background:#f59e0b"></span>통관 바이어 누락 <span class="n u" data-lock>3</span></div>
+            <div class="todo"><span class="dot" data-lock style="background:#3b82f6"></span>수출신고서 업로드 <span class="n" data-lock>5</span></div>
+            <div class="todo"><span class="dot" data-lock style="background:#8b5cf6"></span>정산 대기 <span class="n" data-lock>4</span></div>
+          </div>
+          <div class="card" data-free>
+            <div class="sec">판매 입력</div>
+            <div style="margin-bottom:6px" class="muted">판매가 (필수)</div>
+            <input class="inp req" data-lock value="12,100" style="width:100%;margin-bottom:8px">
+            <div class="banner" data-lock>미수율 60% — 선적 진입이 막혀 있습니다</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:14px">
+    <h2>어디까지 바뀌나</h2>
+    <table class="legend">
+      <tr><th style="width:50%;color:#15803d">바뀌는 것 — 내 테마</th><th style="color:#b91c1c">안 바뀌는 것 — 누구 화면에서나 같다</th></tr>
+      <tr><td>사이드바 배경·글자·선택된 메뉴</td><td>진행상태 뱃지 (매입 파랑 · 판매 보라 · 선적 주황 · 통관 초록 · 완료 회색)</td></tr>
+      <tr><td>강조색 — 주 버튼 · 선택된 탭 · 건수 표시 · 링크 · 입력칸 포커스 테두리</td><td>입금 상태 · 정산 상태 · 채권 위험도 · 운항 뱃지</td></tr>
+      <tr><td>페이지 배경</td><td>진행상태 필터의 「이것만」(보라) · 「제외」(빨강 취소선) · 필터칩 선택 표시</td></tr>
+      <tr><td>카드·표 배경 · 표 머리줄 · 행 위에 올렸을 때 색</td><td>할일 점(긴급도) · 급한 건수 뱃지</td></tr>
+      <tr><td>테두리 · 구분선</td><td>필수 입력칸(노랑) · 잠긴 칸 · 오류/경고/성공 안내</td></tr>
+      <tr><td>본문 글자 · 흐린 글자</td><td>미수 게이지 · 대시보드 그래프 색</td></tr>
+      <tr><td colspan="2" class="note">범위 밖: 로그인 화면 · 전자서명 · 결재 승인 링크 · 자금 보고 · 서류 엑셀 · 알림톡 · 다크 모드</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ════════ 오른쪽: 화면 꾸미기 ════════ -->
+<div>
+  <div class="panel">
+    <h2>화면 꾸미기 — 내 테마</h2>
+    <div class="note" style="margin-bottom:8px">고르는 색은 6개뿐. 나머지는 자동으로 계산됩니다.</div>
+    <div class="pick" id="pick"></div>
+    <div class="note" style="margin-top:10px">자동으로 정해지는 색</div>
+    <div class="derived" id="derived"></div>
+    <div class="warnbox" id="warn"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="mbtn go" id="btnSave">저장</button>
+      <button class="mbtn" id="btnReset">기본으로 되돌리기</button>
+    </div>
+    <div class="row" style="margin-top:10px;padding-top:10px;border-top:1px solid #eef0f3">
+      <input id="thName" class="mbtn" style="flex:1;cursor:text" placeholder="테마 이름 (예: 차분한 남색)">
+      <button class="mbtn" id="btnSubmit" data-roles="user">추천 올리기</button>
+      <button class="mbtn go" id="btnDirect" data-roles="manager super">프리셋으로 등록</button>
+    </div>
+    <div class="note" id="roleHint" style="margin-top:6px"></div>
+  </div>
+
+  <div class="panel" data-roles="manager super">
+    <h2>추천 받은 테마 <span class="note">— 업무관리자 이상만 보임</span></h2>
+    <div id="subs"></div>
+  </div>
+
+  <div class="panel">
+    <h2>프리셋 <span class="note">— 누구나 한 번 눌러 적용</span></h2>
+    <div id="presets"></div>
+    <div class="note" style="margin-top:8px" id="defNote"></div>
+  </div>
+
+  <div class="panel">
+    <h2>방금 일어난 일</h2>
+    <div class="log" id="log"><div class="note">버튼을 눌러 보세요.</div></div>
+  </div>
+</div>
+</div>
+
+<div class="panel">
+  <h2>테마가 퍼지는 순서</h2>
+  <div class="flow">
+    <div class="step"><span class="who">누구나</span><b>① 내 테마 만들기</b>색 6개를 고르고 저장. 내 화면에만 적용됩니다. 마음에 들면 이름을 붙여 「추천 올리기」.</div>
+    <div class="step"><span class="who">업무관리자 이상</span><b>② 프리셋으로 등록</b>「추천 받은 테마」에서 미리보기 → 등록 또는 돌려보내기. 자기 테마는 바로 등록할 수 있습니다.</div>
+    <div class="step"><span class="who">누구나</span><b>③ 프리셋 적용</b>프리셋 목록에서 [적용]. 적용한 뒤 내 취향대로 더 고쳐도 됩니다(내 복사본).</div>
+    <div class="step"><span class="who">시스템관리자만</span><b>④ 회사 기본 지정</b>프리셋 하나를 회사 기본으로. 자기 테마를 저장하지 않은 사람에게만 적용됩니다.</div>
+  </div>
+  <div class="note" style="margin-top:8px">적용 순서: 내 테마 → 없으면 회사 기본 → 없으면 지금의 보라색. 프리셋은 회사별로 따로입니다.</div>
+</div>
+
+</div>
+<script>
+const FIELDS = [
+  ['sb','사이드바 배경'],['accent','강조색'],['page','페이지 배경'],
+  ['card','카드·표 배경'],['border','테두리'],['text','본문 글자'],
+];
+const BASE = {sb:'#16162a',accent:'#7c6fcd',page:'#f5f6f8',card:'#ffffff',border:'#e5e7eb',text:'#1f2937'};
+let cur = {...BASE}, saved = null, role = 'user', defId = null, seq = 10;
+let presets = [
+  {id:1,name:'기본 보라',by:'코드 기본',t:{...BASE},builtin:true},
+  {id:2,name:'차분한 남색',by:'업무관리자',t:{sb:'#0f2742',accent:'#1f7a8c',page:'#f2f5f7',card:'#ffffff',border:'#dbe3ea',text:'#1b2a38'}},
+  {id:3,name:'숲',by:'업무관리자',t:{sb:'#1d3b2f',accent:'#2f855a',page:'#f3f6f1',card:'#fffffe',border:'#dfe6da',text:'#22302a'}},
+];
+let subs = [
+  {id:4,name:'따뜻한 베이지',by:'수출통관 담당',t:{sb:'#3b2f2a',accent:'#c2703d',page:'#f7f2ea',card:'#fffdf8',border:'#e6dccb',text:'#3a2f28'}},
+];
+
+const $ = s => document.querySelector(s);
+const rgb = h => [1,3,5].map(i => parseInt(h.slice(i,i+2),16));
+const hex = a => '#'+a.map(v => Math.round(Math.max(0,Math.min(255,v))).toString(16).padStart(2,'0')).join('');
+const mix = (a,b,t) => { const x=rgb(a),y=rgb(b); return hex(x.map((v,i)=>v+(y[i]-v)*t)); };
+const lum = h => { const c=rgb(h).map(v=>{v/=255;return v<=.03928?v/12.92:Math.pow((v+.055)/1.055,2.4)}); return .2126*c[0]+.7152*c[1]+.0722*c[2]; };
+const contrast = (a,b) => { const x=lum(a),y=lum(b); return (Math.max(x,y)+.05)/(Math.min(x,y)+.05); };
+const on = h => contrast(h,'#ffffff') >= contrast(h,'#111827') ? '#ffffff' : '#111827';
+
+function derive(t){
+  const sbOn = on(t.sb);
+  let accText = t.accent;                       // 연한 배경 위에서 읽히는 강조 글자
+  for(let i=0;i<10 && contrast(accText,t.card)<4.5;i++) accText = mix(accText,t.text,.2);
+  return {
+    '--sb-bg':t.sb, '--sb-text':mix(t.sb,sbOn,.62), '--sb-text-strong':sbOn,
+    '--sb-active-bg':mix(t.sb,t.accent,.32), '--sb-active-text':mix(t.accent,sbOn,.55),
+    '--accent':t.accent, '--accent-hover':mix(t.accent,'#000000',.12), '--on-accent':on(t.accent),
+    '--accent-soft':mix(t.card,t.accent,.16), '--accent-text':accText,
+    '--page-bg':t.page, '--card-bg':t.card, '--border':t.border, '--text':t.text,
+    '--muted':mix(t.text,t.card,.45), '--th-bg':mix(t.card,t.text,.04), '--row-hover':mix(t.card,t.accent,.07),
+  };
+}
+const SHOWN = [['--on-accent','버튼 글자'],['--accent-hover','버튼 눌림'],['--accent-soft','연한 강조'],['--accent-text','링크 글자'],['--sb-text','메뉴 글자'],['--sb-active-bg','선택 메뉴'],['--muted','흐린 글자'],['--th-bg','표 머리줄'],['--row-hover','행 올림']];
+
+function apply(){
+  const d = derive(cur), erp = $('#erp');
+  for(const k in d) erp.style.setProperty(k,d[k]);
+  $('#derived').innerHTML = SHOWN.map(([k,l])=>`<span class="sw"><i style="background:${d[k]}"></i>${l}</span>`).join('');
+  FIELDS.forEach(([k])=>{ $('#c_'+k).value = cur[k]; $('#h_'+k).textContent = cur[k]; });
+  const w = [];
+  if(contrast(cur.text,cur.card) < 4.5) w.push('본문 글자와 카드 배경이 비슷해 글자가 잘 안 읽힙니다');
+  if(contrast(cur.text,cur.page) < 4.5) w.push('본문 글자와 페이지 배경이 비슷합니다');
+  if(contrast(cur.border,cur.card) < 1.1) w.push('테두리가 카드 배경과 거의 같아 칸 구분이 사라집니다');
+  $('#warn').style.display = w.length ? 'block' : 'none';
+  $('#warn').textContent = '경고: ' + w.join(' · ') + ' (저장은 됩니다)';
+}
+function log(m){ const l=$('#log'); if(l.querySelector('.note')) l.innerHTML=''; l.insertAdjacentHTML('afterbegin',`<div>• ${m}</div>`); }
+const chips = t => `<span class="chips">${FIELDS.map(([k])=>`<i style="background:${t[k]}"></i>`).join('')}</span>`;
+const roleName = {user:'일반사용자',manager:'업무관리자',super:'시스템관리자'};
+
+function render(){
+  document.querySelectorAll('[data-roles]').forEach(e => e.classList.toggle('hide', !e.dataset.roles.split(' ').includes(role)));
+  $('#roleHint').textContent = role==='user'
+    ? '일반사용자: 이름을 붙여 올리면 업무관리자 이상이 보고 프리셋으로 등록합니다.'
+    : '업무관리자 이상: 지금 테마를 바로 회사 프리셋으로 등록할 수 있습니다.';
+  $('#subs').innerHTML = subs.length ? subs.map(s=>`<div class="item">${chips(s.t)}<div class="nm"><b>${s.name}</b><span>${s.by} 올림</span></div>
+    <button class="mbtn" onclick="preview(${s.id},1)">미리보기</button><button class="mbtn go" onclick="approve(${s.id})">등록</button><button class="mbtn warn" onclick="reject(${s.id})">돌려보내기</button></div>`).join('')
+    : '<div class="note">대기 중인 추천이 없습니다.</div>';
+  $('#presets').innerHTML = presets.map(p=>`<div class="item">${chips(p.t)}<div class="nm"><b>${p.name}${p.id===defId?'<span class="tag def">회사 기본</span>':''}</b><span>${p.by}</span></div>
+    <button class="mbtn" onclick="preview(${p.id})">적용</button>
+    ${role==='super' && p.id!==defId ? `<button class="mbtn go" onclick="setDef(${p.id})">회사 기본으로</button>`:''}
+    ${role!=='user' && !p.builtin ? `<button class="mbtn warn" onclick="delPreset(${p.id})">삭제</button>`:''}</div>`).join('');
+  const d = presets.find(p=>p.id===defId);
+  $('#defNote').textContent = '회사 기본: ' + (d ? d.name : '지정 안 됨 (지금의 보라색)') + (role==='super' ? '' : ' — 지정은 시스템관리자만');
+}
+window.preview = (id,isSub) => { const p=(isSub?subs:presets).find(x=>x.id===id); cur={...p.t}; apply(); log(`「${p.name}」을(를) 내 화면에 ${isSub?'미리보기':'적용'}했습니다. 여기서 더 고쳐도 됩니다.`); };
+window.approve = id => { const s=subs.find(x=>x.id===id); subs=subs.filter(x=>x.id!==id); presets.push({...s,by:s.by+' 제작 · '+roleName[role]+' 등록'}); render(); log(`${roleName[role]}가 「${s.name}」을(를) 프리셋으로 등록 → 모든 사용자의 프리셋 목록에 나타납니다. (감사로그 기록)`); };
+window.reject = id => { const s=subs.find(x=>x.id===id); subs=subs.filter(x=>x.id!==id); render(); log(`「${s.name}」 추천을 돌려보냈습니다. 올린 사람의 내 테마는 그대로입니다.`); };
+window.delPreset = id => { const p=presets.find(x=>x.id===id); presets=presets.filter(x=>x.id!==id); if(defId===id) defId=null; render(); log(`프리셋 「${p.name}」 삭제. 이미 적용한 사람의 화면은 그대로입니다(내 복사본).`); };
+window.setDef = id => { defId=id; const p=presets.find(x=>x.id===id); render(); log(`시스템관리자가 「${p.name}」을(를) 회사 기본으로 지정 → 내 테마를 저장하지 않은 사람 화면이 이 색으로 바뀝니다. (감사로그 기록)`); };
+
+$('#pick').innerHTML = FIELDS.map(([k,l])=>`<label for="c_${k}">${l}</label><input type="color" id="c_${k}"><code id="h_${k}"></code>`).join('');
+FIELDS.forEach(([k])=> $('#c_'+k).addEventListener('input',e=>{cur[k]=e.target.value;apply();}));
+$('#btnSave').onclick = () => { saved={...cur}; log('내 테마 저장 — 내 화면에만 적용됩니다. 회사 기본이 바뀌어도 내 화면은 그대로입니다.'); };
+$('#btnReset').onclick = () => { const d=presets.find(p=>p.id===defId); cur={...(d?d.t:BASE)}; saved=null; apply(); log('내 테마를 지우고 '+(d?`회사 기본 「${d.name}」`:'기본 보라')+'(으)로 되돌렸습니다.'); };
+const nameOr = () => $('#thName').value.trim() || '이름 없는 테마';
+$('#btnSubmit').onclick = () => { subs.push({id:++seq,name:nameOr(),by:'일반사용자(나)',t:{...cur}}); $('#thName').value=''; render(); log('추천을 올렸습니다 → 역할을 「업무관리자」로 바꾸면 「추천 받은 테마」에 보입니다.'); };
+$('#btnDirect').onclick = () => { const n=nameOr(); presets.push({id:++seq,name:n,by:roleName[role]+' 등록',t:{...cur}}); $('#thName').value=''; render(); log(`${roleName[role]}가 「${n}」을(를) 바로 프리셋으로 등록했습니다.`); };
+document.querySelectorAll('#roleSeg button').forEach(b=> b.onclick = () => { role=b.dataset.role; document.querySelectorAll('#roleSeg button').forEach(x=>x.classList.toggle('on',x===b)); render(); log(`역할을 ${roleName[role]}(으)로 바꿨습니다.`); });
+$('#tgFree').onclick = e => { e.target.classList.toggle('on'); $('#erp').classList.toggle('show-free'); };
+$('#tgLock').onclick = e => { e.target.classList.toggle('on'); $('#erp').classList.toggle('show-lock'); };
+apply(); render();
+</script>
+</body>
+</html>
