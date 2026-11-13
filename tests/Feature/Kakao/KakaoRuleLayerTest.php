@@ -13,6 +13,7 @@ use App\Services\Kakao\KakaoIngestService;
 use App\Services\Kakao\KakaoTodoBoard;
 use App\Services\Kakao\KakaoTopics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -297,7 +298,8 @@ TXT;
         $this->assertSame($m[3]->id, $m[4]->resolves_id);   // 영업의 「입금 확인했습니다」는 자기 서식이 아니라 재무의 「저당 있습니다, 확인 부탁」(다른 사람의 열린 요청)을 닫는다
         $this->assertSame($m[0]->id, $m[5]->resolves_id);   // 재무의 「이체 완료」가 Peugeot 서식을 닫는다(차량번호) — 자기가 올린 요청은 후보가 아니다
 
-        $board = KakaoTodoBoard::forUser($me, now(), true);
+        // 예제 날짜(11-06)가 박혀 있다 — 화면 표시 기간(3일) 안의 시점으로 본다(오늘 날짜에 기대면 며칠 뒤 창 밖으로 나가 깨진다).
+        $board = KakaoTodoBoard::forUser($me, Carbon::parse('2026-11-07 09:00'), true);
         $done = array_column($board['buckets']['done'], 'id');
         $this->assertContains($m[0]->id, $done);
         $this->assertContains($m[1]->id, $done);

@@ -35,7 +35,7 @@ new #[Layout('components.layouts.app')] class extends Component
     public bool $kakaoAssistantEnabled = false;
 
     /** 📱 카톡자동화 수치(jin 11-10 «기능설정에 하루 상한 설정값 없는데?») — 키는 Setting::kakao*() 와 같다(회사 DB 단위) */
-    public array $kakaoParams = ['kakao_daily_cost_cap_krw' => 2000, 'kakao_max_new_per_read' => 500, 'kakao_read_days' => 3, 'kakao_window_days' => 7, 'kakao_urgent_hours' => 24, 'kakao_missed_days' => 3];
+    public array $kakaoParams = ['kakao_daily_cost_cap_krw' => 2000, 'kakao_max_new_per_read' => 500, 'kakao_read_days' => 3, 'kakao_window_days' => 3, 'kakao_urgent_hours' => 24, 'kakao_missed_days' => 3];
 
     public const KAKAO_PARAM_MIN = ['kakao_daily_cost_cap_krw' => 100, 'kakao_max_new_per_read' => 50, 'kakao_read_days' => 1, 'kakao_window_days' => 1, 'kakao_urgent_hours' => 1, 'kakao_missed_days' => 1];
 
