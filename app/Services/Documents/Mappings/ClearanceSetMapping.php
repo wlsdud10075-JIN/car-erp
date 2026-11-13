@@ -98,6 +98,9 @@ class ClearanceSetMapping
                 //   (float — 텍스트면 차량인보이스 SUM/통화서식이 깨진다)
                 'B15' => fn (Vehicle $v) => DocValue::unitPriceWithCharges($v),
                 'D15' => fn (Vehicle $v) => DocValue::money($v->transport_fee),     // 운임 (float)
+                // 말소증 차종 — 승용·승합·화물·특수 (jin 2026-11-13). 양식 K8 은 「승용」 리터럴이 박힌 흰칸이었다 —
+                //   `scripts/fix-clearance-deregistration-vehicle-kind.php` 가 비웠다(--verify). 되살리면 NICE 없는 차에 「승용」이 찍힌다.
+                '말소증!K8' => fn (Vehicle $v) => DocValue::vehicleKindKo($v),
                 // Travel Services Invoice 컨사이니 칸 — 계약서 F6/F7 과 동일 소스(컨사이니→없으면 바이어).
                 //   엔진의 'Sheet!Cell' 시트지정 좌표로 마스터 외 시트에 직접 기입.
                 'Travel Services Invoice!F7' => fn (Vehicle $v) => DocValue::invoiceConsignee($v)?->address ?: DocValue::invoiceBuyer($v)?->address,             // Adress

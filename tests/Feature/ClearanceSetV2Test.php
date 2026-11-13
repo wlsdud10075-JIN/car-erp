@@ -89,6 +89,33 @@ class ClearanceSetV2Test extends TestCase
         $this->assertStringStartsWith('통관SET(Ver.1)_V2-1_', $filler->filename('clearance'), 'Ver.1 파일명에도 버전이 붙는다');
     }
 
+    /**
+     * 말소증 차종(K8) — 「승용」 고정이 아니라 NICE 차종의 종류(승용·승합·화물·특수)로 (jin 2026-11-13).
+     * 양식의 흰칸 리터럴 「승용」은 비웠다 — NICE 없는 차는 빈칸이어야 한다(되살아나면 화물차에도 승용이 찍힌다).
+     */
+    public function test_deregistration_sheet_vehicle_kind_follows_nice_in_both_versions(): void
+    {
+        $make = fn (string $no, ?string $form) => Vehicle::create([
+            'vehicle_number' => $no, 'sales_channel' => 'export', 'currency' => 'USD', 'exchange_rate' => 1400, 'nice_reg_vehicle_form' => $form,
+        ]);
+        $cases = ['K8-1' => ['화물 소형', '화물'], 'K8-2' => ['중형 승합', '승합'], 'K8-3' => ['승용 대형', '승용'], 'K8-4' => [null, ''], 'K8-5' => ['205 004', '']];
+
+        foreach ($cases as $no => [$form, $want]) {
+            $v = $make($no, $form);
+            foreach (['clearance', 'clearance_v2'] as $type) {
+                $cell = (new DocumentFiller($v))->spreadsheet($type)->getSheetByName('말소증')->getCell('K8')->getValue();
+                $this->assertSame($want, trim((string) $cell), "$type · NICE 차종 ".var_export($form, true));
+            }
+        }
+
+        foreach (['system', 'heyman', 'karaba'] as $set) {   // 세 회사 양식 전부에서 샘플이 비워졌는지
+            foreach (['clearance_set.xlsx', 'clearance_set_v2.xlsx'] as $file) {
+                $raw = IOFactory::load(resource_path("templates/$set/$file"))->getSheetByName('말소증')->getCell('K8')->getValue();
+                $this->assertSame('', trim((string) $raw), "$set/$file 말소증 K8 에 샘플이 남아 있다");
+            }
+        }
+    }
+
     /** 배선 — 지원 목록·라우트 200·서류 탭 카드 두 장·도장 슬롯(차량인보이스 슬롯만 뺀 것)·슬롯 앵커에 baked 직인. */
     public function test_v2_is_wired_into_the_controller_docs_tab_and_stamp_slots(): void
     {

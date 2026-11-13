@@ -206,6 +206,22 @@ class DocValue
     }
 
     /**
+     * 차종 「종류」만 한글로 — 승용·승합·화물·특수 (통관 SET 말소증 K8, jin 2026-11-13 «승용/화물 구분»).
+     * NICE 원문 「화물 소형」·「소형 화물」 어느 순서든 종류 토큰만 뽑는다. 못 찾으면 null(빈칸) — 쓰레기값을 찍지 않는다.
+     */
+    public static function vehicleKindKo(Vehicle $v): ?string
+    {
+        $form = (string) $v->nice_reg_vehicle_form;
+        foreach (['승용', '승합', '화물', '특수'] as $kind) {
+            if (str_contains($form, $kind)) {
+                return $kind;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * 용도 영문 — NICE `nice_reg_use_type`(자가용·영업용·관용).
      * 통관 SET 영문등록증 P4 의 SUBSTITUTE 수식과 **같은 규칙**(Private Car / Business / Official).
      * 실측 heymanerp: 자가용 221 · 영업용 3 — 「영업용」을 자가용으로 찍던 SKILLS §8 #71 의 그 3대.
