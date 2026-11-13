@@ -226,10 +226,14 @@ class Setting extends Model
         return max(1, (int) self::get('kakao_read_days', 3));
     }
 
-    /** 「내 카톡 할 일」이 보는 기간(일) — 수집기 첫 읽기 범위(기획 §1 #5 = 7일)와 같게. */
+    /**
+     * 「내 카톡 할 일」이 보는 기간(일) — 읽기 범위(kakaoReadDays)와 같은 3일.
+     * 🔀 2026-11-13 (jin) 7 → 3 — 이 화면은 «그날 일한 것 중 오늘 내가 놓친 게 없나»를 보는 용도이고, 금요일 → 월요일이 3일이다.
+     *    4일 넘게 놓친 것은 화면이 붙들 일이 아니다(그 3일 동안 계속 떠 있었다).
+     */
     public static function kakaoWindowDays(): int
     {
-        return max(1, (int) self::get('kakao_window_days', 7));
+        return max(1, (int) self::get('kakao_window_days', 3));
     }
 
     /** 내 일이 이 시간(h)을 넘기면 「지금 할 일」로 올린다(경과시간만으론 안 올린다는 §5 원칙의 예외 = 하루 묵은 요청). */
