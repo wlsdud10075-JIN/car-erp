@@ -182,7 +182,9 @@ class OpsSummary
         // ⑥ 빈 칸 — 차종 비어 있음
         //   🔀 2026-11-13 (jin) — 갓 등록한 차는 바이어 미정·원부조회 전이라 비어 있는 게 정상이다. 등록 후 EMPTY_MODEL_DAYS 일이 지나도 빈 차만 본다.
         $noModelQ = DB::table('vehicles as v')->whereNull('v.deleted_at')->where('v.created_at', '<=', now()->subDays(self::EMPTY_MODEL_DAYS))
-            ->where(fn ($q) => $q->whereNull('v.model_type')->orWhere('v.model_type', ''));
+            ->where(fn ($q) => $q->whereNull('v.model_type')->orWhere('v.model_type', ''))
+            // 🚫 바이어 미정·바이어 없는 차는 찾지 않는다(jin 2026-11-13) — 값이 싸서 재고로 들고 있는 차라 차종이 비어 있어도 알릴 일이 아니다.
+            ->whereNotNull('v.buyer_id')->where(fn ($q) => $q->whereNull('v.buyer_undecided')->orWhere('v.buyer_undecided', false));
         $noModel = (clone $noModelQ)->count();
         if ($noModel > 0) {
             $a[] = ['level' => 1, 'kind' => '빈 칸', 'count' => $noModel, 'text' => '등록 후 '.self::EMPTY_MODEL_DAYS."일 넘도록 차종 빈 차 {$noModel}대".self::plates($noModelQ, $noModel)];
