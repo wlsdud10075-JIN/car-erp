@@ -26,6 +26,9 @@ class OpsSummary
     /** 판매가 단위 의심 — 외화 판매가×환율이 매입가의 이 배수를 넘으면(원화가 외화 칸에 들어간 모양, 11-02·11-09 실례) */
     public const SALE_UNIT_RATIO = 10;
 
+    /** 차종 빈 칸 — 등록 후 이 일수가 지나도 비어 있을 때만 알린다 */
+    public const EMPTY_MODEL_DAYS = 15;
+
     /** 미수 스냅샷 하루 변동 임계(원) — 11-09 실례 +211억 */
     public const RECEIVABLE_JUMP_KRW = 2_000_000_000;
 
@@ -176,12 +179,13 @@ class OpsSummary
             $a[] = ['level' => 3, 'kind' => '정기 작업 실패', 'count' => count($failed), 'text' => implode(', ', array_slice($failed, 0, 6))];
         }
 
-        // ⑥ 빈 칸 — 차종 비어 있음(최근 30일 등록)
-        $noModelQ = DB::table('vehicles as v')->whereNull('v.deleted_at')->where('v.created_at', '>=', now()->subDays(30))
+        // ⑥ 빈 칸 — 차종 비어 있음
+        //   🔀 2026-11-13 (jin) — 갓 등록한 차는 바이어 미정·원부조회 전이라 비어 있는 게 정상이다. 등록 후 EMPTY_MODEL_DAYS 일이 지나도 빈 차만 본다.
+        $noModelQ = DB::table('vehicles as v')->whereNull('v.deleted_at')->where('v.created_at', '<=', now()->subDays(self::EMPTY_MODEL_DAYS))
             ->where(fn ($q) => $q->whereNull('v.model_type')->orWhere('v.model_type', ''));
         $noModel = (clone $noModelQ)->count();
         if ($noModel > 0) {
-            $a[] = ['level' => 1, 'kind' => '빈 칸', 'count' => $noModel, 'text' => "최근 30일 등록 차 중 차종 빈 차 {$noModel}대".self::plates($noModelQ, $noModel)];
+            $a[] = ['level' => 1, 'kind' => '빈 칸', 'count' => $noModel, 'text' => '등록 후 '.self::EMPTY_MODEL_DAYS."일 넘도록 차종 빈 차 {$noModel}대".self::plates($noModelQ, $noModel)];
         }
 
         // ⑦ 카톡 — 읽다 멈춘 방
