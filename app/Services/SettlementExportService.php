@@ -46,6 +46,25 @@ class SettlementExportService
      */
     private function columns(): array
     {
+        // 🧾 비용합계 앞에 끼울 비용 항목 열 (jin 2026-11-12) — 화면에 입력칸이 있는 10칸만, 없으면 0.
+        //    🚫 옛 4칸(LEGACY_COST_FIELDS)은 일부러 뺀다(jin «안 쓰잖아») — 그 값이 남은 차는 Σ10 < 비용합계다. 받아들인 동작.
+        $costCols = [];
+        foreach (Vehicle::DISPLAY_COST_FIELDS as $col) {
+            $costCols[self::COST_KEY_PREFIX.$col] = [Vehicle::costLabel($col), 'num', fn (Settlement $s) => (int) ($s->vehicle?->{$col} ?? 0)];
+        }
+
+        $cols = $this->baseColumns();
+        $at = array_search('cost_total', array_keys($cols), true);
+
+        return array_slice($cols, 0, $at, true) + $costCols + array_slice($cols, $at, null, true);
+    }
+
+    /** 비용 항목 열의 key 접두어 — 이 열들은 접힌 채로 나간다(buildDetailSheet). */
+    private const COST_KEY_PREFIX = 'cost__';
+
+    /** @return array<string, array{0:string,1:string,2:callable|null}> */
+    private function baseColumns(): array
+    {
         return [
             // 🔢 No. — 시트마다 1부터, 가운데 정렬 (jin 2026-09-18).
             //    🔑 가짜 컬럼이지만 **이 목록에 넣는 것이 핵심**이다 — 합계 행의 SUM 열 위치가
@@ -331,6 +350,18 @@ class SettlementExportService
 
         for ($c = 1; $c <= count($cols); $c++) {
             $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setAutoSize(true);
+        }
+
+        // 🧾 비용 항목 10칸은 **접힌 채로** — 비용합계 위의 [+] 를 눌러 펼친다(jin 2026-11-12 «기본 접힘»).
+        //    [+] 가 그룹 오른쪽(= 비용합계)에 오는 것은 시트 기본값(summaryRight = true) 그대로다 — 바꾸지 말 것.
+        $c = 1;
+        foreach (array_keys($cols) as $key) {
+            if (str_starts_with($key, self::COST_KEY_PREFIX)) {
+                $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setOutlineLevel(1)->setVisible(false);
+            } elseif ($key === 'cost_total') {
+                $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($c))->setCollapsed(true);
+            }
+            $c++;
         }
         $sheet->freezePane('A2');
     }
