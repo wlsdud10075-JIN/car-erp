@@ -563,6 +563,51 @@ class BuyerCashGateTest extends TestCase
         $this->assertSame(0, BuyerCashAllocation::count());
     }
 
+    /**
+     * 🔀 2026-11-13 (jin) — 원화 입금을 넣은 바이어는 원화 잔금도 원장에서 빠진다.
+     * heymanerp 실사례: 원화 입금 2건을 넣었는데 원화 잔금이 원장을 안 타서 입금만 남았다.
+     */
+    public function test_krw_vehicle_uses_the_ledger_once_the_buyer_has_a_krw_receipt(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $this->cash($buyer, 250_000_000, 'KRW');
+        $this->cash($buyer, 236_426_000, 'KRW', '2026-09-02');
+        $a = $this->vehicle($buyer, 'KRW');
+        $b = $this->vehicle($buyer, 'KRW');
+
+        $this->confirmedBalance($a, 183_330_000);
+        $this->confirmedBalance($b, 297_675_000);
+
+        $this->assertSame(481_005_000.0, (float) BuyerCashAllocation::sum('amount'));
+        $this->assertSame(5_421_000.0, BuyerCashReceipt::balanceFor($buyer->id, 'KRW'));
+    }
+
+    /** 원화도 원장을 타기 시작하면 남은 현금 안에서만 들어간다. */
+    public function test_krw_balance_beyond_the_krw_cash_is_blocked(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $this->cash($buyer, 1_000_000, 'KRW');
+
+        $this->expectException(\DomainException::class);
+        $this->confirmedBalance($this->vehicle($buyer, 'KRW'), 5_000_000);
+    }
+
+    /** 외화 입금만 있는 바이어의 원화 차량은 종전대로 원장 밖이다(통화별로 본다). */
+    public function test_krw_vehicle_stays_out_when_the_buyer_only_has_foreign_cash(): void
+    {
+        $this->enable();
+        $this->actingAs($this->finance());
+        $buyer = $this->buyer();
+        $this->cash($buyer, 9_000, 'EUR');
+
+        $this->assertNotNull($this->confirmedBalance($this->vehicle($buyer, 'KRW'), 5_000_000)->id);
+        $this->assertSame(0, BuyerCashAllocation::count());
+    }
+
     /** 바이어가 없으면 뺄 지갑도 없다 — 막지 않는다. */
     public function test_vehicle_without_buyer_is_not_gated(): void
     {

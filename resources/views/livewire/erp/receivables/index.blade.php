@@ -1084,7 +1084,7 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     private function ledgerBalanceOf(Vehicle $vehicle): float
     {
-        if (! Setting::buyerCashEnabled() || ! $vehicle->buyer_id || $vehicle->currency === 'KRW') {
+        if (! Setting::buyerCashEnabled() || ! $vehicle->buyer_id || ! BuyerCashService::currencyInLedger($vehicle->buyer_id, $vehicle->currency)) {
             return 0.0;
         }
 

@@ -83,8 +83,25 @@ class BuyerCashService
             return false;                       // 귀속할 바이어가 없으면 뺄 지갑도 없다
         }
 
-        // 🚨 KRW 차량은 안 막는다 — 국내 거래·원화 판매가 첫날부터 막히면 안 된다.
-        return $vehicle->currency !== 'KRW';
+        return self::currencyInLedger($vehicle->buyer_id, $vehicle->currency);
+    }
+
+    /**
+     * 그 바이어·통화가 현금 원장을 타는가 — 외화는 항상, **원화는 그 바이어에게 원화 입금이 있을 때만**.
+     *
+     * 🔀 2026-11-13 (jin) — 종전엔 원화 차량을 통째로 뺐다(국내 거래·원화 판매가 첫날부터 막히면 안 된다).
+     *    그런데 입금 화면은 원화를 받아서, 원화 입금을 넣은 바이어는 「입금만 쌓이고 잔금에서 안 빠지는」
+     *    상태가 됐다(heymanerp 실측: 원화 입금 2건 4.86억 · 원화 잔금 2건 4.81억 · 배분 0).
+     *    ⇒ 원화 입금을 한 번도 안 넣은 바이어(내수·원화 거래 대부분)는 종전 그대로 원장 밖이다.
+     * 🚫 이 판정을 옮겨 적지 말 것 — 채권관리 입금 한도(`receivables/index`)도 이걸 부른다.
+     */
+    public static function currencyInLedger(?int $buyerId, ?string $currency): bool
+    {
+        if (($currency ?? 'KRW') !== 'KRW') {
+            return true;
+        }
+
+        return $buyerId !== null && BuyerCashReceipt::forBuyerCurrency($buyerId, 'KRW')->exists();
     }
 
     /** 그 차량의 바이어·통화로 지금 쓸 수 있는 현금(외화). 화면 합계와 같은 출처. */
