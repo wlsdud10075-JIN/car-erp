@@ -132,6 +132,10 @@ class OpsControlCenterTest extends TestCase
         $this->assertSame(1, $byText['con'], '적재 차(imported_at)는 끊긴 컨사이니에서 뺀다 — 손입력 차 1대만');
         $this->assertSame(1, $byText['buyer'], '끊긴 바이어는 적재 차여도 센다(돈에 걸린다)');
         $this->assertStringContainsString('엑셀 적재 차 제외', $hits->first(fn ($h) => Str::contains($h['text'], '컨사이니'))['text'] ?? '');
+        // 어느 차인지 같이 보인다(jin 11-13 «주의 뜬 차량이 뭔지 알 수 있게») — 대수만 말하면 찾으러 갈 수가 없다.
+        $this->assertStringContainsString('— 손입력차', $hits->first(fn ($h) => Str::contains($h['text'], '컨사이니'))['text']);
+        $this->assertStringNotContainsString('적재차,', $hits->first(fn ($h) => Str::contains($h['text'], '컨사이니'))['text']);
+        $this->assertStringContainsString('— 적재차바이어끊김', $hits->first(fn ($h) => Str::contains($h['text'], '바이어'))['text']);
     }
 
     public function test_mark_imported_finds_minute_bursts_and_stamps_them_only_with_apply(): void
