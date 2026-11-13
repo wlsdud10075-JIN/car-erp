@@ -28,12 +28,12 @@
     <div class="p-3 md:p-6">
         <div class="mb-4 flex flex-wrap items-center gap-3">
             <a href="{{ route('guides.index') }}" class="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700">{{ __('guides.back') }}</a>
-            <div class="min-w-0 flex-1">
+            <div class="min-w-0 flex-1" style="flex-basis: 240px">
                 <h2 class="text-xl font-bold text-gray-800">{{ $scene['title'] }}</h2>
                 <p class="mt-0.5 text-sm text-gray-500">{{ $scene['summary'] }} · {{ implode('·', array_map(fn ($w) => __('guides.roles.'.$w), $scene['who'])) }} · {{ __('guides.updated', ['date' => $scene['updated']]) }}</p>
             </div>
-            @if($scene['lap'] !== null && $near['lapTotal'])
-                <span class="pill-count">{{ __('guides.lap_pos', ['i' => $scene['lap'], 'n' => $near['lapTotal']]) }}</span>
+            @if($near['lapPos'] && $near['lapTotal'])
+                <span class="pill-count">{{ __('guides.lap_pos', ['i' => $near['lapPos'], 'n' => $near['lapTotal']]) }}</span>
             @endif
         </div>
 
@@ -42,7 +42,7 @@
         @endif
         <div class="gd-scene">{!! $html !!}</div>
 
-        <div class="flex items-center justify-between gap-3" style="max-width: 980px; margin: 24px auto 0; padding-top: 16px; border-top: 1px solid #e5e7eb">
+        <div class="flex flex-wrap items-center justify-between gap-3" style="max-width: 980px; margin: 24px auto 0; padding-top: 16px; border-top: 1px solid #e5e7eb">
             <div>
                 @if($near['prev'])
                     <a href="{{ route('guides.show', $near['prev']['slug']) }}" class="rounded border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700">← {{ \Illuminate\Support\Str::before($near['prev']['title'], ' — ') }}</a>

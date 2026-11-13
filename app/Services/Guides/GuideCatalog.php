@@ -84,6 +84,8 @@ class GuideCatalog
         return [
             'prev' => $i !== false && $i > 0 ? $open[$i - 1] : null,
             'next' => $i !== false && $i < count($open) - 1 ? $open[$i + 1] : null,
+            // 한 바퀴 순번은 **볼 수 있는 씬끼리** 센다 — config 순번을 그대로 찍으면 일부만 올라온 동안 「한 바퀴 6 / 3」이 된다(board 세션 11-13 실측).
+            'lapPos' => $me && $me['lap'] !== null && $i !== false ? $i + 1 : null,
             'lapTotal' => $me && $me['lap'] !== null ? count($open) : null,
         ];
     }

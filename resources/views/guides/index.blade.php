@@ -3,8 +3,8 @@
          씬이 30개 안팎이라 검색·칩은 서버 왕복 없이 화면에서 거른다. 색·모양은 이 파일의 <style> 에만 둔다
          (새 Tailwind 유틸을 쓰면 빌드 CSS 에 없어 조용히 안 먹는다 — SKILLS §8 #50). --}}
     <style>
-        .gd-search { display: flex; gap: 10px; align-items: center; padding: 12px 14px; margin: 14px 0 10px; }
-        .gd-search input { flex: 1; min-width: 0; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px 12px; font-size: 14px; background: #fff; color: #1f2937; }
+        .gd-search { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 14px; margin: 14px 0 10px; }
+        .gd-search input { flex: 1 1 220px; min-width: 0; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px 12px; font-size: 14px; background: #fff; color: #1f2937; }
         .gd-search input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 1px var(--color-primary); }
         .gd-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; align-items: center; }
         .gd-chip { border: 1px solid #d1d5db; background: #fff; border-radius: 99px; padding: 5px 12px; font-size: 12.5px; color: #374151; cursor: pointer; }
