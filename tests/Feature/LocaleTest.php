@@ -48,6 +48,9 @@ class LocaleTest extends TestCase
 
     public function test_sidebar_work_guide_uses_public_notion_url(): void
     {
+        // 씬이 한 장도 없을 때의 동작이다 — 씬이 생기면 사이드바는 앱 안 /guides 로 간다(GuidesPageTest 가 본다).
+        config(['guides.path' => sys_get_temp_dir().DIRECTORY_SEPARATOR.'no-guides-'.uniqid()]);
+
         $this->actingAs($this->localeUser('ko'))
             ->get(route('erp.dashboard'))
             ->assertOk()

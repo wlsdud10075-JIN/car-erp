@@ -34,7 +34,13 @@ class GuideController extends Controller
         return view('guides.show', [
             'scene' => $scene,
             // 본문은 그림을 파일명만으로 적는다(src="01.png") — 여기서 이 씬의 그림 주소로 바꾼다.
-            'html' => preg_replace('/src="([A-Za-z0-9_-]+\.(?:png|jpg|webp))"/', 'src="'.url('guides/'.$slug).'/$1"', GuideCatalog::html($slug)),
+            //   ?v=수정시각 — 그림은 1시간 캐시라, 같은 이름으로 그림을 갈면 브라우저가 옛 그림을 새 글 옆에 보여 준다
+            //   (2026-11-13 첫 씬에서 실제로 글과 그림이 어긋나 보였다).
+            'html' => preg_replace_callback(
+                '/src="([A-Za-z0-9_-]+\.(?:png|jpg|webp))"/',
+                fn ($m) => 'src="'.url('guides/'.$slug).'/'.$m[1].'?v='.(@filemtime((string) GuideCatalog::asset($slug, $m[1])) ?: 0).'"',
+                GuideCatalog::html($slug),
+            ),
             'near' => GuideCatalog::neighbours($slug),
         ]);
     }
