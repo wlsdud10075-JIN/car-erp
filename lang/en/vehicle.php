@@ -1247,6 +1247,8 @@ return [
         'sent' => 'Deregistration AlimTalk sent.',
         'no_doc' => 'Upload and save the deregistration certificate first.',
         'no_phone' => 'Enter the dealer phone number.',
+        'bad_phone' => 'Not a mobile number (010 numbers have 11 digits). AlimTalk cannot reach this number.',
+        'bad_phone_send' => "AlimTalk was not sent.\n\nThe dealer number \":phone\" is not a mobile number.\nCheck for a missing digit or a landline number, then send again.",
         'save_first' => 'Save the vehicle first, then you can send the AlimTalk.',
         'failed' => 'AlimTalk send failed: :reason (check Feature Settings → AlimTalk)',
     ],

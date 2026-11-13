@@ -95,8 +95,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->with(['vehicle:id,vehicle_number', 'user:id,name'])
             ->when(SearchTerm::of($this->search), function ($q) {
                 $term = SearchTerm::like($this->search);
-                $q->where(function ($q2) use ($term) {
+                // 📞 2026-11-13 (jin) — 로그의 번호는 숫자만 저장된다. 「010-960-2299」처럼 하이픈을 넣어 쳐도 찾게 숫자만으로도 한 번 더 본다.
+                $digits = preg_replace('/\D/', '', $this->search);
+                $q->where(function ($q2) use ($term, $digits) {
                     $q2->where('phone', 'like', $term)
+                        ->when(strlen($digits) >= 4, fn ($q3) => $q3->orWhere('phone', 'like', '%'.$digits.'%'))
                         ->orWhere('template_code', 'like', $term)
                         ->orWhereHas('vehicle', fn ($v) => $v->where('vehicle_number', 'like', $term));
                 });

@@ -44,4 +44,13 @@ class PhoneFormat
 
         return preg_replace('/(\d{3})(\d{4})(\d{4})/', '$1-$2-$3', $d);
     }
+
+    /**
+     * 알림톡이 갈 수 있는 휴대폰 번호인가 — 010 은 11자리, 011·016~019 는 10~11자리. 유선·자릿수 오타는 false.
+     * (jin 2026-11-13 — 「010-960-2299」 한 자리 빠진 번호로 나가 미도달. BizM 은 접수는 받고 나중에야 미도달로 돌려준다.)
+     */
+    public static function isMobile(?string $raw): bool
+    {
+        return (bool) preg_match('/^01(0\d{8}|[16789]\d{7,8})$/', (string) preg_replace('/\D/', '', (string) $raw));
+    }
 }
