@@ -34,6 +34,7 @@ class KakaoRuleLayerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->travelTo('2026-11-11 10:00');   // 예시 글이 11-10 — 카톡 표시 기간(3일, 11-13)에 묶여 날짜가 지나면 깨진다
         Setting::updateOrCreate(['key' => 'kakao_assistant_enabled_'.Setting::companyTemplateSet()], ['value' => '1', 'type' => 'boolean']);   // 페이지(continueClassifying)는 회사 토글이 켜져야 연다
         $this->fake = new FakeClassifier;
         $this->app->instance(KakaoClassifierClient::class, $this->fake);

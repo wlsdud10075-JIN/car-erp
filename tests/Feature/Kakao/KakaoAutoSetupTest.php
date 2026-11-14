@@ -27,6 +27,7 @@ class KakaoAutoSetupTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->travelTo('2026-11-11 10:00');   // 예시 글이 11-10 — 카톡 표시 기간(3일, 11-13)에 묶여 날짜가 지나면 깨진다
         Setting::updateOrCreate(['key' => 'kakao_assistant_enabled_'.Setting::companyTemplateSet()], ['value' => '1', 'type' => 'boolean']);
         $this->fake = new FakeClassifier;
         $this->fake->plan = fn (array $ids) => array_map(fn ($id) => ['id' => $id, 'type' => '요청', 'to' => KakaoRoom::SIDE_US, 'mention' => null, 'ref' => null, 'vehicle' => null, 'vin_tail' => null, 'amount' => null, 'resolves' => null], $ids);
