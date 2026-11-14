@@ -198,6 +198,14 @@ class OpsSummary
             }
         }
 
+        // ⑧ 아침 점검 ✗ — 텔레그램(08:00 system:health-check)과 같은 판정. 접힌 칸에만 있으면 「이상 없음」인데 텔레그램은 X 가 된다(jin 2026-11-14).
+        //   기능설정에서 끈 항목은 rows() 가 이미 뺀다 → 회사별로 검사만 빼려면 거기서 끈다.
+        $bad = array_values(array_filter(self::health(), fn ($h) => ! $h['ok']));
+        if ($bad !== []) {
+            $a[] = ['level' => 2, 'kind' => '아침 점검', 'count' => count($bad), 'text' => implode(' · ', array_map(
+                fn ($h) => (__('health.item.'.$h['key']) !== 'health.item.'.$h['key'] ? __('health.item.'.$h['key']) : $h['key']).' — '.$h['detail'], $bad))];
+        }
+
         usort($a, fn ($x, $y) => $y['level'] <=> $x['level']);
 
         return $a;

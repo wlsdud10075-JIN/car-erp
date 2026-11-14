@@ -7,6 +7,8 @@ use App\Http\Middleware\VerifyErpPeerHmac;
 use App\Models\AlimtalkLog;
 use App\Models\Buyer;
 use App\Models\Consignee;
+use App\Models\DailyExchangeRate;
+use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\Ops\OpsHub;
@@ -142,6 +144,21 @@ class OpsControlCenterTest extends TestCase
     }
 
     /** 차종 빈 칸은 등록 후 15일이 지나도 비어 있을 때만 — 갓 등록한 차(바이어 미정·원부조회 전)는 정상이다 (jin 11-13). */
+    /** 아침 점검 ✗ = 이상 감지에도 (jin 2026-11-14) — 기능설정에서 끈 항목은 빠진다(karabaerp 알림톡 발송처럼 회사별로 검사만 뺄 때). */
+    public function test_failed_morning_checks_become_an_anomaly_unless_turned_off(): void
+    {
+        app()->setLocale('ko');
+        // 마감환율이 열흘째 안 들어오면 ✗ (기록이 아예 없으면 O 라서 오래된 기록을 심는다)
+        DailyExchangeRate::create(['currency' => 'USD', 'rate_date' => now()->subDays(10)->toDateString(), 'rate' => 1400, 'source' => 'naver']);
+        $hit = collect(OpsSummary::anomalies())->firstWhere('kind', '아침 점검');
+        $this->assertNotNull($hit, '점검 ✗ 가 있는데 이상 감지에 안 올라왔다');
+        $this->assertStringContainsString('마감환율', $hit['text']);
+
+        Setting::updateOrCreate(['key' => 'health_check_exchange_enabled'], ['value' => '0', 'type' => 'boolean']);
+        $hit = collect(OpsSummary::anomalies())->firstWhere('kind', '아침 점검');
+        $this->assertStringNotContainsString('마감환율', (string) ($hit['text'] ?? ''), '끈 항목은 빠져야 한다');
+    }
+
     public function test_empty_model_is_flagged_only_after_fifteen_days(): void
     {
         $base = ['sales_channel' => 'export', 'currency' => 'USD', 'purchase_price' => 1_000_000];
