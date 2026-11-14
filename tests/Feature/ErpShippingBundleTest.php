@@ -9,6 +9,7 @@ use App\Models\TaskAlarm;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -56,6 +57,22 @@ class ErpShippingBundleTest extends TestCase
         $this->assertSame($buyer->id, (int) ShippingRequest::where('vehicle_id', $v1->id)->value('buyer_id'));
         // 선적요청 알람(수출통관) 발생
         $this->assertSame(2, TaskAlarm::where('type', 'shipping_requested')->whereNull('resolved_at')->count());
+    }
+
+    /**
+     * 수출 탭 바이어가 비어 있으면 판매 바이어로 묶는다 (2026-11-14). 비워 두면 board 가 그 영업의 묶음을 다시 못 보낸다
+     * — ssancarerp 2묶음(이한성 11-09 · 임윤태 09-30)이 이 화면에서 바이어 없이 묶여 그 영업들이 선적요청을 못 했다.
+     */
+    public function test_bundle_falls_back_to_the_sale_buyer_when_export_buyer_is_empty(): void
+    {
+        $buyer = Buyer::create(['name' => '바이어A', 'is_active' => true]);
+        $v = Vehicle::create(['vehicle_number' => '11가1111', 'sales_channel' => 'export', 'buyer_id' => $buyer->id, 'shipping_method' => 'RORO']);
+        DB::table('vehicles')->where('id', $v->id)->update(['export_buyer_id' => null]);   // 묶을 때 수출 탭 바이어가 빈 상태(운영 실측 모양)
+
+        $this->actingAs($this->clearanceUser());
+        Volt::test('erp.vehicles.index')->set('shipDocIds', [$v->id])->call('bundleToShipping');
+
+        $this->assertSame($buyer->id, (int) ShippingRequest::where('vehicle_id', $v->id)->value('buyer_id'));
     }
 
     public function test_bundle_skips_non_export_and_already_open_vehicles(): void

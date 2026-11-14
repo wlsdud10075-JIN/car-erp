@@ -638,14 +638,10 @@ new #[Layout('components.layouts.app')] class extends Component
         $order = array_flip($batchIds);
 
         $grouped = ShippingRequest::query()
-            ->with(['vehicle', 'buyer', 'consignee', 'forwardingCompany'])
+            ->with(['vehicle.salesman', 'buyer', 'consignee', 'forwardingCompany'])
             ->whereIn('batch_id', $batchIds)
             ->get()
             ->groupBy('batch_id');
-
-        // 요청 영업 이름 — 묶음엔 요청자 이메일만 남는다(board 가 보낸 영업 계정). 이메일만으론 누구 건지 모른다(jin 2026-11-14).
-        $requesterNames = \App\Models\Salesman::whereIn('email', $grouped->flatten()->pluck('requested_by_email')->filter()->unique()->values())
-            ->pluck('name', 'email');
 
         // 전자서명 상태 — 가시 batch 차량들의 바이어 세션만 프리로드(N+1 회피), pickForSet 로 batch 차량 set 매칭.
         //   ⚠️ ShippingRequest.buyer_id 는 NULL 일 수 있음(board/묶기 미기입) → 세션 buyer_id 의 출처인
@@ -659,7 +655,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 \App\Models\SignedContract::STATUS_PENDING,
             ])->latest('id')->get();
 
-        $batches = $grouped->map(function ($items) use ($signSessions, $requesterNames) {
+        $batches = $grouped->map(function ($items) use ($signSessions) {
                 $f = $items->first();
                 $memberVehicles = $items->map->vehicle->filter();
                 $fin = ShippingRequest::financeForVehicles($memberVehicles);
@@ -701,7 +697,9 @@ new #[Layout('components.layouts.app')] class extends Component
                     'bl_type' => $f->bl_type,
                     'bl_status' => $f->bl_status ?? ShippingRequest::BL_STATUS_NONE,
                     'requested_by' => $f->requested_by_email,
-                    'requested_name' => $requesterNames[$f->requested_by_email] ?? null,
+                    // 「요청 영업」 = 묶인 차들의 영업담당자(jin 2026-11-14 «누구 건지»). 요청자 이메일은 ERP 관리 계정일 수도 있어 쓰지 않는다
+                    //   (ssancarerp 묶음 중 ERP 차량관리에서 묶은 것은 요청자가 관리·업무관리자다).
+                    'requested_name' => $memberVehicles->map(fn ($v) => $v->salesman?->name)->filter()->unique()->implode(', ') ?: null,
                     'requested_at' => $f->requested_at,
                     'status' => $f->status,
                     'vehicles' => $items->map(fn ($r) => [

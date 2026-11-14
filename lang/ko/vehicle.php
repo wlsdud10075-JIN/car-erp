@@ -417,6 +417,7 @@ return [
         'discharge_note' => '미선택 시 바이어 국가명 사용',
         'export_decl_amount_note' => '통상 인보이스 금액과 동일. CIF/FOB 차이 시만 별도 입력',
         'upload_enables_loaded' => '(올리면 선적중)',
+        'upload_completes_deal' => '(올리면 거래완료)',   // B/L 문서 — 진행상태 1순위(구: 신고서 문구 「선적중」을 같이 써서 틀렸다, 2026-11-14)
         'g1' => [
             'no_price' => '⚠ 판매가 미입력 — 판매 정보(판매가) 입력 후 B/L 발행 가능',
             'override' => '⚠ 미수율 :ratio% — 관리/관리자 미입금 우회 승인(B/L 발행 단계) 적용됨 → B/L 발행 가능',

@@ -405,6 +405,7 @@ return [
         'discharge_note' => 'If unset, uses buyer country name',
         'export_decl_amount_note' => 'Usually equals invoice amount. Enter separately only if CIF/FOB differs.',
         'upload_enables_loaded' => '(uploading moves it to Loading)',
+        'upload_completes_deal' => '(uploading completes the deal)',
         'g1' => [
             'no_price' => '⚠ Sell price missing — enter sale info (sell price) before issuing B/L',
             'override' => '⚠ Unpaid :ratio% — management/admin unpaid-bypass approval (B/L issuance) applied → B/L can be issued',
