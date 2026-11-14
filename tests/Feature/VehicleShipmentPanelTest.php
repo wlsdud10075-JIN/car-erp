@@ -324,4 +324,40 @@ class VehicleShipmentPanelTest extends TestCase
             ->call('openShipmentBulk')
             ->assertStatus(403);
     }
+
+    /**
+     * 📮 날짜가 아닌 접수일은 저장하지 않는다 (2026-11-14) — 구: 조용히 빈 날짜로 저장됐다.
+     *    [＋발송 추가] 때 오늘이 미리 들어가 있어 그 뒤에 이어 치면 「2026-11-1420261114」가 된다(가이드 씬 실측).
+     */
+    public function test_a_garbled_sent_date_blocks_the_save_instead_of_vanishing(): void
+    {
+        $v = $this->vehicle();
+
+        Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->set('shipments', [
+                ['id' => null, 'carrier' => 'ems', 'tracking_no' => 'EE1KR', 'fee' => '25,000', 'sent_date' => '2026-11-1420261114'],
+            ])
+            ->call('save')
+            ->assertHasErrors('shipments.0.sent_date');
+
+        $this->assertSame(0, $v->fresh()->shipments()->count());
+    }
+
+    public function test_bulk_refuses_a_garbled_sent_date(): void
+    {
+        $v = $this->vehicle();
+
+        Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->call('openShipmentBulk')
+            ->set('shipBulkCarrier', 'dhl')
+            ->set('shipBulkTrackingNo', '4508354922')
+            ->set('shipBulkTotal', '10000')
+            ->set('shipBulkDate', '2026-11-1420261114')
+            ->set('shipBulkRaw', $v->vehicle_number)
+            ->call('applyShipmentBulk')
+            ->assertHasErrors('shipBulkDate');
+
+        $this->assertSame(0, $v->fresh()->shipments()->count());
+    }
 }

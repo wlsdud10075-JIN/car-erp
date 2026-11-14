@@ -1442,4 +1442,5 @@ Contact the system administrator.',
         'bl' => 'Needs B/L',
         'bl_hint' => 'Vehicles with the cleared check still missing a B/L upload - excluding completed, cancelled and domestic',
     ],
+    'shipment_bad_date' => 'Shipping date ":value" is not a date. Use 2026-11-14 or 20261114.',
 ];
