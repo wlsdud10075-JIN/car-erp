@@ -124,7 +124,7 @@ return [
     'monthly_count_note' => 'Monthly distribution by purchase/sale/completion (B/L issue) column',
     'monthly_sales_title_pre' => 'Monthly sales total KRW (',
     'monthly_sales_title_post' => ')',
-    'monthly_sales_note' => 'By sale_date. Foreign currency = sale_price × exchange_rate (excludes rate 0/NULL)',
+    'monthly_sales_note' => 'By sale date. Foreign currency = sale price × sale rate (excludes vehicles with no rate)',
 
     'recv_period_note' => 'Receivable figures ignore the date filter above and always show current outstanding balances.',
     'recv_total_unpaid' => 'Total outstanding',
@@ -140,7 +140,7 @@ return [
     'recv_after' => 'Post-shipment outstanding',
     'recv_after_note' => ':count vehicles · departed (past the shipping date)',
     'recv_deposit' => 'Deposit (savings used)',
-    'recv_deposit_note' => ':count vehicles · savings_used > 0',
+    'recv_deposit_note' => ':count vehicles · credit used',
     'recv_salesman_top' => 'Top outstanding by salesman (TOP 10)',
     'recv_buyer_top' => 'Top outstanding by buyer (TOP 10)',
     'recv_empty' => 'No outstanding vehicles',
