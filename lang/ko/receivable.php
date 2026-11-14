@@ -110,6 +110,7 @@ return [
     'history' => '회수 이력',
     'manager_section' => '채권담당자',
     'manager_unassigned' => '미지정',
+    'manager_same_as_salesman' => '영업담당자와 같게 (:name)',
     'assign' => '지정',
     'manager_assigned' => '채권담당자가 지정됐습니다.',
     'form_title_edit' => '회수 이력 수정',

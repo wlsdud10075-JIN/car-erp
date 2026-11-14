@@ -104,6 +104,7 @@ return [
     'history' => 'Collection History',
     'manager_section' => 'AR Manager',
     'manager_unassigned' => 'Unassigned',
+    'manager_same_as_salesman' => 'Same as salesperson (:name)',
     'assign' => 'Assign',
     'manager_assigned' => 'AR manager assigned.',
     'form_title_edit' => 'Edit Collection',

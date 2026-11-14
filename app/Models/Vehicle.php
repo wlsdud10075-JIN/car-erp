@@ -2338,6 +2338,17 @@ class Vehicle extends Model
         return $this->belongsTo(User::class, 'receivable_manager_id');
     }
 
+    /**
+     * 화면에 보이는 채권담당자 이름 — 따로 지정한 사람이 없으면 **영업담당자**(jin 2026-11-14
+     * «영업담당자가 채권담당자인 거랑 같다 — 미러로, 다를 때만 수동»). DB 에는 안 쓴다 — 담당 영업을 바꾸면 그대로 따라간다.
+     * 실측 11-14: 3사 미수 차 498대 중 지정 0대. karabaerp 는 영업담당자에 ERP 계정이 없어 이름으로만 미러한다.
+     * ⚠️ receivableManager·salesman 을 eager load 해서 쓸 것(목록 N+1).
+     */
+    public function getReceivableManagerNameAttribute(): ?string
+    {
+        return $this->receivableManager?->name ?? $this->salesman?->name;
+    }
+
     public function unpaidExportOverrides(): HasMany
     {
         return $this->hasMany(UnpaidExportOverride::class);

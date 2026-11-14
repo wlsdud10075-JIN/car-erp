@@ -70,7 +70,7 @@
                 <td class="py-2 pr-3 text-right font-semibold text-red-700">{{ number_format($v->sale_unpaid_amount, 0) }} <span class="font-normal text-gray-500">{{ $v->currency }}</span></td>
                 <td class="py-2 pr-3"><span class="badge {{ $v->receivable_risk === 'critical' ? 'badge-red' : 'badge-amber' }}">{{ __('receivable.risk.'.$v->receivable_risk) }}</span></td>
                 <td class="py-2 pr-3 text-right text-gray-600">{{ $v->days_since_sale !== null ? $v->days_since_sale.__('dashboard.v.unit_day') : '—' }}</td>
-                <td class="py-2 text-gray-600">{{ $v->receivableManager?->name ?? '—' }}</td>
+                <td class="py-2 text-gray-600">{{ $v->receivable_manager_name ?? '—' }}</td>
             </tr>
             @endforeach
             </tbody>
