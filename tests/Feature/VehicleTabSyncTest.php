@@ -149,4 +149,28 @@ class VehicleTabSyncTest extends TestCase
             $this->assertStringContainsString($cls, $css, "배너 클래스 {$cls} 가 빌드 CSS 에 없다");
         }
     }
+
+    /**
+     * 🪟 내 [승인 기록] 은 「다른 창이 먼저 저장」이 아니다 (2026-11-14 입금률 게이트 씬에서 발견).
+     *    승인이 차량 updated_at 을 바꿔(is_override_active) 자기 패널이 남의 저장으로 착각하고 경고를 띄웠다.
+     *    사유 칸을 친 것도 「입력 중」으로 잡혀 경고가 배너 형태로 떴다.
+     */
+    public function test_own_override_approval_is_not_a_remote_save(): void
+    {
+        [$v, $admin] = $this->fixture();
+        $this->actingAs($admin);
+
+        $c = Volt::test('erp.vehicles.index')->call('openEdit', $v->id)
+            ->set('overrideStage', 'shipping')
+            ->set('overrideReason', '바이어 잔금 송금 예정 확인 — 선박 일정상 반입 먼저 진행');
+        $c->assertSet('formDirty', false);
+
+        $this->travel(1)->minutes();   // 같은 초면 지문이 안 바뀌어 헛통과한다
+        $c->call('approveUnpaidOverride');
+        $this->assertTrue((bool) $v->fresh()->is_override_active);
+        $this->assertSame($v->fresh()->editFingerprint(), $c->get('formFingerprint'), '내 승인 뒤 지문을 새 기준으로 삼지 않았다');
+
+        $c->call('heartbeat');
+        $c->assertSet('remoteChanged', false);
+    }
 }

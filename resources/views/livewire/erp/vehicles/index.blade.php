@@ -4529,6 +4529,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         ]);
 
         $v = Vehicle::findOrFail($this->editingId);
+        // 🪟 승인 기록은 차량 updated_at 을 바꾼다(is_override_active) — 내 저장인데 「다른 창이 먼저 저장」으로 뜨지 않게,
+        //    승인 직전 지문이 폼 지문과 같았으면(그 사이 남이 안 바꿨으면) 승인 뒤 지문을 새 기준으로 삼는다(2026-11-14).
+        $fingerprintBefore = $v->editFingerprint();
 
         \App\Models\UnpaidExportOverride::create([
             'vehicle_id' => $v->id,
@@ -4560,6 +4563,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             'ip_address' => request()->ip(),
         ]);
 
+        if ($this->formFingerprint !== '' && $fingerprintBefore === $this->formFingerprint) {
+            $this->formFingerprint = $v->editFingerprint();
+        }
         $this->overrideStage = '';
         $this->overrideReason = '';
 
@@ -4677,6 +4683,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         'shipmentFilter', 'shipmentMonth', 'boardFilters', 'cancelFilter', 'taskFilter', 'freightExact',
         'vinSearch', 'action', 'salesmanId', 'ids', 'openVehicle', 'create', 'buyerId', 'perPage',
         'sortColumn', 'sortDirection', 'sortExtra', 'visibleColumns', 'page', 'paginators',
+        // 미입금 우회 승인 칸 — 차량 폼이 아니라 [승인 기록] 전용 입력이다(2026-11-14)
+        'overrideStage', 'overrideReason',
     ];
 
     /** 클라이언트가 보낸 프로퍼티 갱신 — 패널이 열려 있고 폼 칸이면 dirty. */
