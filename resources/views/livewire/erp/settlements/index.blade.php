@@ -1932,8 +1932,10 @@ new #[Layout('components.layouts.app')] class extends Component
             return 0;
         }
 
+        // 🔀 2026-11-14 (jin) — 「2차 가능」만 센다. 구: 2차 대기 전체(비용 대기 포함)라 버튼은 (2)인데
+        //   창은 「마감할 정산 0건」 — 숫자만 보면 비용 대기까지 마감될 것처럼 보였다. 실제 대상(secondaryCloseTargets)과 같은 축.
         return Settlement::query()
-            ->where('secondary_status', 'pending')
+            ->secondaryFilter('ready')
             ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
