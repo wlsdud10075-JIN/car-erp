@@ -360,4 +360,17 @@ class VehicleShipmentPanelTest extends TestCase
 
         $this->assertSame(0, $v->fresh()->shipments()->count());
     }
+
+    /** 발송비 합계는 원 단위 그대로 (2026-11-14 — 55,000 이 대시보드식 축약으로 「6만」이 됐다). */
+    public function test_shipment_total_is_shown_to_the_won(): void
+    {
+        $v = $this->vehicle();
+        $v->shipments()->create(['carrier' => 'ems', 'tracking_no' => 'EE1KR', 'fee' => 25_000]);
+        $v->shipments()->create(['carrier' => 'dhl', 'tracking_no' => '123', 'fee' => 30_000]);
+
+        Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->call('openEdit', $v->id)
+            ->assertSee('55,000원')
+            ->assertDontSee('6만');
+    }
 }

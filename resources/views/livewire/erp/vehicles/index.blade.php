@@ -11569,7 +11569,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
             <div class="total-summary">
                 <div class="row total">
                     <span>{{ __('vehicle.panel.shipment_total') }}</span>
-                    <span class="amount">@krw($shipmentTotal)</span>
+                    {{-- 정확한 원 단위(2026-11-14) — @krw 는 만 단위 반올림이라 55,000 이 「6만」으로 보였다. 대시보드 KPI 용 축약이다. --}}
+                    <span class="amount">{{ number_format((int) $shipmentTotal) }}원</span>
                 </div>
             </div>
             <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.panel.shipment_hint') }}</p>
