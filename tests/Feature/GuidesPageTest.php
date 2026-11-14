@@ -130,8 +130,9 @@ class GuidesPageTest extends TestCase
     /** board 링크 — 같은 회사 짝이 있고 board 쪽이 열렸을 때만. karaba 는 board 가 없다. */
     public function test_board_link_is_drawn_only_for_companies_with_a_board_once_it_is_live(): void
     {
-        config(['company.template_set' => 'system']);
+        config(['company.template_set' => 'system', 'guides.board_link_live' => false]);
         $this->assertNull(GuideCatalog::boardUrl(), 'board 배포 전엔 링크를 그리지 않는다(404 로 보내지 않는다)');
+        // 운영 설정은 켜져 있다(2026-11-14 board /guides 운영 확인) — 스위치 자체는 남겨 둔다.
 
         config(['guides.board_link_live' => true]);
         $this->assertSame('https://board.heymancar.com/guides', GuideCatalog::boardUrl());

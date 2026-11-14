@@ -23,7 +23,7 @@ return [
 
     // board 업무 가이드 주소(같은 회사 짝끼리만). 키 = company.template_set. karaba 는 board 가 없다.
     // ⚠️ board 쪽 /guides 가 배포되기 전엔 404 다 — board 배포 통보를 받은 뒤 board_link_live 를 true 로(board 세션 11-13 회신).
-    'board_link_live' => false,
+    'board_link_live' => true,   // ✅ 2026-11-14 켬 — board.heymancar.com·board.heysellcar.com /guides 운영 확인(302→로그인, jin «BOARD 쪽엔 ERP 링크가 있는데 ERP 쪽엔 안 보인다»)
     'board_urls' => [
         'system' => 'https://board.heymancar.com/guides',
         'heyman' => 'https://board.heysellcar.com/guides',
