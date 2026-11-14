@@ -4408,7 +4408,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         $restored = 0;
+        // 비용 10개는 재무도 고친다(jin 2026-11-14) — 그 칸만 복원 대상에서 뺀다.
+        $costEditable = auth()->user()?->canEditVehicleCostFields() ? Vehicle::DISPLAY_COST_FIELDS : [];
         foreach (self::FINANCIAL_FIELD_MAP as $formField => $dbField) {
+            if (in_array($dbField, $costEditable, true)) {
+                continue;
+            }
             $current = (float) str_replace(',', '', (string) ($this->{$formField} ?? '0'));
             $originalValue = (float) ($original->{$dbField} ?? 0);
             if (abs($current - $originalValue) > 0.001) {
@@ -4481,9 +4486,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 회의확장씬 #8 (2026-05-22) — 2차 정산 대기 동안 [재무]/[관리]/admin 잠금 해제.
         // paid 후 한 달 뒤 측정되는 기타비용(말소·면허·탁송·보험·이전비·기타1,2) 수정 대기.
         // secondary_status='closed' 후 다시 잠금 (회계 무결성 복구).
-        $user = auth()->user();
-        $isFinanceOrManager = $user && ($user->isAdmin() || in_array($user->role, ['재무', '관리'], true));
-        if ($isFinanceOrManager) {
+        //   2026-11-14 — 업무관리자도 포함(재무 이상). 판정 = User::canCorrectSecondaryCosts.
+        if (auth()->user()?->canCorrectSecondaryCosts()) {
             $hasSecondaryPending = $existing->settlements()
                 ->where('settlement_status', 'paid')
                 ->where('secondary_status', 'pending')
@@ -10022,8 +10026,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     ->where('settlement_status', 'paid')
                     ->where('secondary_status', 'pending')
                     ->exists();
-                $canEditCostNow = auth()->user()?->isAdmin()
-                    || in_array(auth()->user()?->role, ['재무', '관리'], true);
+                $canEditCostNow = (bool) auth()->user()?->canCorrectSecondaryCosts();
             @endphp
             @if($hasSecondaryPending && $canEditCostNow)
             <div class="mb-2 rounded border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">

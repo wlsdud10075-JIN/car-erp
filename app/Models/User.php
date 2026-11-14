@@ -660,6 +660,28 @@ class User extends Authenticatable
     }
 
     /**
+     * 차량 비용 10개(`Vehicle::DISPLAY_COST_FIELDS`)를 고칠 수 있는가.
+     *
+     * 🔀 jin 2026-11-14 — 재무도 된다. 2차 정산 안내(차량 창 띠·정산 드로어)가 재무에게
+     * 「비용 10개를 실측으로 고친다」고 말하는데, 비용 칸이 위 회계 필드 묶음에 같이 들어
+     * 있어 재무 저장이 조용히 원값으로 되돌아갔다. 매입가·판매가·환율은 종전대로 막는다.
+     */
+    public function canEditVehicleCostFields(): bool
+    {
+        return $this->canEditVehicleFinancialFields() || $this->role === '재무';
+    }
+
+    /**
+     * 정산 지급(paid) 뒤 2차 대기 동안 회계 칸 잠금을 풀어 실측 비용을 넣을 수 있는가.
+     * = 재무 이상(재무·관리·업무관리자·최고관리자·시스템관리자). 🚫 영업은 넣지 않는다(회의확장씬 #8).
+     * 차량 창 2차 대기 띠와 `guardFinancialDriftAfterPaid` 가 같이 본다.
+     */
+    public function canCorrectSecondaryCosts(): bool
+    {
+        return $this->isAdmin() || $this->isManager() || in_array($this->role, ['재무', '관리'], true);
+    }
+
+    /**
      * 회의확장씬 2026-05-22 — 항구 마스터 (/admin/ports) 접근/편집 권한.
      * 사용자 명세: 항구 마스터 [관리]도 볼 수 있고 수정 가능하도록.
      * canAccessAdmin 과 별개 (사용자 관리·기능 설정은 admin only 유지).

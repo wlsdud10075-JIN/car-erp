@@ -784,7 +784,7 @@ return [
         'buyer_first' => '바이어 먼저 선택',
         'buyer_created' => '신규 바이어 등록 완료',
         'consignee_created' => '신규 컨사이니 등록 완료',
-        'fields_restored' => '회계 민감 필드 :count건은 변경 권한이 없어 원값으로 복원됨 (admin/영업만 변경 가능)',
+        'fields_restored' => '회계 민감 필드 :count건은 변경 권한이 없어 원값으로 복원됨 (매입가·판매가·환율은 영업·관리 이상, 비용 10개는 재무도 변경 가능)',
         'override_no_perm' => '미입금 우회 승인 권한이 없습니다.',
         'save_first_approve' => '차량을 먼저 저장한 뒤 승인할 수 있습니다.',
         'override_done' => '미입금 우회 승인 완료 — 해당 단계 진입 가능',

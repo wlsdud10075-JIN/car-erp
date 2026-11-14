@@ -766,7 +766,7 @@ return [
         'buyer_first' => 'Select a buyer first',
         'buyer_created' => 'New buyer created',
         'consignee_created' => 'New consignee created',
-        'fields_restored' => ':count accounting-sensitive field(s) restored to original (no permission; admin/sales only)',
+        'fields_restored' => ':count accounting-sensitive field(s) restored to original (no permission; prices and rate: sales and managers and above; the 10 cost items: finance too)',
         'override_no_perm' => 'No permission for unpaid-bypass approval.',
         'save_first_approve' => 'Save the vehicle first before approving.',
         'override_done' => 'Unpaid bypass approved — this step can now proceed',
