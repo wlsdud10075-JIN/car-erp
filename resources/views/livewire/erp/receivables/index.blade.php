@@ -96,7 +96,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 경과일 = 판매일부터 — ▲(오름차순) = 경과일 적은 순 = 판매일 최신순. 빈 판매일은 뒤로.
             'age' => $q->orderByRaw('vehicles.sale_date IS NULL ASC')->orderBy('vehicles.sale_date', $dir === 'asc' ? 'desc' : 'asc'),
             'risk' => $q->orderByRaw("(CASE vehicles.receivable_risk WHEN 'critical' THEN 5 WHEN 'danger' THEN 4 WHEN 'caution' THEN 3 WHEN 'grace' THEN 2 WHEN 'safe' THEN 1 ELSE 0 END) {$dir}"),
-            'manager' => $q->orderByRaw($name('users', 'vehicles.receivable_manager_id').' IS NULL ASC')->orderByRaw($name('users', 'vehicles.receivable_manager_id')." {$dir}"),
+            // 채권담당 = 지정한 사람, 없으면 영업담당자(Vehicle::receivable_manager_name 과 같은 규칙, 2026-11-14)
+            'manager' => $q->orderByRaw('COALESCE('.$name('users', 'vehicles.receivable_manager_id').', '.$name('salesmen', 'vehicles.salesman_id').') IS NULL ASC')
+                ->orderByRaw('COALESCE('.$name('users', 'vehicles.receivable_manager_id').', '.$name('salesmen', 'vehicles.salesman_id').") {$dir}"),
         };
     }
     // 큐 10 확장 — G3 미수 분류 (회의록 v5 §G3, 사용자 결정 2026-05-18).
@@ -1606,7 +1608,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             떠난 차에 같은 색을 칠하면 옆칸 위험도와 **다른 답**을 하는 화면이 된다. 숫자만 보여준다. --}}
                     <td class="py-2 pr-3 text-right text-gray-600">{{ $v->days_since_sale !== null ? __('receivable.age_days', ['days' => number_format($v->days_since_sale)]) : '-' }}</td>
                     <td class="py-2 pr-3"><span class="badge {{ $riskBadge }}">{{ $v->receivable_risk ? __('receivable.risk.'.$v->receivable_risk) : '-' }}</span></td>
-                    <td class="py-2 pr-3 text-gray-600">{{ $v->receivableManager?->name ?? '-' }}</td>
+                    <td class="py-2 pr-3 text-gray-600">{{ $v->receivable_manager_name ?? '-' }}</td>
                     {{-- 큐 16 — tax_invoice 컬럼 제거 --}}
                 </tr>
                 @empty
@@ -1822,7 +1824,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             </div>
             <div class="mt-2 flex items-center gap-2">
                 <select wire:model="managerIdInput" class="input-base flex-1">
-                    <option value="">{{ __('receivable.manager_unassigned') }}</option>
+                    {{-- 비우면 영업담당자가 채권담당(2026-11-14) — 다를 때만 사람을 고른다 --}}
+                    <option value="">{{ $this->selectedVehicle?->salesman ? __('receivable.manager_same_as_salesman', ['name' => $this->selectedVehicle->salesman->name]) : __('receivable.manager_unassigned') }}</option>
                     @foreach ($this->staff as $u)<option value="{{ $u->id }}">{{ $u->name }} ({{ $u->permission }})</option>@endforeach
                 </select>
                 <button type="button" wire:click="assignManager" class="btn-primary px-3 py-1.5 text-sm">{{ __('receivable.assign') }}</button>
