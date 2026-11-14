@@ -4742,10 +4742,32 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 표시하면 빠뜨린다). rendered 훅은 SupportEvents 의 dehydrate 보다 먼저 돌아 dispatch 가 실린다
      * (LivewireServiceProvider 기능 등록 순서: SupportEvents → SupportLifecycleHooks).
      */
+    /**
+     * 🪟 요청 시작 때의 차량 지문 (2026-11-14) — 패널 버튼(매입취소 전환·우회 승인·마감 등)이 차량에 직접 쓰면
+     *    updated_at 이 바뀌는데 폼 지문은 save() 만 갱신했다. 그래서 30초 하트비트가 **자기 쓰기**를 남의 저장으로 보고
+     *    다시 열거나(입력 중이면) 저장을 막았다. 요청 시작 지문이 폼 지문과 같았고 이번 요청이 썼으면, 끝난 뒤 지문을
+     *    새 기준으로 삼는다(그 사이 남이 쓴 경우는 시작 지문이 이미 달라서 그대로 잡힌다).
+     */
+    private ?string $fingerprintAtStart = null;
+
+    public function hydrate(): void
+    {
+        $this->fingerprintAtStart = ($this->editingId && $this->formFingerprint !== '' && ! $this->remoteChanged)
+            ? Vehicle::query()->whereKey($this->editingId)->first()?->editFingerprint()
+            : null;
+    }
+
     public function rendered(): void
     {
+        if (static::$islandWriteSeen && $this->editingId && $this->fingerprintAtStart !== null
+            && $this->fingerprintAtStart === $this->formFingerprint) {
+            $this->formFingerprint = Vehicle::query()->whereKey($this->editingId)->first()?->editFingerprint() ?? $this->formFingerprint;
+        }
+        // 🔀 2026-11-14 — 보내는 이름을 'vehicles-wrote' 로 갈랐다. 구: 'vehicles-changed' 를 보내 **이 탭의 자기 패널도**
+        //    #[On('vehicles-changed')] 로 받아, 저장이 아닌 패널 버튼(매입취소 전환·우회 승인 등)의 자기 쓰기를
+        //    「다른 창이 먼저 저장」으로 오인했다(지문은 save() 만 갱신). 다른 탭엔 app.js 가 'vehicles-changed' 로 넘긴다.
         if (static::$islandWriteSeen) {
-            $this->dispatch('vehicles-changed');
+            $this->dispatch('vehicles-wrote');
         }
     }
 
