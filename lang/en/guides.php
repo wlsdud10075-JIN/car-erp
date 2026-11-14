@@ -4,7 +4,6 @@
 return [
     'title' => 'Work Guide',
     'intro' => 'Each guide is one task walked through from start to finish, with the actual screens and messages in order.',
-    'board_link' => 'Board work guide →',
     'search_placeholder' => 'Type what you are looking for — searches inside the guides too, not only the titles',
     'chip_work' => 'Area',
     'chip_all' => 'All',
