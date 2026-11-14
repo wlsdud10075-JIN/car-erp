@@ -197,4 +197,33 @@ class CostLicenseBundleTest extends TestCase
             ->call('openLicenseFee', $batch)
             ->assertStatus(403);
     }
+
+    /**
+     * 🔀 2026-11-14 (jin A안) — 재무도 「2차 비용」 탭에서 면허비 n/1 을 넣는다(성지 면허비가 재무 일).
+     * 재무는 이 화면에서 2차 비용 탭만 본다 — 선적/발급 탭으로 못 간다.
+     */
+    public function test_finance_uses_only_the_cost_tab_and_applies_license_n1(): void
+    {
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무', 'email_verified_at' => now()]);
+        $this->actingAs($finance);
+        [, $vehicles, $batch] = $this->makeBundle(2);
+
+        Volt::test('erp.shipping-requests.index', ['focus' => $batch])
+            ->assertSet('viewTab', 'cost')
+            ->assertSet('licenseBatch', $batch)
+            ->call('setViewTab', 'shipping')
+            ->assertSet('viewTab', 'cost')
+            ->call('openLicenseFee', $batch)   // 탭 전환은 폼을 비운다 — 다시 연다
+            ->set('licenseTotal', '100000')
+            ->call('applyLicenseFee');
+
+        $this->assertSame(100000, collect($vehicles)->sum(fn ($v) => (int) $v->fresh()->cost_license),
+            '재무의 면허비 n/1 이 팀 스코프에서 전부 건너뛰어졌다');
+    }
+
+    public function test_sales_still_cannot_open_the_screen(): void
+    {
+        $this->actingAs(User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]));
+        Volt::test('erp.shipping-requests.index')->assertStatus(403);
+    }
 }

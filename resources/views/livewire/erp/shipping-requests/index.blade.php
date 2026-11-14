@@ -67,15 +67,16 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function setViewTab(string $t): void
     {
-        $this->viewTab = $t === 'cost' ? 'cost' : 'shipping';
+        // 재무는 「2차 비용」 탭만 본다(jin 2026-11-14) — 선적/발급 탭은 수출통관·관리 일.
+        $this->viewTab = ($t === 'cost' || ! auth()->user()?->canAccessClearance()) ? 'cost' : 'shipping';
         $this->licenseBatch = '';
         $this->licenseTotal = '';
     }
 
-    /** 면허비 n/1 폼 열기 (승인 권한). */
+    /** 면허비 n/1 폼 열기 — 재무 이상(jin 2026-11-14, 구: 승인 권한). */
     public function openLicenseFee(string $batchId): void
     {
-        abort_unless((bool) auth()->user()?->canApprove(), 403);
+        abort_unless((bool) auth()->user()?->canCorrectSecondaryCosts(), 403);
         $this->licenseBatch = $batchId;
         $this->licenseTotal = '';
     }
@@ -92,7 +93,7 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     public function applyLicenseFee(): void
     {
-        abort_unless((bool) auth()->user()?->canApprove(), 403);
+        abort_unless((bool) auth()->user()?->canCorrectSecondaryCosts(), 403);
 
         $total = (int) round((float) str_replace(',', '', $this->licenseTotal));
         if ($total <= 0) {
@@ -141,15 +142,20 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function mount(): void
     {
-        abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
+        $user = auth()->user();
+        // 🔀 2026-11-14 (jin) — 재무도 들어온다, 단 「2차 비용」 탭만(성지 면허비 n/1 이 재무 일).
+        abort_unless((bool) ($user?->canAccessClearance() || $user?->canCorrectSecondaryCosts()), 403);
 
         $this->normalizePerPage();
 
-        // 딥링크 진입 — 승인 권한자면 2차 비용 탭 열고 해당 묶음 면허비 폼 자동 오픈.
-        if ($this->focus !== '' && auth()->user()?->canApprove()) {
+        // 딥링크 진입 — 2차 비용 권한자(재무 이상)면 2차 비용 탭 열고 해당 묶음 면허비 폼 자동 오픈.
+        if ($this->focus !== '' && $user->canCorrectSecondaryCosts()) {
             $this->viewTab = 'cost';
             $this->licenseBatch = $this->focus;
-        } elseif ($this->tab === 'cost' && auth()->user()?->canApprove()) {
+        } elseif ($this->tab === 'cost' && $user->canCorrectSecondaryCosts()) {
+            $this->viewTab = 'cost';
+        }
+        if (! $user->canAccessClearance()) {
             $this->viewTab = 'cost';
         }
     }
@@ -754,6 +760,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'costBatches' => $costBatches,
             'canApprove' => (bool) auth()->user()?->canApprove(),
             'canAccessClearance' => (bool) auth()->user()?->canAccessClearance(),
+            'canCostTab' => (bool) auth()->user()?->canCorrectSecondaryCosts(),
         ];
     }
 
@@ -838,13 +845,15 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
     @endif
 
-    {{-- 상단 탭: 선적/발급 ↔ 2차 비용(면허비 n/1). 2차 비용은 승인 권한자만. --}}
+    {{-- 상단 탭: 선적/발급 ↔ 2차 비용(면허비 n/1). 선적/발급 = 수출통관·관리 / 2차 비용 = 재무 이상(jin 2026-11-14). --}}
     <div class="mb-4 flex gap-2 border-b border-gray-200">
+        @if($canAccessClearance)
         <button type="button" wire:click="setViewTab('shipping')"
                 class="-mb-px border-b-2 px-3 py-2 text-sm font-medium {{ $viewTab === 'shipping' ? 'border-primary text-primary-text' : 'border-transparent text-gray-500 hover:text-gray-700' }}">
             {{ __('shipping.tab.shipping') }}
         </button>
-        @if($canApprove)
+        @endif
+        @if($canCostTab)
         <button type="button" wire:click="setViewTab('cost')"
                 class="-mb-px border-b-2 px-3 py-2 text-sm font-medium {{ $viewTab === 'cost' ? 'border-primary text-primary-text' : 'border-transparent text-gray-500 hover:text-gray-700' }}">
             {{ __('shipping.tab.cost') }}
