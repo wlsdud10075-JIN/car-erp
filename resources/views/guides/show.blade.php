@@ -14,6 +14,10 @@
         .gd-step .gd-n { font-size: 11.5px; color: #6b7280; font-weight: 700; }
         .gd-step p { margin: 6px 0 0; line-height: 1.65; }
         .gd-step img { margin-top: 10px; max-width: 100%; border: 1px solid #e5e7eb; border-radius: 8px; }
+        .gd-table-wrap { margin-top: 10px; overflow-x: auto; }
+        .gd-table { border-collapse: collapse; width: 100%; font-size: 12.5px; line-height: 1.55; }
+        .gd-table th, .gd-table td { border: 1px solid #e5e7eb; padding: 6px 8px; text-align: left; vertical-align: top; }
+        .gd-table th { background: #f9fafb; color: #4b5563; font-weight: 600; white-space: nowrap; }
         .gd-bubble { margin-top: 10px; max-width: 340px; background: #fee500; border-radius: 4px 14px 14px 14px; padding: 10px 12px; font-size: 12.5px; line-height: 1.6; white-space: pre-line; }
         .gd-bubble small { display: block; margin-top: 6px; color: #6b5a00; font-size: 11px; }
         .gd-scene details { margin-top: 10px; font-size: 12px; color: #4b5563; }
