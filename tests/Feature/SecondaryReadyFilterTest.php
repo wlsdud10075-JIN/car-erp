@@ -188,4 +188,23 @@ class SecondaryReadyFilterTest extends TestCase
         $this->assertNull($before->fresh()->secondary_ready_at, '지급 전 기록을 근거로 삼았다');
         $this->assertStringContainsString('2차 가능 1', Artisan::output());
     }
+
+    /**
+     * 🔢 [이 달 2차 일괄 마감 (N)] 의 N = 「2차 가능」 건수 (jin 2026-11-14).
+     *    구: 2차 대기 전체(비용 대기 포함)라 버튼은 (2)인데 창은 「마감할 정산 1건」 — 숫자만 보면 비용 대기도 마감될 것처럼 보였다.
+     */
+    public function test_bulk_close_button_counts_only_ready_settlements(): void
+    {
+        [$v1] = $this->paidSettlement('11가1111');
+        $this->paidSettlement('22나2222');
+        $this->actingAs($this->finance());
+
+        $c = Volt::test('erp.settlements.index')->set('monthFilter', '2026-07');
+        $c->assertSet('secondaryPendingCount', 0);   // 둘 다 비용 대기 → 버튼 안 뜸
+
+        $v1->update(['cost_towing' => 150_000]);     // 한 대만 2차 가능
+        Volt::test('erp.settlements.index')->set('monthFilter', '2026-07')
+            ->assertSet('secondaryPendingCount', 1)
+            ->assertSee(__('settlement.batch.close_secondary', ['count' => 1]));
+    }
 }

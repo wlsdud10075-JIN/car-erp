@@ -301,7 +301,7 @@ return [
     'section_margin' => 'Margin breakdown',
     'section_costs' => 'Applied Cost Breakdown',
     'costs_total' => 'Cost total',
-    'costs_total_sub' => '(= cost_total, applied to total margin)',
+    'costs_total_sub' => '(applied to total margin)',
     'margin_sales_krw' => 'Sale amount KRW',
     'margin_sales_krw_formula' => '(sale+commission+auto loading-TAX/DC)×rate',
     'margin_settle_sales_krw' => 'Settlement sale KRW',
