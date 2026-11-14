@@ -349,7 +349,7 @@ class LocaleTest extends TestCase
             ->call('openCreate')
             ->assertSee('NICE Registration')        // 기본정보 탭 섹션 (2026-10-02 칸 교체로 「(12)」 표기 제거)
             ->assertSee('Export')                    // 패널 탭 네비 (2026-10-20 선적+수출통관 → 「수출」 합본)
-            ->assertSee('9 Cost Items')              // 매입 탭 섹션
+            ->assertSee('10 Cost Items')              // 매입 탭 섹션
             ->assertSee('Seller Account (remittance target)')
             ->assertSee('Payment Status')            // 판매 탭 섹션
             ->assertSee('Sale Basics')
@@ -358,7 +358,7 @@ class LocaleTest extends TestCase
             ->assertSee('Power of Attorney')
             ->assertSee('Create')                    // 저장바(신규)
             ->assertDontSee('NICE 등록정보')
-            ->assertDontSee('비용 9개')
+            ->assertDontSee('비용 10개')
             ->assertDontSee('입금 현황')
             ->assertDontSee('우체국 EMS')
             ->assertDontSee('위임장');

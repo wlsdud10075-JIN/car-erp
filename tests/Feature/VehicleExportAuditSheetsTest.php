@@ -143,8 +143,7 @@ class VehicleExportAuditSheetsTest extends TestCase
     /**
      * 수식 주입 방어 — 상세 시트도 차량 시트와 같은 규칙(`writeCell`)을 쓴다.
      *
-     * ⚠️ 회수이력 비고로 검사한다 — 잔금(balance) 비고는 `ReceivableHistory` 미러가 되받아써서
-     *    (「회수: …」) 사람이 적은 값이 남지 않는다. 기존 동작이라 여기서 손대지 않는다.
+     * 회수이력 비고로 검사한다(잔금 비고가 덮이던 것은 2026-11-14 에 고쳤다 — `FinalPaymentNoteKeptTest`).
      */
     public function test_detail_sheets_do_not_execute_formulas_from_notes(): void
     {

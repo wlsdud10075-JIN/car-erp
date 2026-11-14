@@ -185,11 +185,22 @@ class ReceivableHistory extends Model
     public function syncFinalPayment(): void
     {
         if ($this->method === 'deposit') {
+            // 🧾 판매 잔금이 먼저 생겨 거꾸로 미러된 회수 줄(FinalPayment::created) — 금액·날짜는 이미 같고,
+            //    여기서 다시 쓰면 실무자가 적은 잔금 비고가 「회수: 판매 잔금 자동 미러링」으로 덮인다(jin 2026-11-14).
+            //    getChanges() 가 비어 있음 = 이번 저장이 insert — 같은 요청에서 그 줄을 이어서 고치면 종전대로 넘긴다.
+            if ($this->wasRecentlyCreated && $this->final_payment_id && $this->getChanges() === []) {
+                return;
+            }
+
             $payload = [
                 'amount' => $this->amount,
                 'payment_date' => $this->collected_at,
-                'note' => '회수: '.($this->note ?? ''),
             ];
+            // 비고는 채권관리에서 회수 줄을 새로 만들거나 비고를 고쳤을 때만 잔금으로 넘긴다 —
+            //   금액·날짜만 고쳐도 비고까지 다시 쓰면 잔금에 적힌 비고가 매번 덮인다.
+            if (! $this->final_payment_id || $this->wasChanged('note')) {
+                $payload['note'] = '회수: '.($this->note ?? '');
+            }
             // 환율 편집 반영 (Phase 3, 2026-07-13) — 환율이 명시된 경우에만 미러링.
             //   ⚠️ null 을 항상 넣으면 역방향 미러(FinalPayment::created→RH)가 FP 기존 환율을 null 로 덮어씀.
             //   raw update 라 FinalPayment::saving 훅 미발동 → amount_krw 를 훅과 동일 공식으로 직접 계산.

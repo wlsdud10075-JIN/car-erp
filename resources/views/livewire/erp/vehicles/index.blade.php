@@ -10011,7 +10011,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
             <hr class="section-divider">
             <div class="section-header">
                 <span class="section-dot bg-blue-300"></span>
-                <span class="section-title">{{ __('vehicle.panel.sec.costs') }}</span>
+                <span class="section-title">{{ __('vehicle.panel.sec.costs', ['n' => count(\App\Models\Vehicle::DISPLAY_COST_FIELDS)]) }}</span>
             </div>
 
             {{-- 회의확장씬 #9 보강 안내 (2026-05-23) — 2차 정산 대기 동안 실측 정정 가이드 --}}

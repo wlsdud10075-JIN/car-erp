@@ -401,7 +401,7 @@ return [
             'purchase_basic' => '매입 기본',
             'purchase_account' => '매입처 계좌 정보 (송금 대상)',
             'fee_account' => '매도비 계좌 정보 (별도 송금 대상)',
-            'costs' => '비용 9개',
+            'costs' => '비용 :n개',
             'purchase_payment' => '매입 지급',
             'sale_basic' => '판매 기본',
             'payment_status' => '입금 현황',
