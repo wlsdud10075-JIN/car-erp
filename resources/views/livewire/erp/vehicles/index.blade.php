@@ -553,7 +553,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ShippingRequest::create([
                     'batch_id' => $batchId,
                     'vehicle_id' => $vehicle->id,
-                    'buyer_id' => $vehicle->export_buyer_id ?: null,
+                    // 🔀 2026-11-14 — 수출 탭 바이어가 아직 비어 있으면 판매 바이어로. 비워 두면 board 가 그 영업의 묶음을 다시 못 보낸다
+                    //    (ssancarerp 2묶음 실측 — 이한성 11-09 · 임윤태 09-30, 둘 다 이 화면에서 묶였다).
+                    'buyer_id' => $vehicle->export_buyer_id ?: ($vehicle->buyer_id ?: null),
                     'consignee_id' => $vehicle->export_consignee_id ?: null,
                     // 컬럼 NOT NULL — 미지정 차량은 RORO 기본값(선적요청 화면/차량편집에서 정정 가능)
                     'shipping_method' => in_array($vehicle->shipping_method, ShippingRequest::METHODS, true)
@@ -11422,7 +11424,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     </x-erp.file-drop>
                 </div>
                 <div class="col-span-2 sm:col-span-3">
-                    <label class="label-base">{{ __('vehicle.field.bl_doc') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.panel.upload_enables_loaded') }}</span></label>
+                    <label class="label-base">{{ __('vehicle.field.bl_doc') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.panel.upload_completes_deal') }}</span></label>
                     <x-erp.file-drop model="blDocFile"
                         accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.pdf,.xlsx,.xls,.csv,.docx,.doc,.hwp,.hwpx,.pptx,.ppt,.txt,.zip">
                     @if($blDocFile)

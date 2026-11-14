@@ -59,15 +59,21 @@ class ShippingRequestsScreenTest extends TestCase
             ->assertViewHas('batches', fn ($b) => $b->count() === 2);   // 3대·1대 = 2배치
     }
 
-    /** 「요청 영업」에 이메일만 있으면 누구 건지 모른다 — 이름만 보인다 (jin 2026-11-14). 명부에서 못 찾는 이메일만 종전대로 이메일. */
+    /**
+     * 「요청 영업」 = 묶인 차의 영업담당자 이름 (jin 2026-11-14 «누구 건지»). 이메일은 안 보인다.
+     * 요청자 이메일은 ERP 관리 계정일 수 있어(차량관리 「묶기」) 차의 담당자로 본다 — 영업 명부에 같은 이메일이 있어도 그쪽을 쓰지 않는다.
+     */
     public function test_requested_by_shows_the_salesman_name(): void
     {
-        Salesman::create(['name' => '홍영업', 'email' => 's@a.com', 'type' => 'employee', 'is_active' => true]);
+        $sm = Salesman::create(['name' => '홍영업', 'type' => 'employee', 'is_active' => true]);
+        Salesman::create(['name' => '요청한관리', 'email' => 's@a.com', 'type' => 'employee', 'is_active' => true]);
         $this->batch('batch-A', ['11가1111']);
+        Vehicle::where('vehicle_number', '11가1111')->update(['salesman_id' => $sm->id]);
         $this->actingAs($this->clearanceUser());
 
         Volt::test('erp.shipping-requests.index')
             ->assertSee('홍영업')
+            ->assertDontSee('요청한관리')
             ->assertDontSee('s@a.com');   // 이름이 있으면 이메일은 안 보인다(jin «더 헷갈려»)
     }
 
