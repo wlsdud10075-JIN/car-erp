@@ -7,6 +7,7 @@ use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\BulkVehicleCostService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -121,6 +122,28 @@ class FinanceCostEditTest extends TestCase
             ->assertHasNoErrors();
 
         $this->assertEquals(150_000, (float) $v->fresh()->cost_towing);
+    }
+
+    /** 명세서 기입(일괄)도 재무 이상 — 2차 정산 비용을 넣는 실무의 주 경로(jin 11-14). EMS/DHL 일괄은 관리 이상 그대로. */
+    public function test_finance_can_use_the_statement_import_but_not_the_shipment_bulk(): void
+    {
+        [$v, $s] = $this->paidVehicle();
+        $finance = $this->user('재무');
+        $this->actingAs($finance);
+
+        Volt::test('erp.vehicles.index')->call('openCostImport')->assertSet('showCostImport', true);
+        Volt::test('erp.vehicles.index')->call('openShipmentBulk')->assertStatus(403);
+
+        $res = app(BulkVehicleCostService::class)
+            ->apply('cost_towing', [$v->id => 150_000], $finance, '재무 명세서 기입 테스트', true);
+        $this->assertSame(1, $res['applied']);
+        $this->assertNotNull($s->fresh()->secondary_ready_at, '명세서 기입이 「2차 가능」을 못 켰다');
+    }
+
+    public function test_clearance_cannot_open_the_statement_import(): void
+    {
+        $this->actingAs($this->user('수출통관'));
+        Volt::test('erp.vehicles.index')->call('openCostImport')->assertStatus(403);
     }
 
     public function test_secondary_correction_predicate_is_finance_and_above_without_sales(): void

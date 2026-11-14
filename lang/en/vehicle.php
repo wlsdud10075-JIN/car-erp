@@ -948,7 +948,7 @@ return [
     'cost_import' => [
         'btn' => 'Import Statement',
         'title' => 'Bulk Cost Entry from Statement',
-        'subtitle' => 'Paste a vendor statement (e.g. Wika); vehicles are matched by number and the cost is filled at once. Management/admin · all vehicles · costs only.',
+        'subtitle' => 'Paste a vendor statement (e.g. Wika); vehicles are matched by number and the cost is filled at once. Finance, management and above · all vehicles · costs only.',
         'target_col' => 'Target cost',
         'col_hint' => 'Per-vehicle costs like towing. (License fee uses n/1 on the shipping bundle screen.)',
         'file_label' => 'Upload Excel file (vendor statement .xlsx)',

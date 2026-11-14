@@ -768,7 +768,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public function openCostImport(): void
     {
-        abort_unless((bool) auth()->user()?->canApprove(), 403);
+        abort_unless((bool) auth()->user()?->canCorrectSecondaryCosts(), 403);   // 명세서 기입 = 재무 이상(jin 2026-11-14)
         $this->reset(['costImportRaw', 'costImportFile', 'costImportParsed', 'costImportForce']);
         $this->costImportColumn = 'cost_towing';
         $this->costImportCompany = 'wika';
@@ -804,7 +804,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 붙여넣은 명세서 파싱 — 줄 단위. */
     public function parseCostImport(): void
     {
-        abort_unless((bool) auth()->user()?->canApprove(), 403);
+        abort_unless((bool) auth()->user()?->canCorrectSecondaryCosts(), 403);   // 명세서 기입 = 재무 이상(jin 2026-11-14)
         abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_UPLOAD_FIELDS, true), 422);
         // 붙여넣기는 위카(범용 파서)만 — 좌표 파서 회사는 셀 위치 고정이라 xlsx 전용(차종 숫자 오파싱 방지).
         abort_unless($this->costImportColumn === 'cost_towing' && $this->costImportCompany === 'wika', 422);
@@ -830,7 +830,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** xlsx 업로드 파싱 — 각 행의 셀을 이어붙여 줄 단위 파서에 넣음(위카 시트0: E=차량번호·J=합계 자동). */
     public function parseCostImportFile(): void
     {
-        abort_unless((bool) auth()->user()?->canApprove(), 403);
+        abort_unless((bool) auth()->user()?->canCorrectSecondaryCosts(), 403);   // 명세서 기입 = 재무 이상(jin 2026-11-14)
         abort_unless(in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_UPLOAD_FIELDS, true), 422);
         $this->assertCostCompanyValid();
         $this->validate(['costImportFile' => ['required', 'file', 'mimes:xlsx,xls', 'max:10240']]);
@@ -1121,7 +1121,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 미리보기 확정 → 매칭 차량에 비용 일괄 기입(fleet-wide, 잠금해제 자동 + 감사). */
     public function applyCostImport(): void
     {
-        abort_unless((bool) auth()->user()?->canApprove(), 403);
+        abort_unless((bool) auth()->user()?->canCorrectSecondaryCosts(), 403);   // 명세서 기입 = 재무 이상(jin 2026-11-14)
 
         $amounts = [];
         $finalizedCount = 0;
@@ -9318,14 +9318,17 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 <button type="button" @click="download()" class="btn-primary w-full justify-center">{{ __('vehicle.export_do') }}</button>
             </div>
         </div>
-        {{-- 탁송비 명세서 일괄 기입 (건바이건 비용 — 관리/admin, 전체 차량). 면허비는 묶음화면. --}}
-        @if(auth()->user()?->canApprove())
+        {{-- 탁송비 명세서 일괄 기입 (건바이건 비용, 전체 차량). 면허비는 묶음화면.
+             🔀 2026-11-14 (jin) 재무 이상으로 — 2차 정산 비용 기입이 재무 일이다. EMS/DHL 은 종전대로 관리 이상. --}}
+        @if(auth()->user()?->canCorrectSecondaryCosts())
         <button type="button" wire:click="openCostImport"
                 class="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
             <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
             {{ __('vehicle.cost_import.btn') }}
         </button>
-        {{-- EMS/DHL 발송 일괄 기입 (jin 2026-08-31) — 「명세서 기입」과 같은 자리·같은 권한. --}}
+        @endif
+        {{-- EMS/DHL 발송 일괄 기입 (jin 2026-08-31) — 「명세서 기입」과 같은 자리. 권한은 관리 이상 그대로. --}}
+        @if(auth()->user()?->canApprove())
         <button type="button" wire:click="openShipmentBulk"
                 class="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50">
             <span class="text-base leading-none">📮</span>
