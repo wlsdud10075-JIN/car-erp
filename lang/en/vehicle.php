@@ -389,7 +389,7 @@ return [
             'purchase_basic' => 'Purchase Basics',
             'purchase_account' => 'Seller Account (remittance target)',
             'fee_account' => 'Selling-Fee Account (separate target)',
-            'costs' => '9 Cost Items',
+            'costs' => ':n Cost Items',
             'purchase_payment' => 'Purchase Payment',
             'sale_basic' => 'Sale Basics',
             'payment_status' => 'Payment Status',

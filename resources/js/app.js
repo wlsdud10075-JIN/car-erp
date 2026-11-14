@@ -337,7 +337,10 @@ document.addEventListener('input', (e) => {
 });
 
 function formatAllMoney() {
-    document.querySelectorAll('input[data-money]').forEach(applyMoneyFormat);
+    // 치는 중인 칸은 input 핸들러가 이미 맞춘다 — 여기서 값을 바꾸면 커서가 끝으로 튄다.
+    document.querySelectorAll('input[data-money]').forEach((el) => {
+        if (el !== document.activeElement) applyMoneyFormat(el);
+    });
 }
 document.addEventListener('DOMContentLoaded', formatAllMoney);
 document.addEventListener('livewire:navigated', formatAllMoney);
@@ -345,6 +348,12 @@ if (window.Livewire) {
     window.Livewire.hook('morph.updated', ({ el }) => {
         if (el && el.matches && el.matches('input[data-money]')) applyMoneyFormat(el);
     });
+    // 🐞 패널을 열면 금액칸이 「새로 생긴」 칸이라 morph.updated 가 안 뜨고, 값은 그 뒤 wire:model 이 넣는다
+    //    → 콤마 없이 보이다가 다음 왕복(하트비트 등, 약 3초 뒤)에야 붙었다(jin 2026-11-14 씬 워크스루).
+    //    패널은 섬(@island)이라 전체 morphed 와 island.morphed 둘 다 받는다. rAF = Alpine 이 값을 넣은 뒤.
+    const formatAfterMorph = () => requestAnimationFrame(formatAllMoney);
+    window.Livewire.hook('morphed', formatAfterMorph);
+    window.Livewire.hook('island.morphed', formatAfterMorph);
 }
 
 // ──────────────────────────────────────────────────────────────────────────

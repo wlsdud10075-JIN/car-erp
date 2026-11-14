@@ -28,6 +28,20 @@ class MoneyInputSignTest extends TestCase
             '금액칸에 keydown 가로채기가 다시 생겼습니다 — `-` 를 막아 음수 입력이 안 됩니다.');
     }
 
+    /**
+     * 패널을 열면 금액칸이 새로 생겨 morph.updated 가 안 뜬다 — 값은 그 뒤 wire:model 이 넣는다.
+     * 그래서 콤마 없이 몇 초 보이다가 다음 왕복에 붙었다(jin 2026-11-14). 패널은 섬이라 island.morphed 도 받는다.
+     * ⚠️ 정적 검사다 — 실제 재현은 브라우저(재무 계정 · 저장 뒤 다시 열기: 잔금·판매가·운임비·면장 6칸이 6초 넘게 콤마 없음).
+     */
+    public function test_money_inputs_are_formatted_after_every_morph(): void
+    {
+        $js = $this->appJs();
+
+        $this->assertMatchesRegularExpression("/hook\('morphed',\s*formatAfterMorph\)/", $js);
+        $this->assertMatchesRegularExpression("/hook\('island\.morphed',\s*formatAfterMorph\)/", $js,
+            '차량 패널은 섬(@island)이라 이 훅이 없으면 패널을 열 때 금액칸에 콤마가 안 붙습니다.');
+    }
+
     public function test_only_signed_inputs_keep_the_minus(): void
     {
         $js = $this->appJs();
