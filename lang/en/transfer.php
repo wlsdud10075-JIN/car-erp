@@ -174,7 +174,7 @@ return [
         'transport_fee' => '+ Transport fee',
         'sale_total' => 'Total sale',
         'note_label' => 'Bank transaction no. or processing memo (optional)',
-        'note_ph' => 'e.g. KB 12345-6789 / Shinhan tx no. — recorded in finance_note if entered',
+        'note_ph' => 'e.g. KB 12345-6789 / Shinhan tx no. — saved as the processing memo',
         'submit' => 'Confirm',
     ],
     'search' => [
