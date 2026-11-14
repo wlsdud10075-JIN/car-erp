@@ -643,6 +643,10 @@ new #[Layout('components.layouts.app')] class extends Component
             ->get()
             ->groupBy('batch_id');
 
+        // 요청 영업 이름 — 묶음엔 요청자 이메일만 남는다(board 가 보낸 영업 계정). 이메일만으론 누구 건지 모른다(jin 2026-11-14).
+        $requesterNames = \App\Models\Salesman::whereIn('email', $grouped->flatten()->pluck('requested_by_email')->filter()->unique()->values())
+            ->pluck('name', 'email');
+
         // 전자서명 상태 — 가시 batch 차량들의 바이어 세션만 프리로드(N+1 회피), pickForSet 로 batch 차량 set 매칭.
         //   ⚠️ ShippingRequest.buyer_id 는 NULL 일 수 있음(board/묶기 미기입) → 세션 buyer_id 의 출처인
         //      차량의 buyer_id 로 프리로드해야 매칭됨.
@@ -655,7 +659,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 \App\Models\SignedContract::STATUS_PENDING,
             ])->latest('id')->get();
 
-        $batches = $grouped->map(function ($items) use ($signSessions) {
+        $batches = $grouped->map(function ($items) use ($signSessions, $requesterNames) {
                 $f = $items->first();
                 $memberVehicles = $items->map->vehicle->filter();
                 $fin = ShippingRequest::financeForVehicles($memberVehicles);
@@ -697,6 +701,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     'bl_type' => $f->bl_type,
                     'bl_status' => $f->bl_status ?? ShippingRequest::BL_STATUS_NONE,
                     'requested_by' => $f->requested_by_email,
+                    'requested_name' => $requesterNames[$f->requested_by_email] ?? null,
                     'requested_at' => $f->requested_at,
                     'status' => $f->status,
                     'vehicles' => $items->map(fn ($r) => [
@@ -921,7 +926,12 @@ new #[Layout('components.layouts.app')] class extends Component
                                 <span class="pill-count">{{ __('shipping.vehicles_n', ['n' => $b['count']]) }}</span>
                             </div>
                             <div class="mt-1 text-[11px] text-gray-400">
-                                {{ __('shipping.requested_by') }}: {{ $b['requested_by'] }}
+                                {{ __('shipping.requested_by') }}:
+                                @if ($b['requested_name'] ?? null)
+                                    <span class="font-semibold text-gray-600">{{ $b['requested_name'] }}</span>{{-- 이메일은 안 보인다 — 더 헷갈린다(jin 2026-11-14) --}}
+                                @else
+                                    {{ $b['requested_by'] }}
+                                @endif
                                 @if ($b['requested_at']) · {{ $b['requested_at']->format('Y-m-d H:i') }} @endif
                             </div>
                         </div>
