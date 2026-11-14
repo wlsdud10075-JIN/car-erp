@@ -130,7 +130,7 @@ return [
     'monthly_count_note' => '매입·판매·거래완료(B/L 발행) 컬럼별 월 분포',
     'monthly_sales_title_pre' => '월별 판매가 합계 KRW (',
     'monthly_sales_title_post' => '년)',
-    'monthly_sales_note' => 'sale_date 기준. 외화는 sale_price × exchange_rate (환율 0/NULL 제외)',
+    'monthly_sales_note' => '판매일 기준. 외화는 판매가 × 판매환율 (환율이 0이거나 빈 차 제외)',
 
     // 채권 탭
     'recv_period_note' => '⏱ 채권 수치는 상단 기간 필터와 무관하게 현재 잔액 전부입니다 (대표 알림톡·채권관리와 동일 기준).',
@@ -147,7 +147,7 @@ return [
     'recv_after' => '선적후 미수금',
     'recv_after_note' => ':count대 · 출항 이후(선적일 지남)',
     'recv_deposit' => '디파짓 (적립금 사용분)',
-    'recv_deposit_note' => ':count대 · savings_used > 0',
+    'recv_deposit_note' => ':count대 · 적립금 사용 있음',
     'recv_salesman_top' => '미수금 상위 담당자 TOP 10',
     'recv_buyer_top' => '미수금 상위 바이어 TOP 10',
     'recv_empty' => '미수금 차량 없음',

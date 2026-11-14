@@ -435,7 +435,7 @@ return [
         'non_cash_title' => 'Settled without cash',
         'non_cash_link' => 'Receivables',
         'non_cash_hint' => '- not mixed into the payment rows (they are the basis for cash received and the settlement rate). Enter via Receivables or the savings field.',
-        'savings_balance_note' => '(SavingsStatus by buyer×currency)',
+        'savings_balance_note' => '(remaining credit for this buyer in this currency)',
         'after_save_note' => '(updates after save)',
         'fully_paid' => '✓ Paid',
         'overpaid' => 'Overpaid · check',
