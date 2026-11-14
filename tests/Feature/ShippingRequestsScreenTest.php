@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Salesman;
 use App\Models\ShippingRequest;
 use App\Models\TaskAlarm;
 use App\Models\User;
@@ -56,6 +57,18 @@ class ShippingRequestsScreenTest extends TestCase
             ->assertSee('33다3333')
             ->assertSee('44라4444')
             ->assertViewHas('batches', fn ($b) => $b->count() === 2);   // 3대·1대 = 2배치
+    }
+
+    /** 「요청 영업」에 이메일만 있으면 누구 건지 모른다 — 이름만 보인다 (jin 2026-11-14). 명부에서 못 찾는 이메일만 종전대로 이메일. */
+    public function test_requested_by_shows_the_salesman_name(): void
+    {
+        Salesman::create(['name' => '홍영업', 'email' => 's@a.com', 'type' => 'employee', 'is_active' => true]);
+        $this->batch('batch-A', ['11가1111']);
+        $this->actingAs($this->clearanceUser());
+
+        Volt::test('erp.shipping-requests.index')
+            ->assertSee('홍영업')
+            ->assertDontSee('s@a.com');   // 이름이 있으면 이메일은 안 보인다(jin «더 헷갈려»)
     }
 
     /**
