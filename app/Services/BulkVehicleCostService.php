@@ -14,7 +14,7 @@ use InvalidArgumentException;
  *
  * 흐름 (차량별, 트랜잭션):
  *   ① 대상 컬럼이 Vehicle::BULK_COST_FIELDS(비용 9개) 인지 검증 — 민감필드 봉인.
- *   ② 스코프: fleet(canApprove 전체) / team(canUnlockLedger 본인 팀). 팀 밖·미존재 차량은 skip 리포트.
+ *   ② 스코프: fleet(canCorrectSecondaryCosts 전체 — 재무 이상) / team(canUnlockLedger 본인 팀). 팀 밖·미존재 차량은 skip 리포트.
  *   ③ 잠긴 차량(hasConfirmedPaymentLock)이면 잠금해제 토큰 자동 발급(사유 1회) → update → saving 훅이 토큰 소비 → 즉시 재잠금.
  *   ④ 안 잠긴 차량은 토큰 없이 그냥 update.
  *   ⑤ 필드 변경(old→new)은 Vehicle booted updated 훅의 recordChange 가 AuditLog 로 자동 기록.
@@ -29,7 +29,7 @@ class BulkVehicleCostService
     /**
      * @param  string  $column  Vehicle::BULK_COST_FIELDS 중 하나 (예: cost_towing / cost_license)
      * @param  array<int, int|float>  $amounts  [vehicleId => 금액] (원, 음수 불가)
-     * @param  bool  $fleetWide  true=탁송비(canApprove 전체) / false=면허비(canUnlockLedger 팀)
+     * @param  bool  $fleetWide  true=탁송비(재무 이상, 전체) / false=면허비(canUnlockLedger 팀)
      * @param  bool  $accumulate  true=**기존 금액에 더한다**(보험료 — 달마다 갱신분이 쌓이는 비용, jin 2026-11-02 «덮어쓰기 아니고 + 더해야»)
      *                            / false=덮어쓴다(탁송비·면허비 — 건당 1회 비용). 더하기는 같은 파일을 두 번 올리면 두 배가 되므로
      *                            호출측(명세서 기입)이 파일 지문으로 재업로드를 막는다.
@@ -42,8 +42,9 @@ class BulkVehicleCostService
         }
 
         // fleet 모드는 전역 권한 1회 검사. team 모드는 차량별로 검사(아래 루프).
-        if ($fleetWide && ! $by->canApprove()) {
-            throw new AuthorizationException('비용 일괄 기입 권한 없음 (관리/admin 전용)');
+        // 🔀 2026-11-14 (jin) — 재무 이상(재무·관리·업무관리자·최고관리자). 2차 정산 비용 기입은 재무 일이다.
+        if ($fleetWide && ! $by->canCorrectSecondaryCosts()) {
+            throw new AuthorizationException('비용 일괄 기입 권한 없음 (재무·관리 이상 전용)');
         }
 
         $applied = 0;
