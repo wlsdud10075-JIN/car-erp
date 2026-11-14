@@ -328,6 +328,7 @@ class LeaverSettlementTest extends TestCase
         $c->assertDontSeeHtml('data-leaver-blocked');
 
         $c->call('openLeaverModal', $leaver->id)->assertSeeHtml('data-leaver-modal')
+            ->assertSee('「퇴사정산 '.$leaver->name.'」', false)->assertDontSee('퇴사정산 :name', false)   // 안내 문구 자리표시자가 그대로 찍히던 것(11-14)
             ->set('newLeaverAdjAmount', '-50,000')->set('newLeaverAdjReason', '예치금 상계')->call('addLeaverAdjustment')
             ->call('submitLeaverBatch')->assertHasNoErrors();
 
