@@ -2431,7 +2431,7 @@ new #[Layout('components.layouts.app')] class extends Component
             @if($lp['deposit_return'] > 0)
             <p class="mt-0.5 text-right text-[11px] text-gray-500">{{ __('settlement.batch.leaver_final_breakdown', ['pay' => number_format($lp['final'] - $lp['deposit_return']), 'dep' => number_format($lp['deposit_return'])]) }}</p>
             @endif
-            <p class="mt-1 text-[11px] text-gray-400">{{ __('settlement.batch.leaver_modal_hint') }}</p>
+            <p class="mt-1 text-[11px] text-gray-400">{{ __('settlement.batch.leaver_modal_hint', ['name' => $lp['name']]) }}</p>
         </div>
 
         <div class="mt-3 flex items-center justify-end gap-2">
