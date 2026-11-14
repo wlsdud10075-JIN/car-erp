@@ -483,7 +483,7 @@ return [
         'shipment_add' => '+ Add shipment',
         'shipment_total' => 'Shipping fee total',
         'shipment_empty' => 'No shipments recorded.',
-        'shipment_hint' => 'Deducted in full from the settlement payout. Leave the amount at 0 when the company absorbs it — the tracking number still stays visible to the buyer.',
+        'shipment_hint' => 'Half of this amount (the staff share) goes into the settlement — deducted from freelancer payouts, used only for the per-unit check for employees. Leave it at 0 when the company pays it all — the tracking number still stays visible to the buyer.',
         'shipment_locked' => 'Secondary settlement is closed — shipments can only be edited after [🔓 ledger re-adjustment].',
         'finance_only_add' => 'finance/admin only',
         'confirmed' => '✓ Confirmed',
