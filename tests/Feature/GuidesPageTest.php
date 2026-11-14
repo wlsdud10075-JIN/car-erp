@@ -127,19 +127,17 @@ class GuidesPageTest extends TestCase
             ->assertSee(route('guides.index'), false)->assertDontSee('notion.site', false);
     }
 
-    /** board 링크 — 같은 회사 짝이 있고 board 쪽이 열렸을 때만. karaba 는 board 가 없다. */
-    public function test_board_link_is_drawn_only_for_companies_with_a_board_once_it_is_live(): void
+    /** 🚫 board 가이드 링크는 없다 — 각자 업무가이드(jin 2026-11-14). 회사 무관하게 board 주소가 화면에 안 나온다. */
+    public function test_there_is_no_link_to_the_board_guides(): void
     {
-        config(['company.template_set' => 'system', 'guides.board_link_live' => false]);
-        $this->assertNull(GuideCatalog::boardUrl(), 'board 배포 전엔 링크를 그리지 않는다(404 로 보내지 않는다)');
-        // 운영 설정은 켜져 있다(2026-11-14 board /guides 운영 확인) — 스위치 자체는 남겨 둔다.
-
-        config(['guides.board_link_live' => true]);
-        $this->assertSame('https://board.heymancar.com/guides', GuideCatalog::boardUrl());
-        config(['company.template_set' => 'heyman']);
-        $this->assertSame('https://board.heysellcar.com/guides', GuideCatalog::boardUrl());
-        config(['company.template_set' => 'karaba']);
-        $this->assertNull(GuideCatalog::boardUrl());
+        $user = $this->staff();
+        foreach (['system', 'heyman', 'karaba'] as $set) {
+            config(['company.template_set' => $set]);
+            $this->actingAs($user)->get(route('guides.index'))->assertOk()
+                ->assertDontSee('board.heymancar.com', false)
+                ->assertDontSee('board.heysellcar.com', false);
+        }
+        $this->assertFalse(method_exists(GuideCatalog::class, 'boardUrl'));
     }
 
     /**

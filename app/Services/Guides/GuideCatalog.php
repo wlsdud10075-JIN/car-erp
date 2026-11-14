@@ -101,16 +101,6 @@ class GuideCatalog
         return is_file($path) ? $path : null;
     }
 
-    /** 같은 회사의 board 업무 가이드 주소 — board 가 없는 회사·아직 안 열린 동안은 null. */
-    public static function boardUrl(): ?string
-    {
-        if (! config('guides.board_link_live')) {
-            return null;
-        }
-
-        return config('guides.board_urls.'.config('company.template_set', 'system')) ?: null;
-    }
-
     /** 본문 파일 — 영어 화면이면 index.en.html 을 먼저, 없으면 한국어 본문으로(빈 화면보다 낫다). */
     private static function file(string $slug): ?string
     {

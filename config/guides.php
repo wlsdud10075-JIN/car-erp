@@ -21,14 +21,8 @@ return [
     // 「처음이라면 — 한 바퀴」 순서(같은 차 한 대로 매입부터 정산까지).
     'lap' => ['vehicle-register', 'purchase-payment', 'sale-register', 'sale-payment', 'export-tab', 'monthly-payout'],
 
-    // board 업무 가이드 주소(같은 회사 짝끼리만). 키 = company.template_set. karaba 는 board 가 없다.
-    // ⚠️ board 쪽 /guides 가 배포되기 전엔 404 다 — board 배포 통보를 받은 뒤 board_link_live 를 true 로(board 세션 11-13 회신).
-    'board_link_live' => true,   // ✅ 2026-11-14 켬 — board.heymancar.com·board.heysellcar.com /guides 운영 확인(302→로그인, jin «BOARD 쪽엔 ERP 링크가 있는데 ERP 쪽엔 안 보인다»)
-    'board_urls' => [
-        'system' => 'https://board.heymancar.com/guides',
-        'heyman' => 'https://board.heysellcar.com/guides',
-        'karaba' => null,
-    ],
+    // 🚫 board 업무 가이드로 가는 링크는 두지 않는다(jin 2026-11-14 «ERP 랑 BOARD 는 서로 업무 알 필요 없다 — 각자 업무가이드»).
+    //    ERP 계정이 있어도 board 계정이 없는 사람이 있어 링크를 타면 board 로그인에서 막혔다. board 쪽도 ERP 링크를 없앤다.
 
     // 🇬🇧 영어 화면(언어 = en)에서 쓰는 제목·요약 [slug => [제목, 한 줄 요약]] (jin 2026-11-13 «영어로 바꿨을 때 적용되게»).
     //    본문 영어판은 `resources/guides/{slug}/index.en.html` — 없으면 한국어 본문을 「Korean only」 표시와 함께 보여준다.

@@ -49,9 +49,6 @@
                 <h2 class="text-xl font-bold text-gray-800">{{ __('guides.title') }}</h2>
                 <p class="mt-1 text-sm text-gray-500">{{ __('guides.intro') }}</p>
             </div>
-            @if($boardUrl)
-                <a href="{{ $boardUrl }}" target="_blank" rel="noopener noreferrer" class="text-sm font-semibold" style="color: var(--color-primary-text)">{{ __('guides.board_link') }}</a>
-            @endif
         </div>
 
         <div class="card gd-search">
