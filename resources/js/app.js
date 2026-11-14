@@ -565,7 +565,8 @@ if (window.Livewire && 'BroadcastChannel' in window) {
         cancelAnimationFrame(tabSyncRaf);
         tabSyncRaf = requestAnimationFrame(() => window.Livewire.dispatch('vehicles-changed'));
     };
-    window.Livewire.on('vehicles-changed', () => {
+    // 서버는 'vehicles-wrote' 를 보낸다(자기 탭은 안 받게) — 다른 탭은 받은 뒤 'vehicles-changed' 로 자기 컴포넌트에 알린다.
+    window.Livewire.on('vehicles-wrote', () => {
         try { tabSync.postMessage(1); } catch (e) { /* 채널이 닫혔으면 조용히 */ }
     });
     tabSync.onmessage = notifyThisTab;

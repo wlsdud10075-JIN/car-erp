@@ -121,10 +121,10 @@ class VehicleTabSyncTest extends TestCase
         $this->actingAs($admin);
 
         $c = Volt::test('erp.vehicles.index')->call('openEdit', $v->id);
-        $c->call('heartbeat')->assertNotDispatched('vehicles-changed');
+        $c->call('heartbeat')->assertNotDispatched('vehicles-wrote');
 
         $c->set('memo', '저장')->set('userConfirmedDocCheckMismatch', true)
-            ->call('save')->assertHasNoErrors()->assertDispatched('vehicles-changed');
+            ->call('save')->assertHasNoErrors()->assertDispatched('vehicles-wrote')->assertNotDispatched('vehicles-changed');
         $this->assertSame('저장', $v->fresh()->memo);
     }
 
@@ -132,7 +132,7 @@ class VehicleTabSyncTest extends TestCase
     {
         $js = file_get_contents(resource_path('js/app.js'));
         $this->assertStringContainsString("new BroadcastChannel('car-erp-vehicles')", $js);
-        $this->assertStringContainsString("window.Livewire.on('vehicles-changed'", $js, '서버 신호를 다른 탭으로 넘기는 배선');
+        $this->assertStringContainsString("window.Livewire.on('vehicles-wrote'", $js, '서버 신호를 다른 탭으로 넘기는 배선');
         $this->assertStringContainsString("window.Livewire.dispatch('vehicles-changed')", $js, '다른 탭의 신호를 자기 컴포넌트로 넣는 배선');
 
         $inventory = file_get_contents(resource_path('views/livewire/erp/inventory/index.blade.php'));
@@ -172,5 +172,28 @@ class VehicleTabSyncTest extends TestCase
 
         $c->call('heartbeat');
         $c->assertSet('remoteChanged', false);
+    }
+
+    /**
+     * 🪟 저장이 아닌 패널 버튼의 자기 쓰기도 「다른 창이 먼저 저장」이 아니다 (2026-11-14 매입취소 씬에서 발견).
+     *    ① 서버 신호가 같은 탭 자기 패널로 돌아오지 않게 이름을 갈랐다(vehicles-wrote → 다른 탭만 vehicles-changed)
+     *    ② 하트비트가 자기 쓰기를 남의 저장으로 보지 않게 요청 시작 지문이 같았으면 새 기준으로 삼는다.
+     */
+    public function test_panel_button_write_is_not_a_remote_save_even_while_typing(): void
+    {
+        [$v, $admin] = $this->fixture();
+        $this->actingAs($admin);
+
+        $c = Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->set('memo', '입력 중');
+        $c->assertSet('formDirty', true);
+
+        $this->travel(1)->minutes();   // 같은 초면 지문이 안 바뀌어 헛통과한다
+        $c->call('markPurchaseCancelled')
+            ->assertDispatched('vehicles-wrote')
+            ->assertNotDispatched('vehicles-changed');
+        $this->assertSame('cancelled', $v->fresh()->cancel_status);
+
+        $c->call('heartbeat');
+        $c->assertSet('remoteChanged', false)->assertSet('memo', '입력 중');
     }
 }
