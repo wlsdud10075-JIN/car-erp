@@ -1,0 +1,26 @@
+const { chromium } = require('playwright-core');
+const raw = __dirname + '/sr/';
+require('fs').mkdirSync(raw, { recursive: true });
+const PLATE = '00가1113';
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 }, locale: 'ko-KR' })).newPage();
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'manage@car-erp.test');
+  await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+  await p.goto('http://localhost:8001/erp/vehicles?search=' + encodeURIComponent(PLATE), { waitUntil: 'networkidle' });
+  await p.locator('tr', { hasText: PLATE }).first().locator('td').nth(1).click();
+  await p.waitForTimeout(2500);
+  await p.click(`button[\\@click="tab = 'sale'"]`);
+  await p.waitForTimeout(600);
+  await p.screenshot({ path: raw + 'x1-sale.png' });
+  console.log('buyer +신규 candidates', JSON.stringify(await p.$$eval('button:visible, a:visible', e => e.filter(x => /신규/.test(x.innerText)).map(x => [x.innerText.trim(), x.getAttribute('wire:click')]))));
+  const nb = p.locator('button:visible', { hasText: '+ 신규' }).first();
+  await nb.click(); await p.waitForTimeout(1200);
+  await p.screenshot({ path: raw + 'x2-newbuyer.png' });
+  console.log('modal inputs', JSON.stringify(await p.$$eval('input:visible, select:visible, textarea:visible', e => e.map(x => [x.tagName, x.getAttribute('wire:model') || x.getAttribute('wire:model.live') || '', x.placeholder || '']).filter(x => /buyer|new|consignee|country|name|email|phone/i.test(x[1])))));
+  console.log('modal buttons', JSON.stringify(await p.$$eval('button:visible', e => e.map(x => [x.innerText.trim(), x.getAttribute('wire:click')]).filter(x => x[0]).slice(-8))));
+  await p.keyboard.press('Escape');
+  await b.close();
+})().catch(e => { console.error(e); process.exit(1); });

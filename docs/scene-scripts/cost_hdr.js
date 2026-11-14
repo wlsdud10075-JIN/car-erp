@@ -1,0 +1,26 @@
+const { chromium } = require('playwright-core');
+const PLATE = '00가1113';
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 }, locale: 'ko-KR', deviceScaleFactor: 1.5 })).newPage();
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'manage@car-erp.test');
+  await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+  await p.goto('http://localhost:8001/erp/vehicles?search=' + encodeURIComponent(PLATE), { waitUntil: 'networkidle' });
+  await p.locator('tr', { hasText: PLATE }).first().locator('td').nth(1).click();
+  await p.waitForTimeout(2500);
+  await p.click(`button[\\@click="tab = 'purchase'"]`);
+  await p.waitForTimeout(800);
+  const hdr = p.locator('.section-title:visible', { hasText: /^비용 \d+개$/ }).first();
+  console.log('header:', await hdr.innerText());
+  await hdr.evaluate(e => e.scrollIntoView({ block: 'start' }));
+  await p.evaluate(() => document.querySelectorAll('.overflow-y-auto').forEach(e => { if (e.scrollTop > 0) e.scrollTop -= 40; }));
+  await p.waitForTimeout(500);
+  const h = await hdr.boundingBox();
+  const last = await p.locator('input[wire\\:model="cost_extra2_str"]:visible').boundingBox();
+  const vals = await p.$$eval('input[wire\\:model$="_str"]', els => els.filter(e => e.getAttribute('wire:model').startsWith('cost_')).map(e => e.getAttribute('wire:model')+'='+e.value));
+  console.log(vals.join(' '));
+  await p.screenshot({ path: __dirname + '/cost09.png', clip: { x: 470, y: h.y - 22, width: 805, height: last.y + last.height + 12 - (h.y - 22) } });
+  await b.close();
+})().catch(e => { console.error(e.message.slice(0,300)); process.exit(1); });

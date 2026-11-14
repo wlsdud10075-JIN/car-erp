@@ -1,0 +1,20 @@
+const { chromium } = require('playwright-core');
+const out = __dirname + '/out/';
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 900 }, locale: 'ko-KR' })).newPage();
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'manage@car-erp.test');
+  await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+  const bad = [];
+  p.on('response', r => { if (r.status() >= 400) bad.push(r.status() + ' ' + r.url()); });
+  const r1 = await p.goto('http://localhost:8001/guides', { waitUntil: 'networkidle' });
+  console.log('index', r1.status());
+  await p.screenshot({ path: out + 'g-index.png' });
+  const r2 = await p.goto('http://localhost:8001/guides/monthly-payout', { waitUntil: 'networkidle' });
+  console.log('show', r2.status(), 'imgs', await p.$$eval('.gd-scene img', i => i.map(x => x.naturalWidth > 0).join(',')));
+  await p.screenshot({ path: out + 'g-show6.png', fullPage: true });
+  console.log(await p.$$eval('.gd-scene img', i => i.slice(0,3).map(x => x.src).join(' ')));console.log('bad', JSON.stringify(bad));
+  await b.close();
+})().catch(e => { console.error(e); process.exit(1); });

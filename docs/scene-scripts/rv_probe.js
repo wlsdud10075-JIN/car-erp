@@ -1,0 +1,21 @@
+const { chromium } = require('playwright-core');
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 }, locale: 'ko-KR' })).newPage();
+  p.setDefaultTimeout(90000);
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'finance@car-erp.test');
+  await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+  await p.goto('http://localhost:8001/erp/receivables', { waitUntil: 'networkidle', timeout: 120000 });
+  console.log('url:', p.url());
+  await p.locator('input[wire\\:model="search"]').first().fill('00가1131');
+  await p.getByRole('button', { name: '조회', exact: true }).click();
+  await p.waitForTimeout(2500);
+  console.log('row:', (await p.locator('tr', { hasText: '00가1131' }).first().innerText()).replace(/\s+/g, ' '));
+  await p.locator('tr', { hasText: '00가1131' }).first().locator('td').nth(1).click();
+  await p.waitForTimeout(2500);
+  const hits = await p.$$eval('*', els => els.filter(e => e.children.length === 0 && /미납 [\d,]+ \//.test(e.textContent || '')).map(e => [e.tagName, e.className, (e.textContent || '').trim(), (e.parentElement && e.parentElement.outerHTML || '').slice(0, 300)]));
+  console.log(JSON.stringify(hits, null, 1));
+  await b.close();
+})().catch(e => { console.error(e.message.slice(0, 300)); process.exit(1); });

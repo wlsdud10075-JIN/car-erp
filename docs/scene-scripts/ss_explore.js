@@ -1,0 +1,28 @@
+const { chromium } = require('playwright-core');
+const raw = __dirname + '/ss/';
+const PLATE = '00가1113';
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 }, locale: 'ko-KR', deviceScaleFactor: 1.5 })).newPage();
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'finance@car-erp.test');
+  await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+  await p.goto('http://localhost:8001/erp/settlements?monthFilter=2026-11', { waitUntil: 'networkidle' });
+  await p.locator('button:visible', { hasText: '✕' }).last().click().catch(() => {});
+  await p.locator('input[wire\\:model="search"], input[wire\\:model\\.live="search"]').first().fill(PLATE).catch(() => {});
+  await p.getByRole('button', { name: '조회', exact: true }).click().catch(() => {});
+  await p.waitForTimeout(1500);
+  await p.screenshot({ path: raw + 'x1-list.png', fullPage: true });
+  const row = p.locator('tr', { hasText: PLATE }).first();
+  console.log('row:', (await row.innerText()).replace(/\s+/g, ' '));
+  console.log('row buttons:', JSON.stringify(await row.locator('button').evaluateAll(e => e.map(x => [x.innerText.trim(), x.getAttribute('wire:click') || x.getAttribute('wire:click.stop')]))));
+  console.log('top buttons:', JSON.stringify(await p.$$eval('button:visible', e => e.map(x => [x.innerText.trim().replace(/\s+/g, ' ').slice(0, 30), x.getAttribute('wire:click')]).filter(x => x[1] && !/sort|page/i.test(x[1])).slice(0, 25))));
+  await row.locator('td').nth(1).click();
+  await p.waitForTimeout(2200);
+  await p.screenshot({ path: raw + 'x2-drawer.png', fullPage: false });
+  const dr = await p.locator('body').innerText();
+  const i = dr.indexOf('정산 수정');
+  console.log('--- drawer ---\n' + dr.slice(i, i + 2500));
+  await b.close();
+})().catch(e => { console.error(e.message.slice(0, 400)); process.exit(1); });

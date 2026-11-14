@@ -1,0 +1,88 @@
+const { chromium } = require('playwright-core');
+const raw = __dirname + '/sp/';
+require('fs').mkdirSync(raw, { recursive: true });
+const PLATE = '00가1113';
+const BUYER = 'GUIDE SAMPLE TRADING';
+const panel = { x: 460, y: 0, width: 820 };
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 }, locale: 'ko-KR', deviceScaleFactor: 1.5 })).newPage();
+  const body = async (re) => { const t = await p.locator('body').innerText(); const m = t.match(re); return m ? m[0] : '(없음)'; };
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'finance@car-erp.test');
+  await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+
+  // ① 바이어 현금 입금
+  await p.goto('http://localhost:8001/erp/buyers?search=' + encodeURIComponent(BUYER), { waitUntil: 'networkidle' });
+  await p.screenshot({ path: raw + 'b0-list-full.png' });
+  const brow = p.locator('tr', { hasText: BUYER }).first();
+  console.log('buyer rows', await p.locator('tr', { hasText: BUYER }).count());
+  await brow.locator('td').nth(0).click();
+  await p.waitForTimeout(2000);
+  await p.screenshot({ path: raw + 'b1-panel-full.png' });
+  const tabs = await p.$$eval('button', e => e.filter(x => (x.getAttribute('@click') || x.getAttribute('x-on:click') || '').includes('tab')).map(x => [x.innerText.trim(), x.getAttribute('@click') || x.getAttribute('x-on:click')]));
+  console.log('buyer tabs', JSON.stringify(tabs));
+  await p.locator('button', { hasText: '현금' }).filter({ hasNotText: '현금 잔액' }).first().click();
+  await p.waitForTimeout(800);
+  await p.screenshot({ path: raw + 'b2-cash-empty-full.png' });
+  await p.locator('input[wire\\:model="cash_date"]').fill('2026-11-13');
+  await p.locator('select[wire\\:model="cash_currency"]').selectOption('USD');
+  await p.locator('input[wire\\:model="cash_amount"]').fill('10000');
+  await p.locator('input[wire\\:model="cash_note"]').fill('00가1113 잔금');
+  await p.waitForTimeout(300);
+  await p.screenshot({ path: raw + 'b3-cash-filled-full.png' });
+  await p.locator('button[wire\\:click="addCashReceipt"]').click();
+  await p.waitForTimeout(1500);
+  console.log('cash toast:', await body(/입금을 기재했습니다[^\n]*/));
+  await p.screenshot({ path: raw + 'b4-cash-after-full.png' });
+
+  // ② 차량 판매 탭 잔금
+  await p.goto('http://localhost:8001/erp/vehicles?search=' + encodeURIComponent(PLATE), { waitUntil: 'networkidle' });
+  await p.locator('tr', { hasText: PLATE }).first().locator('td').nth(1).click();
+  await p.waitForTimeout(2500);
+  await p.click(`button[\\@click="tab = 'sale'"]`);
+  await p.waitForTimeout(600);
+  const bal = p.getByText(/현금 잔액/).first();
+  await bal.evaluate(e => e.scrollIntoView({ block: 'center' })); await p.waitForTimeout(400);
+  await p.screenshot({ path: raw + 'v1-before-full.png' });
+  await p.locator('button[wire\\:click="addFinalPayment"]').click();
+  await p.waitForTimeout(1000);
+  const dt = p.locator('input[wire\\:model\\.live="finalPayments.0.payment_date"]'); await dt.click(); await dt.pressSequentially('20261113'); await p.keyboard.press('Tab');
+  await p.waitForTimeout(2500);
+  const rate = p.locator('input[wire\\:model="finalPayments.0.exchange_rate"]');
+  console.log('auto rate', await rate.inputValue());
+  await rate.fill('1400');
+  const amt = p.locator('input[wire\\:model="finalPayments.0.amount"]'); await amt.click(); await amt.pressSequentially('10000');
+  await p.locator('input[wire\\:model="finalPayments.0.note"]').fill('잔금');
+  await p.waitForTimeout(800);
+  await bal.evaluate(e => e.scrollIntoView({ block: 'center' })); await p.waitForTimeout(400);
+  await p.screenshot({ path: raw + 'v2-filled-full.png' });
+  await p.getByRole('button', { name: '수정 저장' }).click();
+  await p.waitForTimeout(2000);
+  const ok = p.getByRole('button', { name: '확인 후 저장' });
+  if (await ok.count()) { console.log('confirm modal shown'); await p.screenshot({ path: raw + 'v3-confirm-full.png' }); await ok.click(); await p.waitForTimeout(2000); }
+  await p.screenshot({ path: raw + 'v4-after-full.png' });
+  console.log('after save:', await body(/[^\n]*(수정됐습니다|부족|현금|막)[^\n]*/));
+  await p.waitForTimeout(3000);
+  await p.goto('http://localhost:8001/erp/vehicles?search=' + encodeURIComponent(PLATE), { waitUntil: 'networkidle' });
+  await p.locator('tr', { hasText: PLATE }).first().locator('td').nth(1).click();
+  await p.waitForTimeout(2500);
+  await p.click(`button[\\@click="tab = 'sale'"]`);
+  await p.waitForTimeout(600);
+  await p.screenshot({ path: raw + 'v5-top.png', clip: { ...panel, y: 0, height: 200 } });
+  const sm = p.getByText('판매 미입금 요약').first();
+  await sm.evaluate(e => e.scrollIntoView({ block: 'center' })); await p.waitForTimeout(400);
+  await p.screenshot({ path: raw + 'v6-summary-full.png' });
+  // 바이어 현금 다시
+  await p.goto('http://localhost:8001/erp/buyers?search=' + encodeURIComponent(BUYER), { waitUntil: 'networkidle' });
+  await p.locator('tr', { hasText: BUYER }).first().locator('td').nth(0).click();
+  await p.waitForTimeout(2000);
+  await p.locator('button', { hasText: '현금' }).filter({ hasNotText: '현금 잔액' }).first().click();
+  await p.waitForTimeout(800);
+  await p.screenshot({ path: raw + 'b5-cash-used-full.png' });
+  await p.goto('http://localhost:8001/erp/vehicles?search=' + encodeURIComponent(PLATE), { waitUntil: 'networkidle' });
+  console.log('row', (await p.locator('tr', { hasText: PLATE }).first().innerText()).replace(/\s+/g, ' '));
+  await p.screenshot({ path: raw + 'v7-list-full.png' });
+  await b.close();
+})().catch(e => { console.error(e); process.exit(1); });
