@@ -61,7 +61,10 @@ class BulkVehicleCostService
                 }
 
                 // team 모드 — 본인 팀 차량만 (fleet 은 위에서 canApprove 통과).
-                if (! $fleetWide && ! $by->canUnlockLedger($vehicle)) {
+                //   🔀 2026-11-14 (jin) 재무도 — 재무는 팀이 없고 정산을 전 차량으로 보므로 canScopeVehicle(전체) 기준.
+                $inScope = $by->canUnlockLedger($vehicle)
+                    || ($by->role === '재무' && $by->canScopeVehicle($vehicle));
+                if (! $fleetWide && ! $inScope) {
                     $skipped[] = ['id' => $vehicle->id, 'number' => $vehicle->vehicle_number, 'reason' => 'no_scope'];
 
                     continue;

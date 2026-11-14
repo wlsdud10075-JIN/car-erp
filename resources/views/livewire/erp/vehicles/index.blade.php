@@ -8639,7 +8639,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             </button>
         @endif
         {{-- ② 면허비 n/1 딥링크 — 선택 차량이 한 묶음일 때만(완전묶음). 선적 묶음 화면 2차 비용 탭 자동 오픈. --}}
-        @if(auth()->user()?->canApprove() && $this->selectedBundle)
+        @if(auth()->user()?->canCorrectSecondaryCosts() && $this->selectedBundle)   {{-- 재무 이상(jin 2026-11-14) --}}
             <a href="{{ route('erp.shipping-requests.index', ['focus' => $this->selectedBundle]) }}" wire:navigate
                class="rounded border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-medium text-violet-700 hover:bg-violet-100">
                 → {{ __('vehicle.shipdoc_license_link') }}
