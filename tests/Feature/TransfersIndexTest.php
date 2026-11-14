@@ -339,4 +339,22 @@ class TransfersIndexTest extends TestCase
             ->call('openNewPbpModal')
             ->assertSee('VINDROPDOWN00001');
     }
+
+    /** 판매 잔금 행 금액은 차량 통화로 (2026-11-14 — USD 2,000 이 「2,000 원」으로 보였다). 원화만 「원」. */
+    public function test_sale_payment_rows_show_the_vehicle_currency(): void
+    {
+        $finance = User::factory()->create(['permission' => 'user', 'role' => '재무']);
+        $buyer = Buyer::create(['name' => 'FX BUYER', 'is_active' => true]);
+        $v = Vehicle::create([
+            'vehicle_number' => '78가7878', 'sales_channel' => 'export', 'buyer_id' => $buyer->id,
+            'sale_date' => '2026-08-01', 'sale_price' => 10_000, 'currency' => 'USD', 'exchange_rate' => 1400,
+            'purchase_price' => 5_000_000,
+        ]);
+        $v->finalPayments()->create(['amount' => 2_000, 'type' => 'balance', 'payment_date' => '2026-08-02', 'exchange_rate' => 1450]);
+        $this->actingAs($finance);
+
+        $html = Volt::test('erp.transfers.index')->set('tabType', 'sale_payment')->html();
+        $this->assertMatchesRegularExpression('/USD<\/span>\s*2,000/u', $html);
+        $this->assertDoesNotMatchRegularExpression('/2,000\s*<span class="text-\[10px\] text-gray-500">원/u', $html);
+    }
 }

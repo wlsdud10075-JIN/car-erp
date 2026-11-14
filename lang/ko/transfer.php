@@ -175,7 +175,7 @@ return [
         'transport_fee' => '+ 운임비',
         'sale_total' => '총 판매액',
         'note_label' => '은행 거래 번호 또는 처리 메모 (선택)',
-        'note_ph' => '예: KB 12345-6789 / 신한 거래번호 등 — 입력 시 finance_note 에 기록',
+        'note_ph' => '예: KB 12345-6789 / 신한 거래번호 등 — 입력하면 처리 메모로 남습니다',
         'submit' => '재무 처리 완료',
     ],
     'search' => [

@@ -1365,7 +1365,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                         @endif
                     </td>
                     <td class="py-3 pr-4 text-right font-semibold text-violet-700">
-                        {{ number_format((float)$p->amount, 0) }} <span class="text-[10px] text-gray-500">{{ __('transfer.unit_won') }}</span>
+                        {{-- 🔀 2026-11-14 — 판매 잔금은 차량 통화다(구: 늘 「원」 → USD 2,000 이 「2,000 원」). 원화만 「원」. --}}
+                        @php $rowCur = $isSale ? ($p->vehicle?->currency ?: 'KRW') : 'KRW'; $rowAmt = (float) $p->amount; $rowAmtTxt = number_format($rowAmt, fmod($rowAmt, 1) != 0.0 ? 2 : 0); @endphp
+                        @if($rowCur === 'KRW')
+                        {{ $rowAmtTxt }} <span class="text-[10px] text-gray-500">{{ __('transfer.unit_won') }}</span>
+                        @else
+                        <span class="text-[10px] text-gray-500">{{ $rowCur }}</span> {{ $rowAmtTxt }}
+                        @endif
                     </td>
                     <td class="py-3 pr-4 text-xs text-gray-600">{{ $p->payment_date?->format('Y-m-d') ?? '-' }}</td>
                     <td class="py-3 pr-4 text-xs text-gray-500 max-w-xs truncate" title="{{ $p->note ?? '' }}">{{ $p->note ?? '' }}</td>
@@ -1431,7 +1437,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endif
             </div>
             <div class="mt-1 text-sm font-semibold text-violet-700">
-                {{ number_format((float)$p->amount, 0) }} {{ __('transfer.unit_won') }}
+                @php $rowCur = $isSale ? ($p->vehicle?->currency ?: 'KRW') : 'KRW'; $rowAmt = (float) $p->amount; $rowAmtTxt = number_format($rowAmt, fmod($rowAmt, 1) != 0.0 ? 2 : 0); @endphp
+                {{ $rowCur === 'KRW' ? $rowAmtTxt.' '.__('transfer.unit_won') : $rowCur.' '.$rowAmtTxt }}
                 <span class="ml-2 text-[10px] text-gray-500">{{ $p->payment_date?->format('Y-m-d') ?? '-' }}</span>
             </div>
             @if($p->note)
