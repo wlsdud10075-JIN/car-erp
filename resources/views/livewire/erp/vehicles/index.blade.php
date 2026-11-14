@@ -740,6 +740,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $resolved = $this->resolveShipBulkVehicles();
         $total = (int) round((float) str_replace(',', '', $this->shipBulkTotal));
         $label = $this->shipBulkCarrier === 'dhl' ? 'DHL' : 'EMS';
+        // 📮 접수일이 날짜가 아니면 기입하지 않는다(2026-11-14) — 구: 조용히 빈 날짜로 들어갔다.
+        if (trim($this->shipBulkDate) !== '' && \App\Services\BulkVehicleShipmentService::normalizeDate($this->shipBulkDate) === null) {
+            $msg = __('vehicle.shipment_bad_date', ['value' => trim($this->shipBulkDate)]);
+            $this->addError('shipBulkDate', $msg);
+            $this->dispatch('notify', message: $msg, type: 'error');
+
+            return;
+        }
 
         try {
             $out = app(\App\Services\BulkVehicleShipmentService::class)->apply(
@@ -6758,6 +6766,19 @@ new #[Layout('components.layouts.app')] class extends Component {
                     return;
                 }
                 $seen[$key] = true;
+            }
+        }
+
+        // 📮 발송 접수일이 날짜가 아니면 저장하지 않는다(2026-11-14) — 구: normalizeDate 가 null 을 돌려 **조용히 빈 날짜로** 저장됐다.
+        //    접수일 칸은 [＋발송 추가] 때 오늘이 미리 들어가 있어, 그 뒤에 이어 치면 「2026-11-1420261114」가 된다(가이드 씬에서 실측).
+        foreach ($this->shipments as $sIdx => $row) {
+            $rawDate = trim((string) ($row['sent_date'] ?? ''));
+            if ($rawDate !== '' && \App\Services\BulkVehicleShipmentService::normalizeDate($rawDate) === null) {
+                $msg = __('vehicle.shipment_bad_date', ['value' => $rawDate]);
+                $this->addError("shipments.{$sIdx}.sent_date", $msg);
+                $this->dispatch('notify', message: $msg, type: 'error');
+
+                return;
             }
         }
 
