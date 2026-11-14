@@ -87,7 +87,7 @@
 **✅ 0묶음(화면 틀) = 11-13 dev 구현, 미배포** (jin «화면틀까지만 — 씬은 주말에»). 목업 = `docs/design/mock/2026-11-13/guides-page.html`.
 - 목록 단일 출처 `config/guides.php`(scenes 29 · scenes_en · lap · board_urls) · `App\Services\Guides\GuideCatalog` · `GuideController` · `resources/views/guides/{index,show}.blade.php` · `lang/{ko,en}/guides.php` · 가드 `GuidesPageTest`.
 - 본문 = `resources/guides/{slug}/index.html`(조각 HTML, 클래스 `.gd-lane`·`.gd-step`·`.gd-bubble`·`details`·`.gd-check`, 그림은 `src="01.png"` 파일명만). **파일이 곧 상태** — 없으면 「준비 중」.
-- 사이드바는 볼 수 있는 씬이 1장 생길 때까지 종전 Notion 링크. board 링크는 `guides.board_link_live=false`(board 배포 통보 뒤 켠다 — ssancarboard `board.heymancar.com/guides` · heymanboard `board.heysellcar.com/guides`, karaba 없음).
+- 사이드바는 볼 수 있는 씬이 1장 생길 때까지 종전 Notion 링크. 🚫 board 가이드 링크는 없앴다(jin 2026-11-14 «ERP 랑 BOARD 는 서로 업무 알 필요 없다 — 각자 업무가이드», ERP 계정만 있는 사람은 board 로그인에서 막혔다. 8030b8a3 · board 세션에도 제거 요청).
 - 🇬🇧 영어 화면: 문구·제목은 영어, 본문은 `index.en.html` 있으면 그것 · 없으면 한국어 본문 + 「Korean only」.
 - board 세션에 구성·slug 규칙·영어 규칙 전달 완료(11-13). board 는 코드 0, ERP 방식에 맞춘다고 회신.
 
