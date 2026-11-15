@@ -1,0 +1,70 @@
+const { chromium } = require('playwright-core');
+const out = 'C:/xampp/htdocs/car-erp/resources/guides/vehicle-register/';
+require('fs').mkdirSync(out, { recursive: true });
+const PLATE = '00가1113';
+const raw = __dirname + '/out/';
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 }, locale: 'ko-KR', deviceScaleFactor: 1.5 })).newPage();
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'manage@car-erp.test');
+  await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+  await p.goto('http://localhost:8001/erp/vehicles', { waitUntil: 'networkidle' });
+  const btn = p.locator('button[wire\\:click="openCreate"]');
+  const bb = await btn.boundingBox();
+  console.log('btn', JSON.stringify(bb));
+  await p.screenshot({ path: out + '01.png', clip: { x: 220, y: 0, width: 1060, height: Math.max(130, bb.y + bb.height + 16) } });
+  await btn.click();
+  await p.waitForTimeout(1500);
+  const panel = { x: 460, y: 0, width: 820 };
+  // 기본정보
+  await p.fill('input[wire\\:model="vehicle_number"], input[wire\\:model\\.blur="vehicle_number"], input[wire\\:model\\.live\\.blur="vehicle_number"]', PLATE).catch(async () => { await p.locator('input[placeholder="12가3456"]').fill(PLATE); });
+  await p.locator('select').filter({ has: p.locator('option', { hasText: '김영업' }) }).last().selectOption({ label: '김영업' });
+  await p.locator('input[placeholder="현대"]').fill('현대');
+  await p.locator('input[placeholder="쏘나타"]').fill('쏘나타');
+  await p.locator('input[placeholder="2020"]').fill('2020');
+  await p.locator('input[placeholder="85000"]').fill('85000');
+  await p.waitForTimeout(500);
+  await p.screenshot({ path: out + '02.png', clip: { ...panel, height: 540 } });
+  // 매입
+  await p.click(`button[\\@click="tab = 'purchase'"]`);
+  await p.waitForTimeout(500);
+  await p.locator('input[placeholder="경매 / 딜러 / 개인"]').fill('딜러');
+  const pp = p.locator('input[wire\\:model*="purchase_price_str"]'); await pp.click(); await pp.pressSequentially('10000000');
+  const sf = p.locator('input[wire\\:model*="selling_fee_str"]').first(); await sf.click(); await sf.pressSequentially('300000');
+  await p.keyboard.press('Tab');
+  await p.waitForTimeout(800);
+  await p.screenshot({ path: out + '03.png', clip: { ...panel, height: 300 } });
+  // 비용 영역
+  const costHead = p.getByText(/^비용 \d+개$/).first();
+  await costHead.scrollIntoViewIfNeeded();
+  const cb = await costHead.boundingBox();
+  console.log('cost', JSON.stringify(cb), await costHead.innerText());
+  await p.screenshot({ path: out + '04.png', clip: { ...panel, y: Math.max(0, cb.y - 16), height: 300 } });
+  // 판매 — 바이어 미정
+  await p.click(`button[\\@click="tab = 'sale'"]`);
+  await p.waitForTimeout(500);
+  await p.locator('input[type=checkbox][wire\\:model\\.live="buyer_undecided"]').check();
+  await p.waitForTimeout(800);
+  await p.screenshot({ path: out + '05.png', clip: { ...panel, height: 380 } });
+  // 저장
+  await p.getByRole('button', { name: '신규 등록' }).click();
+  await p.waitForTimeout(1200);
+  await p.screenshot({ path: out + '06.png', clip: { x: 400, y: 315, width: 480, height: 370 } });
+  await p.getByRole('button', { name: '확인 후 저장' }).click();
+  await p.waitForTimeout(700);
+  await p.screenshot({ path: raw + 'after1.png' });
+  await p.waitForTimeout(1500);
+  await p.screenshot({ path: raw + 'after2.png' });
+  await p.waitForTimeout(4000);
+  await p.fill('input[wire\\:model="search"]', PLATE).catch(() => {});
+  await p.getByRole('button', { name: '조회', exact: true }).first().click().catch(() => {});
+  await p.waitForTimeout(2000);
+  await p.screenshot({ path: raw + 'after3.png' });
+  const body = await p.locator('body').innerText();
+  const i = body.indexOf('등록됐습니다'); console.log('toast:', i >= 0 ? body.slice(Math.max(0, i - 40), i + 120).replace(/\n/g, ' | ') : 'NOT FOUND');
+  const errs = await p.$$eval('.text-red-500, .text-red-600', e => e.filter(x => x.offsetParent).map(x => x.innerText.trim()).filter(Boolean).slice(0, 8));
+  console.log('errs', JSON.stringify(errs));
+  await b.close();
+})().catch(e => { console.error(e); process.exit(1); });

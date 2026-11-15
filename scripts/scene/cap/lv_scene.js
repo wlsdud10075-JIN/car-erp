@@ -1,0 +1,25 @@
+const { chromium } = require('playwright-core');
+const raw = __dirname + '/lv/';
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const p = await (await b.newContext({ viewport: { width: 1600, height: 1000 }, locale: 'ko-KR', deviceScaleFactor: 1.5 })).newPage();
+  p.setDefaultTimeout(90000);
+  const hideAlarm = async () => { await p.evaluate(() => { for (const el of document.querySelectorAll('*')) { if (el.children.length === 0 && /통관서류 알람/.test(el.textContent || '')) { let a = el; while (a && getComputedStyle(a).position !== 'fixed') a = a.parentElement; if (a) a.style.display = 'none'; } } }); };
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'guide.manager@car-erp.test');
+  await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+  await p.goto('http://localhost:8001/erp/settlements', { waitUntil: 'networkidle', timeout: 120000 });
+  await p.waitForTimeout(2000);
+  await p.locator('text=퇴사자 정산').first().click();
+  await p.waitForTimeout(2500);
+  await hideAlarm();
+  await p.locator('button[wire\\:click^="openLeaverModal"]').nth(1).evaluate(e => e.click());
+  await p.waitForTimeout(3000);
+  await hideAlarm();
+  await p.screenshot({ path: raw + 'm1-modal.png' });
+  const t = await p.locator('body').innerText();
+  const i = t.indexOf('퇴사 정산 제출', t.indexOf('이승훈 퇴사'));
+  console.log(t.slice(t.indexOf('이승훈 퇴사') - 20, t.indexOf('이승훈 퇴사') + 900));
+  await b.close();
+})().catch(e => { console.error(e.message.slice(0, 400)); process.exit(1); });

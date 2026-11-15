@@ -1,0 +1,21 @@
+const { chromium } = require('playwright-core');
+const raw = __dirname + '/bl/';
+const PLATE = '80가8001';
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 }, locale: 'ko-KR', deviceScaleFactor: 1.5 })).newPage();
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'clear@car-erp.test');
+  await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+  await p.goto('http://localhost:8001/erp/vehicles?search=' + encodeURIComponent(PLATE), { waitUntil: 'networkidle' });
+  await p.locator('tr', { hasText: PLATE }).first().locator('td').nth(1).click();
+  await p.waitForTimeout(2500);
+  await p.click(`button[\\@click="tab = 'bl'"]`);
+  await p.waitForTimeout(800);
+  const box = p.locator('[x-show="tab === \'bl\'"] div', { hasText: /B\/L 발행 잠김/ }).last();
+  console.log(await box.innerText());
+  const bb = await box.boundingBox();
+  await p.screenshot({ path: raw + 'locked.png', clip: { x: bb.x - 6, y: bb.y - 6, width: bb.width + 12, height: bb.height + 12 } });
+  await b.close();
+})().catch(e => { console.error(e.message.slice(0, 400)); process.exit(1); });

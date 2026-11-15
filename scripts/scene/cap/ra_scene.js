@@ -1,0 +1,58 @@
+const { chromium } = require('playwright-core');
+const raw = __dirname + '/ra/';
+require('fs').mkdirSync(raw, { recursive: true });
+const PLATE = '00가1121';
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 }, locale: 'ko-KR', deviceScaleFactor: 1.5 })).newPage();
+  p.setDefaultTimeout(90000);
+  p.on('dialog', d => { console.log('dialog:', d.message().slice(0, 200)); d.accept(); });
+  const body = async (re) => { const t = await p.locator('body').innerText(); const m = t.match(re); return m ? m[0] : '(없음)'; };
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'guide.manager@car-erp.test');
+  await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+
+  await p.goto('http://localhost:8001/erp/settlements', { waitUntil: 'networkidle', timeout: 120000 });
+  await p.locator('input[wire\\:model="search"]').first().fill(PLATE);
+  await p.keyboard.press('Enter');
+  await p.waitForTimeout(2500);
+  await p.screenshot({ path: raw + 'r1-list.png', fullPage: true });
+  const btn = p.locator('button[wire\\:click\\.stop^="openReadjustModal"]').first();
+  console.log('btn count:', await p.locator('button[wire\\:click\\.stop^="openReadjustModal"]').count());
+  await btn.evaluate(e => e.click());
+  await p.waitForTimeout(1500);
+  await p.locator('textarea[wire\\:model="readjustReason"]').fill('선사 추가 운임 청구분 반영 (가이드 예시)');
+  await p.waitForTimeout(500);
+  await p.screenshot({ path: raw + 'r2-modal.png' });
+  await p.locator('button[wire\\:click="submitReadjust"]').first().evaluate(e => e.click());
+  await p.waitForURL(/openVehicle/, { timeout: 60000 }).catch(() => {});
+  await p.waitForTimeout(4000);
+  console.log('url:', p.url());
+  await p.screenshot({ path: raw + 'r3-panel.png' });
+  console.log('hint:', await body(/[^\n]*(재조정|해제)[^\n]*/));
+  // 판매 탭
+  await p.locator('button:text-is("판매")').first().evaluate(e => e.click()).catch(e => console.log('tab err', e.message.slice(0, 80)));
+  await p.waitForTimeout(1200);
+  await p.locator('input[wire\\:model="transport_fee_str"]').first().fill('300,000');
+  await p.waitForTimeout(500);
+  await p.screenshot({ path: raw + 'r4-fee.png' });
+  await p.getByRole('button', { name: '수정 저장' }).first().evaluate(e => e.click());
+  await p.waitForTimeout(1500);
+  await p.getByRole('button', { name: '확인 후 저장' }).first().evaluate(e => e.click());
+  await p.waitForTimeout(4000);
+  console.log('after save:', await body(/[^\n]*(저장|막|변경할 수 없)[^\n]*/));
+  await p.screenshot({ path: raw + 'r5-saved.png' });
+  // 다시 열기 — 재잠금 상태 + 새 미수 + 추후 수금
+  await p.goto('http://localhost:8001/erp/vehicles?openVehicle=302', { waitUntil: 'networkidle', timeout: 120000 });
+  await p.waitForTimeout(3000);
+  await p.locator('button:text-is("판매")').first().evaluate(e => e.click());
+  await p.waitForTimeout(1500);
+  await p.screenshot({ path: raw + 'r6-reopen.png' });
+  const sum = p.locator('text=판매 미입금 요약').first();
+  await sum.scrollIntoViewIfNeeded();
+  await p.waitForTimeout(800);
+  await p.screenshot({ path: raw + 'r7-unpaid.png' });
+  console.log('unpaid:', await body(/[^\n]*미입금[^\n]*/));
+  await b.close();
+})().catch(e => { console.error(e.message.slice(0, 400)); process.exit(1); });

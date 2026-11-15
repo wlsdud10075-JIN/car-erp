@@ -1,0 +1,22 @@
+const { chromium } = require('playwright-core');
+const raw = __dirname + '/inv/';
+const PLATE = '20가2001';
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const ctx = await b.newContext({ viewport: { width: 1600, height: 1000 }, locale: 'ko-KR', deviceScaleFactor: 1.5 });
+  await ctx.route(/127\.0\.0\.1:47321/, r => r.abort());
+  const p = await ctx.newPage(); p.setDefaultTimeout(60000);
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'clear@car-erp.test'); await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+  await p.goto('http://localhost:8001/erp/inventory', { waitUntil: 'networkidle' });
+  await p.locator('input[wire\\:model="search"]').first().fill(PLATE);
+  await p.getByRole('button', { name: '조회', exact: true }).click(); await p.waitForTimeout(1800);
+  await p.evaluate(() => { for (const el of document.querySelectorAll('*')) { if (el.children.length === 0 && /통관서류 알람/.test(el.textContent || '')) { let a = el; while (a && getComputedStyle(a).position !== 'fixed') a = a.parentElement; if (a) a.style.display = 'none'; } } });
+  const row = p.locator('tr', { hasText: PLATE }).first();
+  console.log('row:', (await row.innerText()).replace(/\s+/g, ' '));
+  const head = p.locator('thead').first();
+  const hb = await head.boundingBox(); const rb = await row.boundingBox();
+  await p.screenshot({ path: raw + 'b1-row.png', clip: { x: hb.x, y: hb.y, width: hb.width, height: rb.y + rb.height - hb.y } });
+  await b.close();
+})().catch(e => { console.error(e.message.slice(0, 400)); process.exit(1); });

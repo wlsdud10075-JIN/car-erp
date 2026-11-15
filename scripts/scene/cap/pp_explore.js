@@ -1,0 +1,25 @@
+const { chromium } = require('playwright-core');
+const raw = __dirname + '/pp/';
+require('fs').mkdirSync(raw, { recursive: true });
+const PLATE = '00가1113';
+(async () => {
+  const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+  const p = await (await b.newContext({ viewport: { width: 1280, height: 1000 }, locale: 'ko-KR' })).newPage();
+  await p.goto('http://localhost:8001/login');
+  await p.fill('input[type=email]', 'finance@car-erp.test');
+  await p.fill('input[type=password]', 'password');
+  await Promise.all([p.waitForLoadState('networkidle'), p.keyboard.press('Enter')]);
+  console.log('after login', p.url());
+  await p.goto('http://localhost:8001/erp/vehicles?search=' + encodeURIComponent(PLATE), { waitUntil: 'networkidle' });
+  await p.locator('tr', { hasText: PLATE }).first().locator('td').nth(1).click();
+  await p.waitForTimeout(2500);
+  await p.click(`button[\\@click="tab = 'purchase'"]`);
+  await p.waitForTimeout(600);
+  await p.screenshot({ path: raw + 'x1-purchase-top.png' });
+  const l = p.getByText(/^매입 지급$/).first(); await l.scrollIntoViewIfNeeded(); await p.waitForTimeout(400);
+  await p.screenshot({ path: raw + 'x2-pay.png' });
+  console.log('footer buttons', JSON.stringify(await p.$$eval('button:visible', e => e.map(x => x.innerText.trim()).filter(t => /저장|취소/.test(t)))));
+  await p.goto('http://localhost:8001/erp/transfers?tabType=purchase_payment', { waitUntil: 'networkidle' });
+  await p.screenshot({ path: raw + 'x3-transfers.png', fullPage: true });
+  await b.close();
+})().catch(e => { console.error(e); process.exit(1); });
