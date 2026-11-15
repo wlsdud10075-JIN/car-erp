@@ -105,7 +105,8 @@ class ForwardingTrackingLinkTest extends TestCase
         $v->update(['eta_date' => now()->addDays(40)->toDateString()]);
         $v = $v->fresh()->load('forwardingCompany');
 
-        $this->assertSame('in_transit', $v->sailing_phase, '전제 확인 — 선적일이 미래인데도 운항중으로 잡힌다');
+        // 🔀 2026-11-15 — 이제 미래 선적일은 운항중이 아니다(sailing_status 가 고쳐짐). 링크 판정은 그와 별개로 선적일을 직접 본다.
+        $this->assertNull($v->sailing_phase, '미래 선적일은 운항 칩이 없다');
         $this->assertNull($v->tracking_url, '그래도 링크는 닫혀 있어야 한다');
         $this->assertSame('too_early', $v->tracking_block_reason);
     }
