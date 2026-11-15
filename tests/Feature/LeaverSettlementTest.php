@@ -303,6 +303,26 @@ class LeaverSettlementTest extends TestCase
 
     // ── 화면 ──────────────────────────────────────────────────────────────
 
+    /** 🔀 2026-11-15 (jin «추천대로») — 버튼 숫자 = 제출할 것이 남은 퇴사자. 예치금만 남은 사람도 센다(반환하려면 제출해야 한다). */
+    public function test_leaver_count_includes_deposit_only_leavers(): void
+    {
+        $this->actingAs($this->user());
+        $this->user('admin');
+        $withSettlement = $this->freelancer();
+        $this->confirmed($withSettlement);
+        $depositOnly = $this->freelancer();
+        $depositOnly->update(['deposit_krw' => 500_000]);
+        $this->freelancer();   // 남은 것 없음 — 세지 않는다
+
+        $c = Volt::test('erp.settlements.index')->set('monthFilter', '2026-10');
+        $this->assertSame(2, $c->get('leaverOpenCount'), '예치금만 남은 퇴사자가 숫자에서 빠졌다');
+        $c->call('toggleLeavers')->assertSeeHtml('data-leaver-row="'.$depositOnly->id.'"');
+
+        // 결재 중인 퇴사 배치가 있으면 그 사람의 예치금은 이미 올라간 것 — 다시 세지 않는다
+        SettlementPayoutBatch::submitForLeaver(auth()->user(), $depositOnly, [['amount' => 500_000, 'reason' => '예치금 반환', 'kind' => 'deposit']]);
+        $this->assertSame(1, Volt::test('erp.settlements.index')->set('monthFilter', '2026-10')->get('leaverOpenCount'));
+    }
+
     public function test_settlements_screen_lists_leavers_and_submits_from_the_modal(): void
     {
         $manager = $this->user();
