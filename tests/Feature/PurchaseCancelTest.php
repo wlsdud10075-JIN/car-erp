@@ -257,6 +257,25 @@ class PurchaseCancelTest extends TestCase
             ->assertSet('cancelStatusLabel', '취소완료');
     }
 
+    /** 🎨 2026-11-15 (jin «맞춰줘») — 목록 뱃지도 패널처럼 취소완료 = 회색, 미수 남은 매입취소만 빨강. */
+    public function test_list_badge_is_gray_for_done_like_the_panel(): void
+    {
+        $this->actingAs($this->admin());
+        $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);
+        $make = fn (string $plate) => Vehicle::create([
+            'vehicle_number' => $plate, 'sales_channel' => 'export', 'currency' => 'KRW', 'exchange_rate' => 1,
+            'sale_price' => 500, 'sale_date' => now()->toDateString(), 'buyer_id' => $buyer->id, 'cancel_status' => Vehicle::CANCEL_ACTIVE,
+        ]);
+        $make('LB1');
+        $make('LB2')->finalPayments()->create(['amount' => 500, 'type' => 'balance', 'payment_date' => now()->toDateString(), 'confirmed_at' => now()]);
+
+        $html = Volt::test('erp.vehicles.index')->html();
+
+        $this->assertMatchesRegularExpression('/badge-gray" data-cancel-badge>취소완료</u', $html, '취소완료가 회색이 아니다');
+        $this->assertMatchesRegularExpression('/badge-red" data-cancel-badge>매입취소</u', $html, '미수 남은 매입취소는 빨강');
+        $this->assertDoesNotMatchRegularExpression('/badge-red" data-cancel-badge>취소완료</u', $html);
+    }
+
     public function test_vehicle_list_cancel_filter_splits_active_done_closed(): void
     {
         $buyer = Buyer::create(['name' => 'B', 'is_active' => true]);

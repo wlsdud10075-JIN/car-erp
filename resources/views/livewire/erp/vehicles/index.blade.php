@@ -8959,7 +8959,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     @elseif($v->sailing_status === \App\Models\Vehicle::SAILING_ARRIVED)
                         <span class="badge badge-teal" title="{{ __('vehicle.tooltip.arrived', ['eta' => $v->eta_date?->format('Y-m-d')]) }}">⚓</span>
                     @endif
-                    @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
+                    @if($v->isPurchaseCancelled())<span class="badge {{ in_array($v->cancel_status_label, ['미수마감', '취소완료'], true) ? 'badge-gray' : 'badge-red' }}" data-cancel-badge>{{ $v->cancel_status_label }}</span>@endif
                     {{-- 💸 매입 미지급 병기 (jin 2026-09-10) — 진행상태가 「판매중」이어도 매입 잔금이 남았으면
                          그 사실이 목록에서 보여야 한다. 실측 heymanerp: 미지급 30대 중 26대(87%)가
                          판매중·선적완료·거래완료라 진행상태만 보면 매입이 끝난 것처럼 보였다.
@@ -9241,7 +9241,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 @elseif($v->sailing_status === \App\Models\Vehicle::SAILING_ARRIVED)
                     <span class="badge badge-teal">⚓</span>
                 @endif
-                @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
+                @if($v->isPurchaseCancelled())<span class="badge {{ in_array($v->cancel_status_label, ['미수마감', '취소완료'], true) ? 'badge-gray' : 'badge-red' }}" data-cancel-badge>{{ $v->cancel_status_label }}</span>@endif
                 @if($v->sale_price > 0)
                     <span class="text-xs font-medium text-gray-700">{{ number_format($v->sale_price) }} {{ $v->currency }}</span>
                 @endif
