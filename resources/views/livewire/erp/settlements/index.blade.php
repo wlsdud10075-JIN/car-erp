@@ -1158,12 +1158,23 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->showLeavers = ! $this->showLeavers;
     }
 
-    /** 버튼 숫자 — 미배치 정산(미확정·확정 포함)이 남은 즉시 정산 퇴사자 수. 이월만 남은 사람은 펼쳐야 보인다. */
+    /**
+     * 버튼 숫자 — 처리할 것이 남은 즉시 정산 퇴사자 수.
+     *   = 미배치 정산(미확정·확정 포함)이 남은 사람 + (결재 중인 퇴사 배치가 없고) 이월·예치금이 남은 사람.
+     * 🔀 2026-11-15 (jin «추천대로») — 구: 미배치 정산만 셌다 → 예치금만 남은 퇴사자(반환하려면 [퇴사 정산 제출]을 눌러야 함)가
+     *    숫자에서 빠져 펼쳐야 보였다. 퇴사자는 몇 명뿐이라 PHP 로 센다(이월·예치금이 accessor).
+     */
     #[Computed]
     public function leaverOpenCount(): int
     {
+        $pendingLeaverIds = \App\Models\SettlementPayoutBatch::query()->leaver()
+            ->where('status', \App\Models\SettlementPayoutBatch::STATUS_PENDING)->pluck('salesman_id')->map(fn ($id) => (int) $id)->all();
+
         return Salesman::query()->immediateLeavers()->where('payout_excluded', false)
-            ->whereHas('settlements', fn ($q) => $q->whereNull('payout_batch_id')->whereIn('settlement_status', ['pending', 'calculating', 'confirmed']))
+            ->withExists(['settlements as has_open' => fn ($q) => $q->whereNull('payout_batch_id')->whereIn('settlement_status', ['pending', 'calculating', 'confirmed'])])
+            ->get()
+            ->filter(fn (Salesman $sm) => $sm->has_open
+                || (! in_array((int) $sm->id, $pendingLeaverIds, true) && ((int) $sm->unconsumed_carryover !== 0 || (int) ($sm->deposit_krw ?? 0) > 0)))
             ->count();
     }
 
