@@ -1600,7 +1600,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <td class="py-2 pr-3 text-right text-gray-700">{{ $unpaidRatio }}%</td>
                     <td class="py-2 pr-3">
                         <span class="badge badge-gray">{{ $v->progress_status_cache ? __('domain.progress.'.$v->progress_status_cache) : '-' }}</span>
-                        @if($v->isPurchaseCancelled())<span class="badge {{ $v->cancel_status === \App\Models\Vehicle::CANCEL_CLOSED ? 'badge-gray' : 'badge-red' }}">{{ $v->cancel_status_label }}</span>@endif
+                        @if($v->isPurchaseCancelled())<span class="badge {{ in_array($v->cancel_status_label, ['미수마감', '취소완료'], true) ? 'badge-gray' : 'badge-red' }}" data-cancel-badge>{{ $v->cancel_status_label }}</span>@endif
                     </td>
                     <td class="py-2 pr-3 text-center text-xs">{{ $v->bl_document ? '✓' : '-' }}</td>
                     {{-- 📅 경과일 — 판매일부터 오늘까지. 단일 출처 = Vehicle::days_since_sale (위험도 등급이 쓰는 그 값).
