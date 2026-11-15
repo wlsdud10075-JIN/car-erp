@@ -86,12 +86,35 @@ class SailingStatusTest extends TestCase
         $this->assertFalse(Vehicle::query()->sailing('in_transit')->whereKey($v->id)->exists());
     }
 
+    /**
+     * 🔀 2026-11-15 (jin) — 선적일이 미래(배를 미리 잡아 둔 차)면 운항중이 아니다. 선적일 = 오늘이면 떠난 것.
+     */
+    public function test_future_shipping_date_is_not_sailing(): void
+    {
+        $booked = $this->makeVehicle([
+            'shipping_date' => now()->addDays(5)->toDateString(),
+            'eta_date' => now()->addDays(35)->toDateString(),
+        ]);
+        $today = $this->makeVehicle([
+            'shipping_date' => now()->toDateString(),
+            'eta_date' => now()->addDays(30)->toDateString(),
+        ]);
+
+        $this->assertNull($booked->sailing_status, '미래 선적일 차가 운항중으로 보인다');
+        $this->assertFalse(Vehicle::query()->sailing('in_transit')->whereKey($booked->id)->exists());
+        $this->assertFalse(Vehicle::query()->sailing('arrived')->whereKey($booked->id)->exists());
+
+        $this->assertSame(Vehicle::SAILING_IN_TRANSIT, $today->sailing_status, '오늘 선적한 차는 떠난 것');
+        $this->assertTrue(Vehicle::query()->sailing('in_transit')->whereKey($today->id)->exists());
+    }
+
     /** ① accessor 와 scope 가 같은 집합을 낸다. */
     public function test_scope_and_accessor_agree(): void
     {
         $this->makeVehicle(['shipping_date' => now()->subDay()->toDateString(), 'eta_date' => now()->addDays(30)->toDateString()]);
         $this->makeVehicle(['shipping_date' => now()->subDays(90)->toDateString(), 'eta_date' => now()->subDays(30)->toDateString()]);
         $this->makeVehicle(['shipping_date' => now()->subDays(3)->toDateString()]);   // ETA 없음
+        $this->makeVehicle(['shipping_date' => now()->addDays(3)->toDateString(), 'eta_date' => now()->addDays(30)->toDateString()]);   // 배 예약
         $this->makeVehicle();                                                          // 둘 다 없음
 
         foreach (['in_transit' => Vehicle::SAILING_IN_TRANSIT, 'arrived' => Vehicle::SAILING_ARRIVED] as $phase => $label) {
@@ -110,12 +133,14 @@ class SailingStatusTest extends TestCase
         $this->makeVehicle(['shipping_date' => now()->subDay()->toDateString(), 'eta_date' => now()->addDays(5)->toDateString()]);
         $this->makeVehicle(['shipping_date' => now()->subDays(50)->toDateString(), 'eta_date' => now()->subDay()->toDateString()]);
         $this->makeVehicle(['shipping_date' => now()->subDays(2)->toDateString()]);
+        $this->makeVehicle(['shipping_date' => now()->addDays(7)->toDateString(), 'eta_date' => now()->addDays(40)->toDateString()]);   // 배 예약
         $this->makeVehicle();
 
         $inTransit = Vehicle::query()->sailing('in_transit')->count();
         $arrived = Vehicle::query()->sailing('arrived')->count();
         $neither = Vehicle::query()
-            ->where(fn ($q) => $q->whereNull('shipping_date')->orWhereNull('eta_date'))
+            ->where(fn ($q) => $q->whereNull('shipping_date')->orWhereNull('eta_date')
+                ->orWhere('shipping_date', '>', now()->toDateString().' 23:59:59'))
             ->count();
 
         $this->assertSame(Vehicle::count(), $inTransit + $arrived + $neither);

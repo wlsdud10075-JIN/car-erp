@@ -2932,6 +2932,8 @@ class Vehicle extends Model
      *
      * 선적일(= 실제 출항일, jin 확인)과 ETA 가 둘 다 있으면 배가 떴다고 본다.
      * ETA 가 미래면 아직 바다 위(`운항중`), 지났으면 `도착예정`.
+     * 🔀 2026-11-15 (jin «고치는게 좋겠네») — **선적일이 오늘 이후(미래)면 칩 없음.** 배를 미리 잡아 둔 차가
+     *    운항중으로 보였다(CIG 실측 61대 중 4대). 선적일 = 오늘이면 떠난 것(`departed()` 와 같은 경계).
      * ⚠️ **'도착'이 아니라 '도착예정'이다** — ETA 는 예정일이고 지연되면 배는 아직 바다에 있다.
      *    실제 입항을 확인하려면 포워더 소스가 필요하다(2026-08-09 현재 ERP 에 없음).
      *
@@ -2961,6 +2963,9 @@ class Vehicle extends Model
     {
         if (! $this->shipping_date || ! $this->eta_date) {
             return null;
+        }
+        if ($this->shipping_date->toDateString() > now()->toDateString()) {
+            return null;   // 아직 안 떠났다 — scopeSailing 과 같은 판정
         }
 
         return $this->eta_date->toDateString() > now()->toDateString()
@@ -3306,6 +3311,7 @@ class Vehicle extends Model
         $endOfToday = now()->toDateString().' 23:59:59';
 
         return $query->whereNotNull('shipping_date')
+            ->where('shipping_date', '<=', $endOfToday)   // 미래 선적일 = 아직 안 떠남(2026-11-15)
             ->whereNotNull('eta_date')
             ->when($phase === 'in_transit', fn ($q) => $q->where('eta_date', '>', $endOfToday))
             ->when($phase === 'arrived', fn ($q) => $q->where('eta_date', '<=', $endOfToday));
@@ -3324,7 +3330,8 @@ class Vehicle extends Model
 
         return $query->where('progress_status_cache', '거래완료')
             ->where('cancel_status', self::CANCEL_NONE)
-            ->where(fn ($q) => $q->whereNull('shipping_date')->orWhereNull('eta_date')->orWhere('eta_date', '<=', $endOfToday));
+            ->where(fn ($q) => $q->whereNull('shipping_date')->orWhereNull('eta_date')->orWhere('eta_date', '<=', $endOfToday)
+                ->orWhere('shipping_date', '>', $endOfToday));   // 미래 선적일 = 운항중 아님(2026-11-15)
     }
 
     /**
@@ -3340,7 +3347,7 @@ class Vehicle extends Model
             ->where(fn ($q) => $q->whereNull('progress_status_cache')
                 ->orWhere('progress_status_cache', '!=', '거래완료')
                 ->orWhere('cancel_status', '!=', self::CANCEL_NONE)
-                ->orWhere(fn ($q2) => $q2->whereNotNull('shipping_date')->whereNotNull('eta_date')->where('eta_date', '>', $endOfToday)));
+                ->orWhere(fn ($q2) => $q2->whereNotNull('shipping_date')->where('shipping_date', '<=', $endOfToday)->whereNotNull('eta_date')->where('eta_date', '>', $endOfToday)));
     }
 
     /**
