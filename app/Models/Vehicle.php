@@ -3015,8 +3015,9 @@ class Vehicle extends Model
      *   ② 차대번호가 있다                     (템플릿의 `{VIN}` 을 채울 값)
      *   ③ **출항 D+1 이 지났다**              (당일은 선사 준비·데이터 전달 중이라 조회가 안 된다)
      *
-     * ⚠️ ③ 을 `sailing_phase` 로 판정하면 안 된다 — 그 값은 **선적일이 미래여도 ETA 만 있으면
-     *    `운항중`** 이 된다. 실측 CIG 61대 중 4대가 정확히 그 상태였고, 그 차들은 조회가 안 된다.
+     * ⚠️ ③ 을 `sailing_phase` 로 판정하지 않는다 — 그 값은 (2026-11-15 전까지) **선적일이 미래여도 ETA 만 있으면
+     *    `운항중`** 이었다(실측 CIG 61대 중 4대). 지금은 고쳐졌지만 출항 당일(D+0)은 운항중이면서 링크는 닫혀야 하므로
+     *    여전히 `shipping_date` 로 직접 본다.
      *    「실제 출항」은 `shipping_date` 로만 판정한다.
      */
     public function getTrackingUrlAttribute(): ?string
