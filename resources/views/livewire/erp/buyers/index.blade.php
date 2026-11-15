@@ -2444,9 +2444,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <tr class="border-b border-gray-100 align-top">
                             <td class="px-2 py-1.5 whitespace-nowrap">{{ $c->approved_at?->format('Y-m-d') ?? '—' }}</td>
                             <td class="px-2 py-1.5 whitespace-nowrap">{{ $c->vehicle_number ?? '—' }}</td>
-                            <td class="px-2 py-1.5"><span class="badge {{ $c->result === 'accepted' ? 'badge-green' : 'badge-gray' }}">{{ __('buyer.claims.result_'.$c->result) }}</span></td>
-                            <td class="px-2 py-1.5">{{ $c->compensation_type ? __('buyer.claims.type_'.$c->compensation_type) : '—' }}</td>
-                            <td class="px-2 py-1.5 text-right font-mono">{{ $c->currency }} {{ number_format((float) $c->confirmed_amount, 2) }}</td>
+                            <td class="px-2 py-1.5 whitespace-nowrap"><span class="badge {{ $c->result === 'accepted' ? 'badge-green' : 'badge-gray' }}">{{ __('buyer.claims.result_'.$c->result) }}</span></td>
+                            <td class="px-2 py-1.5 whitespace-nowrap">{{ $c->compensation_type ? __('buyer.claims.type_'.$c->compensation_type) : '—' }}</td>
+                            <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono">{{ $c->currency }} {{ number_format((float) $c->confirmed_amount, 2) }}</td>
                             <td class="px-2 py-1.5 text-gray-600">{{ \Illuminate\Support\Str::limit((string) $c->result_reason, 80) }}@if($c->handler_name)<span class="block text-gray-400">{{ $c->handler_name }}@if($c->approved_by_name) · {{ $c->approved_by_name }}@endif</span>@endif</td>
                         </tr>
                     @endforeach

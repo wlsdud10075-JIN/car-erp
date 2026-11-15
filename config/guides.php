@@ -55,7 +55,7 @@ return [
         'ledger-readjust' => ['Readjust after closing', 'Add freight to a closed vehicle and collect the new balance'],
         'leaver-domestic-payout' => ['Leaver payout · domestic staff payout', 'Two payouts that are approved separately'],
         'bank-balance' => ['Bank balances and the cash report', 'Enter closing balances per account for the cash report'],
-        'buyer-claim' => ['Handle a claim', 'Accept or reject a buyer claim'],
+        'buyer-claim' => ['Buyer claim records', 'Claims approved in board are recorded on the buyer Claims tab'],
         'kakao-todo' => ['KakaoTalk automation — my to-dos', 'Read chat rooms and turn messages into to-dos'],
     ],
 
@@ -88,7 +88,7 @@ return [
         'ledger-readjust' => ['settlement', '마감 뒤 회계 재조정', '마감된 차에 운임비를 넣고 새 미수를 받습니다', ['관리', '업무관리자'], '운임비 재조정'],
         'leaver-domestic-payout' => ['settlement', '퇴사자 정산 · 내수직원 월정산', '따로 결재하는 두 가지 정산입니다', ['업무관리자'], '퇴사 예치금 평가수수료'],
         'bank-balance' => ['settlement', '통장 잔액과 자금 보고', '계좌별 마감 잔액을 넣으면 자금 보고에 반영됩니다', ['재무'], '통장 자금'],
-        'buyer-claim' => ['manage', '클레임 처리', '바이어 클레임을 인정하거나 기각합니다', ['관리'], '클레임'],
+        'buyer-claim' => ['manage', '클레임 기록 보기', 'board 에서 결재가 끝난 클레임이 바이어 「클레임」 탭에 쌓입니다', ['관리'], '클레임 인정 기각'],
         'kakao-todo' => ['manage', '카톡 자동화 — 내 카톡 할 일', '카톡방을 읽어 할 일로 정리합니다', ['관리'], '카카오톡 할 일'],
     ],
 ];
