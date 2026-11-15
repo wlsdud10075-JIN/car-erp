@@ -76,7 +76,7 @@ class KakaoBuckets
             return self::r('snoozed', $item->snooze_reason ?: '조건이 될 때까지 미룸');
         }
 
-        $ageHours = $message->sent_at ? $message->sent_at->diffInHours($now) : 0;
+        $ageHours = $message->sent_at ? (int) $message->sent_at->diffInHours($now) : 0;   // Carbon 3 = 소수 — agoLabel(int) 로 넘기기 전에 내린다
 
         switch ($direction) {
             case KakaoDirection::WAITING:

@@ -205,4 +205,20 @@ class KakaoAutoCloseTest extends TestCase
         $again = KakaoTodoBoard::forUser($me, $now);
         $this->assertNotContains($a->id, $ids($again, 'done'), '되돌린 글을 다시 닫지 않는다');
     }
+
+    /** 2026-11-15 씬 촬영 중 발견 — Carbon 3 diffInHours 가 소수라 「20.028410895시간 전」이 찍혔다. 경과 표시는 정수로. */
+    public function test_elapsed_labels_are_whole_numbers(): void
+    {
+        $me = User::factory()->create(['permission' => 'user', 'role' => '수출통관']);
+        $this->room->users()->attach($me->id, ['my_name' => '수출팀A', 'selected' => true]);
+        $hours = $this->msg('09:00', '영업A', '요청', '서류 확인 부탁드립니다');
+        $mins = $this->msg('09:00', '영업A', '질문', '선적일 나왔나요?', null, ['sent_at' => '2026-11-13 05:20:30']);
+
+        $board = KakaoTodoBoard::forUser($me, Carbon::parse('2026-11-13 05:30:00'));   // 20.5 시간 · 9.5 분
+        $rows = collect($board['buckets'])->flatten(1)->keyBy('id');
+
+        $this->assertSame('20시간 전', $rows[$hours->id]['ago']);
+        $this->assertSame('9분 전', $rows[$mins->id]['ago']);
+        $this->assertDoesNotMatchRegularExpression('/\d\.\d/', $rows[$hours->id]['reason'].$rows[$mins->id]['reason']);
+    }
 }
