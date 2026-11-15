@@ -798,7 +798,7 @@ new #[Layout('components.layouts.app')] class extends Component
                                     <button type="button" wire:click="snoozeItem({{ $r['id'] }}, 'today16')" class="h-9 rounded border border-violet-300 bg-white px-2 text-gray-700 sm:h-7">{{ __('kakao.snooze_today') }}</button>
                                     <button type="button" wire:click="snoozeItem({{ $r['id'] }}, 'tomorrow10')" class="h-9 rounded border border-violet-300 bg-white px-2 text-gray-700 sm:h-7">{{ __('kakao.snooze_tomorrow') }}</button>
                                     <span class="flex items-center gap-1"><input type="date" wire:model="snoozeDate" class="input-base h-9 text-xs sm:h-7">
-                                        <button type="button" wire:click="snoozeItem({{ $r['id'] }}, 'date')" class="h-9 rounded border border-violet-300 bg-white px-2 text-gray-700 sm:h-7">{{ __('kakao.snooze_date') }}</button></span>
+                                        <button type="button" wire:click="snoozeItem({{ $r['id'] }}, 'date')" class="h-9 shrink-0 whitespace-nowrap rounded border border-violet-300 bg-white px-2 text-gray-700 sm:h-7">{{ __('kakao.snooze_date') }}</button></span>
                                     <button type="button" wire:click="snoozeItem({{ $r['id'] }}, 'reply')" class="h-9 rounded border border-violet-300 bg-white px-2 text-gray-700 sm:h-7">{{ __('kakao.snooze_reply') }}</button>
                                     <input type="text" wire:model="snoozeReason" placeholder="{{ __('kakao.snooze_reason') }}" class="input-base h-9 w-48 text-xs sm:h-7">
                                     <button type="button" wire:click="$set('snoozeId', null)" class="h-9 px-2 text-gray-500 sm:h-7">{{ __('kakao.cancel') }}</button>
