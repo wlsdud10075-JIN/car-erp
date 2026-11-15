@@ -146,9 +146,10 @@ class KakaoTodoBoard
 
     private static function ago(CarbonInterface $at, CarbonInterface $now): string
     {
-        $h = $at->diffInHours($now);
+        // Carbon 3 의 diffIn* 는 소수를 돌려준다 — 정수로 내리지 않으면 「20.0284시간 전」이 찍힌다(2026-11-15 씬 촬영 중 발견)
+        $h = (int) $at->diffInHours($now);
         if ($h < 1) {
-            return $at->diffInMinutes($now).'분 전';
+            return (int) $at->diffInMinutes($now).'분 전';
         }
 
         return $h < 24 ? $h.'시간 전' : intdiv($h, 24).'일 전';
