@@ -74,6 +74,11 @@ class SearchRequiresButtonTest extends TestCase
                 if (in_array($type, ['checkbox', 'radio', 'date', 'file', 'hidden'], true)) {
                     continue;
                 }
+                // `.live.blur` · `.live.change` · `.live.enter` 는 칸을 벗어날 때·바뀔 때·엔터 때 **한 번** 보낸다 — 「치는 동안」이 없다
+                //   (2026-11-16 딜러 번호 칸 — Livewire 4 는 `.blur` 만이면 요청을 안 보내 `.live.blur` 가 필요하다, SKILLS §8 #138).
+                if (preg_match('/wire:model\.live\.(blur|change|enter)\b/', $tag)) {
+                    continue;
+                }
                 if (! preg_match('/wire:model\.live[^=]*="([^"]+)"/', $tag, $m)) {
                     continue;
                 }
