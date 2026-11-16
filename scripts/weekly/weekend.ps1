@@ -28,12 +28,13 @@ function Run($exe, [string[]]$argList, $timeoutSec = 1800) {
     $out = if (Test-Path $o) { Get-Content $o -Raw -Encoding utf8 } else { '' }
     $err = if (Test-Path $e) { Get-Content $e -Raw -Encoding utf8 } else { '' }
     Remove-Item $o, $e -ErrorAction SilentlyContinue
-    return @{ code = $p.ExitCode; out = [string]$out; err = [string]$err }
+    # 빈 출력은 null 로 온다(Get-Content -Raw 빈 파일) — 문자열로 고정해야 .Trim() 이 안 죽는다(11-16 첫 실행에서 실제로 죽었다)
+    return @{ code = $p.ExitCode; out = $(if ($out) { [string]$out } else { '' }); err = $(if ($err) { [string]$err } else { '' }) }
 }
 function Mark($k, $status, $note) {
     $safe = ($note -replace '"', "'")
     $r = Run $php @('artisan', 'ops:mark', $k, "--status=$status", "--note=`"$safe`"", "--push=$hub") 60
-    Log "ops:mark $k $status ($safe) -> exit $($r.code) $($r.out.Trim()) $($r.err.Trim())"
+    Log "ops:mark $k $status ($safe) -> exit $($r.code) $("$($r.out)".Trim()) $("$($r.err)".Trim())"
 }
 
 if ((Test-Path $done) -and -not $Force) { Log 'already done this cycle — skip'; exit 0 }
@@ -43,7 +44,7 @@ Log "start cycle $stamp"
 if (-not $SkipMemory) {
     $m = Run $php @('scripts/weekly/memory-measure.php') 120
     $last = ($m.out -split "`r?`n" | Where-Object { $_.Trim().StartsWith('{') } | Select-Object -Last 1)
-    try { $j = $last | ConvertFrom-Json; Mark 'memory-doc-cleanup' $j.status $j.note } catch { Mark 'memory-doc-cleanup' 'failed' ('측정 실패: ' + $m.err.Trim()) }
+    try { $j = $last | ConvertFrom-Json; Mark 'memory-doc-cleanup' $j.status $j.note } catch { Mark 'memory-doc-cleanup' 'failed' ('측정 실패: ' + "$($m.err)".Trim()) }
 }
 
 # ② 씬 점검 (러너가 아직 없으면 건너뛴다 — 만드는 동안 「실패」 텔레그램이 가지 않게)
