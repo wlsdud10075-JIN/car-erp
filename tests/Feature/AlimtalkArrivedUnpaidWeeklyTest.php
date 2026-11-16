@@ -91,6 +91,7 @@ class AlimtalkArrivedUnpaidWeeklyTest extends TestCase
     {
         $events = collect(app(Schedule::class)->events())->filter(fn ($e) => str_contains($e->command, 'alimtalk:arrived-unpaid-weekly'));
         $this->assertCount(1, $events);
-        $this->assertSame('0 9 * * 1', $events->first()->expression);
+        // 🔀 2026-11-16 — 월 09:00 → 11:50(시간대 나누기, AlimtalkSchedule::ARRIVED_UNPAID_WEEKLY)
+        $this->assertSame('50 11 * * 1', $events->first()->expression);
     }
 }

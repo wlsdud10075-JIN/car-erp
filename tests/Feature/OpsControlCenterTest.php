@@ -15,6 +15,7 @@ use App\Services\Ops\OpsHub;
 use App\Services\Ops\OpsRoutines;
 use App\Services\Ops\OpsSignature;
 use App\Services\Ops\OpsSummary;
+use App\Support\AlimtalkSchedule;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
@@ -293,6 +294,9 @@ class OpsControlCenterTest extends TestCase
             foreach (array_map(fn ($x) => trim($x, " '"), explode(',', $f[1])) as $d) {
                 $commands[] = 'alimtalk:'.$d;
             }
+        }
+        foreach (array_keys(AlimtalkSchedule::DAILY) as $d) {   // 11-16 — 일일 알림은 시각표 상수로 등록된다
+            $commands[] = 'alimtalk:'.$d;
         }
         $known = array_merge(OpsRoutines::HIDDEN, ...array_map(fn ($g) => $g['commands'], array_values(OpsRoutines::GROUPS)));
         $missing = array_values(array_diff(array_unique($commands), $known));

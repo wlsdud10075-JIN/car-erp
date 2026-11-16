@@ -15,118 +15,98 @@ use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 /**
- * 선적 임박 미수 알림톡 — 글자 수로 자르고 길면 2통 (jin 2026-11-16).
+ * 선적 임박 미수 알림톡 — 배(VSL)별 한 줄 · 한 통 (jin 2026-11-16).
  *
- * 실사고: ssancarerp 11-16 09:00·09:10 — 우회 진행 차 33대 중 20대 × 3줄(+긴 사유) = 1,688자 →
- * BizM E112:OverLimitMessageLength 로 수신자 7명 전원 실패. 구 상한은 「차 20대」였고 글자는 안 셌다.
+ * 경위: ssancarerp 11-16 09:00 우회 차 33대 × 3줄(+긴 사유) = 1,688자 → BizM E112 로 수신자 7명 전원 실패.
+ *   글자 수로 잘라 2통으로 나눴더니 jin «09시에 4~6통 받는데 2통이면 밀려서 안 본다» → 배마다 대표 차 1대 + 「외 N대」, 사유 뺌, 한 통.
  */
 class AlimtalkShippingDueLengthTest extends TestCase
 {
     use RefreshDatabase;
-
-    private string $set;
 
     protected function setUp(): void
     {
         parent::setUp();
         DB::statement('PRAGMA foreign_keys = OFF');
         Http::fake(['*bizmsg.kr*' => Http::response([['code' => 'success', 'data' => ['msgid' => 'MSG-TEST'], 'message' => 'K000']], 200)]);
-        $this->set = Setting::companyTemplateSet();
+        $set = Setting::companyTemplateSet();
         foreach (['enabled' => '1', 'itemlist' => '1', 'userid' => 'uid', 'profile' => 'prof'] as $k => $v) {
-            Setting::updateOrCreate(['key' => "alimtalk_{$k}_{$this->set}"], ['value' => $v, 'type' => 'string']);
+            Setting::updateOrCreate(['key' => "alimtalk_{$k}_{$set}"], ['value' => $v, 'type' => 'string']);
         }
-        Setting::updateOrCreate(['key' => "alimtalk_tmpl_erp_shipping_due_{$this->set}"], ['value' => 'T_SD', 'type' => 'string']);
-        Setting::updateOrCreate(['key' => "alimtalk_toggle_erp_shipping_due_{$this->set}"], ['value' => '1', 'type' => 'boolean']);
+        Setting::updateOrCreate(['key' => "alimtalk_tmpl_erp_shipping_due_{$set}"], ['value' => 'T_SD', 'type' => 'string']);
+        Setting::updateOrCreate(['key' => "alimtalk_toggle_erp_shipping_due_{$set}"], ['value' => '1', 'type' => 'boolean']);
+        User::factory()->create(['permission' => 'manager', 'role' => '관리', 'phone' => '010-7777-0000', 'email_verified_at' => now()]);
     }
 
-    private function manager(): User
+    /** 배 하나에 n대 — 첫 차가 미수 가장 큼. bypass 대수만큼 우회 승인. */
+    private function ship(string $vessel, int $days, int $n, int $bypass = 0, string $buyerName = 'Korea Auto'): void
     {
-        return User::factory()->create(['permission' => 'manager', 'role' => '관리', 'phone' => '010-7777-0000', 'email_verified_at' => now()]);
-    }
-
-    /** 우회 진행 차 n대 — 11-16 운영처럼 긴 사유를 단다. */
-    private function bypassCars(int $n, User $approver): void
-    {
-        $buyer = Buyer::create(['name' => 'Korea Auto', 'is_active' => true]);
-        for ($i = 1; $i <= $n; $i++) {
+        static $seq = 0;
+        $approver = User::first();
+        $buyer = Buyer::create(['name' => $buyerName.' '.$vessel, 'is_active' => true]);
+        for ($i = 0; $i < $n; $i++) {
+            $seq++;
             $v = Vehicle::create([
-                'vehicle_number' => sprintf('%02d가%04d', $i, 1000 + $i), 'sales_channel' => 'export', 'buyer_id' => $buyer->id,
-                'sale_date' => now()->subDays(10)->toDateString(), 'sale_price' => 10_000_000, 'currency' => 'KRW', 'exchange_rate' => 1,
-                'shipping_date' => now()->addDays(3)->toDateString(),
+                'vehicle_number' => sprintf('%02d가%04d', $seq % 100, 1000 + $seq), 'sales_channel' => 'export', 'buyer_id' => $buyer->id,
+                'sale_date' => now()->subDays(10)->toDateString(), 'sale_price' => 10_000_000 - $i * 100_000, 'currency' => 'KRW', 'exchange_rate' => 1,
+                'shipping_date' => now()->addDays($days)->toDateString(), 'vessel_name' => $vessel,
             ]);
-            UnpaidExportOverride::create(['vehicle_id' => $v->id, 'stage' => 'shipping', 'approved_by' => $approver->id,
-                'reason' => '입금예정임'.str_repeat('ㄱ', 25).' 서류 마감 임박으로 인한 면장 진행', 'approved_at' => now()]);
+            if ($i < $bypass) {
+                UnpaidExportOverride::create(['vehicle_id' => $v->id, 'stage' => 'shipping', 'approved_by' => $approver->id,
+                    'reason' => '입금예정임'.str_repeat('ㄱ', 25), 'approved_at' => now()]);
+            }
         }
     }
 
-    public function test_long_list_is_split_into_two_messages_each_under_the_limit(): void
+    public function test_one_message_one_line_per_vessel_with_a_representative_car(): void
     {
-        $this->bypassCars(33, $this->manager());
-
-        $this->artisan('alimtalk:shipping-due')->assertSuccessful();
-
-        $logs = AlimtalkLog::where('template_code', 'erp_shipping_due')->orderBy('id')->get();
-        $this->assertCount(2, $logs, '길면 2통으로 나눠야 한다');
-        foreach ($logs as $log) {
-            $this->assertSame('sent', $log->status);
-            $this->assertLessThanOrEqual(AlimtalkShippingDue::MAX_MESSAGE_CHARS, mb_strlen($log->message), 'BizM 1,000자 상한을 넘었다(E112)');
-        }
-        $this->assertStringContainsString('(1/2)', $logs[0]->message);
-        $this->assertStringContainsString('(2/2)', $logs[1]->message);
-        $this->assertStringContainsString('⚠ 우회 진행 33대 (이어서)', $logs[1]->message, '2통째도 무슨 목록인지 머리가 있어야 한다');
-        $this->assertStringContainsString('…', $logs[0]->message, '긴 사유는 잘라야 한다');
-        $this->assertMatchesRegularExpression('/외 \d+건 → 채권관리/u', $logs[1]->message, '2통에 다 못 담으면 남은 대수를 알린다');
-
-        // 차가 빠지거나 두 번 나오지 않는다 — 실은 대수 + 「외 N건」 = 33
-        $shown = preg_match_all('/★ Korea Auto \d{2}가\d{4}/u', $logs[0]->message.$logs[1]->message);
-        preg_match('/외 (\d+)건/u', $logs[1]->message, $m);
-        $this->assertSame(33, $shown + (int) ($m[1] ?? 0));
-    }
-
-    public function test_short_list_stays_one_message_without_part_tag(): void
-    {
-        $this->bypassCars(2, $this->manager());
+        $this->ship('GLOVIS SUNRISE', 2, 12, 5);
+        $this->ship('HYUNDAI GLORY', 3, 8);
+        $this->ship('', 4, 1);
 
         $this->artisan('alimtalk:shipping-due')->assertSuccessful();
 
         $logs = AlimtalkLog::where('template_code', 'erp_shipping_due')->get();
-        $this->assertCount(1, $logs);
-        $this->assertStringNotContainsString('(1/', $logs[0]->message);
-        $this->assertStringNotContainsString('외 ', $logs[0]->message);
+        $this->assertCount(1, $logs, '한 통만 — 2통 나누기는 없앴다');
+        $msg = $logs[0]->message;
+        $this->assertSame('sent', $logs[0]->status);
+        $this->assertStringContainsString('⚠ 우회 진행 5대 포함 · 전체 21대', $msg);
+        $this->assertMatchesRegularExpression('/🚢 GLOVIS SUNRISE · \d\d\/\d\d \(D-2\)\n  Korea Auto \d\d가\d{4} 외 11대 \(우회 5\)/u', $msg);
+        $this->assertStringContainsString('외 7대', $msg);
+        $this->assertStringNotContainsString('(우회', substr($msg, strpos($msg, 'HYUNDAI GLORY')), '우회 없는 배엔 표시 없음');
+        $this->assertStringContainsString('🚢 선박 미입력', $msg);
+        $this->assertStringNotContainsString('사유:', $msg, '사유 줄은 뺀다(끝의 「승인 사유가 함께 표시」는 BizM 승인 고정문구 — 재등록 때 고칠 것)');
+        $this->assertStringNotContainsString('(1/', $msg);
+        $this->assertLessThan(strpos($msg, 'HYUNDAI GLORY'), strpos($msg, 'GLOVIS SUNRISE'), '선적일 빠른 배가 위');
     }
 
-    /** 09:10 따라잡기 — 1통째가 이미 나갔으면 2통째도 다시 안 보낸다(중복 카톡 방지). */
-    public function test_catchup_does_not_resend_either_part(): void
+    /** 배가 아주 많아도 한 통 · 1,000자 안 · 남은 배는 「외 N척 M대」 — 11-16 E112 재발 방지 */
+    public function test_many_vessels_stay_within_the_limit_and_count_the_rest(): void
     {
-        $this->bypassCars(33, $this->manager());
+        for ($s = 1; $s <= 40; $s++) {
+            $this->ship('VESSEL NUMBER '.$s, 1 + $s % 4, 2, 1, 'Very Long Buyer Name Trading Company');
+        }
+
+        $this->artisan('alimtalk:shipping-due')->assertSuccessful();
+
+        $log = AlimtalkLog::where('template_code', 'erp_shipping_due')->sole();
+        $this->assertSame('sent', $log->status);
+        $this->assertLessThanOrEqual(AlimtalkShippingDue::MAX_MESSAGE_CHARS, mb_strlen($log->message), 'BizM 1,000자 상한(E112)');
+        $this->assertMatchesRegularExpression('/외 (\d+)척 (\d+)대 → 채권관리/u', $log->message);
+        preg_match('/외 (\d+)척 (\d+)대/u', $log->message, $m);
+        $shown = substr_count($log->message, '🚢 ');
+        $this->assertSame(40, $shown + (int) $m[1], '보인 배 + 외 N척 = 전체 배');
+        $this->assertSame(80, $shown * 2 + (int) $m[2], '보인 차 + 외 M대 = 전체 차');
+    }
+
+    /** 09:40 따라잡기 — 이미 보낸 사람에게 다시 안 간다 */
+    public function test_catchup_does_not_resend(): void
+    {
+        $this->ship('GLOVIS', 2, 3);
 
         $this->artisan('alimtalk:shipping-due')->assertSuccessful();
         $this->artisan('alimtalk:shipping-due')->assertSuccessful();
 
-        $this->assertSame(2, AlimtalkLog::where('template_code', 'erp_shipping_due')->count());
-    }
-
-    /** 2통째가 차량 줄로 시작하면 선박·바이어 머리를 다시 붙이고, 1통째 끝에 머리줄만 덩그러니 남기지 않는다. */
-    public function test_pack_repeats_context_and_drops_orphan_headers(): void
-    {
-        $ship = '🚢 GLOVIS · 11/20 (D-3)';
-        $blocks = [['text' => $ship, 'vehicle' => false, 'context' => null]];
-        for ($b = 1; $b <= 3; $b++) {
-            $buyer = '★ BUYER'.$b;
-            $blocks[] = ['text' => $buyer, 'vehicle' => false, 'context' => $ship];
-            for ($i = 1; $i <= 8; $i++) {
-                $blocks[] = ['text' => sprintf('  %d가%04d · 미수100%%', $b, $i), 'vehicle' => true, 'context' => $ship."\n".$buyer];
-            }
-        }
-
-        $parts = AlimtalkShippingDue::pack($blocks, 260);
-
-        $this->assertCount(2, $parts);
-        foreach ($parts as $p) {
-            $this->assertLessThanOrEqual(260, mb_strlen($p));
-        }
-        $this->assertStringStartsWith("(2/2)\n".$ship."\n★ BUYER", $parts[1], '2통째 머리에 선박·바이어를 다시 붙인다');
-        $lastLine = last(explode("\n", explode("\n\n외", $parts[0])[0]));
-        $this->assertStringStartsWith('  ', $lastLine, '1통째가 머리줄로 끝나면 안 된다');
+        $this->assertSame(1, AlimtalkLog::where('template_code', 'erp_shipping_due')->count());
     }
 }
