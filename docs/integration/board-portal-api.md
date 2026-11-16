@@ -175,6 +175,11 @@ board 의 **전송 감사 명령 `board:purchase-sync-audit`**(board dev `cb9974
   ⇒ board 감사 명령은 `deleted` 를 `missing_in_erp` 에 **넣지 않고** `counts.deleted_in_erp` 로 따로 센다(목록은 `deleted_in_erp:[…]` 선택).
   ERP 아침점검은 `deleted_in_erp` 를 실패가 아니라 「(ERP 에서 지운 차 N건 — 참고)」로 붙인다. ERP 쪽이 먼저 배포돼도 board 는 모르는 키를
   무시하고 `missing` 에서 빠지므로 **하위호환**(배포 순서 무관).
+- 🔀 **2026-11-16 (jin «에러로 보기에는 문제가 있다») — `erp_id_without_synced`(ERP id 있는데 board 상태 미완료)도 같은 갈래.**
+  낙찰로 넘겼다가 board 에서 되돌리고 ERP 에서도 지운 매물은 정정 흔적이다(실례 ssancarboard #72 351러7638 / ERP 7612, 11-06 2분 사이).
+  board 가 그 후보의 erp id 를 이 엔드포인트로 대조해 `deleted` 인 것은 빼서 **`counts.erp_id_deleted_in_erp`** + 목록 `erp_id_deleted_in_erp:[{listing_id, vehicle_number, car_erp_vehicle_id}]`
+  (board master `b57b845`). ERP 호출 실패면 새 키 `null` · `erp_id_without_synced` 는 안 뺀 값. ERP 아침점검은 「(board 에서 되돌리고 ERP 에서 지운 매물 N건 — 참고)」(ERP `0a524789`).
+  다시 낙찰하면 ERP 는 지운 차를 멱등 대상으로 안 봐서(`PurchaseSyncController.php:145`, withTrashed 아님) 새 차가 생긴다 — 데이터 피해 없음.
 - 감사 명령이 매일 07:40 에 부르고, 결과 JSON 을 ERP 08:00 아침 점검(`BOARD_AUDIT_JSON`)이 읽어 「board→ERP 전송·정합성」 2행을 붙인다.
   ⚠️ board 는 **두 박스**에 있다(heymanboard `/var/www/board` · ssancarboard `/var/www/board-ssancar`, board 세션 09-28 정정) — 각 ERP 는 **같은 박스의** board 파일을 읽는다.
   ⚠️ 정체 시계는 `updated_at` 이라 won 행을 다른 이유로 저장하면 60분이 다시 시작한다(엄밀히 하려면 `board_audit_logs` 의 won 전이 시각 — 후속, jin 결정).
