@@ -45,7 +45,8 @@ class AlimtalkDailyCatchupScheduleTest extends TestCase
         foreach ($map as $class) {
             $src = file_get_contents(base_path("app/Console/Commands/{$class}.php"));
             $sends = preg_match_all('/->send\(/', $src);
-            $flagged = preg_match_all("/'once_per_day' => true/", $src);
+            // 'after_first_part_sent' = 나눠 보내는 2통째(선적 임박, 2026-11-16) — 1통째가 오늘 처음 나갔을 때만 부른다(같은 효과).
+            $flagged = preg_match_all("/'once_per_day' => true/", $src) + preg_match_all("/'after_first_part_sent' => true/", $src);
             $this->assertGreaterThan(0, $sends, "{$class}: send() 호출이 없다");
             $this->assertSame($sends, $flagged, "{$class}: send() {$sends}곳 중 once_per_day 가 {$flagged}곳 — 따라잡기에서 중복 발송된다");
         }
