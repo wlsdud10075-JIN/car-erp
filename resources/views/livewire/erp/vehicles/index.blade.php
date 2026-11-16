@@ -10437,7 +10437,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
                             @if($this->paidNoticeEnabled) {{ __('vehicle.deregnotice.hint_paid') }} @endif
                         </p>
                         <div class="mt-2 flex gap-2">
-                            <input wire:model.blur="deregistrationBuyerPhone" data-phone type="tel" class="input-base text-sm" placeholder="010-0000-0000" autocomplete="off" />
+                            {{-- 🚨 Livewire 4: wire:model.blur 는 서버로 안 간다(브라우저 값만 맞춤) — updatedDeregistrationBuyerPhone(하이픈 정리·번호 형식 경고)이 칸을 벗어날 때 돌려면 .live.blur (2026-11-16 씬 점검이 찾음) --}}
+                            <input wire:model.live.blur="deregistrationBuyerPhone" data-phone type="tel" class="input-base text-sm" placeholder="010-0000-0000" autocomplete="off" />
                             @if(auth()->user()->canHandleDeregistration())
                             <button type="button" wire:click="sendDeregistrationAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.deregnotice.send_btn') }}</button>
                             @endif
