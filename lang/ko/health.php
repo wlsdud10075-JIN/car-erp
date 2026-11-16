@@ -13,6 +13,7 @@ return [
     'board_integrity' => '완료인데 ERP 번호 없음 :a건 · ERP 번호 있는데 미완료 :b건',
     'board_audit_failed' => 'ERP 대조 실패 (:err)',
     'board_deleted_note' => '(ERP 에서 지운 차 :d건 — 참고)',
+    'board_reverted_note' => '(board 에서 되돌리고 ERP 에서 지운 매물 :e건 — 참고)',
 
     'job_failed' => '정기 작업 실패',
     'job_recovered' => '정기 작업 복구',

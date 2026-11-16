@@ -188,11 +188,16 @@ class SystemHealthReport
 
         $a = $n('synced_without_erp_id');
         $b = $n('erp_id_without_synced');
+        // 2026-11-16 (jin) — 낙찰로 넘겼다가 board 에서 되돌리고 ERP 에서도 지운 매물은 정정 흔적이지 불일치가 아니다.
+        //   board 가 erp_id_without_synced 에서 빼서 따로 센다(board 01cd380). 참고 건수로만 붙인다. 키 없음·null = 0.
+        $e = $n('erp_id_deleted_in_erp');
+        $ok = $a === 0 && $b === 0;
+        $detail = $ok ? __('health.none') : __('health.board_integrity', ['a' => $a, 'b' => $b]);
+        if ($e > 0) {
+            $detail .= ' '.__('health.board_reverted_note', ['e' => $e]);
+        }
 
-        return [
-            'ok' => $a === 0 && $b === 0,
-            'detail' => ($a === 0 && $b === 0) ? __('health.none') : __('health.board_integrity', ['a' => $a, 'b' => $b]),
-        ];
+        return ['ok' => $ok, 'detail' => $detail];
     }
 
     /** JSON 을 한 번만 읽는다. 파일 없음 = 기록 없음(정상) / 오래됨·깨짐 = X. */

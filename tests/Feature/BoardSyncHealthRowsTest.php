@@ -93,6 +93,20 @@ class BoardSyncHealthRowsTest extends TestCase
         $this->assertStringContainsString('5', $row['detail']);
     }
 
+    /** 🔀 2026-11-16 — board 에서 되돌리고 ERP 에서 지운 매물(erp_id_deleted_in_erp)도 참고 건수. 실불일치가 같이 있으면 그대로 X. */
+    public function test_reverted_listings_deleted_in_erp_are_an_info_count(): void
+    {
+        $this->writeAudit(['stalled' => 0, 'synced_without_erp_id' => 0, 'erp_id_without_synced' => 0, 'missing_in_erp' => 0, 'erp_id_deleted_in_erp' => 1]);
+        $row = $this->rows()['board_sync_integrity'];
+        $this->assertTrue($row['ok'], '되돌린 정정 흔적은 불일치가 아니다');
+        $this->assertStringContainsString(__('health.board_reverted_note', ['e' => 1]), $row['detail']);
+
+        $this->writeAudit(['stalled' => 0, 'synced_without_erp_id' => 0, 'erp_id_without_synced' => 2, 'missing_in_erp' => 0, 'erp_id_deleted_in_erp' => 1]);
+        $row = $this->rows()['board_sync_integrity'];
+        $this->assertFalse($row['ok'], '살아 있는 차의 어긋남은 여전히 X');
+        $this->assertStringContainsString(__('health.board_reverted_note', ['e' => 1]), $row['detail']);
+    }
+
     public function test_counts_are_copied_not_judged(): void
     {
         $this->writeAudit(['stalled' => 2, 'synced_without_erp_id' => 1, 'erp_id_without_synced' => 3, 'missing_in_erp' => 1]);
