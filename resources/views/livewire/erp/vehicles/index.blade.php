@@ -9510,6 +9510,10 @@ function vehicleColumnsToggle(columns, serverKnows) {
                             @if((int) $brq->resent_count > 0)
                                 <span class="badge badge-amber ml-1 text-[10px]">{{ __('vehicle.board_resent', ['n' => $brq->resent_count, 'time' => $brq->last_resent_at?->format('m-d H:i')]) }}</span>
                             @endif
+                            {{-- 💬 영업 메모 (jin 2026-11-16) — 알림톡에만 실리던 요청 note 를 확인하는 사람도 보게. --}}
+                            @if(($brqNote = trim((string) $brq->note)) !== '')
+                                <span class="mt-0.5 block whitespace-pre-line break-words text-gray-700" data-board-request-note>💬 {{ $brqNote }}</span>
+                            @endif
                         </span>
                         @if(($brqMeta['manual_confirm'] ?? false) && auth()->user()?->canConfirmFinance())
                             <span class="flex shrink-0 items-center gap-1">
