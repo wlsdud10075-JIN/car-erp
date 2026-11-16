@@ -35,6 +35,8 @@ const FORBIDDEN_METHODS = [
   'sendTelegramTest',
   'resendRequest',            // board 요청 다시 보내기
   'sendVerification',
+  'submitLeaverBatch',        // 퇴사 정산 제출(배치 생성 + 결재 알림톡) — leaver 씬은 화면만 본다
+  'submitDomestic',           // 내수직원 월정산 제출 — 위와 같음
 ];
 // 라벨로만 잡을 수 있는 것(카톡 에이전트 — 로컬 47321 로 가는 버튼) + 라벨이 분명한 발송 버튼
 const FORBIDDEN_LABELS = [
@@ -87,8 +89,24 @@ async function newContext(browser, opts = {}) {
   return ctx;
 }
 
+// 실패한 단계의 화면을 남기려고 마지막에 연 페이지를 기억한다(recorder 가 실패 때 찍는다 — 로컬 로그 폴더에만, 대화에 붙이지 않는다).
+let lastPage = null;
+
 async function newPage(ctx) {
   const p = await ctx.newPage();
+  lastPage = p;
+  // 오른쪽 아래 「통관서류 알람」 팝업(alarm-center, fixed)이 목록·버튼을 가린다 — 점검 브라우저에선 처음부터 숨긴다(11-16 카톡 [미루기] 가려짐).
+  //   팝업 자체를 확인하는 씬은 없다(있으면 그 씬에서 스타일을 지운다).
+  await p.addInitScript(() => {
+    const add = () => {
+      if (document.getElementById('scene-hide-alarm')) return;
+      const s = document.createElement('style');
+      s.id = 'scene-hide-alarm';
+      s.textContent = 'div[data-max-id].fixed{display:none!important}';
+      (document.head || document.documentElement).appendChild(s);
+    };
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', add); else add();
+  });
   p.setDefaultTimeout(60000);
   // wire:confirm(브라우저 confirm) 은 수락 — 금지 버튼은 위 가드가 confirm 전에 삼킨다.
   p.on('dialog', (d) => d.accept().catch(() => {}));
@@ -199,7 +217,17 @@ function recorder(slug) {
         steps.push({ name, ok: true, detail: detail || '', ms: Date.now() - t0 });
       } catch (e) {
         broken = true;
-        steps.push({ name, ok: false, detail: String(e && e.message || e).slice(0, 300), ms: Date.now() - t0 });
+        let shot = '';
+        try {
+          if (lastPage && !lastPage.isClosed()) {
+            const dir = require('path').join(ROOT, 'storage', 'logs', 'scene-check', 'fail');
+            require('fs').mkdirSync(dir, { recursive: true });
+            const file = require('path').join(dir, `${slug}-${steps.length + 1}.png`);
+            await lastPage.screenshot({ path: file, fullPage: true, timeout: 15000 });
+            shot = ` · 화면 ${require('path').relative(ROOT, file)}`;
+          }
+        } catch { /* 찍기 실패는 무시 — 결과 기록이 우선 */ }
+        steps.push({ name, ok: false, detail: String(e && e.message || e).slice(0, 300) + shot, ms: Date.now() - t0 });
       }
     },
     result() { return { slug, steps }; },

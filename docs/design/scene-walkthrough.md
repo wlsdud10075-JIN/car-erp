@@ -161,4 +161,10 @@
 - 되돌리기 = `database/seeders/GuideSceneFixtureSeeder.php`(로컬 가드, 표식으로 찾아 되돌리기만 — 예시가 없으면 만들지 않고 멈춤). ⚠️ 00가1131·1141 의 신고번호·컨테이너번호를 이 씬 값으로 되돌린다.
 - 스킬 `.claude/skills/scene-check` · 토요일 10:00 자동 = `scripts/weekly/weekend.ps1`(jin PC 작업 스케줄러 「car-erp weekend routines」) → 관제 「우리 루틴」 · 실패면 텔레그램.
 - 🚫 이 폴더·시더·스킬은 master 로 안 간다(dev 전용 커밋).
-- 다음 = 2단계(한 바퀴 6장) — §8 순서표.
+- ✅ **2~5단계 완료(같은 날)** — 전체 31장(정적 검사 1 + 씬 29 + board 보관위치 1) **31/31 통과**(로컬 약 24분). 순서·의존 = `run.js` `SCENES` 주석.
+  - 2단계 한 바퀴 = 전용 차 `00가2001`·바이어 `SCENE LOOP TRADING`(00가1113 은 지급완료 정산·확정 배치에 묶여 못 되돌림). bl-issue 도 이 차(월정산 뒤 정확히 가이드 상태).
+  - 3단계 = mk_*.php 를 시더 「되돌리기」로 흡수(만들기는 안 함). 4단계 = board_send.php 로 실제 수신 경로 · 선적 sync 는 안 부름(선언형 자동취소).
+  - 5단계 = `quoted-texts.js` — 가이드 인용 551개가 화면 코드(주석 제외)에 있나, 예외 = `quoted-allow.json`(이유 포함).
+  - **찾은 실제 버그 1** = 딜러 번호 칸 `wire:model.blur`(Livewire 4 는 요청을 안 보냄 → 11-13 「번호 형식 경고」가 한 번도 안 떴다) — SKILLS §8 #138, dev `fe7d54cc`.
+  - 실패하면 화면 = `storage/logs/scene-check/fail/{slug}-{n}.png` · 🔒 실행 잠금 `running.lock`(도는 동안 다른 곳의 시더 호출 거부 — 11-16 board 시험 실행이 도중에 예시를 지워 22/31 이 났다).
+  - board 점검 = board 세션 몫(jin 결정) · ERP 시더가 `board-check@local.test`·바이어 3곳·30가30xx 를 준비·되돌림 · `weekend.ps1` 이 ERP 뒤 `node check/run.mjs --mark --after-erp`.

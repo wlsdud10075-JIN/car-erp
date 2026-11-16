@@ -70,7 +70,8 @@ module.exports.run = async function run({ browser }) {
     });
 
     await r.step('알아 둘 것 — [선택 해제]로 비운다', async () => {
-      await p.locator('button', { hasText: '선택 해제' }).first().click();
+      // 글자 「선택 해제」 는 다른 버튼에도 있다(누적검색 등) — 액션바의 그 버튼을 동작 이름으로 집는다
+      await p.locator('button[wire\\:click="clearShipDocSelection"]:visible').first().click();
       await L.expectNoText(p, '2대 선택', '선택 해제 뒤 막대', { settle: 1500 });
     });
   } finally {

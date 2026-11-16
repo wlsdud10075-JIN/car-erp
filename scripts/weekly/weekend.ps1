@@ -4,7 +4,7 @@
 #   이번 회차(가장 최근 토요일)에 이미 끝났으면 일요일 재시도는 건너뛴다.
 #   🚫 운영 데이터에 쓰지 않는다 — 씬 점검은 로컬 DB 만 바꾼다(되돌리기 시더). 관제 기록만 허브로 서명 POST.
 #   ⚠️ 저장은 UTF-8 BOM + CRLF (SKILLS §8 #112-B).
-param([switch]$Force, [switch]$SkipScene, [switch]$SkipMemory)
+param([switch]$Force, [switch]$SkipScene, [switch]$SkipMemory, [switch]$SkipBoard)
 $ErrorActionPreference = 'Continue'
 $repo = 'C:\xampp\htdocs\car-erp'
 $php = 'C:\xampp\php\php.exe'
@@ -77,5 +77,18 @@ if (-not $SkipScene) {
         Log "telegram sent (exit $($p.ExitCode))"
     }
 }
+# ③ board 씬 점검 — ERP 점검이 끝난 뒤 이어서(같은 로컬 데이터를 동시에 안 건드리게, jin 결정 11-16).
+#    board 러너가 자기 키(board-scene-check)로 관제에 직접 기록한다(--mark). --after-erp = ERP 시더가 막 돌았다는 표시 — board 는 이게 있을 때만 ERP 에 쓰는 씬(2b)을 돈다. exit 0 통과 / 1 실패 / 2 시작 못 함(board 8003 꺼짐 등).
+$boardDir = 'C:\xampp\htdocs\board\scripts\guide-shots'
+if (-not $SkipBoard -and (Test-Path "$boardDir\check\run.mjs")) {
+    $o = "$logDir\board-$stamp.txt"
+    $bp = Start-Process -FilePath $node -ArgumentList @('check/run.mjs', '--mark', '--after-erp') -WorkingDirectory $boardDir -NoNewWindow -PassThru -RedirectStandardOutput $o -RedirectStandardError "$o.err"
+    $null = $bp.Handle
+    if (-not $bp.WaitForExit(3600 * 1000)) { try { $bp.Kill() } catch {}; Log 'board runner TIMEOUT' }
+    Log "board runner exit $($bp.ExitCode) (결과 = $o)"
+} else {
+    Log 'board runner skip (없음 또는 -SkipBoard)'
+}
+
 "done $(Get-Date -Format s)" | Out-File $done -Encoding utf8
 Log 'done'
