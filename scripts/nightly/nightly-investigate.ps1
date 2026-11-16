@@ -95,4 +95,7 @@ if ($SendTelegram) {
     [void](RunCapture 'ssh' @('-i', $key, '-o', 'BatchMode=yes', 'ubuntu@52.79.200.151', "cd /var/www/car-erp && php artisan notify:send --title='야간 조사' --body=-") $bodyFile 120)
     Log "telegram sent via heymanerp notify:send"
 }
+# 5) 관제센터 기록 (2026-11-16) — 「오늘 돌았다」 한 줄을 heymanerp 에. 텔레그램 스위치와 무관하게 항상.
+[void](RunCapture 'ssh' @('-n', '-i', $key, '-o', 'BatchMode=yes', 'ubuntu@52.79.200.151', "cd /var/www/car-erp && php artisan ops:mark nightly-investigate --note='report $((Get-Item $report).Length) bytes'") $null 120)
+Log "ops:mark nightly-investigate"
 Log "done"

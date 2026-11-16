@@ -38,12 +38,25 @@
     "routines": [ { "command", "expression", "status": "ok|failed|running", "started_at", "duration_ms", "error", "last_ok_at" } ],
     "health":   [ { "key", "ok", "detail" } ],
     "links":    { "alimtalk_sent_today", "alimtalk_failed_today", "claude_cost_today_krw", "keys": { "<이름>": true|false } },
-    "anomalies":[ { "level": 1|2|3, "kind", "count", "text" } ] }
+    "anomalies":[ { "level": 1|2|3, "kind", "count", "text" } ],
+    "marks":    { "<루틴 키>": [ { "status": "ok|failed", "at", "note", "source": "button|command|api" } ] },   // 11-16, 선택
+    "telegram": [ { "at", "title", "body", "sent" } ],                                                          // 11-16, 선택 — 최근 7일 60통
+    "external": { "apt_run_at", "apt_installed_at" } }                                                          // 11-16, 선택
   ```
+  🆕 **11-16 세 키는 전부 선택** — board·ssancar.com 은 안 보내도 된다(허브는 없으면 「—」). board 는 `routines[]` 를 11-16 에 붙였다(dev 58724c8).
   🚫 키 원문·개인정보·회사 돈 숫자를 싣지 않는다(keys 는 있음/없음만).
 
 ## 5. 이상 감지 규칙(ERP — `OpsSummary::anomalies`)
 판매가 단위 의심(외화 판매가×환율 > 매입가×10, 11-02·11-09 실례) · 환율 범위 밖(USD 800~2,500 · EUR 900~3,000) · 미수 스냅샷 하루 ±20억 · 삭제된 바이어/컨사이니를 가리키는 차(**컨사이니는 엑셀 적재 차 `imported_at` 제외** — 11-12 jin «적재로 넣은 건 포함되지 않게»: ssancarerp 222대 전부 08-28 적재가 만든 쓰레기 컨사이니 「0.5」·「103」을 지운 흔적. 바이어는 돈에 걸려 적재 차여도 센다 — 11-12 AP Bilar #400→#172 3대 재연결) · 마지막 정기 작업 실패 · 최근 30일 차종 빈 차 · 카톡 읽다 멈춘 방. 허브가 덧붙이는 것 = 사이트 연결 실패 · ERP 3사 버전 어긋남.
+
+## 5-2. 11-16 추가 (jin «전부다» + «우리도 루틴이 있는 내용을 했는지 안 했는지도 알아야»)
+- **알림톡 실패 = 종류 × 원인**(이상 감지 「알림톡 실패」, 확인 안 한 실패·미도달 scope) — 「선적임박미수 E112(본문 1,000자 초과) 14건」. 이 줄이 있으면 「아침 점검」 줄에서 알림톡은 뺀다. 코드 → 사람 말은 운영에서 본 것만(`OpsSummary::ALIMTALK_CODE_LABELS`).
+- **같은 번호 반복 실패**(참고) — 14일 안에 날을 바꿔 2일 이상 실패한 번호, **끝 4자리만**.
+- **루틴 표** — 실패·멈춤 칸에 「마지막 성공」, **1시간 넘게 도는 중 = 멈춤 의심**(`STUCK_MINUTES`, 3사 실측 최장 9초). 묶음마다 `kinds`(erp·board) — 안 도는 사이트 칸은 빈칸. board 묶음 = board 세션 회신 목록.
+- **서버 밖 루틴(실기록)** — GPU PC 야간 조사·Notion 대조 = 스크립트 끝에서 heymanerp 로 `php artisan ops:mark <키>`(텔레그램 스위치와 무관하게 항상) · jin PC 브레인 = 목록 시각 · apt = 사이트마다 `/var/lib/apt/periodic/upgrade-stamp` mtime(644, www-data 읽힘 실측). 30시간 새 기록 없으면 「멈춤?」.
+- **🧑 사람 루틴(주 1회)** — 씬 점검 · Notion 가이드 반영 확인 · 메모리·문서 정리. 월~일, 이번 주 한 번이면 ✓, **수요일부터 안 했으면 주의**(이상 감지에도 한 줄), 지난주 비었으면 「지난주 놓침」. 기록 = 관제 [했음] 버튼(허브 DB) · `php artisan ops:mark scene-check --push=https://heymancar.com`(개발 PC, OPS_HMAC_SECRET, 서명 POST `/api/internal/ops/mark`). 씬 점검 스킬은 끝에서 이걸 부른다(스킬 착수 때).
+- **📨 텔레그램 사본** — `TelegramNotifier::send` 가 `telegram_messages` 에 전문을 남긴다(fail-open — 기록 실패가 발송을 안 막는다). GPU PC 보고도 heymanerp `notify:send` 를 거쳐 남는다. 관제 = 최근 7일, 누르면 본문(jin «전체 보여주고 접었다 폈다»). 텔레그램을 대체하지 않는다.
+- 저장 = `ops_marks`(400일) · `telegram_messages`(60일), 04:50 `model:prune`.
 
 ## 6. 남은 것
 - ✅ **사이트 카드 접기·오와열 = 11-12 밤 dev `b46dd091`**(jin «회사 GPU PC 내용이 너무 길어 보드가 안 이쁘다 — ERP·BOARD 처럼 접고 펼치게, 전부 가지런히» → «진행하자») — 한 줄의 카드 같은 높이(`.ops-row` stretch, 링크는 바닥), GPU PC 메모·점검도 「▸ 메모 · 점검」 접힘(머리줄 = Ollama 응답·확인 시각 한 줄 + 이상 줄), 접힘 내용 순서 = 메모 → PHP/DB → 키 → 알림톡·Claude → 점검. 보드 폭 1400 → **1720**(jin «양쪽 빈 공간이 상당한데 좌우폭을 좀 넓혀보자»). 실측(Playwright 1920px) = 카드 175px 균일 · 보드 1660px.
@@ -55,5 +68,5 @@
 - 회사 GPU PC 칸 = `"probe":"assistant"` → `assistant:health-check`(5분, ssancarerp .env `ASSISTANT_OLLAMA_URL=http://100.110.133.112:11434`) 캐시로 Ollama 응답·색인 시각을 보여 준다(그 PC 에 API 없이). 5분 넘게 응답 없으면 이상 「GPU PC 응답 없음」.
 - ✅ ssancar.com 요약 API 운영 반영(11-12 14:25, jin 직접) — 허브에서 읽힘(6b1e9164, health 13줄). 아래는 경위:
 - ssancar.com 요약 API — 11-12 ssancar 세션 착수. 경로 `https://www.ssancar.com/page/api_ops_summary.php`(그쪽 제안 — `_ops/` 는 문서 폴더, 기존 서명 API 가 `page/` 에 있음 · `ssancar.com` 은 www 로 301). 허브 나가는 IP 54.116.7.83 은 그쪽 지오게이트 통과 목록에 이미 있음. 시크릿 = 그 서버 `/opt/bitnami/ssancar_secrets/ops_control.json` {"hmac_secret"} (jin 이 넣음, 운영은 수동 업로드). 1차 응답 = version·php·disk · health(ERP 미러 소스별 마지막 성공) · anomalies(미러 13h 없음·미러 실패·디스크 90%). ⚠️ ssancar 지적: nonce 가 서명 대상 밖이라 ±300초 안 nonce 만 바꾼 재전송이 가능(HTTPS·읽기 전용 GET — 바꿀지는 jin 판단, 바꾸면 3곳 동시).
-- 루틴 표에 「마지막 성공」 열 · 「N시간 넘게 running」 규칙(기록이 쌓인 뒤 결정).
+- ✅ 루틴 표 「마지막 성공」·「1시간 넘게 running」 = 11-16(§5-2).
 - 3단계 세컨드 브레인.

@@ -161,4 +161,7 @@ if ($SendTelegram) {
     [void](RunCapture 'ssh' @('-i', $key, '-o', 'BatchMode=yes', 'ubuntu@52.79.200.151', "cd /var/www/car-erp && php artisan notify:send --title='Notion 순찰' --body=-") $bodyFile 120)
     Log 'telegram sent via heymanerp notify:send'
 }
+# 5) 관제센터 기록 (2026-11-16) — 「오늘 돌았다」 + 불일치 수를 heymanerp 에. 텔레그램 스위치와 무관하게 항상.
+[void](RunCapture 'ssh' @('-n', '-i', $key, '-o', 'BatchMode=yes', 'ubuntu@52.79.200.151', "cd /var/www/car-erp && php artisan ops:mark nightly-notion --note='mismatch $($v1.mismatch)/4'") $null 120)
+Log 'ops:mark nightly-notion'
 Log 'done'
