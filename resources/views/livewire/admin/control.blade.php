@@ -508,7 +508,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span style="{{ $head }}">TELEGRAM <span style="{{ $sub }}">· 최근 7일 텔레그램 알림 — 누르면 본문 (11-16 부터 기록)</span></span>
                 <div style="display: flex; flex-direction: column; gap: 4px; max-height: 480px; overflow-y: auto">
                     @forelse($telegram as $t)
-                        <details style="border-top: 1px solid rgba(127,231,255,.12); padding-top: 6px" data-telegram-item>
+                        {{-- wire:ignore.self — 5분 폴링·[했음] 왕복에도 펼친 상태(open)를 지킨다(속성만 무시, 안쪽은 갱신) --}}
+                        <details wire:key="tg-{{ md5($t['at'].'|'.$t['site'].'|'.$t['title']) }}" wire:ignore.self style="border-top: 1px solid rgba(127,231,255,.12); padding-top: 6px" data-telegram-item>
                             <summary style="cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; min-height: 32px">
                                 <span style="font-family: 'JetBrains Mono', monospace; color: #8fb0cc">{{ \Carbon\Carbon::parse($t['at'])->timezone(config('app.timezone'))->format('m/d H:i') }}</span>
                                 <span style="padding: 2px 8px; border-radius: 999px; font-weight: 700; color: #0b0f1a; background: {{ $t['site_kind'] === 'board' ? '#c4a8ff' : ($t['site_kind'] === 'erp' ? '#7fe7ff' : '#e0c27a') }}">{{ $t['site'] }}</span>
