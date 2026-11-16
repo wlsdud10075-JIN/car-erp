@@ -3,6 +3,7 @@
 use App\Models\OpsMark;
 use App\Models\ScheduledTaskRun;
 use App\Models\TelegramMessage;
+use App\Support\AlimtalkSchedule;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -30,33 +31,26 @@ Schedule::command('alarms:scan')->dailyAt('06:00')->withoutOverlapping();
 
 // 카카오 알림톡 자동발송 (2026-07-06) — 캐시 재계산(05:00) 후 최신 grace/미수 기준.
 //   전부 BizmAlimtalkService 게이트 내장 = Setting alimtalk_enabled off 면 자동 skip(배포 ≠ 작동, inert).
-//   일일 알림 전부 09:00(jin 2026-07-08) · 주간 금 18:00 · 월결산 = 익월 첫 영업일 09:00.
+//   일일 알림 = AlimtalkSchedule::DAILY(11-16 부터 09:00~11:30 나눔, 구: 전부 09:00 jin 2026-07-08) · 주간 금 18:00 · 월결산 = 익월 첫 영업일 09:00.
 //   ⚠️ 주말 발송 금지(jin 2026-07-10): 정기 자동발송은 평일(월~금)만. weekly 는 금요일이라 무관.
 //      (이벤트 발동 알림 — 정산승인·말소증 등 — 은 사용자 액션 시점이라 스케줄 무관, 별도.)
-Schedule::command('alimtalk:pickup')->dailyAt('09:00')->weekdays()->withoutOverlapping();
-Schedule::command('alimtalk:deregistration')->dailyAt('09:00')->weekdays()->withoutOverlapping();
-Schedule::command('alimtalk:purchase-unpaid')->dailyAt('09:00')->weekdays()->withoutOverlapping();
-Schedule::command('alimtalk:sale-unpaid')->dailyAt('09:00')->weekdays()->withoutOverlapping();
-Schedule::command('alimtalk:eta-balance')->dailyAt('09:00')->weekdays()->withoutOverlapping();
-Schedule::command('alimtalk:shipping-due')->dailyAt('09:00')->weekdays()->withoutOverlapping();
-Schedule::command('alimtalk:deposit-cash')->dailyAt('09:00')->weekdays()->withoutOverlapping();
-Schedule::command('alimtalk:daily-summary')->dailyAt('09:00')->weekdays()->withoutOverlapping();
-// 🔁 09:10 따라잡기 (2026-10-13 · 11-03 jin 09:30 → 09:10) — 09:00 에 서버가 없거나(정지·점검모드·09시 배포) BizM 이 잠깐 막히면 그날 치가
+// 🕘 2026-11-16 (jin) — 일일 알림 시각을 09:00~11:30 으로 나눴다(관리 담당이 09:00대에 4~6통을 한꺼번에 받아 밀려서 안 읽혔다).
+//    시각표 단일 출처 = App\Support\AlimtalkSchedule::DAILY. 따라잡기 = 각자 +10분.
+// 🔁 따라잡기 사연(구: 전부 09:00 · 09:10) (2026-10-13 · 11-03 jin 09:30 → 09:10) — 09:00 에 서버가 없거나(정지·점검모드·09시 배포) BizM 이 잠깐 막히면 그날 치가
 //    영영 안 갔다(실측 heymanerp 09-23 정지 → 일간 5종 결손 · ssancarerp 10-01 09:00 타임아웃 17건). 같은 커맨드를
 //    10분 뒤 한 번 더 돌리되(30분은 늦다 — ssancarerp 11-02·03 09:00 BizM SSL 타임아웃 1~2건이 09:30 에야 갔다), 발송 자체는 `once_per_day`(BizmAlimtalkService) 가 코드·번호·차량 단위로 오늘 보낸 건을
 //    건너뛴다 — 09:00 에 일부만 실패했어도 그 사람들만 다시 간다. 🚫 여기에 조건(when)을 달지 말 것: 명령 단위로 걸면
 //    「한 명이라도 보냈으면 전원 생략」이 된다. receivable-status 도 아래 같은 묶음.
-foreach (['pickup', 'deregistration', 'purchase-unpaid', 'sale-unpaid', 'eta-balance', 'shipping-due', 'deposit-cash', 'daily-summary', 'receivable-status'] as $daily) {
-    Schedule::command("alimtalk:{$daily}")->dailyAt('09:10')->weekdays()->withoutOverlapping();
+//    대표 채권 현황(receivable-status, jin 2026-08-20)도 이 표 안 — 미설정(tmplId 없음)이면 내부 skip.
+foreach (AlimtalkSchedule::DAILY as $daily => $at) {
+    Schedule::command("alimtalk:{$daily}")->dailyAt($at)->weekdays()->withoutOverlapping();
+    Schedule::command("alimtalk:{$daily}")->dailyAt(AlimtalkSchedule::catchupAt($at))->weekdays()->withoutOverlapping();
 }
-// 대표 채권 현황 (jin 2026-08-20) — 일일요약에서 돈 이야기를 분리한 신규 알림톡. 일일과 같은 시각.
-//   미설정(tmplId 없음)이면 BizmAlimtalkService 가 내부 skip 하므로 승인 전에 배포해도 무해하다.
-Schedule::command('alimtalk:receivable-status')->dailyAt('09:00')->weekdays()->withoutOverlapping();
 Schedule::command('alimtalk:weekly-summary')->weeklyOn(5, '18:00')->withoutOverlapping();
 // 대표 주간 자금/손익 보고 (2026-07-23) — 월요일 09:00. 최신 통장 스냅샷 기준. 미설정/미입력 시 내부 skip(inert).
-Schedule::command('alimtalk:capital-weekly')->weeklyOn(1, '09:00')->withoutOverlapping();
-// 도착 후 미수 요약 — 매주 월 09:00, 관리 (jin 2026-10-26). 도착 임박 알림이 끊기는 도착 뒤를 덮는다.
-Schedule::command('alimtalk:arrived-unpaid-weekly')->weeklyOn(1, '09:00')->withoutOverlapping();
+Schedule::command('alimtalk:capital-weekly')->weeklyOn(1, AlimtalkSchedule::CAPITAL_WEEKLY)->withoutOverlapping();
+// 도착 후 미수 요약 — 매주 월, 관리 (jin 2026-10-26). 도착 임박 알림이 끊기는 도착 뒤를 덮는다. 🔀 11-16 09:00 → 11:50(시간대 나누기).
+Schedule::command('alimtalk:arrived-unpaid-weekly')->weeklyOn(1, AlimtalkSchedule::ARRIVED_UNPAID_WEEKLY)->withoutOverlapping();
 // 🚫 월말 마감 보고(말일 18:00, 07-27~)는 2026-10-19 jin «매주 월 09시에만, 매월 말일엔 하지 마» 로 폐지.
 //    월요일이 말일이면 같은 날 두 통이 갔다. 월 단위 결산은 월결산 알림(alimtalk:monthly-closing)이 맡는다.
 // 월결산 = **월배치 정산이 최종 승인된 때** 발송한다 (jin 2026-07-31).

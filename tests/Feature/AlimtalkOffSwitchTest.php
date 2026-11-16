@@ -106,9 +106,12 @@ class AlimtalkOffSwitchTest extends TestCase
 
         $this->artisan('alimtalk:shipping-due')->assertSuccessful();
 
+        // 🔀 2026-11-16 — 배별 한 줄(사유 없음). 우회 판정은 여전히 설정된 필요 입금률(60)을 쓴다.
         $msg = (string) AlimtalkLog::where('template_code', 'erp_shipping_due')->value('message');
-        $this->assertStringContainsString("⚠ 우회 진행 1대\n★ SD-B 22나2222\n  D-2 · 미수100% · 60%미만\n  사유: 대표 승인", $msg, '표시 = 설정된 필요 입금률');
-        $this->assertStringNotContainsString('· 50%미만', $msg, '줄에 붙는 기준은 설정값(고정 꼬리 문장의 [50%미만]은 승인본이라 그대로)');
+        $this->assertStringContainsString("⚠ 우회 진행 1대 포함 · 전체 1대\n\n🚢 선박 미입력 · ", $msg);
+        $this->assertStringContainsString('SD-B 22나2222 (우회 1)', $msg);
+        $this->assertStringNotContainsString('사유:', $msg, '사유는 알림에서 뺀다(jin 11-16)');
+
     }
 
     public function test_monthly_closing_payout_includes_payroll_and_adjustments_but_profit_skips_deposit_returns(): void

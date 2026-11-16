@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Support\AlimtalkSchedule;
 use Illuminate\Console\Scheduling\Schedule;
 use Tests\TestCase;
 
@@ -21,18 +22,30 @@ class AlimtalkDailyCatchupScheduleTest extends TestCase
         'alimtalk:receivable-status',
     ];
 
-    public function test_every_daily_alimtalk_command_runs_at_0900_and_again_at_0910_on_weekdays(): void
+    public function test_every_daily_alimtalk_command_runs_at_its_time_and_again_ten_minutes_later_on_weekdays(): void
     {
         $events = collect(app(Schedule::class)->events());
+        $this->assertEqualsCanonicalizing(array_map(fn ($c) => substr($c, 9), self::DAILY), array_keys(AlimtalkSchedule::DAILY), '시각표 = 일일 9종');
 
         foreach (self::DAILY as $cmd) {
-            $mine = $events->filter(fn ($e) => str_contains($e->command ?? '', $cmd));
+            $mine = $events->filter(fn ($e) => str_ends_with($e->command ?? '', $cmd));
             $exprs = $mine->map(fn ($e) => $e->expression)->values()->all();
+            $at = AlimtalkSchedule::DAILY[substr($cmd, 9)];
+            $cron = fn (string $hm) => (int) substr($hm, 3, 2).' '.(int) substr($hm, 0, 2).' * * 1-5';
 
-            $this->assertContains('0 9 * * 1-5', $exprs, "{$cmd}: 09:00 평일 스케줄이 없다");
-            $this->assertContains('10 9 * * 1-5', $exprs, "{$cmd}: 09:10 따라잡기 스케줄이 없다");
+            $this->assertContains($cron($at), $exprs, "{$cmd}: {$at} 평일 스케줄이 없다");
+            $this->assertContains($cron(AlimtalkSchedule::catchupAt($at)), $exprs, "{$cmd}: +10분 따라잡기 스케줄이 없다");
             $this->assertTrue($mine->every(fn ($e) => $e->withoutOverlapping), "{$cmd}: withoutOverlapping 이 빠졌다");
         }
+    }
+
+    /** 🕘 11-16 (jin) — 관리 담당이 받는 것은 한 시각에 몰리지 않는다(대표용 2종만 09:00 같이). */
+    public function test_manager_alerts_are_spread_across_the_morning(): void
+    {
+        $manager = ['sale-unpaid', 'shipping-due', 'eta-balance', 'purchase-unpaid', 'deposit-cash'];
+        $times = array_map(fn ($c) => AlimtalkSchedule::DAILY[$c], $manager);
+        $this->assertSame(count($times), count(array_unique($times)), '관리가 받는 일일 알림은 시각이 겹치면 안 된다');
+        $this->assertTrue(max(array_merge($times, [AlimtalkSchedule::ARRIVED_UNPAID_WEEKLY])) <= '11:50', '오전 안에 끝낸다');
     }
 
     /** 따라잡기는 명령 단위 조건(when)이 아니라 발송 단위(`once_per_day`)로 걸러야 한다. */
@@ -45,8 +58,7 @@ class AlimtalkDailyCatchupScheduleTest extends TestCase
         foreach ($map as $class) {
             $src = file_get_contents(base_path("app/Console/Commands/{$class}.php"));
             $sends = preg_match_all('/->send\(/', $src);
-            // 'after_first_part_sent' = 나눠 보내는 2통째(선적 임박, 2026-11-16) — 1통째가 오늘 처음 나갔을 때만 부른다(같은 효과).
-            $flagged = preg_match_all("/'once_per_day' => true/", $src) + preg_match_all("/'after_first_part_sent' => true/", $src);
+            $flagged = preg_match_all("/'once_per_day' => true/", $src);
             $this->assertGreaterThan(0, $sends, "{$class}: send() 호출이 없다");
             $this->assertSame($sends, $flagged, "{$class}: send() {$sends}곳 중 once_per_day 가 {$flagged}곳 — 따라잡기에서 중복 발송된다");
         }
