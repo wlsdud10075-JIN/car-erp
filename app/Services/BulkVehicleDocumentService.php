@@ -48,24 +48,28 @@ class BulkVehicleDocumentService
      *    그 시점에 bl_number 가 아직 없다. 선박명·컨테이너 검색으로 사람이 이미 묶는다(jin 2026-09-04).
      */
     public const DOCUMENTS = [
+        /**
+         * ✅ `flag` — 이 서류의 짝 체크박스 (jin 2026-10-15 «일괄로 올리면 체크박스가 안 켜진다»).
+         *    옵션으로 파일과 **같은 update() 배열**에 실어 단건 패널과 같은 훅(cascade·캐시·감사)을 탄다.
+         *    체크빌 → `is_export_cleared`(통관완료) · 말소증 → `is_deregistered`(말소완료·C4 게이트·말소 재촉 알림톡).
+         *    🔀 2026-11-16 (jin) 통관 체크는 **수출신고서 → 체크빌**로 옮겼다 — 실무 순서가 신고서 → 체크빌 → 체크라
+         *       첫 단계에 붙어 있으면 맞지 않는다. 같은 날 만든 「통관 체크 일괄」(파일 없음)과 두 갈래로 존재한다.
+         *    `flag_requires` — 이 컬럼이 비어 있는 차는 파일만 올리고 체크는 안 켠다(통관 체크 일괄과 같은 규칙: 신고서 없는 차 제외).
+         *    수출신고서·B/L 은 체크박스가 없다(B/L 은 파일만으로 거래완료).
+         */
         'checkbill' => [
             'mode' => self::MODE_SHARED,
             'column' => 'checkbill_document',
             'group_by' => null,
             'ability' => 'canAccessClearance',
+            'flag' => 'is_export_cleared',
+            'flag_requires' => 'export_declaration_document',
         ],
-        /**
-         * ✅ `flag` — 이 서류의 짝 체크박스 (jin 2026-10-15 «일괄로 올리면 체크박스가 안 켜진다»).
-         *    옵션(기본 ON)으로 파일과 **같은 update() 배열**에 실어 단건 패널과 같은 훅(cascade·캐시·감사)을 탄다.
-         *    수출신고서 → `is_export_cleared`(없으면 cascade #3 통관중 진입 불가) · 말소증 → `is_deregistered`(없으면 말소완료·C4 게이트·말소 재촉 알림톡).
-         *    B/L·체크빌은 체크박스가 없다(B/L 은 파일만으로 거래완료).
-         */
         'export_declaration' => [
             'mode' => self::MODE_SHARED,
             'column' => 'export_declaration_document',
             'group_by' => 'export_declaration_number',
             'ability' => 'canAccessClearance',
-            'flag' => 'is_export_cleared',
         ],
         /**
          * 🚨 B/L 은 **연쇄가 가장 길다.** 붙는 순간 v4 cascade #1 로 거래완료가 되고,
@@ -274,7 +278,7 @@ class BulkVehicleDocumentService
             DB::transaction(function () use ($vehicle, $cfg, $path, $by, $reason, $type, $setFlag) {
                 // ✅ 짝 체크박스를 같은 배열에 — 단건 패널과 같은 훅을 타게(§8 #44). 이미 켜져 있으면 덮어도 무영향.
                 $data = [$cfg['column'] => $path];
-                if ($setFlag && isset($cfg['flag'])) {
+                if ($setFlag && isset($cfg['flag']) && self::flagAllowed($vehicle, $cfg)) {
                     $data[$cfg['flag']] = true;
                 }
                 $vehicle->update($data);
@@ -399,8 +403,16 @@ class BulkVehicleDocumentService
             'has_file' => filled($v->{$cfg['column']}),
             'blocked' => self::blockerFor($v, $cfg),
             // 짝 체크박스가 지금 꺼져 있나(없는 서류는 null) — 모달이 「체크도 함께 켬 (N대)」 숫자에 쓴다
-            'flag_off' => isset($cfg['flag']) ? ! (bool) $v->{$cfg['flag']} : null,
+            'flag_off' => isset($cfg['flag']) ? ! (bool) $v->{$cfg['flag']} && self::flagAllowed($v, $cfg) : null,
+            // 체크가 꺼져 있지만 선행 서류가 없어 이번에 켜지지 않는 차 — 모달이 「N대는 체크 안 됨」으로 알린다
+            'flag_blocked' => isset($cfg['flag']) && ! (bool) $v->{$cfg['flag']} && ! self::flagAllowed($v, $cfg),
         ];
+    }
+
+    /** 짝 체크를 켤 수 있나 — `flag_requires` 컬럼이 비어 있으면 안 켠다(통관 체크 일괄과 같은 규칙). */
+    private static function flagAllowed(Vehicle $v, array $cfg): bool
+    {
+        return ! isset($cfg['flag_requires']) || filled($v->{$cfg['flag_requires']});
     }
 
     private static function skip(Vehicle $v, string $reason, ?string $message = null): array

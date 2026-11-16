@@ -333,40 +333,47 @@ class BulkVehicleDocumentTest extends TestCase
 
         $this->svc()->applyShared([$v->id], 'export_declaration', $this->file(), $user, false, '테스트');
 
-        // 🔀 2026-10-15 — 기본값이 「통관 체크도 함께 켬」이라 신고서(통관중)를 지나 통관완료까지 간다(옵션 OFF 면 통관중, 아래 테스트).
-        //    (2026-10-16 규칙 재정의: 통관중=신고서 · 통관완료=체크)
-        $this->assertSame('통관완료', $v->fresh()->progress_status);
-        $this->assertSame('통관완료', $v->fresh()->progress_status_cache);
+        // 🔀 2026-11-16 — 통관 체크 옵션이 체크빌로 옮겨 갔다. 신고서는 파일만 = 반입지+신고서(선적일 없음) = 선적중.
+        $this->assertSame('선적중', $v->fresh()->progress_status);
+        $this->assertSame('선적중', $v->fresh()->progress_status_cache);
+        $this->assertFalse((bool) $v->fresh()->is_export_cleared, '신고서 업로드는 setFlag 를 받아도 체크를 안 켠다');
     }
 
     // ── ✅ 짝 체크박스 함께 켬 (jin 2026-10-15) ─────────────────────────
 
-    public function test_declaration_upload_ticks_export_cleared_by_default_and_reaches_clearing(): void
+    /** 🔀 2026-11-16 (jin) 통관 체크 옵션 = 체크빌 업로드에. 신고서 있는 차만 켠다(통관 체크 일괄과 같은 규칙). */
+    public function test_checkbill_upload_ticks_export_cleared_only_where_a_declaration_exists(): void
     {
         $user = $this->clearanceUser();
         $this->actingAs($user);
-        $v = $this->vehicle('11가1001', ['bl_loading_location' => '평택항', 'export_declaration_number' => 'D-1']);
-        $this->assertFalse((bool) $v->is_export_cleared);
+        $ok = $this->vehicle('11가1001', ['bl_loading_location' => '평택항', 'export_declaration_document' => 'vehicles/1/d.pdf']);
+        $noDecl = $this->vehicle('22나2002', ['bl_loading_location' => '평택항']);
 
-        $this->svc()->applyShared([$v->id], 'export_declaration', $this->file(), $user, false, '테스트');
+        $prev = $this->svc()->preview([$ok->id, $noDecl->id], 'checkbill', $user);
+        $this->assertSame([true, false], array_column($prev['targets'], 'flag_off'), '모달 숫자 = 실제로 켜질 차');
+        $this->assertSame([false, true], array_column($prev['targets'], 'flag_blocked'), '신고서 없는 차는 따로 알린다');
 
-        $v->refresh();
-        $this->assertTrue((bool) $v->is_export_cleared, '파일과 같은 저장에 체크가 실린다');
-        $this->assertSame('통관완료', $v->progress_status_cache, '체크 없이는 통관중에 머물렀다(2026-10-16 규칙)');
-        $this->assertSame(1, AuditLog::where('auditable_id', $v->id)->where('action', 'bulk_document_uploaded')->count(), '일괄 출처 감사행은 그대로');
+        $this->svc()->applyShared([$ok->id, $noDecl->id], 'checkbill', $this->file('cb.pdf'), $user, false, '테스트');
+
+        $this->assertTrue((bool) $ok->fresh()->is_export_cleared, '파일과 같은 저장에 체크가 실린다');
+        $this->assertSame('통관완료', $ok->fresh()->progress_status_cache);
+        $this->assertNotNull($noDecl->fresh()->checkbill_document, '체크빌 파일은 올라간다');
+        $this->assertFalse((bool) $noDecl->fresh()->is_export_cleared, '신고서 없는 차는 체크 안 켬');
+        $this->assertSame(2, AuditLog::where('action', 'bulk_document_uploaded')->count(), '일괄 출처 감사행은 그대로');
     }
 
-    public function test_flag_option_off_keeps_the_old_behaviour(): void
+    public function test_checkbill_flag_option_off_uploads_only_the_file(): void
     {
         $user = $this->clearanceUser();
         $this->actingAs($user);
-        $v = $this->vehicle('11가1001', ['bl_loading_location' => '평택항', 'export_declaration_number' => 'D-1']);
+        $v = $this->vehicle('11가1001', ['bl_loading_location' => '평택항', 'export_declaration_document' => 'vehicles/1/d.pdf']);
 
-        $this->svc()->applyShared([$v->id], 'export_declaration', $this->file(), $user, false, '테스트', setFlag: false);
+        $this->svc()->applyShared([$v->id], 'checkbill', $this->file('cb.pdf'), $user, false, '테스트', setFlag: false);
 
         $v->refresh();
+        $this->assertNotNull($v->checkbill_document);
         $this->assertFalse((bool) $v->is_export_cleared);
-        $this->assertSame('선적중', $v->progress_status_cache);   // 반입지+신고서(선적일 없음) = 선적중 (2026-10-20 규칙)
+        $this->assertSame('선적중', $v->progress_status_cache);
     }
 
     public function test_deregistration_upload_ticks_is_deregistered_and_leaves_ticked_rows_alone(): void
@@ -387,33 +394,52 @@ class BulkVehicleDocumentTest extends TestCase
         $this->assertSame(0, AuditLog::where('auditable_id', $b->id)->where('column_name', 'is_deregistered')->where('action', 'updated')->count(), '이미 켜진 차는 변경 없음');
     }
 
-    public function test_bl_and_checkbill_have_no_flag(): void
+    public function test_bl_and_declaration_have_no_flag(): void
     {
         $this->assertArrayNotHasKey('flag', BulkVehicleDocumentService::DOCUMENTS['bl']);
-        $this->assertArrayNotHasKey('flag', BulkVehicleDocumentService::DOCUMENTS['checkbill']);
+        $this->assertArrayNotHasKey('flag', BulkVehicleDocumentService::DOCUMENTS['export_declaration'], '통관 체크는 체크빌로 옮겼다(2026-11-16)');
+        $this->assertSame('is_export_cleared', BulkVehicleDocumentService::DOCUMENTS['checkbill']['flag']);
         $this->assertStringContainsString('wire:model.live="bulkDocSetFlag"', file_get_contents(resource_path('views/livewire/erp/vehicles/index.blade.php')), '모달에 옵션 체크가 있다(기본 ON)');
     }
 
-    public function test_screen_defaults_the_flag_off_for_declaration_and_on_for_deregistration(): void
+    public function test_screen_defaults_the_flag_off_for_checkbill_and_on_for_deregistration(): void
     {
-        // jin 2026-10-20 «수출신고서일 때 통관 체크박스를 기본 체크 안 된 상태로. 말소증은 냅두고»
+        // jin 2026-10-20 «통관 체크박스를 기본 체크 안 된 상태로. 말소증은 냅두고» — 11-16 체크빌로 이동
+        $user = $this->clearanceUser();
+        $this->actingAs($user);
+        $v = $this->vehicle('11가1001', ['bl_loading_location' => '평택항', 'export_declaration_document' => 'vehicles/1/d.pdf']);
+        $noDecl = $this->vehicle('22나2002', ['bl_loading_location' => '평택항']);
+
+        $c = Volt::test('erp.vehicles.index')
+            ->set('shipDocIds', [(string) $v->id, (string) $noDecl->id])
+            ->set('bulkDocType', 'checkbill')
+            ->call('openBulkDoc')
+            ->assertSet('bulkDocSetFlag', false);
+        $c->set('bulkDocType', 'deregistration')->assertSet('bulkDocSetFlag', true);
+        $c->set('bulkDocType', 'checkbill')->assertSet('bulkDocSetFlag', false);
+        $this->assertStringNotContainsString('data-bulk-doc-flag-blocked', $c->html(), '옵션을 안 켰으면 경고도 없다');
+
+        $c->set('bulkDocSetFlag', true);
+        $this->assertMatchesRegularExpression('/data-bulk-doc-flag-blocked[^>]*>\s*수출신고서가 없는 1대는/u', $c->html());
+
+        $c->set('bulkDocSetFlag', false)->set('bulkDocFile', $this->file('cb.pdf'))->call('applyBulkDoc')->assertSet('bulkDocOpen', false);
+        $v->refresh();
+        $this->assertNotNull($v->checkbill_document);
+        $this->assertFalse((bool) $v->is_export_cleared, '그대로 올리면 체크는 안 켜진다');
+    }
+
+    public function test_declaration_tab_no_longer_offers_the_clearance_check(): void
+    {
         $user = $this->clearanceUser();
         $this->actingAs($user);
         $v = $this->vehicle('11가1001', ['bl_loading_location' => '평택항', 'export_declaration_number' => 'D-1']);
 
-        $c = Volt::test('erp.vehicles.index')
+        $html = Volt::test('erp.vehicles.index')
             ->set('shipDocIds', [(string) $v->id])
             ->set('bulkDocType', 'export_declaration')
             ->call('openBulkDoc')
-            ->assertSet('bulkDocSetFlag', false);
-        $c->set('bulkDocType', 'deregistration')->assertSet('bulkDocSetFlag', true);
-        $c->set('bulkDocType', 'export_declaration')->assertSet('bulkDocSetFlag', false);
-
-        $c->set('bulkDocFile', $this->file())->call('applyBulkDoc')->assertSet('bulkDocOpen', false);
-        $v->refresh();
-        $this->assertNotNull($v->export_declaration_document);
-        $this->assertFalse((bool) $v->is_export_cleared, '그대로 올리면 체크는 안 켜진다');
-        $this->assertSame('선적중', $v->progress_status_cache, '신고서만 = 선적중 (2026-10-20 규칙)');
+            ->html();
+        $this->assertStringNotContainsString('data-bulk-doc-flag', $html);
     }
 
     // ── 개별형(말소증) — 차량마다 다른 파일 ─────────────────────────
