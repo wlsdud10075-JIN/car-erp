@@ -11,6 +11,7 @@ return [
     'board_integrity' => 'synced without ERP id :a · ERP id without synced :b',
     'board_audit_failed' => 'ERP check failed (:err)',
     'board_deleted_note' => '(deleted in ERP: :d — info)',
+    'board_reverted_note' => '(reverted on board and deleted in ERP: :e — info)',
 
     'job_failed' => 'Scheduled job failed',
     'job_recovered' => 'Scheduled job recovered',
