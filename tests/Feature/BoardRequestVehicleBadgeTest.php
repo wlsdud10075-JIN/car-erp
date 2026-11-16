@@ -153,6 +153,28 @@ class BoardRequestVehicleBadgeTest extends TestCase
     }
 
     /**
+     * 💬 영업 메모가 드로어 카드에 보인다 (jin 2026-11-16).
+     * 그 전엔 알림톡 본문에만 실려, 차량 창에서 [확인] 을 누르는 사람은 메모를 못 봤다.
+     */
+    public function test_drawer_card_shows_sales_note(): void
+    {
+        $buyer = Buyer::create(['name' => 'ABC', 'is_active' => true]);
+        $v = $this->vehicle($buyer->id);
+        BoardRequest::raise($v->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-n', note: '바이어 오늘 USD 5,000 송금');
+        $bare = $this->vehicle($buyer->id);
+        BoardRequest::raise($bare->id, BoardRequest::TYPE_SALE_PAYMENT_CONFIRM, 'sales@ex.com', $buyer->id, 'b-m');
+
+        $html = Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->call('openEdit', $v->id)->html();
+        $this->assertMatchesRegularExpression('/data-board-request-note>\s*💬 바이어 오늘 USD 5,000 송금\s*</u', $html,
+            '요청 카드에 영업 메모가 안 보인다');
+
+        $bareHtml = Volt::actingAs($this->admin())->test('erp.vehicles.index')
+            ->call('openEdit', $bare->id)->html();
+        $this->assertStringNotContainsString('data-board-request-note', $bareHtml, '메모 없는 요청엔 빈 줄을 그리지 않는다');
+    }
+
+    /**
      * 구 [입금요청]엔 확인 버튼이 없다 — 매입 탭에 지급을 기입하면 자동으로 사라진다.
      * ⚠️ 이건 **구 type 고유 성질**이다(`manual_confirm=false`). 계약금·매입잔금은 버튼이 있다.
      */
