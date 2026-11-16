@@ -373,6 +373,10 @@ class GuideSceneFixtureSeeder extends Seeder
                 $made[] = '바이어 「'.$bn.'」';
             }
         }
+        // 🔓 점검 바이어는 매입 등록 락을 안 건다(board 요청 11-16 — 미수 차 1대만 생겨도 100% 라 락, 한 실행에 판매 확정 씬이 6개).
+        //   새 예외 코드 없이 기존 「바이어별 재정의」(LockThresholdResolver, buyers.lock_purchase_registration_pct) = 필요 입금률 0%.
+        //   락 막힘 화면은 board 1단계가 다른 데모 바이어로 본다.
+        DB::table('buyers')->whereIn('name', self::BOARD_CHECK_BUYERS)->update(['lock_purchase_registration_pct' => 0]);
 
         return 'board 점검 계정: '.($made ? implode('·', $made).' 만듦' : '있음');
     }
