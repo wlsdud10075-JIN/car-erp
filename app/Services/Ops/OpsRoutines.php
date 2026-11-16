@@ -53,23 +53,22 @@ class OpsRoutines
      */
     public const EXTERNAL = [
         'nightly-investigate' => ['label' => '야간 조사 (회사 GPU PC)', 'when' => '매일 03:30 · 끝나면 텔레그램', 'source' => 'mark', 'max_age_hours' => 30],
-        'nightly-notion' => ['label' => 'Notion 가이드 대조·발행 (회사 GPU PC)', 'when' => '매일 04:30', 'source' => 'mark', 'max_age_hours' => 30],
+        'nightly-notion' => ['label' => 'Notion 가이드 대조·발행 (회사 GPU PC) — 발행 뒤 불일치 0 이면 성공', 'when' => '매일 04:30', 'source' => 'mark', 'max_age_hours' => 30],
         'brain-sync' => ['label' => '세컨드 브레인 목록 올리기 (jin PC)', 'when' => '매일 10:10', 'source' => 'brain', 'max_age_hours' => 30],
         'apt' => ['label' => '자동 보안 업데이트 (서버 apt)', 'when' => '매일 02:30~02:45', 'source' => 'apt', 'max_age_hours' => 30],
     ];
 
     /**
-     * 🧑 사람 루틴 — 주 1회(월~일). 이번 주에 한 번이라도 「했음」이면 ✅, 수요일부터 안 했으면 주의 (jin 2026-11-16).
-     *   기록 = 관제 [했음] 버튼 · `ops:mark <키> --push=<허브>`(스킬 끝).
+     * 🧑 우리 루틴 — 주 1회, **토요일 10:00 이 PC 에서 자동 실행**(일요일 재시도) (jin 2026-11-16 «아무도 안 쓰는 주말에 자동으로 하면 고칠 시간이 있다»).
+     *   회차 = 가장 최근 토요일 00:00 부터. 그 뒤 마지막 기록이 ok → ✓ · todo(할 일 남음) → 주의 · failed → 실패.
+     *   기록이 없으면: 주말엔 「대기」, 평일엔 「지난 주말 안 돌았음」(PC 꺼짐·8001 꺼짐) 주의.
+     *   기록 = 주말 작업(`ops:mark <키> --push`) · 스킬 끝 · 관제 [했음] 버튼(손으로 끝냈을 때).
+     *   🔀 「Notion 가이드 반영 확인」은 빠졌다 — 새벽 04:30 대조·발행이 매일 하고, 결과는 서버 밖 루틴 「Notion 가이드 대조·발행」 줄이 판정한다.
      */
     public const MANUAL = [
-        'scene-check' => ['label' => '씬 점검 (화면 회귀)', 'how' => '씬 점검 스킬이 끝나면 자동 기록 · 또는 [했음]'],
-        'notion-guide-check' => ['label' => 'Notion 가이드 반영 확인', 'how' => '--verify 4종 정합 확인(불일치면 Codex 발행) 뒤 [했음]'],
-        'memory-doc-cleanup' => ['label' => '메모리·문서 정리', 'how' => 'MEMORY 색인(200줄)·낡은 문서 정리 뒤 [했음]'],
+        'scene-check' => ['label' => '씬 점검 (화면 회귀)', 'how' => '토 10:00 자동 · 실패하면 텔레그램 → 「씬 점검 실패 봐줘」'],
+        'memory-doc-cleanup' => ['label' => '메모리·문서 정리', 'how' => '토 10:00 측정·후보 표 자동 · 후보가 있으면 /memory-cleanup 으로 정리'],
     ];
-
-    /** 이 요일(ISO, 월=1)부터 이번 주 미완료를 주의로 */
-    public const MANUAL_WARN_FROM_DOW = 3;
 
     /** 보여 주지 않는 커맨드(Laravel 샘플 등) */
     public const HIDDEN = ['inspire'];
@@ -194,37 +193,40 @@ class OpsRoutines
     }
 
     /**
-     * 사람 루틴 줄 — 이번 주(월~일) 판정 + 지난주 놓침.
+     * 우리 루틴 줄 — 이번 회차(가장 최근 토요일부터) 판정.
      *
      * @return list<array{key: string, label: string, how: string, state: string, text: string, title: string, warn: bool}>
      */
     public static function manualRows(array $sites, ?Carbon $now = null): array
     {
         $now ??= now();
-        $weekStart = $now->copy()->startOfWeek(Carbon::MONDAY);
-        $lastWeekStart = $weekStart->copy()->subWeek();
+        $cycleStart = $now->copy()->startOfDay();
+        while ($cycleStart->dayOfWeekIso !== 6) {   // 가장 최근 토요일(오늘이 토요일이면 오늘)
+            $cycleStart->subDay();
+        }
+        $weekend = $now->dayOfWeekIso >= 6;
         $marks = self::marks($sites);
         $rows = [];
         foreach (self::MANUAL as $key => $m) {
-            $oks = array_values(array_filter($marks[$key] ?? [], fn ($x) => $x['status'] === 'ok'));
-            $thisWeek = array_values(array_filter($oks, fn ($x) => Carbon::parse($x['at'])->gte($weekStart)));
-            $lastWeek = array_filter($oks, fn ($x) => Carbon::parse($x['at'])->gte($lastWeekStart) && Carbon::parse($x['at'])->lt($weekStart));
-            // 지난주 놓침 = 지난주 기록이 없고, 그보다 전에 한 적이 있을 때만(처음 시작한 주에 「놓침」이 붙지 않게)
-            $before = array_filter($oks, fn ($x) => Carbon::parse($x['at'])->lt($lastWeekStart));
-            $missedLast = $lastWeek === [] && $before !== [] ? ' · 지난주 놓침' : '';
-            if ($thisWeek !== []) {
-                $at = Carbon::parse($thisWeek[0]['at'])->timezone(config('app.timezone'));
-                $rows[] = ['key' => $key, 'label' => $m['label'], 'how' => $m['how'], 'state' => 'ok', 'warn' => false,
-                    'text' => '✓ 이번 주 '.$at->isoFormat('MM/DD(dd)').' 했음'.$missedLast,
-                    'title' => trim(($thisWeek[0]['note'] ?? '').' '.($thisWeek[0]['source'] ?? ''))];
+            $list = $marks[$key] ?? [];
+            $cur = array_values(array_filter($list, fn ($x) => Carbon::parse($x['at'])->gte($cycleStart)));
+            $row = ['key' => $key, 'label' => $m['label'], 'how' => $m['how']];
+            if ($cur !== []) {
+                $x = $cur[0];
+                $at = Carbon::parse($x['at'])->timezone(config('app.timezone'))->isoFormat('MM/DD(dd) HH:mm');
+                $note = trim((string) ($x['note'] ?? ''));
+                $rows[] = $row + match ($x['status']) {
+                    'ok' => ['state' => 'ok', 'warn' => false, 'text' => '✓ '.$at.($note !== '' ? ' · '.$note : ''), 'title' => (string) ($x['source'] ?? '')],
+                    'todo' => ['state' => 'warn', 'warn' => true, 'text' => '할 일 있음 · '.$at.($note !== '' ? ' · '.$note : ''), 'title' => $m['how']],
+                    default => ['state' => 'failed', 'warn' => true, 'text' => '실패 · '.$at.($note !== '' ? ' · '.$note : ''), 'title' => $m['how']],
+                };
 
                 continue;
             }
-            $warn = $now->dayOfWeekIso >= self::MANUAL_WARN_FROM_DOW;
-            $last = $oks[0]['at'] ?? null;
-            $rows[] = ['key' => $key, 'label' => $m['label'], 'how' => $m['how'], 'state' => $warn ? 'warn' : 'none', 'warn' => $warn,
-                'text' => '이번 주 아직'.$missedLast.($last ? ' · 마지막 '.self::at($last) : ' · 기록 없음'),
-                'title' => $warn ? '수요일부터 주의 — 이번 주(월~일) 안에 한 번' : '이번 주(월~일) 안에 한 번'];
+            $last = $list[0]['at'] ?? null;
+            $rows[] = $row + ($weekend
+                ? ['state' => 'none', 'warn' => false, 'text' => '이번 주말 대기'.($last ? ' · 지난번 '.self::at($last) : ''), 'title' => '토 10:00 자동(못 돌면 일요일 재시도)']
+                : ['state' => 'warn', 'warn' => true, 'text' => '지난 주말 안 돌았음'.($last ? ' · 마지막 '.self::at($last) : ' · 기록 없음'), 'title' => '그 시각에 이 PC·로컬 서버(8001)가 켜져 있었나 — 손으로 돌리고 [했음]']);
         }
 
         return $rows;

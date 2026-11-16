@@ -15,7 +15,7 @@ use Illuminate\Support\Facades\Http;
  */
 class OpsMarkCommand extends Command
 {
-    protected $signature = 'ops:mark {key : 루틴 키(OpsRoutines — 예 scene-check)} {--status=ok : ok | failed} {--note= : 메모(500자)} {--push= : 허브 주소. 없으면 이 서버 DB 에}';
+    protected $signature = 'ops:mark {key : 루틴 키(OpsRoutines — 예 scene-check)} {--status=ok : ok | failed | todo} {--note= : 메모(500자)} {--push= : 허브 주소. 없으면 이 서버 DB 에}';
 
     protected $description = '관제센터 루틴 완료 기록(사람 루틴·서버 밖 루틴)';
 
@@ -25,7 +25,7 @@ class OpsMarkCommand extends Command
         $status = (string) $this->option('status');
         $note = $this->option('note') !== null ? mb_substr((string) $this->option('note'), 0, 500) : null;
         if (! OpsMark::validKey($key) || ! in_array($status, OpsMark::STATUSES, true)) {
-            $this->error('키는 영소문자·숫자·하이픈, status 는 ok|failed 입니다.');
+            $this->error('키는 영소문자·숫자·하이픈, status 는 ok|failed|todo 입니다.');
 
             return self::FAILURE;
         }
