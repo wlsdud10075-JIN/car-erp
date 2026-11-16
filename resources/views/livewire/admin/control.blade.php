@@ -97,7 +97,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $externalRows = OpsRoutines::externalRows($sites, $brain['generated_at'] ?? null);
         $warned = array_values(array_filter($manualRows, fn ($r) => $r['warn']));
         if ($warned !== []) {
-            $anomalies[] = ['level' => 2, 'kind' => '사람 루틴', 'count' => count($warned), 'text' => '이번 주 아직 — '.implode(', ', array_column($warned, 'label')), 'site' => '루틴', 'site_key' => '', 'site_kind' => 'etc'];
+            $anomalies[] = ['level' => 2, 'kind' => '우리 루틴', 'count' => count($warned), 'text' => implode(' · ', array_map(fn ($r) => $r['label'].' — '.$r['text'], $warned)), 'site' => '루틴', 'site_key' => '', 'site_kind' => 'etc'];
         }
         $stale = array_values(array_filter($externalRows, fn ($r) => ($r['cell']['state'] ?? '') === 'failed' || collect($r['by'])->contains(fn ($c) => $c['state'] === 'failed')));
         if ($stale !== []) {
@@ -485,10 +485,10 @@ new #[Layout('components.layouts.app')] class extends Component
         </div>
 
         <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start">
-            {{-- 🧑 사람 루틴 (jin 2026-11-16 «우리도 루틴이 있는 내용을 했는지 안 했는지») — 주 1회, 월~일, 수요일부터 주의 --}}
+            {{-- 🧑 우리 루틴 (jin 2026-11-16 «우리도 루틴이 있는 내용을 했는지 안 했는지» · «주말에 자동으로») — OpsRoutines::manualRows --}}
             <div style="flex: 1 1 420px; min-width: 0; {{ $panel }} display: flex; flex-direction: column; gap: 8px" data-ops-manual>
                 <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px">
-                    <span style="{{ $head }}">OUR ROUTINES <span style="{{ $sub }}">· 사람 루틴 — 주 1회(월~일), 수요일부터 안 했으면 주의</span></span>
+                    <span style="{{ $head }}">OUR ROUTINES <span style="{{ $sub }}">· 우리 루틴 — 매주 토 10:00 이 PC 에서 자동(일 재시도) · 실패·할 일·안 돌았으면 주의</span></span>
                 </div>
                 @foreach($manualRows as $m)
                     <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; border-top: 1px solid rgba(127,231,255,.12); padding-top: 8px" data-manual-row="{{ $m['key'] }}">
@@ -496,7 +496,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             <span style="font-size: 13px; color: #eaf6ff">{{ $m['label'] }}</span>
                             <span style="font-size: 11px; color: #7d98b3">{{ $m['how'] }}</span>
                         </div>
-                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{ ['ok' => '#3dffaa', 'warn' => '#ffcf86'][$m['state']] ?? '#8fa3b8' }}" title="{{ $m['title'] }}" data-manual-state="{{ $m['state'] }}">{{ $m['text'] }}</span>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{ ['ok' => '#3dffaa', 'warn' => '#ffcf86', 'failed' => '#ff7a7a'][$m['state']] ?? '#8fa3b8' }}" title="{{ $m['title'] }}" data-manual-state="{{ $m['state'] }}">{{ $m['text'] }}</span>
                         <button type="button" wire:click="markRoutineDone('{{ $m['key'] }}')" wire:loading.attr="disabled"
                                 style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(61,255,170,.45); background: rgba(61,255,170,.08); color: #c8ffe6; font: inherit; font-size: 12px; cursor: pointer">했음</button>
                     </div>

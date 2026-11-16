@@ -17,7 +17,8 @@ class OpsMark extends Model
 
     public const KEEP_DAYS = 400;
 
-    public const STATUSES = ['ok', 'failed'];
+    /** todo = 돌았지만 사람이 할 일이 남음(메모리 정리 후보 등) — 관제에서 주의 */
+    public const STATUSES = ['ok', 'failed', 'todo'];
 
     public const SOURCES = ['button', 'command', 'api'];
 

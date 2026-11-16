@@ -151,30 +151,42 @@ class OpsRoutineMarksTest extends TestCase
 
     // 🧑 ───────────────────────────────────────────
 
-    public function test_manual_routines_are_judged_by_the_calendar_week(): void
+    /** 🧑 우리 루틴 = 토요일 10:00 자동 — 회차는 가장 최근 토요일부터(jin 11-16 «주말에 자동으로») */
+    public function test_our_routines_are_judged_by_the_latest_weekend_run(): void
     {
-        $mon = Carbon::parse('2026-11-16 10:00', config('app.timezone'));   // 월요일
-        $wed = $mon->copy()->addDays(2);
-        $lastWeek = $mon->copy()->subDays(5)->toIso8601String();
+        $tz = config('app.timezone');
+        $sat = Carbon::parse('2026-11-21 10:05', $tz);   // 토요일
+        $mon = Carbon::parse('2026-11-23 09:00', $tz);   // 다음 월요일
         $sites = fn (array $marks) => [$this->site(['marks' => $marks])];
+        $mark = fn (string $status, Carbon $at, ?string $note = null) => ['status' => $status, 'at' => $at->toIso8601String(), 'note' => $note, 'source' => 'api'];
+
+        $r = collect(OpsRoutines::manualRows($sites([]), $sat->copy()->setTime(9, 0)))->keyBy('key');
+        $this->assertSame('none', $r['scene-check']['state'], '주말 실행 전엔 대기(주의 아님)');
 
         $r = collect(OpsRoutines::manualRows($sites([]), $mon))->keyBy('key');
-        $this->assertSame('none', $r['scene-check']['state'], '월·화는 아직이어도 회색');
-        $r = collect(OpsRoutines::manualRows($sites([]), $wed))->keyBy('key');
-        $this->assertSame('warn', $r['scene-check']['state'], '수요일부터 주의');
+        $this->assertSame('warn', $r['scene-check']['state'], '평일인데 지난 주말 기록 없음 = PC 꺼짐 등 → 주의');
+        $this->assertStringContainsString('지난 주말 안 돌았음', $r['scene-check']['text']);
 
-        $thisWeek = ['status' => 'ok', 'at' => $wed->copy()->subHour()->toIso8601String(), 'source' => 'api'];
-        $r = collect(OpsRoutines::manualRows($sites(['scene-check' => [$thisWeek]]), $wed))->keyBy('key');
+        $r = collect(OpsRoutines::manualRows($sites(['scene-check' => [$mark('ok', $sat, '통과 5 / 실패 0')]]), $mon))->keyBy('key');
         $this->assertSame('ok', $r['scene-check']['state']);
-        $this->assertStringNotContainsString('지난주 놓침', $r['scene-check']['text'], '처음 시작한 주엔 「놓침」이 아니다');
+        $this->assertStringContainsString('통과 5', $r['scene-check']['text']);
 
-        $twoWeeksAgo = ['status' => 'ok', 'at' => $mon->copy()->subDays(10)->toIso8601String(), 'source' => 'api'];
-        $r = collect(OpsRoutines::manualRows($sites(['scene-check' => [$thisWeek, $twoWeeksAgo]]), $wed))->keyBy('key');
-        $this->assertStringContainsString('지난주 놓침', $r['scene-check']['text'], '하던 루틴이 지난주에 비었으면 같이 알린다');
+        $r = collect(OpsRoutines::manualRows($sites(['scene-check' => [$mark('failed', $sat, '통과 4 / 실패 1')]]), $mon))->keyBy('key');
+        $this->assertSame('failed', $r['scene-check']['state']);
+        $this->assertTrue($r['scene-check']['warn']);
 
-        $r = collect(OpsRoutines::manualRows($sites(['scene-check' => [['status' => 'ok', 'at' => $lastWeek, 'source' => 'button']]]), $wed))->keyBy('key');
-        $this->assertSame('warn', $r['scene-check']['state'], '지난주에 한 것은 이번 주를 채우지 않는다');
-        $this->assertStringNotContainsString('지난주 놓침', $r['scene-check']['text']);
+        // 고친 뒤 [했음] → 최신이 ok 라 초록
+        $r = collect(OpsRoutines::manualRows($sites(['scene-check' => [$mark('ok', $mon->copy()->addHour()), $mark('failed', $sat)]]), $mon->copy()->addHours(2)))->keyBy('key');
+        $this->assertSame('ok', $r['scene-check']['state']);
+
+        $r = collect(OpsRoutines::manualRows($sites(['memory-doc-cleanup' => [$mark('todo', $sat, '정리 후보 6줄')]]), $mon))->keyBy('key');
+        $this->assertSame('warn', $r['memory-doc-cleanup']['state'], '측정만 하고 후보가 남으면 「할 일 있음」');
+        $this->assertStringContainsString('할 일 있음', $r['memory-doc-cleanup']['text']);
+
+        $r = collect(OpsRoutines::manualRows($sites(['scene-check' => [$mark('ok', $sat->copy()->subWeek())]]), $mon))->keyBy('key');
+        $this->assertSame('warn', $r['scene-check']['state'], '지지난 주말 기록은 이번 회차를 채우지 않는다');
+
+        $this->assertArrayNotHasKey('notion-guide-check', OpsRoutines::MANUAL, 'Notion 은 새벽 자동 판정으로 옮겼다');
     }
 
     public function test_page_button_marks_a_manual_routine_and_ignores_other_keys(): void
@@ -188,7 +200,7 @@ class OpsRoutineMarksTest extends TestCase
 
         $this->assertSame(1, OpsMark::count(), '사람 루틴 키만 버튼으로 기록된다');
         $this->assertSame(['button', $jin->id], [OpsMark::first()->source, OpsMark::first()->user_id]);
-        $this->assertStringContainsString('이번 주', substr($c->html(), strpos($c->html(), 'data-manual-row="scene-check"'), 1200));
+        $this->assertStringContainsString('data-manual-state="ok"', substr($c->html(), strpos($c->html(), 'data-manual-row="scene-check"'), 1500), '버튼을 누르면 이번 회차가 ✓');
     }
 
     // ① ───────────────────────────────────────────
