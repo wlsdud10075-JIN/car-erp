@@ -154,3 +154,11 @@
 **착수 때 jin 에게 물을 것(짧게)**: ①스킬 형태(슬래시 명령 하나면 충분한가) ②주 1회 = 사람이 부르기 vs 예약 실행(로컬 PC 가 켜져 있어야 함) ③실패를 어디로 알릴지(대화 보고만 / 텔레그램).
 
 **함정(촬영하며 겪은 것)** — `scripts/scene/README.md` 와 같음: 47321 차단 · 히어독 백슬래시 · `MSYS_NO_PATHCONV` · 선적 sync 선언형 자동취소 · 로컬 BizM 실발송 계정 · 실명(로컬 DB 에 실무자 이름·jin 개인 이메일 행이 섞여 있다 — 점검 결과 출력에도 찍지 말 것) · 편집 잠금(`unlock.php`) · 재무 계정은 「알림」 화면 403.
+
+### 8-1. ✅ 1단계 완료 (2026-11-16)
+- `scripts/scene/check/` — `run.js`(8001 확인 → 알림톡 마스터 스위치 꺼짐 확인 → 시더 → 씬 순서대로 → 결과 표·JSON, `FAIL`/`SUMMARY` 줄) · `lib.js`(47321 차단 · 클릭 가드 = `wire:click` 메서드명 기준 · 문구 대기 · DB 조회) · `db.php`(SELECT 만) · `alimtalk-guard.php` · `package.json`(commonjs — 레포가 `"type":"module"`).
+- 씬 5개 = bank-balance · documents · bulk-shipping-dates · shipment-fee · buyer-account (단계 34개, 약 3분). 로컬 2회 연속 통과(재실행 가능), 기대 문구를 일부러 틀리면 그 단계가 `FAIL` 로 잡히는 것 확인.
+- 되돌리기 = `database/seeders/GuideSceneFixtureSeeder.php`(로컬 가드, 표식으로 찾아 되돌리기만 — 예시가 없으면 만들지 않고 멈춤). ⚠️ 00가1131·1141 의 신고번호·컨테이너번호를 이 씬 값으로 되돌린다.
+- 스킬 `.claude/skills/scene-check` · 토요일 10:00 자동 = `scripts/weekly/weekend.ps1`(jin PC 작업 스케줄러 「car-erp weekend routines」) → 관제 「우리 루틴」 · 실패면 텔레그램.
+- 🚫 이 폴더·시더·스킬은 master 로 안 간다(dev 전용 커밋).
+- 다음 = 2단계(한 바퀴 6장) — §8 순서표.
