@@ -1108,6 +1108,14 @@ jin: «금액만 쭈루룩 나오고 확인이 필요하다고 뜬다 · 사진 
 - 🚫 **규칙으로 안 건드린 것 = 숫자만 있는 메시지.** 같은 「1730」이 무사백 방에선 송금 요청(만원), heymanerp 평가사 방에선 차량 번호 끝자리다. 방마다 뜻이 갈리는 토큰은 전역 규칙에 넣지 않는다 — 다음 결정(방별 힌트)으로 넘겼다.
 가드 = `KakaoRuleLayerTest`(조각 수·예산·실패 보존·토큰 기록·호출·늦은 뒷글·재분할 명령) · `KakaoRulesTest` · `KakaoExportParserTest::test_header_without_body…`. 상세 = `docs/design/kakao-automation.md §12`.
 
+### 138. 🫥 **Livewire 4 의 `wire:model.blur` 는 서버로 안 간다 — 「칸을 벗어나면 서버가 고친다」가 한 번도 안 돌았다** (2026-11-16 씬 점검이 처음 찾은 버그)
+
+딜러 번호 칸(`vehicles/index` 말소 탭)이 `wire:model.blur` + 서버 훅 `updatedDeregistrationBuyerPhone()`(하이픈 정리 07-10 · 「휴대폰 번호 형식이 아닙니다」 즉시 경고 11-13)이었다.
+Livewire 4.3 은 `.blur` 에 `live` 가 없으면 **브라우저 값만 맞추고 요청을 안 보낸다**(`livewire.esm.js` `shouldSendNetwork = isLive || hasLazyWithoutLive`). ⇒ 훅은 **저장할 때만** 돌았고 11-13 의 「바로 알린다」는 화면에서 한 번도 안 떴다.
+- 🔎 **기능 테스트는 원리상 못 잡는다** — Volt `->set()` 이 훅을 직접 부르므로 테스트는 초록이었다. 실브라우저로 끝까지 눌러 보는 씬 점검(`scripts/scene/check/`)이 「경고가 안 뜬다」로 잡았고, 진단 = 칸을 벗어난 뒤 **Livewire POST 가 0건**.
+- ✅ 서버 훅이 칸을 벗어날 때 돌아야 하면 `wire:model.live.blur`. 가드 = `LivewireBlurNeedsLiveTest`(훅 있는 프로퍼티를 `.blur` 로 묶으면 실패, 정적). 전 화면 `.blur` 6곳 중 훅 있는 곳은 이 1곳뿐이었다(나머지는 저장 때 같이 가니 무해).
+- 🧭 「서버가 즉시 반응한다」고 적은 기능은 **요청이 실제로 나가는지**(Network 탭·Playwright response)부터 본다 — CLAUDE.md 15번(「느리다 = 배선부터」)과 같은 결.
+
 ## 9. 구현 패턴
 
 ### 상태기반 조회 (차량목록 dateType)
