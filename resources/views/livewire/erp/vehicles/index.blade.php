@@ -152,6 +152,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 같은 번호인데 선택 밖인 차량도 함께 처리할지 — 기본 켬(묶음이 반쪽으로 남지 않게). */
     public bool $bulkDocIncludeOutside = true;
 
+    /** ✅ 통관 체크 일괄 (jin 2026-11-16 A안) — 서류 업로드 → 체크빌 → 체크 순서의 마지막 단계만. 파일 없음. */
+    public bool $bulkClearOpen = false;
+
+    public string $bulkClearReason = '';
+
     /** 번호가 2종 이상 섞였을 때 사람이 명시로 확인했는가. 확인 없이는 진행하지 않는다. */
     public bool $bulkDocMixedAck = false;
 
@@ -3090,6 +3095,62 @@ new #[Layout('components.layouts.app')] class extends Component {
             'applied' => $result['applied'],
             'skipped' => count($result['skipped']),
         ]));
+    }
+
+    /** 통관 체크 일괄 모달 — 수출신고서 없는 차는 제외, 체크빌 없는 차는 경고만(jin 2026-11-16). */
+    public function openBulkClear(): void
+    {
+        abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
+        $this->bulkClearReason = '';
+        $this->bulkClearOpen = true;
+        unset($this->bulkClearPreview);
+    }
+
+    public function closeBulkClear(): void
+    {
+        $this->bulkClearOpen = false;
+        unset($this->bulkClearPreview);
+    }
+
+    /** 화면과 실행이 같은 판정(BulkExportClearedService::classify). 모달이 닫혀 있으면 계산하지 않는다. */
+    #[Computed]
+    public function bulkClearPreview(): array
+    {
+        $empty = ['targets' => [], 'no_doc' => [], 'already' => [], 'no_scope' => []];
+        if (! $this->bulkClearOpen || empty($this->shipDocIds)) {
+            return $empty;
+        }
+
+        try {
+            return app(\App\Services\BulkExportClearedService::class)->preview($this->shipDocIds, auth()->user());
+        } catch (\Throwable $e) {
+            return $empty;
+        }
+    }
+
+    public function applyBulkClear(): void
+    {
+        $reason = trim($this->bulkClearReason) !== '' ? trim($this->bulkClearReason) : __('vehicle.bulk_clear.reason_default');
+
+        try {
+            $result = app(\App\Services\BulkExportClearedService::class)->apply($this->shipDocIds, auth()->user(), $reason);
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', type: 'error', message: $e->getMessage());
+
+            return;
+        }
+
+        $this->bulkClearOpen = false;
+        unset($this->vehicles, $this->bulkClearPreview);
+        if ($result['applied'] > 0) {
+            $this->clearShipDocSelection();
+        }
+
+        $errors = collect($result['skipped'])->where('reason', 'error');
+        $this->dispatch('notify', type: $errors->isEmpty() ? 'success' : 'error', message: __('vehicle.bulk_clear.done', [
+            'applied' => $result['applied'],
+            'skipped' => count($result['skipped']),
+        ]).($errors->isEmpty() ? '' : ' — '.$errors->map(fn ($s) => $s['number'].': '.($s['message'] ?? ''))->implode(' / ')));
     }
 
     /** 번호 일괄 기입 모달 열기 — 통관 데이터라 canAccessClearance(선적요청 묶음 폼과 같은 권한). */
@@ -8682,6 +8743,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     class="rounded border border-green-300 bg-green-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-green-700">
                 # {{ __('vehicle.bulk_num.btn') }}
             </button>
+            {{-- ①-B2 통관 체크 일괄 (jin 2026-11-16 A안) — 신고서 업로드 → 체크빌 → 체크 순서의 마지막 단계. 파일 없음. --}}
+            <button type="button" wire:click="openBulkClear"
+                    class="rounded border border-teal-300 bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-500">
+                ✓ {{ __('vehicle.bulk_clear.btn') }}
+            </button>
             {{-- ①-C 선적일·ETA·VSL·반입지 일괄 (jin 2026-10-30) — 상단 버튼은 「필터 전체」, 여기는 「체크한 선택」만.
                  같은 모달·같은 충돌 경고(선박명·반입지)를 쓰고 대상만 다르다. 성공해도 선택은 비우지 않는다(이어서 묶기). --}}
             <button type="button" wire:click="openBulkDate('selected')"
@@ -12659,6 +12725,64 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     class="btn-primary disabled:opacity-50">
                 <span wire:loading.remove wire:target="applyBulkDoc">{{ __('vehicle.bulk_doc.apply') }}</span>
                 <span wire:loading wire:target="applyBulkDoc">{{ __('vehicle.panel.uploading') }}</span>
+            </button>
+        </div>
+    </div>
+</div>
+@endif
+
+@if($bulkClearOpen)
+{{-- 통관 체크 일괄 모달 (jin 2026-11-16 A안) — 대상 = 체크박스 누적 선택.
+     수출신고서 없는 차는 제외 · 체크빌 없는 차는 경고만 · 이미 체크된 차는 그대로. --}}
+@php
+    $bcPrev = $this->bulkClearPreview;
+    $bcNoCb = collect($bcPrev['targets'])->where('no_checkbill', true);
+@endphp
+<div class="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-3" wire:key="bulk-clear-modal">
+    <div class="card mx-4 w-full max-w-lg shadow-2xl max-h-[90vh] overflow-y-auto">
+        <h3 class="text-base font-semibold text-gray-900">{{ __('vehicle.bulk_clear.title') }}</h3>
+        <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_clear.hint') }}</p>
+
+        <p class="mt-3 text-xs font-medium text-primary-text" data-bulk-clear-target>
+            {{ __('vehicle.bulk_clear.target', ['count' => count($bcPrev['targets'])]) }}
+        </p>
+        <div class="mt-2 max-h-28 overflow-y-auto rounded border border-gray-200 bg-gray-50 p-2">
+            @forelse($bcPrev['targets'] as $t)
+                <span class="mr-1 inline-block rounded px-1.5 py-0.5 text-[11px] {{ $t['no_checkbill'] ? 'bg-amber-100 text-amber-800' : 'bg-white text-gray-700' }}">{{ $t['number'] }}</span>
+            @empty
+                <span class="text-xs text-gray-400">{{ __('vehicle.bulk_clear.no_target') }}</span>
+            @endforelse
+        </div>
+
+        @if($bcNoCb->isNotEmpty())
+            <p class="mt-2 rounded border border-amber-200 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800" data-bulk-clear-no-checkbill>
+                {{ __('vehicle.bulk_clear.no_checkbill', ['count' => $bcNoCb->count()]) }}
+            </p>
+        @endif
+        @if($bcPrev['no_doc'] !== [])
+            <p class="mt-2 text-[11px] text-red-600" data-bulk-clear-no-doc>
+                {{ __('vehicle.bulk_clear.no_doc', ['count' => count($bcPrev['no_doc'])]) }}: {{ implode(', ', $bcPrev['no_doc']) }}
+            </p>
+        @endif
+        @if($bcPrev['already'] !== [])
+            <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_clear.already', ['count' => count($bcPrev['already'])]) }}</p>
+        @endif
+        @if($bcPrev['no_scope'] !== [])
+            <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_doc.no_scope', ['count' => count($bcPrev['no_scope'])]) }}</p>
+        @endif
+
+        <label class="mt-3 block text-xs font-medium text-gray-600">{{ __('vehicle.bulk_doc.reason') }}</label>
+        <input wire:model="bulkClearReason" type="text" class="input-base mt-1 w-full"
+               placeholder="{{ __('vehicle.bulk_clear.reason_default') }}" />
+
+        <div class="mt-4 flex justify-end gap-2">
+            <button type="button" wire:click="closeBulkClear" class="rounded border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">
+                {{ __('common.cancel') }}
+            </button>
+            <button type="button" wire:click="applyBulkClear" wire:loading.attr="disabled" wire:target="applyBulkClear"
+                    @disabled($bcPrev['targets'] === [])
+                    class="btn-primary disabled:opacity-50">
+                {{ __('vehicle.bulk_clear.apply', ['count' => count($bcPrev['targets'])]) }}
             </button>
         </div>
     </div>

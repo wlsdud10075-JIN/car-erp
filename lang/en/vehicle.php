@@ -44,6 +44,20 @@ return [
         'outside' => 'Also include :count vehicle(s) with the same number left out of the selection',
         'done' => 'Uploaded :applied · skipped :skipped',
     ],
+    // Bulk export-clearance check (jin 2026-11-16) — last step after declaration upload and check bill.
+    'bulk_clear' => [
+        'btn' => 'Bulk clearance check',
+        'title' => 'Bulk export clearance check',
+        'hint' => 'Turns on the clearance check only (no file) for vehicles whose declaration and check bill are done. Checked vehicles become Cleared.',
+        'target' => 'Vehicles to check: :count',
+        'no_target' => 'No vehicles to check.',
+        'no_checkbill' => '⚠ :count vehicle(s) without a check bill (yellow) — they will still be checked.',
+        'no_doc' => 'Excluded, no export declaration: :count',
+        'already' => 'Already checked: :count (left as is)',
+        'reason_default' => 'Bulk clearance check',
+        'apply' => 'Check :count vehicle(s)',
+        'done' => 'Checked :applied · skipped :skipped',
+    ],
     // Bulk entry of export declaration no / container no (jin 2026-09-08) — blank field = leave as is.
     'bulk_num' => [
         'btn' => 'Bulk enter numbers',
