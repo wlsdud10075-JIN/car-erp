@@ -8,7 +8,8 @@ const { execFileSync } = require('child_process');
 const L = require('./lib');
 
 // 순서 = 같은 예시 차(00가1131·00가1141)를 서로 다른 칸으로 쓰는 순. buyer-account 는 마지막(돈이 움직인다).
-const SCENES = ['bank-balance', 'documents', 'bulk-shipping-dates', 'shipment-fee', 'buyer-account'];
+// quoted-texts = 5단계 정적 검사(브라우저 없이 몇 초, 가이드 인용 문구가 화면 코드에 있나) — 맨 앞.
+const SCENES = ['quoted-texts', 'bank-balance', 'documents', 'bulk-shipping-dates', 'shipment-fee', 'buyer-account'];
 
 const arg = (k) => { const a = process.argv.find((x) => x.startsWith(`--${k}=`)); return a ? a.split('=').slice(1).join('=') : null; };
 const only = arg('only');
