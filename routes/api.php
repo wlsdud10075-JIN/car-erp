@@ -20,6 +20,7 @@ use App\Http\Middleware\VerifyKakaoCollectorToken;
 use App\Http\Middleware\VerifyOpsHmac;
 use App\Http\Middleware\VerifyPortalReadHmac;
 use App\Http\Middleware\VerifyPurchaseSyncHmac;
+use App\Models\OpsMark;
 use App\Services\Ops\OpsBrain;
 use App\Services\Ops\OpsSummary;
 use Illuminate\Http\Request;
@@ -64,6 +65,21 @@ Route::middleware([VerifyOpsHmac::class, 'throttle:10,1'])
             return response()->json(['error' => $e->getMessage()], 422);
         }
     })->name('api.internal.ops.brain');
+
+// 🛰️ 관제센터 루틴 완료 기록(jin 2026-11-16) — 개발 PC 의 `ops:mark … --push` 가 서명 POST(씬 점검 스킬 끝 등). 허브 DB 에 한 줄.
+Route::middleware([VerifyOpsHmac::class, 'throttle:30,1'])
+    ->post('/internal/ops/mark', function (Request $request) {
+        $data = json_decode($request->getContent(), true);
+        $key = is_array($data) ? (string) ($data['key'] ?? '') : '';
+        $status = is_array($data) ? (string) ($data['status'] ?? 'ok') : '';
+        if (! OpsMark::validKey($key) || ! in_array($status, OpsMark::STATUSES, true)) {
+            return response()->json(['error' => 'bad key or status'], 422);
+        }
+        $mark = OpsMark::create(['key' => $key, 'status' => $status, 'note' => isset($data['note']) ? mb_substr((string) $data['note'], 0, 500) : null,
+            'source' => 'api', 'created_at' => now()]);
+
+        return response()->json(['id' => $mark->id, 'key' => $key, 'status' => $status]);
+    })->name('api.internal.ops.mark');
 
 Route::middleware([VerifyErpPeerHmac::class, 'throttle:30,1'])
     ->get('/internal/peer/payouts', [PeerPayoutController::class, 'payouts'])

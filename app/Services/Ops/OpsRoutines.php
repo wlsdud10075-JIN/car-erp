@@ -13,11 +13,16 @@ use Carbon\Carbon;
  */
 class OpsRoutines
 {
-    /** @var array<string, array{when: string, commands: list<string>}> */
+    /**
+     * kinds = 이 묶음이 도는 사이트 종류(기본 erp). 다른 종류 칸은 빈칸(「기록 없음」으로 오해하지 않게).
+     * board 목록 = board 세션 회신(11-16, board dev 58724c8 — routines[] 구현).
+     *
+     * @var array<string, array{when: string, commands: list<string>, kinds?: list<string>}>
+     */
     public const GROUPS = [
-        'DB 백업' => ['when' => '매일 03:00', 'commands' => ['db:backup']],
+        'DB 백업' => ['when' => '매일 03:00', 'commands' => ['db:backup'], 'kinds' => ['erp', 'board']],
         '공휴일 수집' => ['when' => '매일 04:10', 'commands' => ['holidays:sync']],
-        '예약 작업 기록 정리(90일)' => ['when' => '매일 04:50', 'commands' => ['model:prune']],
+        '예약 작업 기록 정리(90일)' => ['when' => '매일 04:50', 'commands' => ['model:prune'], 'kinds' => ['erp', 'board']],
         '캐시 재계산(미수·위험도·진행상태)' => ['when' => '매일 05:00', 'commands' => ['vehicles:rebuild-caches']],
         '할일 알람 스캔' => ['when' => '매일 06:00', 'commands' => ['alarms:scan']],
         '시스템 점검(아침 요약 텔레그램)' => ['when' => '매일 08:00', 'commands' => ['system:health-check']],
@@ -26,14 +31,45 @@ class OpsRoutines
         '알림톡 도달 결과 조회' => ['when' => '매시', 'commands' => ['alimtalk:poll-report']],
         '환율 스냅샷(네이버)' => ['when' => '매일 09:00', 'commands' => ['exchange:snapshot-daily']],
         'GPU PC 감시(Ollama 핑)' => ['when' => '5분마다', 'commands' => ['assistant:health-check']],
+        // ── board ──
+        '요청 결과 휴대폰 알림 · 탁송 배차 예약 발송' => ['when' => '매분', 'commands' => ['board:push-request-results', 'board:transport-send'], 'kinds' => ['board']],
+        '관제 하트비트 · GPU PC 응답 확인' => ['when' => '매분 · 5분', 'commands' => ['ops-heartbeat', 'ops-gpu-ping'], 'kinds' => ['board']],
+        '바이어 회신·상담 승격·검차 사진 확인(respond.io·ssancar.com)' => ['when' => '2분마다', 'commands' => ['board:poll-verdicts', 'board:poll-promotions', 'board:poll-ssancar-media'], 'kinds' => ['board']],
+        '업무일지 마감 알림' => ['when' => '5분마다', 'commands' => ['board:work-journal-cutoff'], 'kinds' => ['board']],
+        '환율 갱신 · 챗봇 색인·GPU 점검' => ['when' => '매시 정각', 'commands' => ['board:refresh-rates', 'board:assistant-health'], 'kinds' => ['board']],
+        '검차 큐 일일 대사(ssancar.com)' => ['when' => '매일 07:20', 'commands' => ['board:inspection-reconcile'], 'kinds' => ['board']],
+        'board→ERP 전송 감사' => ['when' => '매일 07:40', 'commands' => ['board:purchase-sync-audit'], 'kinds' => ['board']],
+        '지역 검차 알림톡' => ['when' => '기능설정 시각 있을 때만', 'commands' => ['board:alimtalk-region-inspection'], 'kinds' => ['board']],
     ];
 
-    /** 기록이 안 남는 외부 루틴 — 줄만 보여 준다(어디서 도는지 잊지 않게) */
+    /** 1시간 넘게 「도는 중」이면 멈춤 의심 — 3사 실측 최장 9초(11-16), 넉넉하게 */
+    public const STUCK_MINUTES = 60;
+
+    /**
+     * 서버 밖에서 도는 루틴 — 실제 기록으로 판정한다(11-16, 구: 설명 줄만).
+     *   mark  = GPU PC 스크립트가 끝에 heymanerp 로 `ops:mark <키>` 를 부른다(어느 사이트 기록이든 합쳐 본다)
+     *   brain = 허브의 세컨드 브레인 목록 시각 · apt = 사이트마다 OpsSummary::external() 의 apt_run_at
+     *   max_age_hours 안에 성공 기록이 없으면 「멈춤?」.
+     */
     public const EXTERNAL = [
-        ['label' => 'Notion 가이드 발행 · 야간 조사 (회사 GPU PC)', 'when' => '03:30 조사(끝나면 바로 텔레그램) · 04:30 발행', 'note' => 'GPU PC 작업 스케줄러 — 기록 연결은 후속'],
-        ['label' => '세컨드 브레인 목록 올리기 (jin PC)', 'when' => '매일 10:10', 'note' => '관제 화면 머리줄 「기준 시각」으로 확인'],
-        ['label' => '자동 보안 업데이트 (서버 apt)', 'when' => '02:30~02:45', 'note' => 'systemd 타이머 — 기록 연결은 후속'],
+        'nightly-investigate' => ['label' => '야간 조사 (회사 GPU PC)', 'when' => '매일 03:30 · 끝나면 텔레그램', 'source' => 'mark', 'max_age_hours' => 30],
+        'nightly-notion' => ['label' => 'Notion 가이드 대조·발행 (회사 GPU PC)', 'when' => '매일 04:30', 'source' => 'mark', 'max_age_hours' => 30],
+        'brain-sync' => ['label' => '세컨드 브레인 목록 올리기 (jin PC)', 'when' => '매일 10:10', 'source' => 'brain', 'max_age_hours' => 30],
+        'apt' => ['label' => '자동 보안 업데이트 (서버 apt)', 'when' => '매일 02:30~02:45', 'source' => 'apt', 'max_age_hours' => 30],
     ];
+
+    /**
+     * 🧑 사람 루틴 — 주 1회(월~일). 이번 주에 한 번이라도 「했음」이면 ✅, 수요일부터 안 했으면 주의 (jin 2026-11-16).
+     *   기록 = 관제 [했음] 버튼 · `ops:mark <키> --push=<허브>`(스킬 끝).
+     */
+    public const MANUAL = [
+        'scene-check' => ['label' => '씬 점검 (화면 회귀)', 'how' => '씬 점검 스킬이 끝나면 자동 기록 · 또는 [했음]'],
+        'notion-guide-check' => ['label' => 'Notion 가이드 반영 확인', 'how' => '--verify 4종 정합 확인(불일치면 Codex 발행) 뒤 [했음]'],
+        'memory-doc-cleanup' => ['label' => '메모리·문서 정리', 'how' => 'MEMORY 색인(200줄)·낡은 문서 정리 뒤 [했음]'],
+    ];
+
+    /** 이 요일(ISO, 월=1)부터 이번 주 미완료를 주의로 */
+    public const MANUAL_WARN_FROM_DOW = 3;
 
     /** 보여 주지 않는 커맨드(Laravel 샘플 등) */
     public const HIDDEN = ['inspire'];
@@ -51,7 +87,7 @@ class OpsRoutines
             if (! in_array($kind, ['erp', 'board'], true)) {
                 continue;
             }
-            $columns[] = ['key' => $s['site']['key'], 'name' => $s['site']['name'], 'ok' => (bool) $s['ok']];
+            $columns[] = ['key' => $s['site']['key'], 'name' => $s['site']['name'], 'ok' => (bool) $s['ok'], 'kind' => $kind];
             foreach ((array) ($s['data']['routines'] ?? []) as $r) {
                 if (is_array($r) && isset($r['command'])) {
                     $byCmd[$s['site']['key']][$r['command']] = $r;
@@ -74,7 +110,9 @@ class OpsRoutines
         foreach (self::GROUPS as $label => $g) {
             $by = [];
             foreach ($columns as $col) {
-                $by[$col['key']] = self::cell($g['commands'], $byCmd[$col['key']] ?? null, $col['ok']);
+                $by[$col['key']] = in_array($col['kind'], $g['kinds'] ?? ['erp'], true)
+                    ? self::cell($g['commands'], $byCmd[$col['key']] ?? null, $col['ok'])
+                    : ['state' => 'na', 'text' => '', 'title' => '이 사이트에서는 돌지 않는다'];
             }
             $rows[] = ['label' => $label, 'when' => $g['when'], 'by' => $by];
         }
@@ -87,6 +125,125 @@ class OpsRoutines
         }
 
         return ['columns' => $columns, 'rows' => $rows, 'unknown' => $unknown];
+    }
+
+    /**
+     * 모든 사이트 요약의 marks 를 키별로 합친다(최신순). 사이트 하나가 marks 를 못 보내도(테이블 없음 → error) 나머지로.
+     *
+     * @return array<string, list<array{status: string, at: string, note: ?string, source: string, site: string}>>
+     */
+    public static function marks(array $sites): array
+    {
+        $out = [];
+        foreach ($sites as $s) {
+            foreach ((array) ($s['data']['marks'] ?? []) as $key => $list) {
+                if (! is_string($key) || ! is_array($list) || array_is_list($list) === false) {
+                    continue;
+                }
+                foreach ($list as $m) {
+                    if (is_array($m) && isset($m['at'], $m['status'])) {
+                        $out[$key][] = $m + ['site' => $s['site']['name'] ?? ''];
+                    }
+                }
+            }
+        }
+        foreach ($out as $k => $list) {
+            usort($list, fn ($x, $y) => strcmp($y['at'], $x['at']));
+            $out[$k] = $list;
+        }
+
+        return $out;
+    }
+
+    /**
+     * 서버 밖 루틴 줄 — span 이면 한 칸(사이트 무관), 아니면 사이트별(apt).
+     *
+     * @return list<array{key: string, label: string, when: string, span: bool, cell: ?array, by: array}>
+     */
+    public static function externalRows(array $sites, ?string $brainGeneratedAt): array
+    {
+        $marks = self::marks($sites);
+        $rows = [];
+        foreach (self::EXTERNAL as $key => $e) {
+            $row = ['key' => $key, 'label' => $e['label'], 'when' => $e['when'], 'span' => true, 'cell' => null, 'by' => []];
+            if ($e['source'] === 'mark') {
+                $row['cell'] = self::ageCell($marks[$key] ?? [], $e['max_age_hours']);
+            } elseif ($e['source'] === 'brain') {
+                $row['cell'] = self::ageCell($brainGeneratedAt ? [['status' => 'ok', 'at' => $brainGeneratedAt]] : [], $e['max_age_hours']);
+            } else {   // apt — ERP 사이트마다
+                $row['span'] = false;
+                foreach ($sites as $s) {
+                    if (! in_array($s['site']['kind'] ?? 'erp', ['erp', 'board'], true)) {
+                        continue;
+                    }
+                    $at = $s['data']['external']['apt_run_at'] ?? null;
+                    $installed = $s['data']['external']['apt_installed_at'] ?? null;
+                    $cell = ! $s['ok'] ? ['state' => 'none', 'text' => '—', 'title' => '사이트 응답 없음']
+                        : (array_key_exists('external', (array) $s['data']) ? self::ageCell($at ? [['status' => 'ok', 'at' => $at]] : [], $e['max_age_hours'])
+                            : ['state' => 'none', 'text' => '—', 'title' => '이 사이트는 아직 안 보낸다']);
+                    if ($installed) {
+                        $cell['title'] = trim($cell['title'].' 마지막 설치 '.self::at($installed));
+                    }
+                    $row['by'][$s['site']['key']] = $cell;
+                }
+            }
+            $rows[] = $row;
+        }
+
+        return $rows;
+    }
+
+    /**
+     * 사람 루틴 줄 — 이번 주(월~일) 판정 + 지난주 놓침.
+     *
+     * @return list<array{key: string, label: string, how: string, state: string, text: string, title: string, warn: bool}>
+     */
+    public static function manualRows(array $sites, ?Carbon $now = null): array
+    {
+        $now ??= now();
+        $weekStart = $now->copy()->startOfWeek(Carbon::MONDAY);
+        $lastWeekStart = $weekStart->copy()->subWeek();
+        $marks = self::marks($sites);
+        $rows = [];
+        foreach (self::MANUAL as $key => $m) {
+            $oks = array_values(array_filter($marks[$key] ?? [], fn ($x) => $x['status'] === 'ok'));
+            $thisWeek = array_values(array_filter($oks, fn ($x) => Carbon::parse($x['at'])->gte($weekStart)));
+            $lastWeek = array_filter($oks, fn ($x) => Carbon::parse($x['at'])->gte($lastWeekStart) && Carbon::parse($x['at'])->lt($weekStart));
+            // 지난주 놓침 = 지난주 기록이 없고, 그보다 전에 한 적이 있을 때만(처음 시작한 주에 「놓침」이 붙지 않게)
+            $before = array_filter($oks, fn ($x) => Carbon::parse($x['at'])->lt($lastWeekStart));
+            $missedLast = $lastWeek === [] && $before !== [] ? ' · 지난주 놓침' : '';
+            if ($thisWeek !== []) {
+                $at = Carbon::parse($thisWeek[0]['at'])->timezone(config('app.timezone'));
+                $rows[] = ['key' => $key, 'label' => $m['label'], 'how' => $m['how'], 'state' => 'ok', 'warn' => false,
+                    'text' => '✓ 이번 주 '.$at->isoFormat('MM/DD(dd)').' 했음'.$missedLast,
+                    'title' => trim(($thisWeek[0]['note'] ?? '').' '.($thisWeek[0]['source'] ?? ''))];
+
+                continue;
+            }
+            $warn = $now->dayOfWeekIso >= self::MANUAL_WARN_FROM_DOW;
+            $last = $oks[0]['at'] ?? null;
+            $rows[] = ['key' => $key, 'label' => $m['label'], 'how' => $m['how'], 'state' => $warn ? 'warn' : 'none', 'warn' => $warn,
+                'text' => '이번 주 아직'.$missedLast.($last ? ' · 마지막 '.self::at($last) : ' · 기록 없음'),
+                'title' => $warn ? '수요일부터 주의 — 이번 주(월~일) 안에 한 번' : '이번 주(월~일) 안에 한 번'];
+        }
+
+        return $rows;
+    }
+
+    /** 마지막 성공이 max 시간 안이면 성공, 넘으면 「멈춤?」, 마지막이 실패면 실패, 기록 없으면 회색 */
+    private static function ageCell(array $list, int $maxHours): array
+    {
+        if ($list === []) {
+            return ['state' => 'none', 'text' => '기록 없음', 'title' => '11-16 부터 쌓임 — 다음 실행부터'];
+        }
+        $latest = $list[0];
+        if (($latest['status'] ?? '') === 'failed') {
+            return ['state' => 'failed', 'text' => '실패 · '.self::at($latest['at']), 'title' => (string) ($latest['note'] ?? '')];
+        }
+        $ok = Carbon::parse($latest['at'])->gte(now()->subHours($maxHours));
+
+        return ['state' => $ok ? 'ok' : 'failed', 'text' => ($ok ? '성공 ' : '멈춤? 마지막 ').self::at($latest['at']),
+            'title' => $ok ? (string) ($latest['note'] ?? '') : $maxHours.'시간 넘게 새 기록이 없다'];
     }
 
     /** 묶음 한 칸 — 멤버 커맨드들의 마지막 실행을 하나로: 실패 하나라도 있으면 실패, 도는 중, 전부 성공, 기록 없음 */
@@ -106,15 +263,29 @@ class OpsRoutines
         if ($failed !== []) {
             $f = $failed[0];
 
-            return ['state' => 'failed', 'text' => '실패 '.count($failed).'/'.count($found).' · '.self::at($f['started_at'] ?? null), 'title' => implode(' / ', array_map(fn ($r) => $r['command'].': '.mb_substr((string) ($r['error'] ?? ''), 0, 120), $failed))];
+            return ['state' => 'failed', 'text' => '실패 '.count($failed).'/'.count($found).' · '.self::at($f['started_at'] ?? null), 'title' => implode(' / ', array_map(fn ($r) => $r['command'].': '.mb_substr((string) ($r['error'] ?? ''), 0, 120), $failed)).self::lastOk($failed)];
         }
-        if (array_filter($found, fn ($r) => ($r['status'] ?? '') === 'running') !== []) {
-            return ['state' => 'running', 'text' => '도는 중 · '.self::at(max(array_column($found, 'started_at'))), 'title' => ''];
+        $running = array_values(array_filter($found, fn ($r) => ($r['status'] ?? '') === 'running'));
+        if ($running !== []) {
+            $since = max(array_column($running, 'started_at'));
+            if ($since && Carbon::parse($since)->lt(now()->subMinutes(self::STUCK_MINUTES))) {   // 기록이 「도는 중」인 채로 1시간 = 죽었거나 걸렸다
+                return ['state' => 'failed', 'text' => '멈춤 의심 · '.self::at($since).' 시작', 'title' => self::STUCK_MINUTES.'분 넘게 끝나지 않았다'.self::lastOk($found)];
+            }
+
+            return ['state' => 'running', 'text' => '도는 중 · '.self::at($since), 'title' => ''];
         }
         $latest = max(array_map(fn ($r) => $r['finished_at'] ?? $r['started_at'] ?? '', $found));
         $partial = count($found) < count($commands) ? ' ('.count($found).'/'.count($commands).' 기록)' : '';
 
         return ['state' => 'ok', 'text' => '성공 '.self::at($latest).$partial, 'title' => implode(', ', array_column($found, 'command'))];
+    }
+
+    /** 「 · 마지막 성공 11/15 09:00」 — 실패·멈춤 칸에 붙인다(언제부터 깨졌나). 성공 기록이 없으면 「마지막 성공 없음」 */
+    private static function lastOk(array $runs): string
+    {
+        $oks = array_filter(array_map(fn ($r) => $r['last_ok_at'] ?? null, $runs));
+
+        return ' · 마지막 성공 '.($oks !== [] ? self::at(max($oks)) : '없음(기록 이후)');
     }
 
     private static function at(?string $iso): string

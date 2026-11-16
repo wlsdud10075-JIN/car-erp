@@ -4,8 +4,12 @@ namespace App\Services\Ops;
 
 use App\Models\AlimtalkLog;
 use App\Models\KakaoRead;
+use App\Models\OpsMark;
 use App\Models\ScheduledTaskRun;
+use App\Models\TelegramMessage;
 use App\Services\SystemHealthReport;
+use App\Support\AlimtalkTemplates;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Schema;
@@ -32,12 +36,36 @@ class OpsSummary
     /** 미수 스냅샷 하루 변동 임계(원) — 11-09 실례 +211억 */
     public const RECEIVABLE_JUMP_KRW = 2_000_000_000;
 
+    /** 텔레그램 사본 — 며칠·몇 통까지 싣나 */
+    public const TELEGRAM_DAYS = 7;
+
+    public const TELEGRAM_MAX = 60;
+
+    /** 같은 번호 반복 실패 — 이 기간 안에 이 일수 이상 실패하면 알린다 */
+    public const REPEAT_FAIL_WINDOW_DAYS = 14;
+
+    public const REPEAT_FAIL_MIN_DAYS = 2;
+
+    /**
+     * BizM 결과코드 → 사람 말. 운영에서 실제로 본 것만(지어내지 않는다). 모르는 코드는 코드 그대로.
+     *   E112 = 11-16 선적임박 1,688자 · K101 = 11-13 카톡 수신 불가 번호 · K104 = §8 #89 승인 전 tmplId · K108 = §8 #133-B 버튼 불일치 · K208 = 버튼 URL(localhost)
+     */
+    public const ALIMTALK_CODE_LABELS = [
+        'E112' => '본문 1,000자 초과',
+        'K101' => '그 번호로 카톡 수신 불가',
+        'K104' => '등록 템플릿과 내용 다름',
+        'K108' => '버튼이 등록본과 다름',
+        'K208' => '버튼 주소 오류',
+    ];
+
     public static function collect(): array
     {
         app()->setLocale('ko');   // 점검 문구(SystemHealthReport)가 서명 요청(로그인 없음)에서도 한국어로
         $out = ['generated_at' => now()->toIso8601String(), 'company' => (string) config('company.template_set', 'system')];
+        // 2026-11-16 — marks · telegram · external 추가(선택 키 — board·ssancar.com 은 안 보내도 된다, 허브는 없으면 「—」).
         foreach (['server' => fn () => self::server(), 'routines' => fn () => self::routines(), 'health' => fn () => self::health(),
-            'links' => fn () => self::links(), 'anomalies' => fn () => self::anomalies()] as $k => $fn) {
+            'links' => fn () => self::links(), 'anomalies' => fn () => self::anomalies(),
+            'marks' => fn () => OpsMark::recentByKey(), 'telegram' => fn () => self::telegram(), 'external' => fn () => self::external()] as $k => $fn) {
             try {
                 $out[$k] = $fn();
             } catch (\Throwable $e) {   // 한 칸이 죽어도 나머지는 보낸다
@@ -89,6 +117,43 @@ class OpsSummary
     public static function health(): array
     {
         return array_map(fn ($r) => ['key' => $r['key'], 'ok' => (bool) $r['ok'], 'detail' => (string) ($r['detail'] ?? '')], app(SystemHealthReport::class)->rows());
+    }
+
+    /** 텔레그램 사본 — 최근 TELEGRAM_DAYS 일, 최신순 TELEGRAM_MAX 통(jin 11-16 «전체 보여주고 접었다 폈다 — 나만 본다») */
+    public static function telegram(): array
+    {
+        if (! Schema::hasTable('telegram_messages')) {
+            return [];
+        }
+
+        return TelegramMessage::where('created_at', '>=', now()->subDays(self::TELEGRAM_DAYS))->orderByDesc('id')->limit(self::TELEGRAM_MAX)->get()
+            ->map(fn ($m) => ['at' => $m->created_at->toIso8601String(), 'title' => $m->title, 'body' => $m->body, 'sent' => $m->sent])->all();
+    }
+
+    /**
+     * 서버 밖에서 도는 것 중 이 서버가 볼 수 있는 것 — 자동 보안 업데이트(apt).
+     *   `/var/lib/apt/periodic/upgrade-stamp`(644, www-data 가 읽힌다 — 11-16 실측) = 마지막 실행 시각.
+     *   `/var/log/unattended-upgrades/unattended-upgrades-dpkg.log`(644) 끝의 「Log started:」 = 마지막으로 실제 설치한 시각.
+     */
+    public static function external(): array
+    {
+        $stamp = '/var/lib/apt/periodic/upgrade-stamp';
+        $out = ['apt_run_at' => is_readable($stamp) ? date(DATE_ATOM, (int) filemtime($stamp)) : null, 'apt_installed_at' => null];
+        $log = '/var/log/unattended-upgrades/unattended-upgrades-dpkg.log';
+        if (is_readable($log)) {
+            $fh = @fopen($log, 'r');
+            if ($fh) {
+                fseek($fh, max(0, filesize($log) - 200_000));
+                $chunk = (string) stream_get_contents($fh);
+                fclose($fh);
+                if (preg_match_all('/^Log started: (\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})/m', $chunk, $m) && $m[1] !== []) {
+                    // dpkg 로그 시각은 서버 시계(UTC) 기준
+                    $out['apt_installed_at'] = Carbon::parse(end($m[1]), 'UTC')->toIso8601String();
+                }
+            }
+        }
+
+        return $out;
     }
 
     /** 외부 연동 — 오늘 숫자 몇 개(키 원문은 절대 싣지 않는다, 있음/없음만) */
@@ -198,9 +263,21 @@ class OpsSummary
             }
         }
 
+        // ⑨ 알림톡 실패 — 무엇이 · 왜(jin 11-16). 「확인 필요 N건」 숫자만으로는 원인을 몰랐다(11-16 선적임박 14건 = E112 길이 초과).
+        //   대상 = 아침 점검과 같은 scope(needsAttention — 확인 안 한 실패·미도달). 이 줄이 있으면 ⑧ 에서 알림톡 줄은 뺀다(같은 내용 두 줄 방지).
+        $alimtalkLine = self::alimtalkFailures();
+        if ($alimtalkLine !== null) {
+            $a[] = $alimtalkLine;
+        }
+        // ⑩ 같은 번호 반복 실패 — 날을 바꿔 계속 실패하는 번호(11-13 끝자리 7973 K101). 번호는 끝 4자리만.
+        $repeat = self::alimtalkRepeatFailures();
+        if ($repeat !== null) {
+            $a[] = $repeat;
+        }
+
         // ⑧ 아침 점검 ✗ — 텔레그램(08:00 system:health-check)과 같은 판정. 접힌 칸에만 있으면 「이상 없음」인데 텔레그램은 X 가 된다(jin 2026-11-14).
         //   기능설정에서 끈 항목은 rows() 가 이미 뺀다 → 회사별로 검사만 빼려면 거기서 끈다.
-        $bad = array_values(array_filter(self::health(), fn ($h) => ! $h['ok']));
+        $bad = array_values(array_filter(self::health(), fn ($h) => ! $h['ok'] && ! ($alimtalkLine !== null && $h['key'] === 'alimtalk_failed')));
         if ($bad !== []) {
             $a[] = ['level' => 2, 'kind' => '아침 점검', 'count' => count($bad), 'text' => implode(' · ', array_map(
                 fn ($h) => (__('health.item.'.$h['key']) !== 'health.item.'.$h['key'] ? __('health.item.'.$h['key']) : $h['key']).' — '.$h['detail'], $bad))];
@@ -209,6 +286,64 @@ class OpsSummary
         usort($a, fn ($x, $y) => $y['level'] <=> $x['level']);
 
         return $a;
+    }
+
+    /** 오류 문자열 → 「E112(본문 1,000자 초과)」. 미도달(report_status=undelivered)은 「미도달」. */
+    public static function alimtalkReason(?string $error, ?string $reportStatus): string
+    {
+        if (preg_match('/\b([EK]\d{3})\b/', (string) $error, $m)) {
+            $label = self::ALIMTALK_CODE_LABELS[$m[1]] ?? null;
+
+            return $m[1].($label ? '('.$label.')' : '');
+        }
+        if ($reportStatus === 'undelivered') {
+            return '미도달';
+        }
+
+        return $error !== null && $error !== '' ? mb_substr($error, 0, 40) : '이유 없음';
+    }
+
+    private static function templateName(string $code): string
+    {
+        return (string) (AlimtalkTemplates::TEMPLATES[$code]['name'] ?? $code);
+    }
+
+    /** ⑨ — 「선적임박미수 E112(본문 1,000자 초과) 14건 · …」 */
+    private static function alimtalkFailures(): ?array
+    {
+        $rows = AlimtalkLog::needsAttention()->get(['template_code', 'error', 'report_status']);
+        if ($rows->isEmpty()) {
+            return null;
+        }
+        $groups = $rows->groupBy(fn ($r) => self::templateName($r->template_code).' '.self::alimtalkReason($r->error, $r->report_status))
+            ->map->count()->sortDesc();
+        $text = $groups->take(5)->map(fn ($n, $k) => $k.' '.$n.'건')->implode(' · ').($groups->count() > 5 ? ' 외 '.($groups->count() - 5).'가지' : '');
+
+        return ['level' => 2, 'kind' => '알림톡 실패', 'count' => $rows->count(), 'text' => $text.' — 알림톡 로그에서 확인하면 0 이 된다'];
+    }
+
+    /** ⑩ — 「끝자리 7973 · 2일 실패 K101(그 번호로 카톡 수신 불가) — 선적임박미수」 */
+    private static function alimtalkRepeatFailures(): ?array
+    {
+        $rows = AlimtalkLog::where('status', 'failed')->where('created_at', '>=', now()->subDays(self::REPEAT_FAIL_WINDOW_DAYS))
+            ->get(['phone', 'template_code', 'error', 'report_status', 'created_at']);
+        $lines = [];
+        foreach ($rows->groupBy('phone') as $phone => $g) {
+            $days = $g->map(fn ($r) => $r->created_at->toDateString())->unique()->count();
+            if ($days < self::REPEAT_FAIL_MIN_DAYS) {
+                continue;
+            }
+            $reasons = $g->map(fn ($r) => self::alimtalkReason($r->error, $r->report_status))->unique()->take(2)->implode(' · ');
+            $tpls = $g->map(fn ($r) => self::templateName($r->template_code))->unique();
+            $lines[] = ['days' => $days, 'text' => '끝자리 '.substr((string) $phone, -4).' · '.$days.'일 실패 '.$reasons.' — '.$tpls->take(2)->implode(', ').($tpls->count() > 2 ? ' 외' : '')];
+        }
+        if ($lines === []) {
+            return null;
+        }
+        usort($lines, fn ($x, $y) => $y['days'] <=> $x['days']);
+
+        return ['level' => 1, 'kind' => '알림톡 반복 실패', 'count' => count($lines),
+            'text' => '최근 '.self::REPEAT_FAIL_WINDOW_DAYS.'일 날을 바꿔 계속 실패한 번호 — '.implode(' / ', array_column(array_slice($lines, 0, 4), 'text'))];
     }
 
     /** 「 — 12가3456, 34나5678 외 2대」 — 이상 줄에 붙이는 차량번호(최근 수정 순 5대까지). 쿼리는 vehicles 별칭 v. */

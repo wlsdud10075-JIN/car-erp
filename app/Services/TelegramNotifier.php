@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\TelegramMessage;
 use App\Support\TelegramConfig;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -62,6 +63,7 @@ class TelegramNotifier
             $text = mb_substr($text, 0, self::MAX_LEN)."\n… (이하 생략)";
         }
 
+        $ok = false;
         try {
             $res = Http::timeout(10)->asForm()->post(
                 self::API.'/bot'.$this->config->token.'/sendMessage',
@@ -71,15 +73,28 @@ class TelegramNotifier
             if (! $res->successful()) {
                 // 🚫 토큰이 URL 에 있으므로 응답 본문만 남기고 URL 은 남기지 않는다.
                 Log::warning('telegram send failed', ['status' => $res->status(), 'body' => mb_substr($res->body(), 0, 300)]);
-
-                return false;
+            } else {
+                $ok = true;
             }
-
-            return true;
         } catch (\Throwable $e) {
             Log::warning('telegram send error', ['error' => $e->getMessage()]);
+        }
 
-            return false;
+        self::mirror($title, $text, $ok);
+
+        return $ok;
+    }
+
+    /**
+     * 🛰️ 관제센터 사본 (jin 2026-11-16 «텔레그램·알림톡·Notion 으로 나눠 받아 헷갈렸다»). 텔레그램을 대체하지 않는다 — 보낸 것을 남길 뿐.
+     * 🔴 fail-open 그대로 — 기록이 실패해도(테이블 없음·DB 끊김) 발송 결과에 영향 없음.
+     */
+    private static function mirror(string $title, string $text, bool $ok): void
+    {
+        try {
+            TelegramMessage::create(['title' => mb_substr($title, 0, 200), 'body' => $text, 'sent' => $ok, 'created_at' => now()]);
+        } catch (\Throwable $e) {
+            Log::warning('telegram mirror failed', ['error' => mb_substr($e->getMessage(), 0, 200)]);
         }
     }
 }

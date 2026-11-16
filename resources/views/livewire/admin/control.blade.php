@@ -47,6 +47,17 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->docOpen = null;
     }
 
+    /** 🧑 사람 루틴 [했음] (jin 2026-11-16) — 허브(이 서버) DB 에 한 줄. 사람 루틴 키만 받는다. */
+    public function markRoutineDone(string $key): void
+    {
+        abort_unless(auth()->user()?->isOpsOwner(), 404);
+        if (! array_key_exists($key, OpsRoutines::MANUAL)) {
+            return;
+        }
+        \App\Models\OpsMark::create(['key' => $key, 'status' => 'ok', 'source' => 'button', 'user_id' => auth()->id(), 'created_at' => now()]);
+        OpsHub::collect(true);
+    }
+
     public function with(): array
     {
         abort_unless(auth()->user()?->isOpsOwner(), 404);
@@ -79,10 +90,32 @@ new #[Layout('components.layouts.app')] class extends Component
         if (count(array_unique($erpVersions)) > 1) {   // 3사 동시 배포가 어긋남
             $anomalies[] = ['level' => 3, 'kind' => '버전 어긋남', 'count' => count($erpVersions), 'text' => collect($erpVersions)->map(fn ($v, $k) => $k.' '.$v)->implode(' · '), 'site' => 'ERP 3사', 'site_key' => '', 'site_kind' => 'erp'];
         }
+        $brain = OpsBrain::index();
+
+        // 🧑 사람 루틴 · 서버 밖 루틴(11-16) — 놓친 것은 이상 감지에도 한 줄(접힌 표만 보고 지나치지 않게)
+        $manualRows = OpsRoutines::manualRows($sites);
+        $externalRows = OpsRoutines::externalRows($sites, $brain['generated_at'] ?? null);
+        $warned = array_values(array_filter($manualRows, fn ($r) => $r['warn']));
+        if ($warned !== []) {
+            $anomalies[] = ['level' => 2, 'kind' => '사람 루틴', 'count' => count($warned), 'text' => '이번 주 아직 — '.implode(', ', array_column($warned, 'label')), 'site' => '루틴', 'site_key' => '', 'site_kind' => 'etc'];
+        }
+        $stale = array_values(array_filter($externalRows, fn ($r) => ($r['cell']['state'] ?? '') === 'failed' || collect($r['by'])->contains(fn ($c) => $c['state'] === 'failed')));
+        if ($stale !== []) {
+            $anomalies[] = ['level' => 2, 'kind' => '서버 밖 루틴', 'count' => count($stale), 'text' => '멈춤·실패 — '.implode(', ', array_column($stale, 'label')), 'site' => '루틴', 'site_key' => '', 'site_kind' => 'etc'];
+        }
         usort($anomalies, fn ($a, $b) => $b['level'] <=> $a['level']);
         ksort($routines);
 
-        $brain = OpsBrain::index();
+        // 📨 텔레그램 사본(11-16) — 사이트별 사본을 합쳐 최신순
+        $telegram = [];
+        foreach ($sites as $s) {
+            foreach ((array) ($s['data']['telegram'] ?? []) as $t) {
+                if (is_array($t) && isset($t['at'], $t['title'])) {
+                    $telegram[] = $t + ['site' => $s['site']['name'], 'site_kind' => $s['site']['kind'] ?? 'erp'];
+                }
+            }
+        }
+        usort($telegram, fn ($x, $y) => strcmp($y['at'], $x['at']));
 
         $linksSum = ['sent' => 0, 'failed' => 0, 'claude' => 0, 'missing' => [], 'gpu' => '—'];
         foreach ($sites as $s) {
@@ -126,6 +159,9 @@ new #[Layout('components.layouts.app')] class extends Component
             'shownAnomalies' => $this->siteFilter === '' ? $anomalies : array_values(array_filter($anomalies, fn ($a) => $a['site_key'] === $this->siteFilter)),
             'routines' => $routines,
             'routineTable' => OpsRoutines::rows($sites),
+            'manualRows' => $manualRows,
+            'externalRows' => $externalRows,
+            'telegram' => array_slice($telegram, 0, 80),
             'online' => count(array_filter($sites, fn ($s) => $s['ok'])),
             'urgent' => count(array_filter($anomalies, fn ($a) => $a['level'] >= 3)),
         ];
@@ -407,7 +443,7 @@ new #[Layout('components.layouts.app')] class extends Component
         <div style="{{ $panel }} display: flex; flex-direction: column; gap: 8px" data-ops-routines>
             <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px">
                 <span style="{{ $head }}">ROUTINES <span style="{{ $sub }}">· 예약 작업 — 무엇이 언제 돌고, 사이트별 마지막 결과 (11-12 부터 기록)</span></span>
-                <span style="font-size: 11px; color: #8fb0cc">초록 = 성공 · 빨강 = 실패(이유는 칸 안에) · 회색 = 아직 기록 없음</span>
+                <span style="font-size: 11px; color: #8fb0cc">초록 = 성공 · 빨강 = 실패·멈춤 의심(이유·마지막 성공은 칸 안에) · 회색 = 아직 기록 없음</span>
             </div>
             <div style="overflow-x: auto">
                 <table style="width: 100%; min-width: 760px; border-collapse: collapse; font-size: 12px">
@@ -427,15 +463,64 @@ new #[Layout('components.layouts.app')] class extends Component
                                 @endforeach
                             </tr>
                         @endforeach
-                        @foreach(\App\Services\Ops\OpsRoutines::EXTERNAL as $e)
-                            <tr style="border-top: 1px solid rgba(127,231,255,.12); color: #7d98b3">
-                                <td style="padding: 7px 8px 7px 0">{{ $e['label'] }}</td>
-                                <td style="padding: 7px 8px; font-family: 'JetBrains Mono', monospace; white-space: nowrap">{{ $e['when'] }}</td>
-                                <td style="padding: 7px 8px" colspan="{{ max(1, count($routineTable['columns'])) }}">{{ $e['note'] }}</td>
+                        {{-- 서버 밖 루틴(11-16) — GPU PC 는 끝에 ops:mark, jin PC 는 브레인 목록 시각, apt 는 사이트마다 --}}
+                        @foreach($externalRows as $e)
+                            <tr style="border-top: 1px solid rgba(127,231,255,.12)" data-external-row="{{ $e['key'] }}">
+                                <td style="padding: 7px 8px 7px 0; color: #c9dcee">{{ $e['label'] }}</td>
+                                <td style="padding: 7px 8px; font-family: 'JetBrains Mono', monospace; color: #9cc3e0; white-space: nowrap">{{ $e['when'] }}</td>
+                                @if($e['span'])
+                                    @php($c = $e['cell'])
+                                    <td style="padding: 7px 8px; font-family: 'JetBrains Mono', monospace; color: {{ ['ok' => '#3dffaa', 'failed' => '#ff7a7a'][$c['state']] ?? '#5f6b80' }}" colspan="{{ max(1, count($routineTable['columns'])) }}" title="{{ $c['title'] }}">{{ $c['text'] }}@if($c['state'] === 'failed' && $c['title'] !== '') <span style="font-size: 10px; color: #ff9b8a">{{ $c['title'] }}</span>@endif</td>
+                                @else
+                                    @foreach($routineTable['columns'] as $col)
+                                        @php($c = $e['by'][$col['key']] ?? ['state' => 'none', 'text' => '—', 'title' => ''])
+                                        <td style="padding: 7px 8px; white-space: nowrap; font-family: 'JetBrains Mono', monospace; color: {{ ['ok' => '#3dffaa', 'failed' => '#ff7a7a'][$c['state']] ?? '#5f6b80' }}" title="{{ $c['title'] }}">{{ $c['text'] }}</td>
+                                    @endforeach
+                                @endif
                             </tr>
                         @endforeach
                     </tbody>
                 </table>
+            </div>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start">
+            {{-- 🧑 사람 루틴 (jin 2026-11-16 «우리도 루틴이 있는 내용을 했는지 안 했는지») — 주 1회, 월~일, 수요일부터 주의 --}}
+            <div style="flex: 1 1 420px; min-width: 0; {{ $panel }} display: flex; flex-direction: column; gap: 8px" data-ops-manual>
+                <div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px">
+                    <span style="{{ $head }}">OUR ROUTINES <span style="{{ $sub }}">· 사람 루틴 — 주 1회(월~일), 수요일부터 안 했으면 주의</span></span>
+                </div>
+                @foreach($manualRows as $m)
+                    <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; border-top: 1px solid rgba(127,231,255,.12); padding-top: 8px" data-manual-row="{{ $m['key'] }}">
+                        <div style="flex: 1 1 200px; min-width: 0; display: flex; flex-direction: column; gap: 2px">
+                            <span style="font-size: 13px; color: #eaf6ff">{{ $m['label'] }}</span>
+                            <span style="font-size: 11px; color: #7d98b3">{{ $m['how'] }}</span>
+                        </div>
+                        <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{ ['ok' => '#3dffaa', 'warn' => '#ffcf86'][$m['state']] ?? '#8fa3b8' }}" title="{{ $m['title'] }}" data-manual-state="{{ $m['state'] }}">{{ $m['text'] }}</span>
+                        <button type="button" wire:click="markRoutineDone('{{ $m['key'] }}')" wire:loading.attr="disabled"
+                                style="height: 36px; padding: 0 12px; border-radius: 10px; border: 1px solid rgba(61,255,170,.45); background: rgba(61,255,170,.08); color: #c8ffe6; font: inherit; font-size: 12px; cursor: pointer">했음</button>
+                    </div>
+                @endforeach
+            </div>
+
+            {{-- 📨 텔레그램 사본 (jin 2026-11-16 «전체 보여주고 접었다 폈다») — 텔레그램을 대체하지 않는다, 보낸 것을 모아 볼 뿐 --}}
+            <div style="flex: 2 1 520px; min-width: 0; {{ $panel }} display: flex; flex-direction: column; gap: 6px" data-ops-telegram>
+                <span style="{{ $head }}">TELEGRAM <span style="{{ $sub }}">· 최근 7일 텔레그램 알림 — 누르면 본문 (11-16 부터 기록)</span></span>
+                <div style="display: flex; flex-direction: column; gap: 4px; max-height: 480px; overflow-y: auto">
+                    @forelse($telegram as $t)
+                        <details style="border-top: 1px solid rgba(127,231,255,.12); padding-top: 6px" data-telegram-item>
+                            <summary style="cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-size: 12px; min-height: 32px">
+                                <span style="font-family: 'JetBrains Mono', monospace; color: #8fb0cc">{{ \Carbon\Carbon::parse($t['at'])->timezone(config('app.timezone'))->format('m/d H:i') }}</span>
+                                <span style="padding: 2px 8px; border-radius: 999px; font-weight: 700; color: #0b0f1a; background: {{ $t['site_kind'] === 'board' ? '#c4a8ff' : ($t['site_kind'] === 'erp' ? '#7fe7ff' : '#e0c27a') }}">{{ $t['site'] }}</span>
+                                <span style="flex: 1 1 200px; min-width: 0; color: #eaf6ff">{{ $t['title'] }}</span>
+                                @unless($t['sent'] ?? true)<span style="color: #ff7a7a">전송 실패</span>@endunless
+                            </summary>
+                            <pre style="margin: 6px 0 4px; white-space: pre-wrap; word-break: break-word; font-family: 'Noto Sans KR', sans-serif; font-size: 12px; color: #c9dcee; background: rgba(5,10,20,.6); border-radius: 8px; padding: 8px">{{ $t['body'] }}</pre>
+                        </details>
+                    @empty
+                        <span style="font-size: 12px; color: #8fb0cc">최근 7일 텔레그램 알림 없음(배포 뒤부터 쌓입니다).</span>
+                    @endforelse
+                </div>
             </div>
         </div>
 
