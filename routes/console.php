@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\OpsMark;
 use App\Models\ScheduledTaskRun;
+use App\Models\TelegramMessage;
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
@@ -86,4 +88,4 @@ Schedule::command('system:health-check')->dailyAt('08:00')->withoutOverlapping()
 Schedule::command('assistant:health-check')->everyFiveMinutes()->withoutOverlapping();
 
 // 예약 작업 실행 기록 정리 (jin 2026-11-12 관제센터) — 90일 넘은 줄을 지운다(ScheduledTaskRun::KEEP_DAYS).
-Schedule::command('model:prune', ['--model' => [ScheduledTaskRun::class]])->dailyAt('04:50')->withoutOverlapping();
+Schedule::command('model:prune', ['--model' => [ScheduledTaskRun::class, OpsMark::class, TelegramMessage::class]])->dailyAt('04:50')->withoutOverlapping();

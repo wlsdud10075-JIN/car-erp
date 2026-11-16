@@ -88,7 +88,7 @@ class OpsControlCenterTest extends TestCase
         $this->withHeaders($this->signed(secret: 'wrong') + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertStatus(401);
 
         $res = $this->withHeaders($this->signed() + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertOk();
-        $this->assertSame(['generated_at', 'company', 'server', 'routines', 'health', 'links', 'anomalies'], array_keys($res->json()));
+        $this->assertSame(['generated_at', 'company', 'server', 'routines', 'health', 'links', 'anomalies', 'marks', 'telegram', 'external'], array_keys($res->json()));
         $this->withHeaders($this->signedV1() + ['Accept' => 'application/json'])->get('/api/internal/ops/summary')->assertStatus(401);   // v1(nonce 밖)은 11-12 전환 뒤 거부
 
         // v2 = nonce 가 서명 안(jin 11-12) — nonce 만 바꾼 재전송은 서명이 안 맞아 401
