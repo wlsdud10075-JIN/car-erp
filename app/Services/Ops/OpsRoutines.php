@@ -68,6 +68,8 @@ class OpsRoutines
     public const MANUAL = [
         'scene-check' => ['label' => '씬 점검 (화면 회귀)', 'how' => '토 10:00 자동 · 실패하면 텔레그램 → 「씬 점검 실패 봐줘」'],
         'memory-doc-cleanup' => ['label' => '메모리·문서 정리', 'how' => '토 10:00 측정·후보 표 자동 · 후보가 있으면 /memory-cleanup 으로 정리'],
+        // board 씬 점검(jin 결정 11-16) — ERP 점검 뒤 weekend.ps1 이 이어서 부르고, board 러너가 이 키로 직접 기록한다
+        'board-scene-check' => ['label' => 'board 씬 점검 (화면 회귀)', 'how' => '토 10:00 ERP 점검 뒤 이어서 자동 · board 러너가 기록 · 실패면 board 세션에서'],
     ];
 
     /** 보여 주지 않는 커맨드(Laravel 샘플 등) */
