@@ -594,6 +594,7 @@ return [
         // 2026-09-08 — 같은 도구가 선박명·컨테이너·수출신고번호까지 찍는다. 무엇이 바뀌었는지는 column_name 에 남는다.
         'bulk_shipping_date_applied' => '선적·통관 정보 일괄 기입',
         'bulk_document_uploaded' => '서류 일괄 업로드',
+        'bulk_export_cleared' => '통관 체크 일괄',
         'bulk_shipment_applied' => '발송 내역 일괄 기입',
         'freight_usd_import' => '운임비(USD) 소급 기입',
         // 퇴사 승계 일괄 (2026-08-27) — A 의 바이어·진행중 차량을 B 로 통째 이관.
