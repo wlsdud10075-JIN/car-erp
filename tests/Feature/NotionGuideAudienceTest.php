@@ -205,6 +205,42 @@ class NotionGuideAudienceTest extends TestCase
         '기본급(월)' => '2026-10-09 삭제 — 사내직원관리 「급여 항목」(귀속월별 18항목)으로 대체',
     ];
 
+    /**
+     * 📜 변경 이력 카드(jin 2026-11-16 «일지 같은 거 쓸 때 왜 변경되었는지가 나타나게») — 바뀌기 전 카드를 기록으로 남긴 것.
+     *   조건 = audience `system`(직원 챗봇 검색 밖) + 첫 줄 「변경 이력」 + 질문 예시 없음. 이 셋을 다 갖춘 카드만 폐기 용어 검사에서 뺀다.
+     */
+    public static function withoutHistoryCards(string $json): string
+    {
+        $groups = json_decode($json, true) ?: [];
+        foreach ($groups as $gi => $g) {
+            $groups[$gi]['cards'] = array_values(array_filter($g['cards'] ?? [], fn ($c) => ! self::isHistoryCard($c)));
+        }
+
+        return json_encode($groups, JSON_UNESCAPED_UNICODE);
+    }
+
+    private static function isHistoryCard(array $c): bool
+    {
+        return ($c['audience'] ?? '') === 'system' && (($c['rows'][0][0] ?? '') === '변경 이력') && empty($c['ex']);
+    }
+
+    /** 이력 카드는 직원에게 안 보여야 한다 — 그래서 예외가 안전하다 */
+    public function test_history_cards_stay_out_of_staff_search(): void
+    {
+        $groups = json_decode(file_get_contents(base_path(self::CARDS_JSON)), true);
+        $history = [];
+        foreach ($groups as $g) {
+            foreach ($g['cards'] as $c) {
+                if (($c['rows'][0][0] ?? '') === '변경 이력') {
+                    $history[] = $c['title'];
+                    $this->assertSame('system', $c['audience'], "{$c['title']} — 이력 카드는 system 대상이어야 한다(직원 챗봇 검색 밖)");
+                    $this->assertEmpty($c['ex'] ?? [], "{$c['title']} — 이력 카드에 질문 예시를 달면 직원 질문에 걸린다");
+                }
+            }
+        }
+        $this->assertNotEmpty($history);
+    }
+
     public function test_guides_do_not_describe_retired_features(): void
     {
         /*
@@ -216,6 +252,9 @@ class NotionGuideAudienceTest extends TestCase
         $violations = [];
         foreach ($sources as $f) {
             $text = file_get_contents(base_path($f));
+            if ($f === self::CARDS_JSON) {
+                $text = self::withoutHistoryCards($text);
+            }
             foreach (self::RETIRED_TERMS as $term => $why) {
                 if (str_contains($text, $term)) {
                     $violations[] = "{$f} — '{$term}' ({$why})";

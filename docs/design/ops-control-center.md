@@ -54,7 +54,8 @@
 - **같은 번호 반복 실패**(참고) — 14일 안에 날을 바꿔 2일 이상 실패한 번호, **끝 4자리만**.
 - **루틴 표** — 실패·멈춤 칸에 「마지막 성공」, **1시간 넘게 도는 중 = 멈춤 의심**(`STUCK_MINUTES`, 3사 실측 최장 9초). 묶음마다 `kinds`(erp·board) — 안 도는 사이트 칸은 빈칸. board 묶음 = board 세션 회신 목록.
 - **서버 밖 루틴(실기록)** — GPU PC 야간 조사·Notion 대조 = 스크립트 끝에서 heymanerp 로 `php artisan ops:mark <키>`(텔레그램 스위치와 무관하게 항상) · jin PC 브레인 = 목록 시각 · apt = 사이트마다 `/var/lib/apt/periodic/upgrade-stamp` mtime(644, www-data 읽힘 실측). 30시간 새 기록 없으면 「멈춤?」.
-- **🧑 사람 루틴(주 1회)** — 씬 점검 · Notion 가이드 반영 확인 · 메모리·문서 정리. 월~일, 이번 주 한 번이면 ✓, **수요일부터 안 했으면 주의**(이상 감지에도 한 줄), 지난주 비었으면 「지난주 놓침」. 기록 = 관제 [했음] 버튼(허브 DB) · `php artisan ops:mark scene-check --push=https://heymancar.com`(개발 PC, OPS_HMAC_SECRET, 서명 POST `/api/internal/ops/mark`). 씬 점검 스킬은 끝에서 이걸 부른다(스킬 착수 때).
+- 🔀 **같은 날 오후 개편(jin «주말에 아무도 안 쓸 때 집에서 자동으로»)** — 우리 루틴 = 씬 점검 · 메모리·문서 정리 2개, **매주 토 10:00 jin PC 작업 스케줄러 자동(일 재시도)**. 회차 = 가장 최근 토요일부터: ok ✓ · todo(할 일 남음, 메모리 정리 후보) 주의 · failed 실패 · 평일인데 기록 없음 = 「지난 주말 안 돌았음」 주의. **Notion 가이드 반영 확인은 뺐다** — 새벽 04:30 대조·발행이 매일 하고(최근 8일 실패 0), `ops:mark nightly-notion` 이 「발행 뒤 불일치 + 자동 발행 불가 신호」 0 이면 ok·아니면 failed. Notion 에만 있던 옛 카드 4장은 **변경 이력 카드**(audience system · 첫 줄 「변경 이력」 · 질문 예시 없음)로 cards.json 에 살렸다(jin «일지 쓸 때 왜 변경되었는지»).
+- (오전판) **🧑 사람 루틴(주 1회)** — 씬 점검 · Notion 가이드 반영 확인 · 메모리·문서 정리. 월~일, 이번 주 한 번이면 ✓, **수요일부터 안 했으면 주의**(이상 감지에도 한 줄), 지난주 비었으면 「지난주 놓침」. 기록 = 관제 [했음] 버튼(허브 DB) · `php artisan ops:mark scene-check --push=https://heymancar.com`(개발 PC, OPS_HMAC_SECRET, 서명 POST `/api/internal/ops/mark`). 씬 점검 스킬은 끝에서 이걸 부른다(스킬 착수 때).
 - **📨 텔레그램 사본** — `TelegramNotifier::send` 가 `telegram_messages` 에 전문을 남긴다(fail-open — 기록 실패가 발송을 안 막는다). GPU PC 보고도 heymanerp `notify:send` 를 거쳐 남는다. 관제 = 최근 7일, 누르면 본문(jin «전체 보여주고 접었다 폈다»). 텔레그램을 대체하지 않는다.
 - 저장 = `ops_marks`(400일) · `telegram_messages`(60일), 04:50 `model:prune`.
 

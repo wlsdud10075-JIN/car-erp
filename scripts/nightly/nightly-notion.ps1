@@ -94,6 +94,7 @@ function RunVerify {
 }
 
 $v1 = RunVerify
+$v2 = $null   # 발행이 있을 때만 2차 대조(아래) — 없으면 1차가 최종
 $v1.text | Out-File $verifyF -Encoding utf8
 
 $rep = New-Object System.Text.StringBuilder
@@ -162,6 +163,10 @@ if ($SendTelegram) {
     Log 'telegram sent via heymanerp notify:send'
 }
 # 5) 관제센터 기록 (2026-11-16) — 「오늘 돌았다」 + 불일치 수를 heymanerp 에. 텔레그램 스위치와 무관하게 항상.
-[void](RunCapture 'ssh' @('-n', '-i', $key, '-o', 'BatchMode=yes', 'ubuntu@52.79.200.151', "cd /var/www/car-erp && php artisan ops:mark nightly-notion --note='mismatch $($v1.mismatch)/4'") $null 120)
+#    판정 = 발행 「뒤」 남은 불일치(2차, 발행이 없었으면 1차) + 자동 발행 불가 신호. 둘 다 0 이면 ok, 아니면 failed (jin 11-16 — 사람 주간 확인 대신 자동 판정).
+$final = if ($v2) { $v2 } else { $v1 }
+$markStatus = if ($final.mismatch -eq 0 -and $final.blocked.Count -eq 0) { 'ok' } else { 'failed' }
+$markNote = "after $($final.mismatch)/4 · before $($v1.mismatch)/4 · blocked $($final.blocked.Count)"
+[void](RunCapture 'ssh' @('-n', '-i', $key, '-o', 'BatchMode=yes', 'ubuntu@52.79.200.151', "cd /var/www/car-erp && php artisan ops:mark nightly-notion --status=$markStatus --note='$markNote'") $null 120)
 Log 'ops:mark nightly-notion'
 Log 'done'
