@@ -138,8 +138,8 @@ class SystemHealthCheckTest extends TestCase
 
     public function test_the_threshold_is_configurable(): void
     {
-        DailyExchangeRate::create(['currency' => 'USD', 'rate_date' => now()->subDays(5)->toDateString(), 'rate' => 1300, 'source' => 'naver']);
-        $this->assertFalse($this->rowFor('exchange')['ok']);   // 기본 2일 → 이상
+        DailyExchangeRate::create(['currency' => 'USD', 'rate_date' => now()->subDays(8)->toDateString(), 'rate' => 1300, 'source' => 'naver']);
+        $this->assertFalse($this->rowFor('exchange')['ok']);   // 기본 5일(2026-11-17 영업일만 저장 — 월요일 3일·연휴 5일이 정상) → 8일은 이상
 
         Setting::updateOrCreate(['key' => 'health_check_exchange_days'], ['value' => '10', 'type' => 'integer']);
 
