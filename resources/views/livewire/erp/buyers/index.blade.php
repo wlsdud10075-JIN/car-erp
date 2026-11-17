@@ -70,7 +70,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 🆕 신규 바이어만(jin 11-12 «신규 뱃지 버튼축으로 필터») — 배지와 같은 기준(Buyer::scopeNewBuyers). ⚠️ 메서드명 ≠ 프로퍼티명(§8 #32) */
     #[Url(as: 'new')] public bool $newOnly = false;
 
+    /** 🏷️ DP/FD 필터 (jin 2026-11-17 «B2B 파트너스에도 DP, FD 뱃지 필터 버튼») — '' · 'DP' · 'FD'. 바이어 지정 또는 그 유형 차량 보유. */
+    #[Url(as: 'deal')] public string $dealFilter = '';
+
     public bool   $is_b2b_partner = false;
+    /** 🏷️ 바이어 「DP·FD 진행 중」 — 각각 지정(jin 2026-11-17). 차량 거래 유형(vehicles.deal_type)과 따로. 관리 이상. */
+    public bool   $is_dp = false;
+    public bool   $is_fd = false;
     public string $website = '';
     public string $office_address = '';
     public string $city = '';
@@ -368,6 +374,29 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    /** 🏷️ DP/FD 버튼 — 같은 걸 다시 누르면 해제. ⚠️ 메서드명 ≠ 프로퍼티명(§8 #32). */
+    public function toggleDealFilter(string $type): void
+    {
+        $this->dealFilter = ($this->dealFilter === $type || ! in_array($type, ['DP', 'FD'], true)) ? '' : $type;
+        unset($this->buyers, $this->newBuyerCount, $this->dealBuyerCounts);
+        $this->resetPage();
+    }
+
+    /** 버튼 숫자 = 지금 조건(DP/FD 버튼만 빼고)에서 그 유형 바이어 수 — 목록 조건과 같은 판정(buyerQuery). */
+    #[Computed]
+    public function dealBuyerCounts(): array
+    {
+        $keep = $this->dealFilter;
+        $out = [];
+        foreach (['DP', 'FD'] as $t) {
+            $this->dealFilter = $t;
+            $out[$t] = $this->buyerQuery()->when($this->newOnly, fn ($q) => $q->newBuyers())->count();
+        }
+        $this->dealFilter = $keep;
+
+        return $out;
+    }
+
     /** 버튼 숫자 = 지금 조건(이 버튼 제외)에서 신규 바이어 수 */
     #[Computed]
     public function newBuyerCount(): int
@@ -432,6 +461,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         return Buyer::query()
             ->when($this->b2bFilter === '1' && Setting::b2bPartnersEnabled(), fn ($q) => $q->where('is_b2b_partner', true))
+            // 🏷️ DP/FD — 바이어가 그 유형으로 지정됐거나 그 유형 차량이 있는 바이어(둘 중 하나만 된 것도 보여야 맞춰 볼 수 있다).
+            ->when(in_array($this->dealFilter, ['DP', 'FD'], true) && Setting::b2bPartnersEnabled(), fn ($q) => $q->where(fn ($q2) => $q2
+                ->where($this->dealFilter === 'DP' ? 'is_dp' : 'is_fd', true)
+                ->orWhereHas('vehicles', fn ($q3) => $q3->where('deal_type', $this->dealFilter))
+            ))
             ->when($restrictToOwnSalesman, fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('salesman_id', $user->salesman->id)
                 ->orWhereHas('vehicles', fn ($q3) => $q3->where('salesman_id', $user->salesman->id))
@@ -499,6 +533,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_inherited  = (bool) $buyer->is_inherited;
         $this->is_domestic   = (bool) $buyer->is_domestic;
         $this->is_b2b_partner = (bool) $buyer->is_b2b_partner;
+        $this->is_dp = (bool) $buyer->is_dp;
+        $this->is_fd = (bool) $buyer->is_fd;
         $this->website = $buyer->website ?? '';
         $this->office_address = $buyer->office_address ?? '';
         $this->city = $buyer->city ?? '';
@@ -598,6 +634,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 🤝 B2B 파트너스 관리대상·API 연동 표시 (공개지도 동의 칸은 11-03 제거 — 불러온 값을 그대로 다시 저장) — 관리 이상(요청서 05 「지정 담당자」, jin 11-01 «관리 이상»).
             if (Setting::b2bPartnersEnabled()) {   // 꺼진 회사에선 칸이 안 보이니 값도 안 건드린다
                 $data['is_b2b_partner'] = $this->is_b2b_partner;
+                $data['is_dp'] = $this->is_dp;   // 🏷️ DP·FD 진행 중(jin 11-17) — 같은 권한(관리 이상)
+                $data['is_fd'] = $this->is_fd;
             }
             $data['map_name_public'] = $this->map_name_public;
             $data['api_linked'] = $this->api_linked;
@@ -636,6 +674,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $wasInherited = (bool) $buyer->is_inherited;
             $wasDomestic = (bool) $buyer->is_domestic;
             $wasB2b = (bool) $buyer->is_b2b_partner;
+            $wasDeal = ['is_dp' => (bool) $buyer->is_dp, 'is_fd' => (bool) $buyer->is_fd];
             $wasMapPublic = (bool) $buyer->map_name_public;
             $wasRatio = $buyer->settlement_ratio_pct;
             $wasLimit = (int) ($buyer->unsecured_limit_krw ?? 0);
@@ -655,6 +694,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             // B2B 관리대상·공개지도 동의 — 누가 언제 켰는지(요청서 05 「변경자·변경일 기록」). Buyer 엔 감사 훅이 없어 여기서 직접.
             if (array_key_exists('is_b2b_partner', $data) && $wasB2b !== $this->is_b2b_partner) {
                 \App\Models\AuditLog::recordChange($buyer, 'is_b2b_partner', $wasB2b, $this->is_b2b_partner, 'b2b_partner_toggled');
+            }
+            // 🏷️ DP·FD 진행 중 — 누가 언제 켰는지(계약 시점 확인용)
+            foreach ($wasDeal as $col => $was) {
+                if (array_key_exists($col, $data) && $was !== (bool) $data[$col]) {
+                    \App\Models\AuditLog::recordChange($buyer, $col, $was, (bool) $data[$col], 'buyer_deal_flag_toggled');
+                }
             }
             if (array_key_exists('map_name_public', $data) && $wasMapPublic !== $this->map_name_public) {
                 \App\Models\AuditLog::recordChange($buyer, 'map_name_public', $wasMapPublic, $this->map_name_public);
@@ -1623,6 +1668,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             = $this->address = $this->memo = '';
         $this->is_active = true;
         $this->is_b2b_partner = $this->map_name_public = $this->api_linked = $this->removePhoto = false;
+        $this->is_dp = $this->is_fd = false;
         $this->website = $this->office_address = $this->city = $this->whatsapp_phone = $this->contract_note = '';
         $this->contract_kind = 'base';
         $this->photoUpload = $this->contractUpload = null;
@@ -1690,6 +1736,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             {{ $newOnly ? '✓ ' : '' }}{{ __('buyer.new_badge') }} ({{ number_format($this->newBuyerCount) }})
         </button>
     </div>
+    @if(Setting::b2bPartnersEnabled())
+    {{-- 🏷️ DP/FD 버튼축(jin 11-17 «B2B 파트너스에도 DP, FD 뱃지 필터 버튼») — 차량관리 거래 유형 토글과 같은 모양. 같은 걸 다시 누르면 해제. --}}
+    <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3" data-deal-filter>
+        @foreach(['DP' => ['bg-purple-600 text-white shadow-sm', 'bg-purple-100 text-purple-700 hover:bg-purple-200'], 'FD' => ['bg-blue-600 text-white shadow-sm', 'bg-blue-100 text-blue-700 hover:bg-blue-200']] as $dk => [$on, $off])
+            <button type="button" wire:click="toggleDealFilter('{{ $dk }}')" aria-pressed="{{ $dealFilter === $dk ? 'true' : 'false' }}"
+                    title="{{ \App\Models\Vehicle::DEAL_TYPES[$dk]['title'] }} — {{ __('buyer.deal.filter_hint') }}"
+                    class="h-9 rounded-full px-2.5 text-xs font-semibold transition sm:h-7 {{ $dealFilter === $dk ? $on : $off }}">
+                {{ $dealFilter === $dk ? '✓ ' : '' }}{{ $dk }} ({{ number_format($this->dealBuyerCounts[$dk]) }})
+            </button>
+        @endforeach
+    </div>
+    @endif
 </div>
 
 {{-- 테이블 --}}
@@ -1747,11 +1805,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     </span>
                 </td>
                 @if(Setting::b2bPartnersEnabled())
-                {{-- 🤝 B2B 관리대상 + 거래별 DP/FD 개수(차량에서 센다 — 바이어에 플래그 없음) --}}
+                {{-- 🤝 B2B 관리대상 + DP/FD(바이어 지정 = 진한색 · 숫자 = 그 유형 차량 대수, jin 11-17) --}}
                 <td class="py-3 pr-4 text-xs text-gray-600">
                     @if($b->is_b2b_partner)<span class="badge badge-amber">{{ __('buyer.b2b_badge') }}</span>@endif
-                    @if(($b->dp_count ?? 0) > 0)<span class="ml-1 whitespace-nowrap rounded-full bg-purple-100 px-1.5 py-0.5 text-[10px] font-bold text-purple-700" title="{{ \App\Models\Vehicle::DEAL_TYPES['DP']['title'] }}">DP {{ $b->dp_count }}</span>@endif
-                    @if(($b->fd_count ?? 0) > 0)<span class="ml-1 whitespace-nowrap rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700" title="{{ \App\Models\Vehicle::DEAL_TYPES['FD']['title'] }}">FD {{ $b->fd_count }}</span>@endif
+                    <x-erp.buyer-deal-badges :buyer="$b" />
                 </td>
                 @endif
                 <td class="py-3 text-right">
@@ -1782,11 +1839,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @foreach($svm as $cur => $bal)<span class="ml-1 whitespace-nowrap {{ (float) $bal < 0 ? 'text-red-600' : 'text-emerald-700' }}"><span class="font-mono font-semibold">{{ $cur }}</span> {{ number_format((float) $bal, 2) }}</span>@endforeach
             </div>
             @endif
-            @if(Setting::b2bPartnersEnabled() && ($b->is_b2b_partner || ($b->dp_count ?? 0) > 0 || ($b->fd_count ?? 0) > 0))
+            @if(Setting::b2bPartnersEnabled() && ($b->is_b2b_partner || $b->is_dp || $b->is_fd || ($b->dp_count ?? 0) > 0 || ($b->fd_count ?? 0) > 0))
             <div class="mt-0.5 text-[10px]">
                 @if($b->is_b2b_partner)<span class="badge badge-amber">{{ __('buyer.b2b_badge') }}</span>@endif
-                @if(($b->dp_count ?? 0) > 0)<span class="ml-1 rounded-full bg-purple-100 px-1.5 py-0.5 font-bold text-purple-700">DP {{ $b->dp_count }}</span>@endif
-                @if(($b->fd_count ?? 0) > 0)<span class="ml-1 rounded-full bg-blue-100 px-1.5 py-0.5 font-bold text-blue-700">FD {{ $b->fd_count }}</span>@endif
+                <x-erp.buyer-deal-badges :buyer="$b" />
             </div>
             @endif
         </div>
@@ -2021,6 +2077,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <span class="mt-1 block text-[11px] leading-relaxed text-gray-600">{{ __('buyer.field.b2b_partner_hint') }}</span>
                         </span>
                     </label>
+                    {{-- 🏷️ DP·FD 진행 중 — 바이어 단위, 각각(jin 2026-11-17). 차량(거래)별 지정은 판매 탭에서 따로. --}}
+                    <div class="mt-2 flex flex-wrap items-center gap-3 border-t border-amber-200 pt-2" data-buyer-deal-flags>
+                        <label class="flex items-center gap-1.5 text-sm text-gray-800 {{ $canB2b ? 'cursor-pointer' : '' }}">
+                            <input wire:model="is_dp" type="checkbox" class="rounded" @disabled(! $canB2b) />
+                            <span class="rounded-full bg-purple-600 px-1.5 py-0.5 text-[10px] font-bold text-white">DP</span> {{ __('buyer.deal.dp_label') }}
+                        </label>
+                        <label class="flex items-center gap-1.5 text-sm text-gray-800 {{ $canB2b ? 'cursor-pointer' : '' }}">
+                            <input wire:model="is_fd" type="checkbox" class="rounded" @disabled(! $canB2b) />
+                            <span class="rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">FD</span> {{ __('buyer.deal.fd_label') }}
+                        </label>
+                        <span class="block w-full text-[11px] leading-relaxed text-gray-600">{{ __('buyer.deal.flags_hint') }}</span>
+                    </div>
                     @if(! $canB2b)<p class="mt-1 text-[11px] text-gray-500">{{ __('buyer.field.b2b_readonly') }}</p>@endif
 
                     @if($editingId)

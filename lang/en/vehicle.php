@@ -765,6 +765,7 @@ return [
         'hint' => 'Applies to this deal (vehicle) only. Cleared automatically when the buyer changes. Display only — not approval or insurance.',
         'readonly' => 'Managers and above only.',
         'filter_all' => 'All deal types',
+        'buyer_not_flagged' => 'This buyer is not marked ":type in progress" — check it in buyer management.',
     ],
     'cancel_filter' => [
         'all' => 'All',

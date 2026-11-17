@@ -72,6 +72,15 @@ return [
 
     'col_b2b' => 'B2B',
     'b2b_badge' => 'B2B',
+    // Buyer DP/FD in progress (2026-11-17) — set on the buyer and per vehicle (deal), separately
+    'deal' => [
+        'dp_label' => 'DP in progress',
+        'fd_label' => 'FD in progress',
+        'flags_hint' => 'Marks whether you are doing DP/FD deals with this buyer (both allowed). The deal type per vehicle is set separately in the vehicle sales tab, from the vehicle whose contract was received.',
+        'on_hint' => 'Set on buyer · :n vehicle(s) of this type',
+        'off_hint' => 'Not set on buyer · :n vehicle(s) only — check the buyer setting',
+        'filter_hint' => 'Buyers marked with this type or having vehicles of this type',
+    ],
     'b2b_filter_all' => 'All (B2B)',
     'b2b_filter_only' => 'B2B partners only',
     'field' => [
@@ -80,7 +89,7 @@ return [
         'settlement_ratio_hint' => 'With 5:5 or 7:3, cars sold to this buyer pay the salesman total margin × that share regardless of type (7:3 = our salesman 30%, no per-unit tier, negative on loss cars). The 50,000 document fee is deducted for freelancers only. Applies to settlements created after this is set; resets to default when the buyer changes salesman.',
         'domestic' => 'Domestic-sale buyer',
         'b2b_partner' => 'Special-contract partner (B2B Partners)',
-        'b2b_partner_hint' => 'When on, this buyer is listed in the "B2B Partners" menu (even with no vehicles or receivables). DP/FD badges are not set here — set them per deal in the vehicle sales tab.',
+        'b2b_partner_hint' => 'When on, this buyer is listed in the "B2B Partners" menu (even with no vehicles or receivables).',
         'b2b_readonly' => '🔒 Only managers and above can set partner status or upload contracts.',
         'contracts' => 'Contracts (base / additional)',
         'contracts_hint' => 'Register once and add or replace when needed. Replaced files are kept as "previous version" (max :max).',

@@ -10617,6 +10617,11 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     <p class="mt-1 text-[10.5px] text-gray-400">{{ __('vehicle.deal_type.readonly') }}</p>
                     @endif
                     @error('deal_type')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+                    {{-- 🏷️ 바이어 지정과 어긋나면 알린다(jin 11-17 «해당 바이어도 DP·FD 진행 중인지 확인은 되어야») — 막지는 않는다 --}}
+                    @php $dealBuyer = ($deal_type !== '' && $buyer_id_str !== '') ? \App\Models\Buyer::find((int) $buyer_id_str, ['id', 'is_dp', 'is_fd']) : null; @endphp
+                    @if($dealBuyer && ! ($deal_type === 'DP' ? $dealBuyer->is_dp : $dealBuyer->is_fd))
+                        <p class="mt-1 text-[11px] font-medium text-amber-700" data-deal-buyer-mismatch>⚠ {{ __('vehicle.deal_type.buyer_not_flagged', ['type' => $deal_type]) }}</p>
+                    @endif
                 </div>
                 @endif
                 {{-- 당사자 축소 (jin 2026-07-09) — 판매=바이어만. 컨사이니는 선적 탭에서 입력. --}}
