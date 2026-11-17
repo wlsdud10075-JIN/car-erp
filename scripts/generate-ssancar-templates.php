@@ -32,7 +32,7 @@ $app->make(Kernel::class)->bootstrap();
 $APPLY = in_array('--apply', $argv, true);
 
 // 인보이스/팩킹 회사정보 블록(정본, 멀티라인) — 기존 house 서식(트레일링 스페이스) 유지.
-$invBlock = "SSANCAR LTD.,\n163 Sangidaehak-ro, Siheung-si,\nGyeonggi-do, Republic of Korea\nTEL:82-505-355-9977  \nFAX:82-505-366-9977 \nEMAIL : ssancar9977@gmail.com";
+$invBlock = "SSANCAR LTD.,\n163 Sangidaehak-ro, Siheung-si,\nGyeonggi-do, Republic of Korea\nTEL:82-505-355-9977\nFAX:82-505-366-9977\nEMAIL : ssancar9977@gmail.com";
 // A2 단일라인 헤더(상호·대표·주소·전화·이메일) — 인천 주소 → 시흥, 전화 366→355.
 $a2Line = 'Ssancar LTD. Cho Tae Shin. 163 Sangidaehak-ro, Siheung-si, Gyeonggi-do, Korea  Phone: +82-505-355-9977 Email: ssancar9977@gmail.com';
 
