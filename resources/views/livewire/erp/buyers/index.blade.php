@@ -958,11 +958,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             $details += $ledger->rowDetails($buyerId, $cur);   // row_id 는 전역 유일이라 통화별 병합 안전
         }
 
-        // 최근 50건 거래내역 — 각 행에 "어느 적립분을 얼마 썼고 그 적립분 잔여는 얼마"를 붙인다.
+        // 거래내역 **전체** — 각 행에 "어느 적립분을 얼마 썼고 그 적립분 잔여는 얼마"를 붙인다.
+        //   🔀 2026-11-17 — 구: 최근 50건. 그보다 오래된 기록은 화면에 아예 없었다(GOLDEN AUTO 54건 중 4건). 화면이 월별로 접어 보여준다.
         $this->txnList = SavingsStatus::where('buyer_id', $buyerId)
             ->with('creator:id,name')
             ->orderByDesc('id')
-            ->limit(50)
             ->get()
             ->map(fn($t) => [
                 'id'               => $t->id,
@@ -1214,8 +1214,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->whereIn('transaction_type', ['USED', 'REFUND'])
             ->with('vehicle:id,vehicle_number')
             ->orderByDesc('id')
-            ->limit(50)
-            ->get()
+            ->get()   // 🔀 2026-11-17 전체(구: 50건) — 화면이 월별로 접는다
             ->map(fn (SavingsStatus $t) => [
                 'id' => $t->id,
                 'date' => $t->created_at->format('Y-m-d'),
@@ -2664,12 +2663,20 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <th class="px-2 py-2 text-right">{{ __('buyer.savings.col_amount') }}</th>
                             <th class="px-2 py-2 text-right">{{ __('buyer.savings.col_balance') }}</th>
                             <th class="px-2 py-2">{{ __('buyer.savings.col_fifo') }}</th>
-                            <th class="px-2 py-2">{{ __('common.memo') }}</th>
                             <th class="px-2 py-2"></th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-gray-100">
-                        @forelse($txnList as $t)
+                    {{-- 📅 월별 접기/펼치기(jin 2026-11-17 — ssancarerp GOLDEN AUTO 54건 중 오래된 4건이 50건 제한에 잘려 안 보였다).
+                         전체를 불러와 달마다 묶는다. 최근 달만 펼침 — 머리 줄을 누르면 열고 닫는다(Alpine, 서버 왕복 없음). --}}
+                    @php $txnMonths = collect($txnList)->groupBy(fn ($t) => substr((string) $t['created_at'], 0, 7)); @endphp
+                    @forelse($txnMonths as $ym => $monthRows)
+                    <tbody x-data="{ open: {{ $loop->first ? 'true' : 'false' }} }" class="divide-y divide-gray-100" wire:key="svm-{{ $ym }}" data-savings-month="{{ $ym }}">
+                        <tr class="cursor-pointer select-none bg-gray-100/80 hover:bg-gray-100" @click="open = !open">
+                            <td colspan="8" class="px-2 py-1.5 text-[11px] font-semibold text-gray-600">
+                                <span x-text="open ? '▾' : '▸'"></span> {{ $ym }} <span class="font-normal text-gray-400">· {{ __('buyer.savings.month_count', ['n' => $monthRows->count()]) }}</span>
+                            </td>
+                        </tr>
+                        @foreach($monthRows as $t)
                         @php
                             $typeLabel = match($t['transaction_type']) {
                                 'EARNED' => __('buyer.savings.t_earned'), 'USED' => __('buyer.savings.t_used'),
@@ -2683,7 +2690,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 default => 'text-amber-600',
                             };
                         @endphp
-                        <tr class="even:bg-gray-50/60">
+                        <tr x-show="open" class="even:bg-gray-50/60">
                             <td class="px-2 py-1.5 text-gray-400 whitespace-nowrap">{{ $t['created_at'] }}</td>
                             <td class="px-2 py-1.5 whitespace-nowrap text-gray-600" data-savings-by>{{ $t['by'] !== '' ? $t['by'] : '-' }}</td>
                             <td class="px-2 py-1.5 font-mono whitespace-nowrap">{{ $t['currency'] }}</td>
@@ -2693,7 +2700,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             </td>
                             <td class="px-2 py-1.5 text-right font-mono text-gray-700">{{ number_format($t['balance'], 2) }}</td>
                             {{-- 선입선출 — 적립분은 "환율·잔여", 사용분은 "어느 적립분에서 얼마 나갔고 그 적립분 잔여" (jin 2026-07-29) --}}
-                            <td class="px-2 py-1.5 whitespace-nowrap text-[11px]">
+                            <td class="min-w-[150px] px-2 py-1.5 text-[11px]">{{-- 줄바꿈 허용(2026-11-17) — 한 줄 고정이면 메모 칸이 가로 스크롤 밖으로 밀린다 --}}
                                 @php $f = $t['fifo'] ?? null; @endphp
                                 @if(!$f)
                                     <span class="text-gray-300">—</span>
@@ -2732,7 +2739,6 @@ new #[Layout('components.layouts.app')] class extends Component {
                             {{-- 메모가 길면 잘리는데 호버해도 안 보였다(jin 2026-08-20).
                                  title 은 브라우저가 그려서 **슬라이드 패널 밖으로도 안 잘린다** —
                                  CSS 툴팁(absolute)을 쓰면 패널 overflow 에 갇힌다. --}}
-                            <td class="px-2 py-1.5 text-gray-400"><div class="hidden max-w-[120px] truncate sm:block" title="{{ $t['note'] }}">{{ $t['note'] }}</div><div class="min-w-[160px] whitespace-normal sm:hidden">{{ $t['note'] }}</div></td>
                             <td class="px-2 py-1.5">
                                 @if($t['transaction_type'] !== 'CANCELLED')
                                 <button wire:click="cancelSavingsTransaction({{ $t['id'] }})"
@@ -2741,10 +2747,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 @endif
                             </td>
                         </tr>
-                        @empty
-                        <tr><td colspan="9" class="py-6 text-center text-gray-400">{{ __('buyer.savings.no_history') }}</td></tr>
-                        @endforelse
+                        {{-- 메모 = 거래 바로 아래 전체 폭 줄(2026-11-17 — 구: PC 120px 한 줄로 잘려 호버해야 보였고, 칸을 넓히면 패널 밖으로 밀렸다) --}}
+                        @if($t['note'] !== '')
+                        <tr x-show="open" class="bg-white">
+                            <td colspan="8" class="px-2 pb-2 pt-0 text-[11px] leading-snug text-gray-500"><div class="whitespace-normal break-words" data-savings-note><span class="text-gray-400">{{ __('common.memo') }} ·</span> {{ $t['note'] }}</div></td>
+                        </tr>
+                        @endif
+                        @endforeach
                     </tbody>
+                    @empty
+                    <tbody><tr><td colspan="8" class="py-6 text-center text-gray-400">{{ __('buyer.savings.no_history') }}</td></tr></tbody>
+                    @endforelse
                 </table>
             </div>
             @endif
@@ -3081,20 +3094,29 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 <th class="px-2 py-2">{{ __('common.memo') }}</th>
                             </tr>
                         </thead>
-                        <tbody class="divide-y divide-violet-100">
-                            @forelse($savingsUseList as $u)
-                            <tr class="align-top even:bg-violet-50/40">
+                        {{-- 📅 월별 접기/펼치기(2026-11-17) — 거래 내역과 같은 방식. 최근 달만 펼침. --}}
+                        @php $useMonths = collect($savingsUseList)->groupBy(fn ($u) => substr((string) $u['date'], 0, 7)); @endphp
+                        @forelse($useMonths as $ym => $monthRows)
+                        <tbody x-data="{ open: {{ $loop->first ? 'true' : 'false' }} }" class="divide-y divide-violet-100" wire:key="svu-{{ $ym }}" data-savings-use-month="{{ $ym }}">
+                            <tr class="cursor-pointer select-none bg-violet-100/60 hover:bg-violet-100" @click="open = !open">
+                                <td colspan="4" class="px-2 py-1.5 text-[11px] font-semibold text-violet-800">
+                                    <span x-text="open ? '▾' : '▸'"></span> {{ $ym }} <span class="font-normal text-violet-500">· {{ __('buyer.savings.month_count', ['n' => $monthRows->count()]) }}</span>
+                                </td>
+                            </tr>
+                            @foreach($monthRows as $u)
+                            <tr x-show="open" class="align-top even:bg-violet-50/40">
                                 <td class="px-2 py-1.5 whitespace-nowrap text-gray-500">{{ $u['date'] }}</td>
                                 <td class="px-2 py-1.5 whitespace-nowrap text-gray-700">{{ $u['vehicle_number'] ?? __('buyer.cash.savings_no_vehicle_label') }}</td>
                                 <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono {{ $u['amount'] < 0 ? 'text-violet-700' : 'text-emerald-700' }}">
                                     {{ number_format($u['amount'], 2) }} <span class="text-[10px] text-gray-400">{{ $u['currency'] }}</span>
                                 </td>
-                                <td class="px-2 py-1.5 text-[11px] text-gray-500"><div class="hidden max-w-[180px] truncate sm:block" title="{{ $u['note'] }}">{{ $u['note'] }}</div><div class="min-w-[160px] whitespace-normal sm:hidden">{{ $u['note'] }}</div></td>
+                                <td class="px-2 py-1.5 text-[11px] text-gray-500"><div class="min-w-[160px] max-w-[320px] whitespace-normal break-words" data-savings-use-note>{{ $u['note'] }}</div></td>
                             </tr>
-                            @empty
-                            <tr><td colspan="4" class="py-4 text-center text-gray-400">{{ __('buyer.cash.savings_no_use') }}</td></tr>
-                            @endforelse
+                            @endforeach
                         </tbody>
+                        @empty
+                        <tbody><tr><td colspan="4" class="py-4 text-center text-gray-400">{{ __('buyer.cash.savings_no_use') }}</td></tr></tbody>
+                        @endforelse
                     </table>
                 </div>
             </div>
