@@ -220,7 +220,7 @@ class B2bPartnersTest extends TestCase
         $this->vehicle('11가1001', $sm, $other, ['deal_type' => 'DP']);
 
         Volt::test('erp.buyers.index')->set('b2bFilter', '1')->assertSee('PARTNER CO')->assertDontSee('OTHER CO');
-        // 개수는 차량에서 센다 — 관리대상이 아니어도 DP 1 이 보인다(바이어에 플래그 없음)
+        // 개수는 차량에서 센다 — 관리대상이 아니어도 DP 1 이 보인다(바이어 지정이 없으면 연한 뱃지, 11-17)
         $html = Volt::test('erp.buyers.index')->html();
         $this->assertStringContainsString('DP 1', $html);
     }
@@ -342,5 +342,74 @@ class B2bPartnersTest extends TestCase
 
         $this->actingAs($this->admin());   // 최고관리자(admin)는 못 바꾼다
         Volt::test('admin.settings')->assertStatus(403);   // 기능설정 자체가 super 전용(mount 에서 403)
+    }
+
+    // ── 🏷️ 바이어 DP·FD 진행 중 (jin 2026-11-17) — 바이어 지정 + 차량별 지정 두 곳, 각각 ──────────
+
+    public function test_buyer_deal_flags_are_saved_separately_and_audited(): void
+    {
+        $this->actingAs($this->manager());
+        $b = $this->buyer($this->salesman());
+
+        Volt::test('erp.buyers.index')->call('openEdit', $b->id)->set('is_dp', true)->set('is_fd', true)->call('save')->assertHasNoErrors();
+        $this->assertTrue($b->fresh()->is_dp);
+        $this->assertTrue($b->fresh()->is_fd, '둘 다 켤 수 있다');
+        $this->assertSame(2, AuditLog::where('action', 'buyer_deal_flag_toggled')->count());
+
+        Volt::test('erp.buyers.index')->call('openEdit', $b->id)->assertSet('is_dp', true)->set('is_dp', false)->call('save');
+        $this->assertFalse($b->fresh()->is_dp);
+        $this->assertTrue($b->fresh()->is_fd);
+    }
+
+    public function test_sales_cannot_change_buyer_deal_flags(): void
+    {
+        $sm = $this->salesman();
+        $b = $this->buyer($sm);
+        $this->actingAs($this->sales($sm));
+
+        Volt::test('erp.buyers.index')->call('openEdit', $b->id)->set('is_dp', true)->call('save');
+        $this->assertFalse($b->fresh()->is_dp, '영업은 저장해도 안 바뀐다');
+    }
+
+    public function test_list_badges_show_buyer_flag_and_vehicle_count_and_filter_buttons_work(): void
+    {
+        $this->actingAs($this->manager());
+        $sm = $this->salesman();
+        $flagged = $this->buyer($sm, ['name' => 'FLAGGED DP', 'is_dp' => true]);
+        $this->vehicle('11가1001', $sm, $flagged, ['deal_type' => 'DP']);
+        $this->vehicle('11가1002', $sm, $flagged, ['deal_type' => 'DP']);
+        $vehicleOnly = $this->buyer($sm, ['name' => 'VEHICLE ONLY']);
+        $this->vehicle('22나2001', $sm, $vehicleOnly, ['deal_type' => 'DP']);
+        $fdOnly = $this->buyer($sm, ['name' => 'FD FLAG', 'is_fd' => true]);
+        $this->buyer($sm, ['name' => 'PLAIN']);
+
+        $c = Volt::test('erp.buyers.index');
+        $html = $c->html();
+        $this->assertMatchesRegularExpression('/data-buyer-deal="DP-on"[^>]*>DP 2</u', $html, '지정 바이어 = 진한 뱃지 + 차량 2대');
+        $this->assertMatchesRegularExpression('/data-buyer-deal="DP-off"[^>]*>DP 1</u', $html, '차량만 = 연한 뱃지');
+        $this->assertMatchesRegularExpression('/data-buyer-deal="FD-on"[^>]*>FD</u', $html);
+        $this->assertSame(['DP' => 2, 'FD' => 1], $c->get('dealBuyerCounts'));
+
+        $c->call('toggleDealFilter', 'DP');
+        $names = collect($c->get('buyers')->items())->pluck('name')->all();
+        $this->assertEqualsCanonicalizing(['FLAGGED DP', 'VEHICLE ONLY'], $names);
+
+        $c->call('toggleDealFilter', 'DP');   // 다시 누르면 해제
+        $this->assertSame('', $c->get('dealFilter'));
+    }
+
+    public function test_vehicle_deal_type_warns_when_buyer_is_not_flagged(): void
+    {
+        $this->actingAs($this->manager());
+        $sm = $this->salesman();
+        $b = $this->buyer($sm);
+        $v = $this->vehicle('11가1001', $sm, $b, ['deal_type' => 'DP']);
+
+        $html = Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->html();
+        $this->assertStringContainsString('data-deal-buyer-mismatch', $html);
+
+        $b->update(['is_dp' => true]);
+        $html = Volt::test('erp.vehicles.index')->call('openEdit', $v->id)->html();
+        $this->assertStringNotContainsString('data-deal-buyer-mismatch', $html, '바이어도 DP 면 경고 없음');
     }
 }

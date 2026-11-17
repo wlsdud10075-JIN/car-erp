@@ -617,6 +617,7 @@ return [
         // 2026-11-01 B2B 파트너스 — 바이어 계약서·관리대상·거래 유형
         'deal_type_cleared_on_buyer_change' => '거래 유형(DP/FD) 자동 해제 (바이어 변경)',
         'b2b_partner_toggled' => 'B2B 파트너스 관리대상 지정/해제',
+        'buyer_deal_flag_toggled' => '바이어 DP·FD 진행 지정/해제',
         'b2b_contract_uploaded' => 'B2B 계약서 업로드',
         'b2b_contract_superseded' => 'B2B 계약서 교체(원본 보관)',
         'b2b_contract_read' => 'B2B 계약서 열람',
