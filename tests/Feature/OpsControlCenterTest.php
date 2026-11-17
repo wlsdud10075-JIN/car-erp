@@ -327,4 +327,21 @@ class OpsControlCenterTest extends TestCase
         $this->assertStringContainsString('세컨드 브레인 목록 올리기', $t);
         $this->assertStringNotContainsString('inspire', $t);
     }
+
+    /** 🧰 SKILLS 칸 — 세션별 네 묶음(ERP·board·ssancar.com·공통), 접기/펼치기(jin 11-17 «씬 점검 스킬이라던가 표시만 되게»). */
+    public function test_skills_board_lists_skills_by_session_in_collapsible_groups(): void
+    {
+        Http::fake(['*' => Http::response([], 404)]);
+        $jin = User::factory()->create(['permission' => 'super', 'email' => 'jin@example.com', 'email_verified_at' => now()]);
+        config(['services.ops.owner_emails' => ['jin@example.com']]);
+
+        $html = $this->actingAs($jin)->get('/admin/control')->assertOk()->getContent();
+
+        foreach (['erp', 'board', 'ssancar', 'common'] as $g) {
+            $this->assertMatchesRegularExpression('/<details[^>]*data-ops-skill-group="'.$g.'"/', $html, "{$g} 묶음이 접기 요소로");
+        }
+        foreach (['씬 점검', '메모리·문서 정리', '동기화·배포', '포털 화면 규약', '심층 인터뷰'] as $skill) {
+            $this->assertStringContainsString($skill, $html);
+        }
+    }
 }
