@@ -21,8 +21,8 @@ $APPLY = in_array('--apply', $argv, true);
 
 // karaba 공통 문자열
 $sellerLine = 'Karaba Co., Ltd. Kim Hee-chul. #303, 178 Injung-ro, Jung-gu, Incheon, Korea  Phone: +82-32-710-7979 Email: sales@karaba.co.kr';
-$shipperBlock = "KARABA CO., LTD.,\n#303, 178 Injung-ro, Jung-gu,\nIncheon, Republic of Korea\nTEL:82-32-710-7979 \nFAX:82-32-710-1881\nEMAIL : sales@karaba.co.kr";
-$clearanceSeller = "KARABA CO., LTD.,\n#303, 178 Injung-ro, Jung-gu, Incheon\nTEL:82-32-710-7979 \nFAX:82-32-710-1881\nEMAIL : sales@karaba.co.kr";
+$shipperBlock = "KARABA CO., LTD.,\n#303, 178 Injung-ro, Jung-gu,\nIncheon, Republic of Korea\nTEL:82-32-710-7979\nFAX:82-32-710-1881\nEMAIL : sales@karaba.co.kr";
+$clearanceSeller = "KARABA CO., LTD.,\n#303, 178 Injung-ro, Jung-gu, Incheon\nTEL:82-32-710-7979\nFAX:82-32-710-1881\nEMAIL : sales@karaba.co.kr";
 $bankAddr = '216-55, Hogupo-ro, Namdong-gu, Incheon, South Korea';
 $benefAddr = '#303, 178 Injung-ro, Jung-gu, Incheon, Korea';
 $benefAddr2 = "#303, 178 Injung-ro, Jung-gu,\nIncheon, Korea";
