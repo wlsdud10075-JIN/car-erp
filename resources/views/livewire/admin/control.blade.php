@@ -429,12 +429,20 @@ new #[Layout('components.layouts.app')] class extends Component
                     @endforeach
                 </div>
                 <div style="flex: 1 1 auto; {{ $panel }} display: flex; flex-direction: column; gap: 8px" data-ops-skills>
-                    <span style="{{ $head }}">SKILLS <span style="{{ $sub }}">· 스킬</span></span>
-                    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; font-size: 12px">
-                        @foreach([['적재양식 import', 'xlsx → 차량 일괄'], ['컨사이니 import', '바이어·컨사이니'], ['라운드테이블 회의', '6부서 검토'], ['교차 검증', 'Codex·Gemini']] as [$t, $d])
-                            <div style="border: 1px solid rgba(127,231,255,.2); border-radius: 10px; padding: 8px; background: rgba(127,231,255,.04)"><b style="color: #eaf6ff">{{ $t }}</b><div style="color: #8fb0cc">{{ $d }}</div></div>
-                        @endforeach
-                    </div>
+                    <span style="{{ $head }}">SKILLS <span style="{{ $sub }}">· 스킬 — 세션별, 누르면 펼침</span></span>
+                    {{-- 🧰 세션별 묶음(jin 11-17) — 목록 단일 출처 = App\Services\Ops\OpsSkills. 접기/펼치기는 브라우저 기본(details) — 서버 왕복 없음 --}}
+                    @foreach(\App\Services\Ops\OpsSkills::GROUPS as $gKey => $g)
+                        <details style="border: 1px solid rgba(127,231,255,.2); border-radius: 10px; background: rgba(127,231,255,.04)" data-ops-skill-group="{{ $gKey }}">
+                            <summary style="cursor: pointer; padding: 6px 10px; font-size: 12px; color: #eaf6ff; font-weight: 700">
+                                {{ $g['label'] }} <span style="font-weight: 400; color: #8fb0cc">· {{ count($g['skills']) }}개</span>
+                            </summary>
+                            <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; padding: 0 8px 8px; font-size: 12px">
+                                @foreach($g['skills'] as [$t, $d])
+                                    <div style="border: 1px solid rgba(127,231,255,.15); border-radius: 8px; padding: 6px 8px"><b style="color: #eaf6ff">{{ $t }}</b><div style="color: #8fb0cc">{{ $d }}</div></div>
+                                @endforeach
+                            </div>
+                        </details>
+                    @endforeach
                 </div>
             </div>
         </div>
