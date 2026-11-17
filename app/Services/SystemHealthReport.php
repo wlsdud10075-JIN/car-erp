@@ -29,9 +29,8 @@ class SystemHealthReport
      * 점검 항목. days = 「마지막 성공」이 이 일수를 넘기면 X.
      *
      * 기본 임계는 **정상 공백**을 근거로 정했다 — 근거 없이 줄이지 말 것:
-     *  - exchange  : 스냅샷이 09:00 에 `rate_date=어제`를 쓰고 점검은 08:00(그 전)이라 **정상도 항상 2일**이다.
-     *                주말도 매일 돌아 공백이 없다(커맨드 주석 — weekdays 로 하면 금요일이 유실된다).
-     *                ⇒ 2일이면 한 번만 놓쳐도 다음 아침에 잡힌다.
+     *  - exchange  : 🔀 2026-11-17 — 네이버 **영업일 확정값만** 저장한다(00:30·09:00). 주말·공휴일 행이 없으니
+     *                월요일 아침 정상 나이가 3일(금요일 행), 3일 연휴 뒤엔 5일이다. ⇒ 5일. 구(2일)는 매일 09:00 이 어제 날짜를 찍던 때 기준.
      *  - alimtalk  : 평일 09:00 만 발송 + **대상 0건이면 행조차 안 생긴다**. 연휴·비수기를 덮으려면 넉넉해야 한다.
      *  - holidays  : 한 해치를 받아두므로 며칠 멈춰도 당장 지장이 없다. 「완전히 죽었나」만 본다.
      *  - backup    : 매일 03:00. 하루라도 비면 바로 알아야 하는 유일한 항목이다.
@@ -41,7 +40,7 @@ class SystemHealthReport
      * @var array<string, array{days:int, default_on:bool}>
      */
     public const CHECKS = [
-        'exchange' => ['days' => 2, 'default_on' => true],
+        'exchange' => ['days' => 5, 'default_on' => true],
         'alimtalk_sent' => ['days' => 7, 'default_on' => true],
         'alimtalk_failed' => ['days' => 0, 'default_on' => true],   // days 미사용(건수 기준)
         'holidays' => ['days' => 10, 'default_on' => true],

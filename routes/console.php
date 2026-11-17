@@ -64,12 +64,14 @@ Schedule::command('alimtalk:monthly-closing')->dailyAt('09:00')->withoutOverlapp
 //   read-only 조회라 매시간(주말 포함 — 금요일 발송분이 주말에 도달 확정될 수 있음). 미설정 시 내부 skip(inert).
 Schedule::command('alimtalk:poll-report')->hourly()->withoutOverlapping();
 
-// 일별 마감환율 스냅샷 (2026-07-13) — 매일 09:00 네이버 현재값을 "전날 마감"으로 daily_exchange_rates 저장.
-//   ⚠️ 매일(주말 포함) — 금요일 마감이 토요일 09:00 에 정확히 잡히게. 잔금 날짜별 환율 자동기입 소스.
+// 💱 일별 확정 환율 (🔀 2026-11-17 — 네이버 날짜별 확정값을 그 날짜로, 매매기준율 포함). 구: 09:00 장중 값을 「어제」로.
+//   00:30 = 전날 마감이 확정된 뒤 · 09:00 = 재시도(한 페이지 10영업일을 매번 다시 넣어 빠진 날도 메운다).
+//   판매잔금 「전날 마감」 자동 기록(12월~)의 소스라 아침 업무 전에 전날 행이 있어야 한다.
+Schedule::command('exchange:snapshot-daily')->dailyAt('00:30')->withoutOverlapping();
 Schedule::command('exchange:snapshot-daily')->dailyAt('09:00')->withoutOverlapping();
 
 // 시스템 점검 요약 → 시스템관리자 텔레그램 1통 (jin 2026-09-11, SKILLS §8 #88 후속).
-//   🚫 환율 스냅샷(09:00)보다 **먼저** 돈다 — 그래서 마감환율의 정상 나이가 늘 2일이다
+//   환율 수집(00:30)은 이미 끝난 뒤다 — 마감환율 정상 나이 = 영업일 기준 1~3일(연휴 5일)
 //      (SystemHealthReport::CHECKS 주석). 시각을 옮기면 그 임계도 같이 봐야 한다.
 //   🟢 이상이 없어도 보낸다(dead-man's switch). 끄는 곳은 기능설정.
 //   3사가 각자 보낸다 — 모아 보내면 모으는 서버가 죽을 때 통째로 침묵한다.

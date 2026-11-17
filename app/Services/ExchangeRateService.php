@@ -104,6 +104,38 @@ class ExchangeRateService
     }
 
     /**
+     * 💱 네이버 날짜별 **확정** 환율 — prices JSON 한 페이지(영업일 10행, 최근이 먼저). page 를 넘기면 과거로 간다.
+     * 행마다 `localTradedAt`(날짜) · `receiveValue`(송금 받으실 때) · `closePrice`(매매기준율)가 같이 온다(2026-11-17 실측).
+     * ⚠️ 오늘 날짜 행은 장중 값이라 확정이 아니다 — 저장은 호출자가 오늘 이전 날짜만 한다.
+     *
+     * @return list<array{date:string, rate:float, base_rate:?float}>|null 실패면 null
+     */
+    public function fetchHistoryPage(string $currency, int $page = 1): ?array
+    {
+        if (! in_array($currency, self::SUPPORTED_CURRENCIES, true)) {
+            return null;
+        }
+        $body = $this->fetchHtml(self::NAVER_PRICES_URL.'?category=exchange&reutersCode=FX_'.$currency.'KRW&page='.max(1, $page));
+        $json = $body === null ? null : json_decode($body, true);
+        if (! is_array($json) || ($json['isSuccess'] ?? false) !== true || ! is_array($json['result'] ?? null)) {
+            return null;
+        }
+        $num = fn ($v) => (is_string($v) || is_numeric($v)) && (float) str_replace(',', '', (string) $v) > 0
+            ? (float) str_replace(',', '', (string) $v) : null;
+        $out = [];
+        foreach ($json['result'] as $row) {
+            $date = substr((string) ($row['localTradedAt'] ?? ''), 0, 10);
+            $rate = $num($row['receiveValue'] ?? null);   // 🚫 옆 필드와 헷갈리지 말 것(parseTtBuyingRate 주석)
+            if (! preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) || $rate === null) {
+                continue;
+            }
+            $out[] = ['date' => $date, 'rate' => $rate, 'base_rate' => $num($row['closePrice'] ?? null)];
+        }
+
+        return $out;
+    }
+
+    /**
      * 캐시 강제 갱신 (운영자 수동 갱신 또는 scheduler).
      */
     public function refresh(): ?array
