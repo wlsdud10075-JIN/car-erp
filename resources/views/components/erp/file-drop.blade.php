@@ -16,9 +16,17 @@
     'accept' => '',
     'multiple' => false,
     'label' => null,   // null = common.filedrop.label
+    // 📦 고르는 순간 크기 확인 (jin 2026-11-17 «100MB 넘으면 줄여서 올리라고») — Livewire 임시 업로드 상한과 같은 값.
+    //    서버(nginx 110M)까지 가서 막히면 이유 없는 실패로 보이고 다 올린 뒤에야 안다. 넘으면 올리지 않고 안내만.
+    'maxMb' => intdiv(\App\Models\Vehicle::DOCUMENT_MAX_KB, 1024),
 ])
 <div
-    x-data="{ over: false, uploading: false, progress: 0 }"
+    x-data="{ over: false, uploading: false, progress: 0, tooBig: '' }"
+    x-on:change.capture="
+        const f = Array.from($event.target.files || []).find(x => x.size > {{ (int) $maxMb }} * 1024 * 1024);
+        tooBig = '';
+        if (f) { $event.stopImmediatePropagation(); tooBig = f.name; $event.target.value = ''; }
+    "
     x-on:livewire-upload-start="uploading = true; progress = 0"
     x-on:livewire-upload-progress="progress = $event.detail.progress"
     x-on:livewire-upload-finish="progress = 100; setTimeout(() => { uploading = false }, 500)"
@@ -39,6 +47,10 @@
         <span x-show="!over" class="truncate">{{ $label ?? __('common.filedrop.label') }}</span>
         <span x-show="over" x-cloak class="font-medium text-primary-text">{{ __('common.filedrop.drop_here') }}</span>
     </div>
+
+    <p x-show="tooBig" x-cloak class="mt-1 text-[11px] font-medium text-red-600" data-filedrop-too-big>
+        <span x-text="tooBig"></span> — {{ __('common.filedrop.too_big', ['mb' => (int) $maxMb]) }}
+    </p>
 
     {{-- 업로드 진행 게이지 — 이 존 업로드 중에만 노출. 즉시완료·0% 도 보이게 최소폭 12%, 완료 후 0.5s 잔류 --}}
     <div x-show="uploading" x-cloak class="mt-2 h-1.5 overflow-hidden rounded bg-gray-200">

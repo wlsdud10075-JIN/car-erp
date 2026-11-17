@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Vehicle;
+
 /**
  * 회의확장씬 보강 (2026-05-23) — 새회의.txt #1 사용자 명세.
  *
@@ -133,9 +135,15 @@ return [
     'ulid' => ':attribute은(는) 올바른 ULID 여야 합니다.',
     'uuid' => ':attribute은(는) 올바른 UUID 여야 합니다.',
 
-    'custom' => [
+    'custom' => array_merge(
         // 컬럼별 커스텀 메시지 — 필요 시 추가
-    ],
+        // 📦 차량 서류 용량 초과(jin 2026-11-17 «100MB 넘으면 줄여서 올리라고») — 「102400 KB 이하」 대신 사람 말로.
+        //    files.* = Livewire 임시 업로드(올리는 순간 걸리는 곳), 나머지 = 저장 때 검증.
+        array_fill_keys(
+            ['files.*', 'deregistrationDocFile', 'exportDeclarationDocFile', 'blDocFile', 'checkbillFile', 'bulkDocFile', 'bulkDocFiles.*'],
+            ['max' => '파일이 '.intdiv(Vehicle::DOCUMENT_MAX_KB, 1024).'MB 를 넘습니다. PDF 는 압축하거나 나눠서 올려 주세요.'],
+        ),
+    ),
 
     /**
      * config/column_labels.php 의 vehicles + 다른 테이블 라벨을 attributes 로 흡수.

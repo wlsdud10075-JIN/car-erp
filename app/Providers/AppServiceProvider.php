@@ -48,9 +48,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // 📦 Livewire 임시 업로드 상한 200MB (jin 2026-11-17 — B/L 100MB+ PDF). 기본 12MB 가 앱 검증(Vehicle::DOCUMENT_MAX_KB)보다
+        // 📦 Livewire 임시 업로드 상한 100MB (jin 2026-11-17 — B/L PDF 가 구 10MB 에 막혔다). 기본 12MB 가 앱 검증(Vehicle::DOCUMENT_MAX_KB)보다
         //    먼저 걸려 「업로드가 안 된다」로만 보였다. 화면별 검증(사진 10MB 등)은 각자 그대로다. 큰 파일은 올리는 데 오래 걸려
-        //    임시파일 유효시간도 30분으로. 서버 nginx·PHP 상한(210M)도 같이 올라가 있어야 실제로 들어온다.
+        //    임시파일 유효시간도 30분으로. 서버 nginx·PHP 상한(110M)도 같이 올라가 있어야 실제로 들어온다.
+        //    넘는 파일은 공용 업로드 칸(x-erp.file-drop)이 고르는 순간 막고 「압축하거나 나눠서」 안내한다.
         config([
             'livewire.temporary_file_upload.rules' => ['required', 'file', 'max:'.Vehicle::DOCUMENT_MAX_KB],
             'livewire.temporary_file_upload.max_upload_time' => 30,

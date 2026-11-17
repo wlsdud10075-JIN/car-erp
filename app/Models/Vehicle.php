@@ -770,8 +770,11 @@ class Vehicle extends Model
      */
     public const DOCUMENT_MIMES = 'jpeg,jpg,png,gif,webp,bmp,pdf,xlsx,xls,csv,docx,doc,hwp,hwpx,pptx,ppt,txt,zip';
 
-    /** 200MB (jin 2026-11-17 — B/L 100MB+ PDF 가 막혔다. board 와 같은 상한). 서버 nginx·PHP 상한도 함께 올렸다. */
-    public const DOCUMENT_MAX_KB = 204800;
+    /**
+     * 100MB (jin 2026-11-17 — 구 10MB 에 B/L PDF 가 막혔다. «100MB 넘으면 줄여서 올리라고 하는 게 맞다»).
+     * 넘으면 「압축하거나 나눠서」 안내(lang validation.custom). 서버 nginx·PHP 상한은 110M.
+     */
+    public const DOCUMENT_MAX_KB = 102400;
 
     /**
      * 거래 유형 뱃지 (B2B 파트너스 1차, jin 2026-11-01) — 차량(거래) 단위. 바이어 지정만으로 자동 표시 ❌.

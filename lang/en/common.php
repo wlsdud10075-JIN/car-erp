@@ -52,5 +52,6 @@ return [
         'label' => 'Drag files here or choose them',
         'browse' => 'Choose file',
         'drop_here' => 'Drop here to upload',
+        'too_big' => 'Larger than :mbMB, not uploaded. Please compress or split the PDF.',
     ],
 ];
