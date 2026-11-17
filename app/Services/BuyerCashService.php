@@ -323,8 +323,9 @@ class BuyerCashService
             AuditLog::recordEvent($fee, 'buyer_cash_to_savings');
             $this->chargeFee($fee);   // 모자라면 던진다 → 아래 적립금까지 통째로 안 생긴다
 
+            // 💳 적립금 행에 이 현금 차감 줄을 잇는다 — 적립금을 취소하면 현금도 돌아오게(2026-11-17, R.S.H 2,400 EUR).
             if ($vehicle) {
-                $vehicle->syncSavingsDeposit($amount);
+                $vehicle->syncSavingsDeposit($amount, $fee->id);
             } else {
                 $latest = SavingsStatus::where('buyer_id', $buyerId)->where('currency', $currency)
                     ->lockForUpdate()->orderByDesc('id')->first();
@@ -337,6 +338,7 @@ class BuyerCashService
                     'savings' => $amount,
                     'balance' => (float) ($latest?->balance ?? 0) + $amount,
                     'note' => $note ?: __('buyer.cash.savings_note'),
+                    'buyer_cash_fee_id' => $fee->id,
                 ]);
             }
 

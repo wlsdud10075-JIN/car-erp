@@ -10,6 +10,8 @@ class SavingsStatus extends Model
     protected $fillable = [
         'buyer_id', 'vehicle_id', 'currency', 'exchange_rate', 'transaction_type',
         'savings', 'balance', 'original_transaction_id', 'note', 'created_by',
+        // 💳 현금 → 적립금 전환으로 생긴 EARNED 면 그 현금 차감 줄(BuyerCashFee kind=savings). 취소가 같이 되돌린다(2026-11-17).
+        'buyer_cash_fee_id',
     ];
 
     /**
