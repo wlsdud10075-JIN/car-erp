@@ -482,6 +482,8 @@ return [
         'transfer_locked_pbp' => 'Deposit prepayment',
         'edit_in_receivables' => 'Edit in Receivables',
         'rate_at_payment' => 'Rate at payment',
+        'rate_auto' => 'prev. close',
+        'rate_auto_hint' => 'The rate is recorded automatically on save as the closing rate of the day before the payment date (feature setting). Used only for the company FX gain/loss, not for settlements.',
         'krw_converted' => 'KRW converted (saved)',
         'transfer_out' => '→ transferred to vehicle :number',
         'transfer_in' => '← transferred from vehicle :number',

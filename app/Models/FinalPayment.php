@@ -7,6 +7,7 @@ use App\Support\PaymentAudit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 
 class FinalPayment extends Model
 {
@@ -19,6 +20,8 @@ class FinalPayment extends Model
         'confirmed_by_user_id', 'confirmed_at', 'finance_note',
         // 전시문(전신환 송금증) 경로 — 잔금 금액별 증빙 (jin 2026-07-20). 회계 잠금 대상 아님.
         'proof_path',
+        // 💱 2026-11-17 jin — 시스템이 자동 기록한 환율의 출처(마감 날짜·종류). 사람이 적은 행은 NULL.
+        'rate_source_date', 'rate_kind',
     ];
 
     /**
@@ -48,7 +51,32 @@ class FinalPayment extends Model
         'confirmed_at' => 'datetime',
         'exchange_rate' => 'decimal:4',
         'amount_krw' => 'decimal:2',
+        'rate_source_date' => 'date',
     ];
+
+    /**
+     * 💱 **판매잔금 환율 자동 기록 값** (jin 2026-11-17 «12월 1일부터 기입란이 없어지고 전날 마감으로»).
+     *   입금일 전날(직전 영업일) 마감 — 종류는 기능설정(Setting::paymentRateKind). 사람 입력 대신 이 값을 적는다.
+     *   못 찾으면 [] — 호출자는 환율을 비워 둔다(계산은 판매환율로 떨어져 환차 0, 회사이익에도 안 잡힘) + 로그.
+     *   ⚠️ 전날 마감이 아직 수집 안 됐으면 그 전 영업일 값이 들어간다 — rate_source_date 로 가려낸다.
+     *
+     * @return array{exchange_rate?: float, rate_source_date?: string, rate_kind?: string}
+     */
+    public static function autoRateFields(string $currency, ?string $paymentDate): array
+    {
+        if ($currency === 'KRW' || ! $paymentDate) {
+            return [];
+        }
+        $kind = Setting::paymentRateKind();
+        $hit = DailyExchangeRate::closingBefore($currency, substr($paymentDate, 0, 10), $kind);
+        if ($hit === null) {
+            Log::warning('판매잔금 자동 환율 없음', ['currency' => $currency, 'payment_date' => $paymentDate, 'kind' => $kind]);
+
+            return [];
+        }
+
+        return ['exchange_rate' => $hit['rate'], 'rate_source_date' => $hit['date'], 'rate_kind' => $kind];
+    }
 
     /**
      * 큐 10 H5 — ReceivableHistory.syncFinalPayment 안에서 FinalPayment를 생성할 때

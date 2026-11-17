@@ -46,11 +46,15 @@ class Setting extends Model
 
     private static ?bool $domesticPayoutMemo = null;
 
+    /** settlementFxExcludedFrom 메모 — false = 아직 안 읽음(null 은 「설정 없음」이라 구분) */
+    private static string|false|null $fxExcludedFromMemo = false;
+
     public static function flushRiskParamMemo(): void
     {
         self::$riskParamMemo = [];
         self::$b2bMemo = null;
         self::$domesticPayoutMemo = null;
+        self::$fxExcludedFromMemo = false;
     }
 
     private static function riskParam(string $key, callable $resolve): int|float
@@ -194,6 +198,49 @@ class Setting extends Model
     public static function b2bPartnersEnabled(): bool
     {
         return self::$b2bMemo ??= (bool) self::get('b2b_partners_enabled_'.self::companyTemplateSet(), false);
+    }
+
+    /**
+     * 💱 **정산에서 환차 제외 — 시작 귀속월** (jin 2026-11-17 «12월 처리분을 1월 10일 정산하는 애들부터 환차익 없는 걸로»).
+     *   'Y-m' 이면 그 귀속월 이상인 정산은 판매금원화를 **판매환율**로 계산(Settlement::fxExcluded). 비우면 종전(실효 입금환율 — 환차 포함).
+     *   회사별 키 `settlement_fx_excluded_from_{회사}` · 시스템관리자만(기능설정). 정산은 배치 제출·지급 때 이 판정을 박제(fx_excluded)하므로
+     *   나중에 값을 바꿔도 이미 묶이거나 지급된 정산은 안 움직인다. 요청 단위 메모 — 정산 accessor 마다 부른다.
+     */
+    public static function settlementFxExcludedFrom(): ?string
+    {
+        if (self::$fxExcludedFromMemo === false) {
+            $v = trim((string) self::get('settlement_fx_excluded_from_'.self::companyTemplateSet(), ''));
+            self::$fxExcludedFromMemo = preg_match('/^\d{4}-\d{2}$/', $v) ? $v : null;
+        }
+
+        return self::$fxExcludedFromMemo;
+    }
+
+    /**
+     * 💱 **판매잔금 환율 자동 기록 시작일** (jin 2026-11-17 «12월 1일부터 환율 기입란이 없어진다»).
+     *   'Y-m-d' 이면 그날부터 차량 판매탭·채권관리의 잔금 환율 칸이 숨고, 저장 때 시스템이 **입금일 전날 마감**(paymentRateKind)을 적는다.
+     *   비우면 종전(사람이 입력·당일 마감 자동기입). 회사별 `payment_rate_auto_from_{회사}`.
+     */
+    public static function paymentRateAutoFrom(): ?string
+    {
+        $v = trim((string) self::get('payment_rate_auto_from_'.self::companyTemplateSet(), ''));
+
+        return preg_match('/^\d{4}-\d{2}-\d{2}$/', $v) ? $v : null;
+    }
+
+    /** 오늘 기준 자동 기록이 켜져 있나 — 화면 칸 숨김·저장 경로가 같이 본다(갈리면 숨겼는데 사람 값이 저장된다). */
+    public static function paymentRateAutoActive(): bool
+    {
+        $from = self::paymentRateAutoFrom();
+
+        return $from !== null && today()->toDateString() >= $from;
+    }
+
+    /** 💱 자동 기록 환율 종류 — receive(송금 받으실 때, 기본) | base(매매기준율). 은행 우대율 확인 뒤 jin 이 기능설정에서 고른다. */
+    public static function paymentRateKind(): string
+    {
+        return self::get('payment_rate_kind_'.self::companyTemplateSet(), DailyExchangeRate::KIND_RECEIVE) === DailyExchangeRate::KIND_BASE
+            ? DailyExchangeRate::KIND_BASE : DailyExchangeRate::KIND_RECEIVE;
     }
 
     /**

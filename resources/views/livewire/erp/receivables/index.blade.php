@@ -1886,11 +1886,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <input type="number" step="0.01" wire:model="hAmount" class="input-base" placeholder="0" />
                     @error('hAmount')<div class="mt-1 text-xs text-red-500">{{ $message }}</div>@enderror
                 </div>
-                @if($sv->currency !== 'KRW')
+                @if($sv->currency !== 'KRW' && ! \App\Models\Setting::paymentRateAutoActive())
                 <div>
                     <label class="label-base">{{ __('receivable.field.rate') }}</label>
                     <input type="number" step="0.0001" wire:model="hExchangeRate" class="input-base" placeholder="0" />
                     @error('hExchangeRate')<div class="mt-1 text-xs text-red-500">{{ $message }}</div>@enderror
+                </div>
+                @elseif($sv->currency !== 'KRW')
+                {{-- 💱 2026-11-17 jin — 자동 기록 기간: 입금 환율은 저장 때 「입금일 전날 마감」으로(ReceivableHistory::syncFinalPayment). --}}
+                <div data-rh-rate-auto>
+                    <label class="label-base">{{ __('receivable.field.rate') }}</label>
+                    <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.panel.rate_auto_hint') }}</p>
                 </div>
                 @endif
                 <div class="col-span-2">

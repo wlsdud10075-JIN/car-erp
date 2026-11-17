@@ -1063,6 +1063,8 @@ class SettlementPayoutBatch extends Model
                 'submitted_at' => now(),
             ]);
             Settlement::whereIn('id', $ids)->update(['payout_batch_id' => $batch->id]);
+            // 💱 환차 제외 판정 박제(jin 2026-11-17) — bulk update 라 saving 훅이 안 돈다. 위 total_payout 과 같은 판정(아직 안 정한 정산 = 설정 기준).
+            Settlement::pinFxForIds($ids);
             // 🧾 제출 때 실지급액 박제 (jin 2026-10-21) — 결재 중에 판매가 등이 바뀌면 「제출 때 ↔ 지금」으로 띄운다(settlementPayoutChanges).
             foreach ($settlements as $s) {
                 Settlement::whereKey($s->id)->update(['payout_submitted_krw' => (int) $s->actual_payout]);
@@ -1381,6 +1383,8 @@ class SettlementPayoutBatch extends Model
         $shipping = (int) $settlements->sum(fn (Settlement $s) => (int) $s->shipping_fee);
         // 💰 예치금 반환(퇴사 정산)은 지급 총액엔 있지만 회사 비용이 아니다 — 그 사람 돈을 돌려주는 것. 회사이익에서 되돌린다.
         $depositReturn = $this->depositReturnTotal();
+        // 💱 환차를 정산에서 뺀 정산의 환차 = 회사 몫(2026-11-17). company_net 을 못 쓰는 자리라(위 주석) 같은 함수로 더한다.
+        $companyFx = (int) $settlements->sum(fn (Settlement $s) => $s->companyFxKrw());
 
         return [
             'total_margin' => $totalMargin,
@@ -1388,7 +1392,8 @@ class SettlementPayoutBatch extends Model
             'fx' => $fx,
             'shipping' => $shipping,
             'deposit_return' => $depositReturn,
-            'company_profit' => $totalMargin - ($payout - $depositReturn) - $shipping,
+            'company_fx' => $companyFx,
+            'company_profit' => $totalMargin - ($payout - $depositReturn) - $shipping + $companyFx,
             // 💴 월정산 v3 — 급여(사내·검차)까지 뺀 회사 순이익. 승인 알림톡 「회사이익」 변수와 승인 화면이 이것을 쓴다(문구 무변경, 숫자만).
             'company_profit_after_payroll' => BatchPayoutBreakdown::forBatch($this)['totals']['company_net'],
             // 📊 배치 전체 마진율 (jin 2026-09-18) — Σ총마진 / Σ판매금원화. 내수는 양쪽에서 빠진다.

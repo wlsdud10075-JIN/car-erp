@@ -625,7 +625,16 @@ new #[Layout('components.layouts.app')] class extends Component
             + (float) ($v->auto_loading ?? 0)
             - (float) ($v->tax_dc ?? 0);
         $rate = (float) ($v->exchange_rate ?? 0);
-        $settleRate = $v->settlement_exchange_rate;
+        // 💱 정산 환율은 **모델에 묻는다**(Settlement::settlementRate — 2026-11-17 환차 제외). 정산이 아직 없으면 그 차가 들어갈 귀속월로 판정.
+        //    옮겨 적으면 미리보기(실효)와 실제 정산(판매환율)이 갈린다.
+        $rateHolder = $this->editingId ? Settlement::find($this->editingId) : null;
+        if (! $rateHolder) {
+            $rateHolder = new Settlement(['attributed_month' => $v->settlementAttributionMonth()]);
+            $rateHolder->is_domestic = $v->currency === 'KRW' && $v->isDomesticSale();
+        }
+        $rateHolder->setRelation('vehicle', $v);
+        $settleRate = $rateHolder->settlementRate();
+        $fxExcluded = $rateHolder->fxExcluded();
         $salesAmountKrw = (int) ($saleBase * $settleRate);
 
         $settlementSalesKrw = $salesAmountKrw - (int) ($v->cost_total ?? 0);
@@ -740,7 +749,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'salesAmountKrw', 'settlementSalesKrw', 'salesMargin',
             'vatMargin', 'totalMargin', 'settlementAmount',
             'documentFee', 'shippingFee', 'actualPayout', 'exchangeDiff',
-            'carryoverIn', 'carryoverOut',
+            'carryoverIn', 'carryoverOut', 'fxExcluded',
             // karaba 이익율 정산 표시용 (Phase 3)
             'isKaraba', 'operatingProfit', 'profitRate', 'karabaSalesKrw', 'purchaseTotal', 'karabaCosts', 'karabaVat'
         );
@@ -3427,6 +3436,12 @@ new #[Layout('components.layouts.app')] class extends Component
             </div>
             @else
             <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1.5">
+                @if($this->marginData['fxExcluded'] ?? false)
+                    {{-- 💱 환차 제외 정산(jin 2026-11-17) — 판매환율로 계산. 왜 실입금과 다른지 사람이 바로 알게 --}}
+                    <p class="rounded bg-sky-50 px-2 py-1 text-[11px] text-sky-800" data-fx-excluded>
+                        <span class="font-semibold">{{ __('settlement.fx_excluded_badge') }}</span> — {{ __('settlement.fx_excluded_hint') }}
+                    </p>
+                @endif
                 <div class="flex justify-between text-gray-600">
                     <span>{{ __('settlement.margin_sales_krw') }} <span class="text-xs text-gray-400">{{ __('settlement.margin_sales_krw_formula') }}</span></span>
                     <span>₩{{ number_format($this->marginData['salesAmountKrw']) }}</span>
@@ -3704,7 +3719,7 @@ new #[Layout('components.layouts.app')] class extends Component
             {{-- 2026-08-06 (jin) — 실현 환차 참고 라인. 1차 정산에 이미 반영돼 있어 여기서 재가산하지 않는다. --}}
             @if(! empty($this->marginData['exchangeDiff']))
             <div class="flex justify-between text-gray-600">
-                <span>{{ __('settlement.result_exchange') }} <span class="text-xs text-gray-400">{{ __('settlement.result_exchange_sub') }}</span></span>
+                <span>{{ __('settlement.result_exchange') }} <span class="text-xs text-gray-400">{{ ($this->marginData['fxExcluded'] ?? false) ? __('settlement.result_exchange_sub_excluded') : __('settlement.result_exchange_sub') }}</span></span>
                 @if($this->marginData['exchangeDiff'] > 0)
                 <span class="text-emerald-600">+ ₩{{ number_format($this->marginData['exchangeDiff']) }}</span>
                 @else

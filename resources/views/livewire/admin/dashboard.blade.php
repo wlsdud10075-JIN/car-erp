@@ -655,6 +655,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $marginSum = 0;
         $payoutSum = 0;
         $fxAbsorbed = 0;   // 사내직원 정산건의 실현 환차 — 전액 회사 귀속 (정보용. company_net 에 이미 포함)
+        $companyFxSum = 0;   // 💱 환차를 정산에서 뺀 정산의 환차 — 회사 몫(2026-11-17). companyNet 에 이미 더해져 있다(표시용 합계)
         $shippingSum = 0;  // 서류 발송비(EMS·DHL) — 회사가 먼저 치르고 지급에서 되받는 돈
         $batchIds = [];    // 이 기간에 지급된 정산이 속한 월정산 — 아래에서 수동 조정을 마저 더한다.
         $byPerson = [];
@@ -674,7 +675,7 @@ new #[Layout('components.layouts.app')] class extends Component
             // ⚠️ 컬럼을 제한하지 말 것('salesman:id,name') — per_unit_tier_enabled 가 안 실리면
             //    차등정산 담당자의 정산액이 10만 고정으로 계산돼 금액이 통째로 틀린다.
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
-            ->chunk(500, function ($rows) use (&$companyNet, &$marginSum, &$payoutSum, &$fxAbsorbed, &$shippingSum, &$byPerson, &$batchIds) {
+            ->chunk(500, function ($rows) use (&$companyNet, &$marginSum, &$payoutSum, &$fxAbsorbed, &$shippingSum, &$byPerson, &$batchIds, &$companyFxSum) {
                 foreach ($rows as $s) {
                     if ($s->payout_batch_id) {
                         $batchIds[$s->payout_batch_id] = true;
@@ -688,7 +689,10 @@ new #[Layout('components.layouts.app')] class extends Component
                     // ⚡ company_net accessor(= total_margin − actual_payout − shipping_fee)를 다시 부르면
                     //    방금 계산한 총마진·실지급액 체인을 한 번 더 돈다(행당 3.4ms × 986행 = 3.4초 중 절반).
                     //    같은 정의를 이미 손에 든 값으로 조립한다 — 단일 출처는 여전히 Settlement::company_net.
-                    $share = $margin - $payout - $shipping;
+                    // 💱 환차를 정산에서 뺀 정산의 환차 = 회사 몫(Settlement::companyFxKrw, 2026-11-17) — company_net 과 같은 정의.
+                    $companyFx = $s->companyFxKrw();
+                    $share = $margin - $payout - $shipping + $companyFx;
+                    $companyFxSum += $companyFx;
 
                     $companyNet += $share;
                     $marginSum += $margin;
@@ -859,6 +863,7 @@ new #[Layout('components.layouts.app')] class extends Component
             'payout_sum' => $payoutSum,
             'shipping_sum' => $shippingSum,
             'fx_absorbed' => $fxAbsorbed,
+            'company_fx' => $companyFxSum,
             'payroll_sum' => $payrollSum,
             'common_labor' => $commonLabor,
             'overpay_income' => $overpayIncome,
@@ -1627,6 +1632,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 </p>
                 @if($cp['fx_absorbed'] !== 0)
                 <p class="mt-0.5 text-[11px] text-gray-400">{{ __('admin_dash.company_fx_absorbed', ['fx' => number_format($cp['fx_absorbed'])]) }}</p>
+                @endif
+                @if(($cp['company_fx'] ?? 0) !== 0)
+                {{-- 💱 환차손익(회사) — 환차를 정산에서 뺀 정산분(2026-11-17). 회사 순이익에 이미 더해져 있다 --}}
+                <p class="mt-0.5 text-[11px] {{ $cp['company_fx'] >= 0 ? 'text-emerald-600' : 'text-red-600' }}" data-company-fx>{{ __('admin_dash.company_fx_line', ['fx' => ($cp['company_fx'] >= 0 ? '+' : '').number_format($cp['company_fx'])]) }}</p>
                 @endif
                 @if(($cp['domestic_profit'] ?? 0) !== 0)
                 <p class="mt-0.5 text-[11px] text-emerald-600" data-domestic-profit>{{ __('admin_dash.company_domestic_profit', ['amount' => number_format($cp['domestic_profit'])]) }}</p>

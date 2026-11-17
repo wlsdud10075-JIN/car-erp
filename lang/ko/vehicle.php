@@ -495,6 +495,8 @@ return [
         'transfer_locked_pbp' => '보증금 선지급',
         'edit_in_receivables' => '채권관리에서 수정',
         'rate_at_payment' => '입금 시점 환율',
+        'rate_auto' => '전날 마감',
+        'rate_auto_hint' => '환율은 저장할 때 입금일 전날 마감값으로 자동 기록됩니다(기능설정). 정산에는 쓰지 않고 회사 환차손익 계산에만 씁니다.',
         'krw_converted' => 'KRW 환산 (저장됨)',
         'transfer_out' => '→ 차량 :number 으로 이체',
         'transfer_in' => '← 차량 :number 에서 이체',

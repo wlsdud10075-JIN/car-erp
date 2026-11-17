@@ -1,0 +1,117 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\FinalPayment;
+use App\Models\Setting;
+use App\Models\Settlement;
+use App\Models\Vehicle;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Tests\TestCase;
+
+/**
+ * 💱 정산에서 환차 제외 (jin 2026-11-17 «12월 1~30일 처리분을 1월 10일 정산 — 이때 정산되는 애들부터 환차익 없는 걸로.
+ *    12월 10일 지급분까지는 환차익이 있음. 회사별 토글»).
+ *
+ * 기준 = 정산 귀속월 ≥ 기능설정 「시작 귀속월」 → 판매금원화를 판매환율로. 지키는 것:
+ *   ① 설정이 비면 종전 그대로(실효 입금환율) ② 귀속월 11월은 환차 포함, 12월부터 제외
+ *   ③ 지급(paid)·배치 제출 때 박제 — 나중에 설정을 바꿔도 지급 끝난 숫자가 안 움직인다
+ *
+ * 숫자 = 18누0304(SettlementReceiptRateTest): 입금환율 1718 → 실지급 373,259 / 판매환율 1716 → 366,205.
+ */
+class SettlementFxExclusionTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private int $n = 0;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        DB::statement('PRAGMA foreign_keys = OFF');
+    }
+
+    private function fxFrom(?string $ym): void
+    {
+        Setting::updateOrCreate(['key' => 'settlement_fx_excluded_from_'.Setting::companyTemplateSet()], ['value' => (string) $ym, 'type' => 'string']);
+        Setting::flushRiskParamMemo();
+    }
+
+    /** 18누0304 — 판매환율 1716, 완납 입금 @1718 */
+    private function settlement(string $attributedMonth): Settlement
+    {
+        $v = Vehicle::create([
+            'vehicle_number' => 'FXE-'.++$this->n, 'sales_channel' => 'export', 'dhl_request' => false,
+            'currency' => 'EUR', 'exchange_rate' => 1716, 'sale_price' => 7837, 'transport_fee' => 1159,
+            'sale_date' => '2026-08-01', 'purchase_date' => '2026-07-01', 'purchase_price' => 13_200_000, 'selling_fee' => 440_000,
+            'cost_deregistration' => 24_000, 'cost_license' => 14_740, 'cost_towing' => 25_000, 'cost_insurance' => 7_650,
+        ]);
+        foreach ([5000, 3996] as $amt) {
+            FinalPayment::create(['vehicle_id' => $v->id, 'type' => 'balance', 'amount' => $amt, 'exchange_rate' => 1718, 'payment_date' => '2026-08-05', 'confirmed_at' => now()]);
+        }
+
+        return Settlement::create([
+            'vehicle_id' => $v->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'pending', 'attributed_month' => $attributedMonth,
+        ])->fresh();
+    }
+
+    public function test_no_setting_keeps_fx_in_the_settlement(): void
+    {
+        $this->fxFrom(null);
+
+        $this->assertSame(373_259, $this->settlement('2026-12-01')->actual_payout, '설정이 비면 종전(입금환율)');
+    }
+
+    public function test_from_december_attributed_month_uses_the_sale_rate(): void
+    {
+        $this->fxFrom('2026-12');
+
+        $nov = $this->settlement('2026-11-01');
+        $dec = $this->settlement('2026-12-01');
+
+        $this->assertFalse($nov->fxExcluded());
+        $this->assertSame(373_259, $nov->actual_payout, '귀속월 11월(12월 10일 지급분)은 환차 포함');
+        $this->assertTrue($dec->fxExcluded());
+        $this->assertSame(366_205, $dec->actual_payout, '귀속월 12월(1월 10일 지급분)부터 판매환율');
+        $this->assertSame(1716.0, $dec->settlementRate());
+    }
+
+    public function test_paid_settlement_is_pinned_and_does_not_move_when_the_setting_changes(): void
+    {
+        $this->fxFrom('2026-12');
+        $s = $this->settlement('2026-12-01');
+        $s->update(['settlement_status' => 'paid', 'paid_at' => now()]);
+        $s->refresh();
+        $this->assertTrue($s->fx_excluded, '지급 때 박제');
+        $before = [$s->total_margin, $s->actual_payout, $s->company_net];
+
+        $this->fxFrom(null);   // 나중에 환차를 다시 넣기로 해도
+        $s = $s->fresh();
+
+        $this->assertSame($before, [$s->total_margin, $s->actual_payout, $s->company_net], '지급 끝난 정산 숫자는 그대로');
+    }
+
+    public function test_unpinned_old_paid_rows_were_backfilled_as_fx_included(): void
+    {
+        // 마이그레이션이 기존 지급분을 false 로 박았다 — 시작 월을 과거로 잘못 넣어도 지난 지급분은 안 바뀐다.
+        $s = $this->settlement('2026-09-01');
+        $s->forceFill(['settlement_status' => 'paid', 'fx_excluded' => false])->saveQuietly();
+        $this->fxFrom('2026-01');
+
+        $this->assertSame(373_259, $s->fresh()->actual_payout);
+    }
+
+    public function test_batch_submission_pins_the_judgement(): void
+    {
+        $this->fxFrom('2026-12');
+        $s = $this->settlement('2026-12-01');
+
+        Settlement::pinFxForIds([$s->id]);
+
+        $this->assertTrue($s->fresh()->fx_excluded);
+        $this->fxFrom(null);
+        $this->assertSame(366_205, $s->fresh()->actual_payout, '제출된 뒤 설정을 바꿔도 그대로');
+    }
+}

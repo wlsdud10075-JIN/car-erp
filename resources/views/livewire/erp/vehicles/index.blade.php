@@ -6985,6 +6985,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'confirmed_by_user_id' => $authUser->id,
             ] : [];
 
+            // 💱 판매잔금 환율 자동 기록(jin 2026-11-17, 기능설정 시작일부터) — 화면 칸은 숨고 **서버가 정한다**(폼 값은 안 믿는다).
+            //    새 행 · 미확정 행의 입금일이 바뀐 때 · 미확정인데 환율이 빈 행만 「입금일 전날 마감」으로 적고,
+            //    그 밖(확정 행·시작 전에 사람이 적은 행)은 DB 값을 그대로 둔다 — 지우거나 덮지 않는다(마감 잠금도 안 건드림).
+            $rateAuto = \App\Models\Setting::paymentRateAutoActive() && $this->currency !== 'KRW';
             foreach ($this->finalPayments as $idx => $row) {
                 if (!empty($row['locked'])) continue;
                 if ($row['amount'] === '' && $row['payment_date'] === '') continue;
@@ -6994,13 +6998,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $rateVal = ($row['exchange_rate'] ?? '') !== '' ? (float) str_replace(',', '', $row['exchange_rate']) : null;
                 if (isset($row['id']) && $row['id']) {
                     if (in_array($row['id'], $lockedFinalIds)) continue;
-                    $fpNew = [
+                    $dbFp = FinalPayment::find($row['id']);
+                    $rateFields = ['exchange_rate' => $rateVal];
+                    if ($rateAuto && $dbFp) {
+                        $dateChanged = optional($dbFp->payment_date)->toDateString() !== ($dt ? substr((string) $dt, 0, 10) : null);
+                        $rateFields = ($dbFp->confirmed_at === null && ($dateChanged || $dbFp->exchange_rate === null))
+                            ? (\App\Models\FinalPayment::autoRateFields($this->currency, $dt ? (string) $dt : null) ?: ['exchange_rate' => null])
+                            : ['exchange_rate' => $dbFp->exchange_rate];
+                    }
+                    $rateForKrw = $rateFields['exchange_rate'] !== null ? (float) $rateFields['exchange_rate'] : null;
+                    $fpNew = array_merge([
                         'amount' => $amt,
-                        'exchange_rate' => $rateVal,
                         'payment_date' => $dt,
                         'note' => $row['note'] ?? null,
-                    ];
-                    \App\Support\PaymentAudit::updatingRow(FinalPayment::find($row['id']), $fpNew);   // bulk update — 훅 대신
+                        // bulk update 는 saving 훅(amount_krw 계산)을 안 탄다 — 원화 환산을 같이 맞춘다(엑셀 내보내기가 이 값을 읽는다, 2026-11-17).
+                        'amount_krw' => ($rateForKrw !== null && (float) $amt > 0) ? round((float) $amt * $rateForKrw, 2) : null,
+                    ], $rateFields);
+                    \App\Support\PaymentAudit::updatingRow($dbFp, $fpNew);   // bulk update — 훅 대신
                     FinalPayment::where('id', $row['id'])->update($fpNew);
                 } else {
                     $newFp = $vehicle->finalPayments()->create(array_merge([
@@ -7008,7 +7022,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                         'exchange_rate' => $rateVal,
                         'payment_date' => $dt,
                         'note' => $row['note'] ?? null,
-                    ], $autoConfirmFields));
+                    ], $rateAuto ? (\App\Models\FinalPayment::autoRateFields($this->currency, $dt ? (string) $dt : null) ?: ['exchange_rate' => null]) : [],
+                    $autoConfirmFields));
                     $this->finalPayments[$idx]['id'] = $newFp->id;   // 아래 전시문 패스가 새 id 를 찾도록
                 }
             }
@@ -8035,6 +8050,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         $autoRate = '';
         if ($this->currency === 'KRW') {
             $autoRate = '1';
+        } elseif (\App\Models\Setting::paymentRateAutoActive()) {
+            // 💱 2026-11-17 — 자동 기록 기간엔 입금일 전날 마감(저장 때 서버가 다시 정한다 — 여기 값은 미리보기).
+            $autoRate = (string) (\App\Models\FinalPayment::autoRateFields($this->currency, today()->toDateString())['exchange_rate'] ?? '');
         } else {
             $rate = app(\App\Services\ExchangeRateService::class)->getRate($this->currency);
             if ($rate !== null) {
@@ -8153,9 +8171,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $service = app(\App\Services\ExchangeRateService::class);
-        $rate = $date >= today()->toDateString()
-            ? $service->getRate($this->currency)                         // 오늘/미래 = 실시간
-            : $service->getRateForDate($this->currency, $date);          // 과거 = 마감환율 이력
+        $rate = \App\Models\Setting::paymentRateAutoActive()
+            ? (\App\Models\FinalPayment::autoRateFields($this->currency, $date)['exchange_rate'] ?? null)   // 💱 자동 기록 기간 = 전날 마감(2026-11-17)
+            : ($date >= today()->toDateString()
+                ? $service->getRate($this->currency)                         // 오늘/미래 = 실시간
+                : $service->getRateForDate($this->currency, $date));         // 과거 = 마감환율 이력
         if ($rate !== null) {
             $this->finalPayments[$idx]['exchange_rate'] = (string) $rate;
         }
@@ -10934,8 +10954,16 @@ function vehicleColumnsToggle(columns, serverKnows) {
                            style="width: 112px; flex: none;" />
                     {{-- 환율 (외화만, 자동 기입 + 수정 가능) --}}
                     @if($currency !== 'KRW')
+                    @if(\App\Models\Setting::paymentRateAutoActive())
+                    {{-- 💱 2026-11-17 jin — 자동 기록 기간: 칸을 숨기고 저장 때 서버가 「입금일 전날 마감」을 적는다. 숨은 칸은 원화 환산 계산(app.js)용. --}}
+                    <input wire:model="finalPayments.{{ $idx }}.exchange_rate" type="hidden" data-fp-rate />
+                    <span class="text-[11px] text-gray-400" style="width: 80px; flex: none;" title="{{ __('vehicle.panel.rate_auto_hint') }}" data-fp-rate-auto>
+                        {{ ($row['exchange_rate'] ?? '') !== '' ? number_format((float) str_replace(',', '', $row['exchange_rate']), 2) : '—' }} <span class="text-[10px]">{{ __('vehicle.panel.rate_auto') }}</span>
+                    </span>
+                    @else
                     <input wire:model="finalPayments.{{ $idx }}.exchange_rate" type="text" data-fp-rate class="input-base"
                            style="width: 80px; flex: none;" placeholder="{{ __('vehicle.ph.rate') }}" title="{{ __('vehicle.panel.rate_at_payment') }}" />
+                    @endif
                     @endif
                     {{-- 금액 --}}
                     <input wire:model="finalPayments.{{ $idx }}.amount" type="text" data-money data-fp-amount class="input-base"
