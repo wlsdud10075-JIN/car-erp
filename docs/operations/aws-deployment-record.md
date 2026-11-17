@@ -935,6 +935,14 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-17 — master `9d8cd201` · 마이그 2 (jin «배포해줘. 점심시간이야»)
+
+- **적립금 취소 → 현금 복귀** — 현금→적립금 전환의 두 줄을 `savings_statuses.buyer_cash_fee_id` 로 이어, 적립금 취소가 현금 차감 줄도 지운다. 이미 꼬인 건 `buyer-cash:revert-cancelled-savings --apply` 로 정리: heymanerp R.S.H(10) 2,400 EUR · karabaerp Kushtrim(76) 100 EUR 현금 복귀(실행 전후 잔액 0 → 2,400 / 0 → 100, 적립금 잔액 무변화). 기존 전환 연결 heyman 11/12 · karaba 4/4.
+- **양식 TEL·FAX 줄 끝 공백 제거** — 3사 × 통관 SET Ver.1·2·컨테이너/RORO 인보이스 12파일 17곳(받는 쪽에서 빈 줄로 보이던 것).
+- **차량 서류 업로드 상한 10MB → 100MB** — 넘으면 고르는 순간 「압축하거나 나눠서」 안내. 🖥️ 서버: 3사 nginx ERP 사이트 `client_max_body_size 50M → 110M`(백업 `.bak-20261117-upload`) · `/etc/php/8.4/fpm/conf.d/99-car-erp-upload.ini`(upload_max_filesize·post_max_size 110M) · `nginx -t`·`php-fpm8.4 -t` 통과 후 reload.
+- **바이어별 DP·FD 진행 지정** — `buyers.is_dp·is_fd`, 목록 뱃지(진한 = 바이어 지정 + 차량 대수 · 연한 = 차량만) · DP/FD 필터 버튼 · 판매 탭 어긋남 경고.
+- 잡 5개 success · 3사 `9d8cd201` · 마이그 2 Ran · `/login` 200. dev 로컬 전체 3,934 통과. cherry-pick 5개(dev-only `generate-karaba-templates.php` 충돌은 master 상태 유지로 해소).
+
 ## 2026-11-16 (4) — master `b4eda6a7` · 마이그 0 (jin «배포해줘», 21시)
 
 - **통관 체크 일괄**(차량관리 액션바 「✓ 통관 체크 일괄」) — 실무 순서 신고서 업로드 → 체크빌 → 통관 체크의 마지막 단계를 파일 없이 여러 대에. 신고서 없는 차 제외 · 체크빌 없는 차 경고만 · 이미 체크 그대로. 감사로그 `bulk_export_cleared`.
