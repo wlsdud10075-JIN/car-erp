@@ -2651,28 +2651,30 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <button wire:click="addSavingsTransaction" class="btn-primary mt-3 text-xs py-1.5">{{ __('buyer.savings.add_btn') }}</button>
             </div>
 
-            {{-- 거래 내역 --}}
-            <div class="overflow-x-auto rounded-lg border border-gray-200">
-                <table class="w-full text-xs">
+            {{-- 거래 내역 — 🔀 2026-11-17 jin «어지럽고 복잡해 보인다» → 한 건 = 한 줄(날짜·유형·금액·잔액·메모 앞부분), 누르면 그 아래에 상세.
+                 상세 = 메모 전체 · 선입선출 차감 · 처리자·시각·통화 · [취소]. 달마다 묶어 최근 달만 펼침(전체 — 구: 최근 50건만, GOLDEN AUTO 4건 누락).
+                 상태는 Alpine(서버 왕복 없음). 통화가 둘 이상인 바이어만 금액 옆에 통화를 붙인다. --}}
+            @php
+                $txnMonths = collect($txnList)->groupBy(fn ($t) => substr((string) $t['created_at'], 0, 7));
+                $txnMultiCur = collect($txnList)->pluck('currency')->unique()->count() > 1;
+            @endphp
+            <div class="overflow-hidden rounded-lg border border-gray-200">
+                <table class="w-full table-fixed text-xs">
+                    <colgroup><col class="w-12"><col class="w-12"><col class="w-24"><col class="w-24"><col><col class="w-6"></colgroup>
                     <thead>
-                        <tr class="bg-gray-50 text-left text-[11px] font-semibold uppercase tracking-wide text-gray-500 whitespace-nowrap">
+                        <tr class="bg-gray-50 text-left text-[11px] font-semibold text-gray-500">
                             <th class="px-2 py-2">{{ __('buyer.savings.col_date') }}</th>
-                            <th class="px-2 py-2">{{ __('buyer.savings.col_by') }}</th>
-                            <th class="px-2 py-2">{{ __('buyer.savings.currency') }}</th>
                             <th class="px-2 py-2">{{ __('buyer.savings.type') }}</th>
                             <th class="px-2 py-2 text-right">{{ __('buyer.savings.col_amount') }}</th>
                             <th class="px-2 py-2 text-right">{{ __('buyer.savings.col_balance') }}</th>
-                            <th class="px-2 py-2">{{ __('buyer.savings.col_fifo') }}</th>
-                            <th class="px-2 py-2"></th>
+                            <th class="px-2 py-2">{{ __('common.memo') }}</th>
+                            <th></th>
                         </tr>
                     </thead>
-                    {{-- 📅 월별 접기/펼치기(jin 2026-11-17 — ssancarerp GOLDEN AUTO 54건 중 오래된 4건이 50건 제한에 잘려 안 보였다).
-                         전체를 불러와 달마다 묶는다. 최근 달만 펼침 — 머리 줄을 누르면 열고 닫는다(Alpine, 서버 왕복 없음). --}}
-                    @php $txnMonths = collect($txnList)->groupBy(fn ($t) => substr((string) $t['created_at'], 0, 7)); @endphp
                     @forelse($txnMonths as $ym => $monthRows)
-                    <tbody x-data="{ open: {{ $loop->first ? 'true' : 'false' }} }" class="divide-y divide-gray-100" wire:key="svm-{{ $ym }}" data-savings-month="{{ $ym }}">
-                        <tr class="cursor-pointer select-none bg-gray-100/80 hover:bg-gray-100" @click="open = !open">
-                            <td colspan="8" class="px-2 py-1.5 text-[11px] font-semibold text-gray-600">
+                    <tbody x-data="{ open: {{ $loop->first ? 'true' : 'false' }}, sel: null }" wire:key="svm-{{ $ym }}" data-savings-month="{{ $ym }}">
+                        <tr class="cursor-pointer select-none border-t border-gray-200 bg-gray-100/80 hover:bg-gray-100" @click="open = !open">
+                            <td colspan="6" class="px-2 py-1.5 text-[11px] font-semibold text-gray-600">
                                 <span x-text="open ? '▾' : '▸'"></span> {{ $ym }} <span class="font-normal text-gray-400">· {{ __('buyer.savings.month_count', ['n' => $monthRows->count()]) }}</span>
                             </td>
                         </tr>
@@ -2689,74 +2691,51 @@ new #[Layout('components.layouts.app')] class extends Component {
                                 'CANCELLED' => 'text-gray-400',
                                 default => 'text-amber-600',
                             };
+                            $f = $t['fifo'] ?? null;
                         @endphp
-                        <tr x-show="open" class="even:bg-gray-50/60">
-                            <td class="px-2 py-1.5 text-gray-400 whitespace-nowrap">{{ $t['created_at'] }}</td>
-                            <td class="px-2 py-1.5 whitespace-nowrap text-gray-600" data-savings-by>{{ $t['by'] !== '' ? $t['by'] : '-' }}</td>
-                            <td class="px-2 py-1.5 font-mono whitespace-nowrap">{{ $t['currency'] }}</td>
-                            <td class="px-2 py-1.5 {{ $typeColor }} font-medium whitespace-nowrap">{{ $typeLabel }}</td>
-                            <td class="px-2 py-1.5 text-right font-mono {{ $t['savings'] >= 0 ? 'text-green-600' : 'text-red-500' }}">
-                                {{ $t['savings'] >= 0 ? '+' : '' }}{{ number_format($t['savings'], 2) }}
+                        {{-- 요약 한 줄 — 누르면 상세가 열리고 닫힌다 --}}
+                        <tr x-show="open" class="cursor-pointer border-t border-gray-100 hover:bg-violet-50/40" :class="sel === {{ $t['id'] }} && 'bg-violet-50/60'"
+                            @click="sel = sel === {{ $t['id'] }} ? null : {{ $t['id'] }}" data-savings-row>
+                            <td class="px-2 py-2 whitespace-nowrap text-gray-500">{{ substr((string) $t['created_at'], 5, 5) }}</td>
+                            <td class="px-2 py-2 whitespace-nowrap font-medium {{ $typeColor }}">{{ $typeLabel }}</td>
+                            <td class="px-2 py-2 whitespace-nowrap text-right font-mono {{ $t['savings'] >= 0 ? 'text-green-600' : 'text-red-500' }}">
+                                {{ $t['savings'] >= 0 ? '+' : '' }}{{ number_format($t['savings'], 2) }}@if($txnMultiCur) <span class="text-[10px] text-gray-400">{{ $t['currency'] }}</span>@endif
                             </td>
-                            <td class="px-2 py-1.5 text-right font-mono text-gray-700">{{ number_format($t['balance'], 2) }}</td>
-                            {{-- 선입선출 — 적립분은 "환율·잔여", 사용분은 "어느 적립분에서 얼마 나갔고 그 적립분 잔여" (jin 2026-07-29) --}}
-                            <td class="min-w-[150px] px-2 py-1.5 text-[11px]">{{-- 줄바꿈 허용(2026-11-17) — 한 줄 고정이면 메모 칸이 가로 스크롤 밖으로 밀린다 --}}
-                                @php $f = $t['fifo'] ?? null; @endphp
-                                @if(!$f)
-                                    <span class="text-gray-300">—</span>
-                                @elseif($f['kind'] === 'in')
-                                    <span class="text-gray-500">
+                            <td class="px-2 py-2 whitespace-nowrap text-right font-mono text-gray-700">{{ number_format($t['balance'], 2) }}</td>
+                            <td class="truncate px-2 py-2 text-gray-500" title="{{ $t['note'] }}">{{ $t['note'] }}</td>
+                            <td class="pr-2 text-right text-gray-300"><span x-text="sel === {{ $t['id'] }} ? '⌄' : '›'"></span></td>
+                        </tr>
+                        {{-- 상세 — 메모 전체·선입선출 차감·처리 정보·취소 --}}
+                        <tr x-show="open && sel === {{ $t['id'] }}" x-cloak class="bg-violet-50/40">
+                            <td colspan="6" class="px-3 pb-3 pt-1 text-[11px] leading-relaxed text-gray-600" data-savings-detail>
+                                @if($t['note'] !== '')
+                                <div class="whitespace-normal break-words" data-savings-note><span class="mr-1 text-gray-400">{{ __('common.memo') }}</span>{{ $t['note'] }}</div>
+                                @endif
+                                @if($f)
+                                <div class="mt-1"><span class="mr-1 text-gray-400">{{ __('buyer.savings.col_fifo') }}</span>
+                                    @if($f['kind'] === 'in')
                                         @if(!empty($f['exchange_rate'])){{ __('buyer.savings.rate_label', ['rate' => number_format($f['exchange_rate'], 2)]) }}@else<span class="text-amber-600">{{ __('buyer.savings.rate_none') }}</span>@endif
-                                    </span>
-                                    <span class="ml-1 {{ ($f['remaining'] ?? 0) > 0.004 ? 'text-emerald-700' : 'text-gray-400' }}">
-                                        @if(($f['remaining'] ?? 0) > 0.004)
-                                            · {{ __('buyer.savings.lot_left', ['amount' => number_format($f['remaining'], 2)]) }}
-                                        @else
-                                            · {{ __('buyer.savings.lot_spent') }}
-                                        @endif
-                                    </span>
-                                @elseif($f['kind'] === 'out')
-                                    @forelse($f['takes'] as $tk)
-                                    <div class="text-gray-600">
-                                        {{ __('buyer.savings.take_line', [
-                                            'date'   => $tk['at'],
-                                            'amount' => number_format($tk['take'], 2),
-                                            'left'   => number_format($tk['lot_left'], 2),
-                                        ]) }}
-                                    </div>
-                                    @empty
-                                    <span class="text-gray-300">—</span>
-                                    @endforelse
-                                @elseif($f['kind'] === 'back')
-                                    @foreach($f['backs'] as $bk)
-                                    <div class="text-blue-600">
-                                        {{ __('buyer.savings.back_line', ['date' => $bk['at'], 'amount' => number_format($bk['amount'], 2)]) }}
-                                    </div>
-                                    @endforeach
-                                    @if(empty($f['backs']))<span class="text-gray-300">—</span>@endif
+                                        · @if(($f['remaining'] ?? 0) > 0.004)<span class="text-emerald-700">{{ __('buyer.savings.lot_left', ['amount' => number_format($f['remaining'], 2)]) }}</span>@else{{ __('buyer.savings.lot_spent') }}@endif
+                                    @elseif($f['kind'] === 'out')
+                                        @foreach($f['takes'] as $tk){{ $loop->first ? '' : ' · ' }}{{ __('buyer.savings.take_line', ['date' => $tk['at'], 'amount' => number_format($tk['take'], 2), 'left' => number_format($tk['lot_left'], 2)]) }}@endforeach
+                                    @elseif($f['kind'] === 'back')
+                                        <span class="text-blue-600">@foreach($f['backs'] as $bk){{ $loop->first ? '' : ' · ' }}{{ __('buyer.savings.back_line', ['date' => $bk['at'], 'amount' => number_format($bk['amount'], 2)]) }}@endforeach</span>
+                                    @endif
+                                </div>
                                 @endif
-                            </td>
-                            {{-- 메모가 길면 잘리는데 호버해도 안 보였다(jin 2026-08-20).
-                                 title 은 브라우저가 그려서 **슬라이드 패널 밖으로도 안 잘린다** —
-                                 CSS 툴팁(absolute)을 쓰면 패널 overflow 에 갇힌다. --}}
-                            <td class="px-2 py-1.5">
-                                @if($t['transaction_type'] !== 'CANCELLED')
-                                <button wire:click="cancelSavingsTransaction({{ $t['id'] }})"
-                                        wire:confirm="{{ __('buyer.savings.cancel_confirm') }}"
-                                        class="text-gray-300 hover:text-red-400" title="{{ __('buyer.savings.cancel_title') }}">×</button>
-                                @endif
+                                <div class="mt-1 flex flex-wrap items-center justify-between gap-2 text-gray-400">
+                                    <span>{{ $t['created_at'] }} · {{ $t['currency'] }}@if($t['by'] !== '') · <span data-savings-by>{{ $t['by'] }}</span>@endif</span>
+                                    @if($t['transaction_type'] !== 'CANCELLED')
+                                    <button wire:click="cancelSavingsTransaction({{ $t['id'] }})" wire:confirm="{{ __('buyer.savings.cancel_confirm') }}"
+                                            class="rounded border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-gray-500 hover:border-red-300 hover:text-red-500">{{ __('buyer.savings.cancel_title') }}</button>
+                                    @endif
+                                </div>
                             </td>
                         </tr>
-                        {{-- 메모 = 거래 바로 아래 전체 폭 줄(2026-11-17 — 구: PC 120px 한 줄로 잘려 호버해야 보였고, 칸을 넓히면 패널 밖으로 밀렸다) --}}
-                        @if($t['note'] !== '')
-                        <tr x-show="open" class="bg-white">
-                            <td colspan="8" class="px-2 pb-2 pt-0 text-[11px] leading-snug text-gray-500"><div class="whitespace-normal break-words" data-savings-note><span class="text-gray-400">{{ __('common.memo') }} ·</span> {{ $t['note'] }}</div></td>
-                        </tr>
-                        @endif
                         @endforeach
                     </tbody>
                     @empty
-                    <tbody><tr><td colspan="8" class="py-6 text-center text-gray-400">{{ __('buyer.savings.no_history') }}</td></tr></tbody>
+                    <tbody><tr><td colspan="6" class="py-6 text-center text-gray-400">{{ __('buyer.savings.no_history') }}</td></tr></tbody>
                     @endforelse
                 </table>
             </div>
