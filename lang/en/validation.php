@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\Vehicle;
+
 return [
 
     /*
@@ -178,11 +180,18 @@ return [
     |
     */
 
-    'custom' => [
-        'attribute-name' => [
-            'rule-name' => 'custom-message',
+    'custom' => array_merge(
+        [
+            'attribute-name' => [
+                'rule-name' => 'custom-message',
+            ],
         ],
-    ],
+        // Vehicle document size limit (2026-11-17) — plain words instead of "102400 kilobytes".
+        array_fill_keys(
+            ['files.*', 'deregistrationDocFile', 'exportDeclarationDocFile', 'blDocFile', 'checkbillFile', 'bulkDocFile', 'bulkDocFiles.*'],
+            ['max' => 'The file is larger than '.intdiv(Vehicle::DOCUMENT_MAX_KB, 1024).'MB. Please compress or split the PDF.'],
+        ),
+    ),
 
     /*
     |--------------------------------------------------------------------------
