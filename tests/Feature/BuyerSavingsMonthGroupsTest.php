@@ -43,8 +43,8 @@ class BuyerSavingsMonthGroupsTest extends TestCase
         $this->assertCount(18, $c->get('savingsUseList'), '사용 내역도 전부');
         $html = $c->html();
         $this->assertSame(55, substr_count($html, 'data-savings-note'), '메모가 있는 모든 행이 그려진다');
-        $this->assertMatchesRegularExpression('/x-data="\{ open: true \}"[^>]*data-savings-month="2026-11"/', $html, '최근 달은 펼침');
-        $this->assertMatchesRegularExpression('/x-data="\{ open: false \}"[^>]*data-savings-month="2026-08"/', $html, '지난 달은 접힘');
+        $this->assertMatchesRegularExpression('/x-data="\{ open: true, sel: null \}"[^>]*data-savings-month="2026-11"/', $html, '최근 달은 펼침');
+        $this->assertMatchesRegularExpression('/x-data="\{ open: false, sel: null \}"[^>]*data-savings-month="2026-08"/', $html, '지난 달은 접힘');
         $this->assertStringContainsString('data-savings-use-month="2026-08"', $html);
         $this->assertStringContainsString(trim($long), $html, '긴 메모가 통째로 나온다');
         $this->assertStringNotContainsString('max-w-[120px] truncate', $html, '한 줄 자르기 없음');

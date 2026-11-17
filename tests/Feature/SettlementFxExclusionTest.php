@@ -119,6 +119,32 @@ class SettlementFxExclusionTest extends TestCase
         $this->assertSame(366_205, $s->fresh()->actual_payout, '제출된 뒤 설정을 바꿔도 그대로');
     }
 
+    /**
+     * 2차 정산 — 환차 제외 정산은 지급 뒤 잔금이 다른 환율로 들어와도 환차분이 0, 비용 변동분만 넘어간다(jin 11-17 확인).
+     * 환차 포함 정산은 종전대로 환차분이 생긴다.
+     */
+    public function test_secondary_carries_only_cost_changes_for_excluded_settlements(): void
+    {
+        $this->fxFrom('2026-12');
+        foreach (['2026-12-01' => true, '2026-11-01' => false] as $month => $excluded) {
+            $s = $this->settlement($month);
+            $s->update(['settlement_status' => 'paid', 'paid_at' => now()]);
+            $v = $s->vehicle;
+            // 지급 뒤: 잔금 하나의 환율 정정(1718 → 1800) + 탁송비 1만 원 추가
+            FinalPayment::where('vehicle_id', $v->id)->first()->forceFill(['exchange_rate' => 1800])->saveQuietly();
+            $v->forceFill(['cost_towing' => 35_000])->saveQuietly();
+            $s = Settlement::with(['vehicle.finalPayments', 'vehicle.receivableHistories'])->find($s->id);
+
+            $d = $s->secondaryDeltas();
+            $this->assertEqualsWithDelta(-9_000.0, $d['cost'], 0.5, "{$month}: 비용 변동분은 종전 그대로");
+            if ($excluded) {
+                $this->assertSame(0.0, $d['fx'], '환차 제외 정산은 환차분 0');
+            } else {
+                $this->assertGreaterThan(0.0, $d['fx'], '환차 포함 정산은 종전대로 환차분');
+            }
+        }
+    }
+
     /** 배치가 반려되면(지급 전) 박제를 푼다 — 귀속월을 옮겨 다시 제출하면 그때 다시 판정. */
     public function test_rejected_batch_releases_the_pin(): void
     {
