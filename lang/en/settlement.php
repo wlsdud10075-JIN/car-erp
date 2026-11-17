@@ -319,6 +319,7 @@ return [
     'krw_krw_vehicle' => 'KRW vehicle — no FX diff',
     'krw_primary' => 'Primary settlement KRW',
     'krw_primary_sub' => '(at vehicle rate)',
+    'krw_primary_sub_excluded' => '(this settlement is calculated with this value — FX excluded)',
     'krw_received' => 'KRW at deposit time',
     'krw_received_sub' => '(per-row rate)',
     'krw_baseline' => 'Baseline',

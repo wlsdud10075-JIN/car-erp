@@ -332,6 +332,7 @@ return [
     'krw_krw_vehicle' => '원화 차량 — 환차 없음',
     'krw_primary' => '판매환율 기준 판매금원화',
     'krw_primary_sub' => '(환차 비교용 기준선 — 실제 1차 정산은 입금환율로 계산)',
+    'krw_primary_sub_excluded' => '(이 정산은 이 값으로 계산 — 환차 제외)',
     'krw_received' => '입금 시점 KRW 합',
     'krw_received_sub' => '(row별 환율)',
     'krw_baseline' => '기준액',
