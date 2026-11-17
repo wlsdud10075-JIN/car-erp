@@ -140,6 +140,7 @@ final class BatchPayoutBreakdown
 
         $contributionSum = 0;
         $commonLabor = 0;
+        $companyFx = 0;
         $transfer = 0;
         $vehicles = 0;
         $equivSum = 0;
@@ -159,6 +160,7 @@ final class BatchPayoutBreakdown
             } elseif ($r['company_contribution'] !== null) {
                 $contributionSum += (int) $r['company_contribution'];
             }
+            $companyFx += (int) ($r['company_fx'] ?? 0);   // 💱 옛 박제엔 키가 없다 → 0
         }
         foreach ($rows as &$r) {
             // 분모 = 기여 합(jin 2026-10-08 — 음수가 있으면 나머지 합이 100% 를 넘는다). 합이 음수면 |합| 로 나눠 부호를 지킨다. 0 이면 없음.
@@ -187,7 +189,9 @@ final class BatchPayoutBreakdown
                 'contribution_sum' => $contributionSum,
                 'common_labor' => $commonLabor,
                 'domestic_profit' => $domesticProfit,
-                'company_net' => $contributionSum - $commonLabor + $domesticProfit,
+                // 💱 환차손익(회사) — 환차를 정산에서 뺀 정산분(2026-11-17). 사람별 기여엔 안 넣고 여기 합계에만.
+                'company_fx' => $companyFx,
+                'company_net' => $contributionSum - $commonLabor + $domesticProfit + $companyFx,
             ],
             // 🧾 내수직원 합계 줄(jin 2026-11-03 — 엑셀 G74:P74) = 이번 달 카드에 들어간 내수직원 표의 열 합. 없으면 null.
             //    켜진 회사의 사내직원 월정산은 사람 카드가 없으므로 그 달 표에서 바로 더한다(표시 전용 — 송금·회사이익 무관, jin «합계 한 줄이면 족해»).

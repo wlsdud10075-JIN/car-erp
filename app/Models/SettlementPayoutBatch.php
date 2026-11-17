@@ -1336,6 +1336,8 @@ class SettlementPayoutBatch extends Model
             $this->save();
 
             // 멤버 정산 배치 해제 → 재배치 가능 (settlement_status=confirmed 유지)
+            // 💱 환차 제외 박제도 푼다(지급 전이라) — 다시 제출될 때 그때 귀속월·설정으로 다시 정한다(jin 2026-11-17).
+            $this->settlements()->where('settlement_status', '!=', 'paid')->update(['fx_excluded' => null]);
             $this->settlements()->update(['payout_batch_id' => null, 'payout_submitted_krw' => null]);
             // 💸 이 배치가 가져갔던 미청산 이월을 되돌린다 — 안 되돌리면 반려된 배치가 돈을 「처리한 것」이 되어
             //    다음 제출에서 그 이월이 안 나온다(조정 줄은 반려 배치의 역사로 남는다). (jin 2026-10-06)
