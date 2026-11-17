@@ -3,9 +3,13 @@
 namespace Tests\Feature;
 
 use App\Models\FinalPayment;
+use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\Settlement;
+use App\Models\SettlementPayoutBatch;
+use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\Payout\PersonPayoutBreakdown;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -113,5 +117,40 @@ class SettlementFxExclusionTest extends TestCase
         $this->assertTrue($s->fresh()->fx_excluded);
         $this->fxFrom(null);
         $this->assertSame(366_205, $s->fresh()->actual_payout, '제출된 뒤 설정을 바꿔도 그대로');
+    }
+
+    /** 배치가 반려되면(지급 전) 박제를 푼다 — 귀속월을 옮겨 다시 제출하면 그때 다시 판정. */
+    public function test_rejected_batch_releases_the_pin(): void
+    {
+        $this->fxFrom('2026-12');
+        $sm = Salesman::create(['name' => 'FX프리', 'type' => 'freelance', 'is_active' => true]);
+        $s = $this->settlement('2026-11-01');
+        $s->update(['salesman_id' => $sm->id, 'settlement_status' => 'confirmed', 'confirmed_at' => now()]);
+        $submitter = User::factory()->create(['permission' => 'user', 'role' => '관리', 'email_verified_at' => now()]);
+
+        $batch = SettlementPayoutBatch::submitForMonth($submitter, '2026-11');
+        $this->assertFalse($s->fresh()->fx_excluded, '11월 귀속 = 환차 포함으로 박제');
+
+        $batch->rejectBy(User::factory()->create(['permission' => 'manager', 'email_verified_at' => now()]), '다시');
+
+        $this->assertNull($s->fresh()->fx_excluded, '반려되면 박제 해제');
+        $this->assertNull($s->fresh()->payout_batch_id);
+    }
+
+    /** 환차손익(회사)은 합계에만 — 사람별 기여엔 안 들어간다(환율 사건이 담당자 순위·비중을 흔들지 않게). */
+    public function test_company_fx_goes_to_the_total_not_to_the_person(): void
+    {
+        $this->fxFrom('2026-12');
+        $sm = Salesman::create(['name' => 'FX프리2', 'type' => 'freelance', 'is_active' => true]);
+        $s = $this->settlement('2026-12-01');
+        $s->update(['salesman_id' => $sm->id]);
+        $s = $s->fresh();
+        $fx = $s->companyFxKrw();
+        $this->assertSame((int) round(8996 * (1718 - 1716)), $fx, '실현 환차 = 받은 외화 × (입금환율 − 판매환율)');
+
+        $person = PersonPayoutBreakdown::build($sm, '2026-12', collect([$s]), collect(), 0, false);
+        $this->assertSame($fx, $person['company_fx']);
+        $this->assertSame($s->total_margin - $s->actual_payout - $s->shipping_fee, $person['company_contribution'], '사람별 기여엔 환차 없음');
+        $this->assertSame($person['company_contribution'] + $fx, $s->company_net, '회사 몫(합계)엔 환차 포함');
     }
 }

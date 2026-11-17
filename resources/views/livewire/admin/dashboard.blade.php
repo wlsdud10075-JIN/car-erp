@@ -706,7 +706,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         if (! isset($byPerson[$id])) {
                             $byPerson[$id] = ['contribution' => 0, 'count' => 0, 'payout' => 0, 'payroll' => 0, 'adjust' => 0, 'employee' => false];
                         }
-                        $byPerson[$id]['contribution'] += $share;
+                        $byPerson[$id]['contribution'] += $share - $companyFx;   // 💱 사람별 기여엔 환율 사건(회사 환차)을 안 넣는다 — 합계에만
                         $byPerson[$id]['payout'] += $payout;
                         $byPerson[$id]['count']++;
                         if ($s->settlement_type !== 'ratio') {

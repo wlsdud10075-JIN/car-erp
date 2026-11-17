@@ -2960,7 +2960,8 @@ new #[Layout('components.layouts.app')] class extends Component
                         <span class="text-gray-300" title="{{ __('settlement.exchange_needs_receipt') }}">—</span>
                     @else
                         @php $preview = $s->isExchangeDifferencePreview(); $partial = $s->isExchangeDifferencePartial(); @endphp
-                        <span title="{{ $partial ? __('settlement.exchange_partial_title') : ($preview ? __('settlement.exchange_preview_title') : ($diff > 0 ? __('settlement.exchange_profit_title') : ($diff < 0 ? __('settlement.exchange_loss_title') : __('settlement.exchange_same_title')))) }}">
+                        {{-- 💱 환차 제외 정산(2026-11-17)은 「1차에 이미 반영」이 틀린 말이 된다 — 그 정산엔 회사 몫이라고 적는다 --}}
+                        <span title="{{ $s->fxExcluded() ? __('settlement.fx_excluded_hint') : ($partial ? __('settlement.exchange_partial_title') : ($preview ? __('settlement.exchange_preview_title') : ($diff > 0 ? __('settlement.exchange_profit_title') : ($diff < 0 ? __('settlement.exchange_loss_title') : __('settlement.exchange_same_title'))))) }}">
                             @if($diff > 0)
                             <span class="font-semibold text-emerald-600">+₩{{ number_format($diff) }}</span>
                             @elseif($diff < 0)

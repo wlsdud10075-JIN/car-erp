@@ -178,7 +178,8 @@ final class PersonPayoutBreakdown
         $equivSaleRate = (int) $settlements->sum(fn (Settlement $s) => $s->freelanceEquivalentPayout((float) ($s->vehicle?->exchange_rate ?? 0)));
         $equivEffective = (int) $settlements->sum(fn (Settlement $s) => $s->freelanceEquivalentPayout());
         $fxPrimary = $equivEffective - $equivSaleRate;
-        // 💱 환차를 정산에서 뺀 정산의 환차 = 회사 몫(Settlement::companyFxKrw, 2026-11-17). 회사 기여에 더한다.
+        // 💱 환차를 정산에서 뺀 정산의 환차 = 회사 몫(Settlement::companyFxKrw, 2026-11-17).
+        //    🚫 사람별 기여(company_contribution)엔 안 넣는다 — 환율 사건이라 담당자 순위·비중을 흔든다. 합계(BatchPayoutBreakdown totals)에서만 더한다.
         $companyFx = (int) $settlements->sum(fn (Settlement $s) => $s->companyFxKrw());
 
         [$closedCarry, $closedFx] = self::closedInMonth($sm, $month, $type);
@@ -195,7 +196,7 @@ final class PersonPayoutBreakdown
                 'equiv_sale_rate' => $equivSaleRate, 'fx_primary' => $fxPrimary, 'carry' => $carry, 'fx_secondary' => $closedFx,
                 'equiv_total' => $equivTotal, 'settlement_pay' => $equivTotal, 'payout' => $payout,
                 'total_margin' => $totalMargin, 'shipping' => $shipping,
-                'company_contribution' => $totalMargin - $payoutCost - $shipping + $companyFx, 'company_fx' => $companyFx,
+                'company_contribution' => $totalMargin - $payoutCost - $shipping, 'company_fx' => $companyFx,
                 'margin_after_pay' => null, 'excess_ratio' => null,
             ];
         }
@@ -220,7 +221,7 @@ final class PersonPayoutBreakdown
             'equiv_sale_rate' => $equivSaleRate, 'fx_primary' => $fxPrimary, 'carry' => $closedCarry, 'fx_secondary' => $closedFx,
             'equiv_total' => $equivTotal, 'settlement_pay' => $settlementPay, 'payout' => $payout,
             'total_margin' => $totalMargin, 'shipping' => $shipping,
-            'company_contribution' => $totalMargin - $payoutCost - $shipping + $companyFx, 'company_fx' => $companyFx,
+            'company_contribution' => $totalMargin - $payoutCost - $shipping, 'company_fx' => $companyFx,
             'margin_after_pay' => $marginAfterPay,
             'excess_ratio' => $payoutCost > 0 ? round($marginAfterPay / $payoutCost, 1) : null,
             'base_pay' => $payroll + $settlementPay,
