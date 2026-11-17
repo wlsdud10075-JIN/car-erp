@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Listeners\NotifyScheduledTaskOutcome;
 use App\Listeners\RecordScheduledTaskRun;
+use App\Models\Vehicle;
 use App\Services\Assistant\OllamaClient;
 use App\Services\Kakao\AnthropicKakaoClient;
 use App\Services\Kakao\KakaoClassifierClient;
@@ -47,6 +48,14 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        // 📦 Livewire 임시 업로드 상한 200MB (jin 2026-11-17 — B/L 100MB+ PDF). 기본 12MB 가 앱 검증(Vehicle::DOCUMENT_MAX_KB)보다
+        //    먼저 걸려 「업로드가 안 된다」로만 보였다. 화면별 검증(사진 10MB 등)은 각자 그대로다. 큰 파일은 올리는 데 오래 걸려
+        //    임시파일 유효시간도 30분으로. 서버 nginx·PHP 상한(210M)도 같이 올라가 있어야 실제로 들어온다.
+        config([
+            'livewire.temporary_file_upload.rules' => ['required', 'file', 'max:'.Vehicle::DOCUMENT_MAX_KB],
+            'livewire.temporary_file_upload.max_upload_time' => 30,
+        ]);
+
         // claudereview A — 문서 다운로드 Rate Limiting (정책 D 유지의 보상통제).
         // 사용자당 분당 제한 + (이론상) 미인증 시 IP fallback. 정상 사용(하루 수~수십 건)은 무영향.
         // 다중차량(showMulti)은 1요청=최대 30대라 분당 횟수를 더 낮게 잡아 대량열람 억제.

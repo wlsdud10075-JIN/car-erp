@@ -219,13 +219,13 @@ class BulkVehicleDocumentService
         }
 
         $ext = self::extOf($file);
-        $content = self::contentOf($file);
+        $open = self::opener($file);
 
         $applied = 0;
         $skipped = [];
 
         foreach (Vehicle::whereIn('id', $ids)->orderBy('vehicle_number')->get() as $vehicle) {
-            $result = $this->writeOne($vehicle, $cfg, $type, $content, $ext, $by, $replaceExisting, $reason, $setFlag);
+            $result = $this->writeOne($vehicle, $cfg, $type, $open, $ext, $by, $replaceExisting, $reason, $setFlag);
             if ($result === null) {
                 $applied++;
             } else {
@@ -245,7 +245,7 @@ class BulkVehicleDocumentService
         Vehicle $vehicle,
         array $cfg,
         string $type,
-        string $content,
+        \Closure $open,
         string $ext,
         User $by,
         bool $replaceExisting,
@@ -268,7 +268,16 @@ class BulkVehicleDocumentService
             }
 
             $path = "vehicles/{$vehicle->id}/".Str::random(40).'.'.$ext;
-            if (! Storage::disk($disk)->put($path, $content) || ! Storage::disk($disk)->exists($path)) {
+            // 📦 스트림으로 쓴다 — 200MB PDF 를 문자열로 읽으면 memory_limit(128M)에서 죽는다(2026-11-17 상한 200MB).
+            $stream = $open();
+            try {
+                $ok = Storage::disk($disk)->put($path, $stream);
+            } finally {
+                if (is_resource($stream)) {
+                    fclose($stream);
+                }
+            }
+            if (! $ok || ! Storage::disk($disk)->exists($path)) {
                 throw new FileStoreFailedException($cfg['column']);
             }
             $stored = $path;
@@ -319,16 +328,20 @@ class BulkVehicleDocumentService
     }
 
     /**
-     * Livewire 임시파일은 `get()` 이 임시 디스크에서 직접 읽는다(임시 디스크가 s3 여도 동작).
-     * 테스트의 평범한 `UploadedFile` 에는 그 메서드가 없어 Symfony 의 `getContent()` 로 떨어진다.
+     * 파일을 **읽을 때마다 새 스트림**을 여는 함수 — 공유형은 같은 파일을 N대에 쓰므로 매번 처음부터 읽는다.
+     * Livewire 임시파일은 `readStream()` 이 임시 디스크에서 직접 연다(임시 디스크가 s3 여도 동작).
+     * 테스트의 평범한 `UploadedFile` 에는 그 메서드가 없어 실제 경로를 연다.
      *
      * 🚨 **`store()` 를 N번 부르지 않는 이유** = Livewire `storeAs()` 는 대상 디스크가 임시 디스크와
      *    같으면 `move()` 라 첫 저장에서 원본이 사라진다. 더해서 `put` 반환값을 버리고 경로를 그대로
-     *    돌려주므로 실패를 못 잡는다(SKILLS §8 #47-B). 그래서 여기서 내용을 읽어 직접 쓴다.
+     *    돌려주므로 실패를 못 잡는다(SKILLS §8 #47-B). 그래서 여기서 직접 쓴다.
+     * 📦 문자열로 읽지 않는다(2026-11-17) — 상한 200MB 파일을 통째로 읽으면 memory_limit 128M 에서 죽는다.
      */
-    private static function contentOf(UploadedFile $file): string
+    private static function opener(UploadedFile $file): \Closure
     {
-        return method_exists($file, 'get') ? $file->get() : $file->getContent();
+        return method_exists($file, 'readStream')
+            ? fn () => $file->readStream()
+            : fn () => fopen($file->getRealPath(), 'rb');
     }
 
     private static function extOf(UploadedFile $file): string
@@ -375,7 +388,7 @@ class BulkVehicleDocumentService
         foreach (Vehicle::whereIn('id', array_keys($files))->orderBy('vehicle_number')->get() as $vehicle) {
             $file = $files[$vehicle->id];
             $result = $this->writeOne(
-                $vehicle, $cfg, $type, self::contentOf($file), self::extOf($file), $by, $replaceExisting, $reason, $setFlag
+                $vehicle, $cfg, $type, self::opener($file), self::extOf($file), $by, $replaceExisting, $reason, $setFlag
             );
             if ($result === null) {
                 $applied++;
