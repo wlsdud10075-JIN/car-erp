@@ -10957,7 +10957,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     @if(\App\Models\Setting::paymentRateAutoActive())
                     {{-- 💱 2026-11-17 jin — 자동 기록 기간: 칸을 숨기고 저장 때 서버가 「입금일 전날 마감」을 적는다. 숨은 칸은 원화 환산 계산(app.js)용. --}}
                     <input wire:model="finalPayments.{{ $idx }}.exchange_rate" type="hidden" data-fp-rate />
-                    <span class="text-[11px] text-gray-400" style="width: 80px; flex: none;" title="{{ __('vehicle.panel.rate_auto_hint') }}" data-fp-rate-auto>
+                    <span class="whitespace-nowrap text-[11px] text-gray-400" style="flex: none;" title="{{ __('vehicle.panel.rate_auto_hint') }}" data-fp-rate-auto>
                         {{ ($row['exchange_rate'] ?? '') !== '' ? number_format((float) str_replace(',', '', $row['exchange_rate']), 2) : '—' }} <span class="text-[10px]">{{ __('vehicle.panel.rate_auto') }}</span>
                     </span>
                     @else

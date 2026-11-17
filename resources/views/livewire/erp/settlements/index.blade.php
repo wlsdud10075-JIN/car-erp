@@ -3524,7 +3524,7 @@ new #[Layout('components.layouts.app')] class extends Component
             @else
             <div class="rounded-lg bg-gray-50 p-3 text-sm space-y-1.5">
                 <div class="flex justify-between text-gray-600">
-                    <span>{{ __('settlement.krw_primary') }} <span class="text-xs text-gray-400">{{ __('settlement.krw_primary_sub') }}</span></span>
+                    <span>{{ __('settlement.krw_primary') }} <span class="text-xs text-gray-400">{{ ($this->marginData['fxExcluded'] ?? false) ? __('settlement.krw_primary_sub_excluded') : __('settlement.krw_primary_sub') }}</span></span>
                     <span>₩{{ number_format($kb['primary_krw']) }}</span>
                 </div>
                 <div class="flex justify-between text-gray-600">
