@@ -99,6 +99,7 @@ return [
     'inv_preship' => 'Pre-shipping',
     'company_net_breakdown' => 'Total margin ₩:margin − take-home ₩:payout (incl. payroll & incentives) − shipping ₩:shipping − common labor ₩:labor',
     'company_fx_absorbed' => 'Employee FX absorbed by company: ₩:fx',
+    'company_fx_line' => 'FX gain/loss (company) ₩:fx — settlements with FX excluded, included above',
     'company_domestic_profit' => '+ domestic staff company profit ₩:amount (after appraiser pay, from the fee sheet)',
     'company_overpay_income' => '+ overpayment booked as company income ₩:amount (converted in Receivables, by conversion date in this period)',
     'company_contrib_title' => 'Company contribution by person (top 10)',

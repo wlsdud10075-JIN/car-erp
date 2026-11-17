@@ -204,7 +204,27 @@ class ReceivableHistory extends Model
             // 환율 편집 반영 (Phase 3, 2026-07-13) — 환율이 명시된 경우에만 미러링.
             //   ⚠️ null 을 항상 넣으면 역방향 미러(FinalPayment::created→RH)가 FP 기존 환율을 null 로 덮어씀.
             //   raw update 라 FinalPayment::saving 훅 미발동 → amount_krw 를 훅과 동일 공식으로 직접 계산.
-            if ($this->exchange_rate !== null) {
+            // 💱 판매잔금 환율 자동 기록 기간(jin 2026-11-17) — 채권관리 입금도 사람이 적은 환율 대신 「입금일 전날 마감」.
+            //    새 잔금 · 미확정 잔금의 날짜가 바뀐 때 · 미확정인데 환율이 빈 때만. 확정된 잔금의 환율은 그대로 둔다.
+            $autoRate = null;
+            $cur = $this->vehicle?->currency;
+            if (Setting::paymentRateAutoActive() && $cur && $cur !== 'KRW') {
+                $linked = $this->final_payment_id ? FinalPayment::find($this->final_payment_id) : null;
+                $date = substr((string) $this->collected_at, 0, 10);
+                $autoRate = (! $linked || ($linked->confirmed_at === null
+                        && ($linked->payment_date?->toDateString() !== $date || $linked->exchange_rate === null)))
+                    ? (FinalPayment::autoRateFields($cur, $date) ?: ['exchange_rate' => null])
+                    : [];   // 확정 잔금 — 환율을 안 건드린다
+            }
+            if ($autoRate !== null) {
+                if ($autoRate !== []) {
+                    $rate = (float) ($autoRate['exchange_rate'] ?? 0);
+                    $amt = (float) ($this->amount ?? 0);
+                    $payload += $autoRate;
+                    $payload['amount_krw'] = ($rate > 0 && $amt > 0) ? round($amt * $rate, 2) : null;
+                    static::query()->whereKey($this->id)->update(['exchange_rate' => $autoRate['exchange_rate']]);   // 회수 줄도 같은 값(raw — 재진입 방지)
+                }
+            } elseif ($this->exchange_rate !== null) {
                 $rate = (float) $this->exchange_rate;
                 $amt = (float) ($this->amount ?? 0);
                 $payload['exchange_rate'] = $this->exchange_rate;

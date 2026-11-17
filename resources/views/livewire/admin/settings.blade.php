@@ -31,6 +31,11 @@ new #[Layout('components.layouts.app')] class extends Component
     /** 🤝 B2B 파트너스 on/off (jin 2026-11-02) — 회사별. */
     public bool $b2bPartnersEnabled = false;
 
+    /** 💱 환차·판매잔금 환율 (jin 2026-11-17) — 회사별, 시스템관리자만. 비우면 종전 동작. */
+    public string $fxExcludedFrom = '';      // 'Y-m' — 그 귀속월 이상 정산은 판매환율(환차 제외)
+    public string $paymentRateAutoFrom = ''; // 'Y-m-d' — 그날부터 판매잔금 환율 칸 숨김 + 전날 마감 자동 기록
+    public string $paymentRateKind = 'receive';   // receive(송금 받으실 때) | base(매매기준율)
+
     /** 📱 카톡자동화 「내 카톡 할 일」 on/off (jin 2026-11-10) — 회사별, 기본 꺼짐. 키는 서버 .env. */
     public bool $kakaoAssistantEnabled = false;
 
@@ -177,6 +182,9 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->unsecuredLimitEnabled = Setting::unsecuredLimitEnabled();
         $this->buyerCashEnabled = Setting::buyerCashEnabled();
         $this->b2bPartnersEnabled = Setting::b2bPartnersEnabled();
+        $this->fxExcludedFrom = (string) Setting::settlementFxExcludedFrom();
+        $this->paymentRateAutoFrom = (string) Setting::paymentRateAutoFrom();
+        $this->paymentRateKind = Setting::paymentRateKind();
         $this->kakaoAssistantEnabled = Setting::kakaoAssistantEnabled();
         $this->kakaoParams = ['kakao_daily_cost_cap_krw' => Setting::kakaoDailyCostCapKrw(), 'kakao_max_new_per_read' => Setting::kakaoMaxNewPerRead(), 'kakao_read_days' => Setting::kakaoReadDays(),
             'kakao_window_days' => Setting::kakaoWindowDays(), 'kakao_urgent_hours' => Setting::kakaoUrgentHours(), 'kakao_missed_days' => Setting::kakaoMissedDays()];
@@ -1059,6 +1067,48 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     /** 📱 카톡자동화 수치 저장 — 하루 상한(원)·읽기당 최대 건수·표시 기간·급한 기준·놓침 기준. 하한은 KAKAO_PARAM_MIN(Setting::kakao*() 와 같음). 감사로그 1건. */
+    /**
+     * 💱 환차·판매잔금 환율 저장 (jin 2026-11-17) — 세 값을 한 번에, 감사 1건.
+     *   ① 정산 환차 제외 시작 귀속월(Y-m, 비우면 환차 포함) ② 판매잔금 환율 자동 기록 시작일(Y-m-d, 비우면 사람이 입력) ③ 자동 기록 환율 종류.
+     *   🔒 정산은 배치 제출·지급 때 판정이 박제되므로 여기 값을 바꿔도 이미 묶이거나 지급된 정산은 안 움직인다.
+     */
+    public function saveFxSettings(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $this->validate([
+            'fxExcludedFrom' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
+            'paymentRateAutoFrom' => ['nullable', 'date_format:Y-m-d'],
+            'paymentRateKind' => ['required', 'in:receive,base'],
+        ]);
+        $set = Setting::companyTemplateSet();
+        $values = [
+            'settlement_fx_excluded_from_'.$set => trim($this->fxExcludedFrom),
+            'payment_rate_auto_from_'.$set => trim($this->paymentRateAutoFrom),
+            'payment_rate_kind_'.$set => $this->paymentRateKind,
+        ];
+        $before = [];
+        $after = [];
+        foreach ($values as $key => $v) {
+            $old = (string) Setting::get($key, '');
+            if ($old !== $v) {
+                Setting::updateOrCreate(['key' => $key], ['value' => $v, 'type' => 'string', 'description' => '환차·판매잔금 환율 (2026-11-17)']);
+                $before[$key] = $old;
+                $after[$key] = $v;
+            }
+        }
+        if ($after !== []) {
+            \App\Models\AuditLog::create([
+                'user_id' => auth()->id(), 'auditable_type' => Setting::class, 'auditable_id' => Setting::where('key', array_key_first($after))->value('id'),
+                'action' => 'fx_settings_changed', 'column_name' => 'fx_settings',
+                'old_value' => json_encode($before, JSON_UNESCAPED_UNICODE), 'new_value' => json_encode($after, JSON_UNESCAPED_UNICODE), 'ip_address' => request()?->ip(),
+            ]);
+        }
+        Setting::flushRiskParamMemo();
+        $this->dispatch('notify', message: __('feature_settings.saved'), type: 'success');
+    }
+
     public function saveKakaoParams(): void
     {
         if (! auth()->user()?->isSuperAdmin()) {
@@ -2042,6 +2092,35 @@ new #[Layout('components.layouts.app')] class extends Component
                     <span class="relative h-5 w-9 shrink-0 rounded-full bg-gray-300 transition-colors peer-checked:bg-amber-500
                                  after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:transition-transform peer-checked:after:translate-x-4"></span>
                 </label>
+            </div>
+
+            {{-- 💱 환차·판매잔금 환율 (jin 2026-11-17) — 회사별. 비우면 종전 동작. 저장 버튼 1개, 감사 1건. --}}
+            <div class="rounded-md border border-gray-100 px-3 py-2" data-fx-settings>
+                <p class="text-sm text-gray-700">{{ __('feature_settings.fx_title') }}
+                    <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.fx_sub') }}</span>
+                </p>
+                <div class="mt-2 grid grid-cols-1 gap-2 border-t border-gray-100 pt-2 sm:grid-cols-3">
+                    <label class="block text-xs text-gray-600">{{ __('feature_settings.fx_excluded_from') }}
+                        <input type="month" wire:model="fxExcludedFrom" class="input-base mt-1 w-full" />
+                        <span class="mt-0.5 block text-[10px] text-gray-400">{{ __('feature_settings.fx_excluded_from_hint') }}</span>
+                        @error('fxExcludedFrom')<span class="block text-[11px] text-red-500">{{ $message }}</span>@enderror
+                    </label>
+                    <label class="block text-xs text-gray-600">{{ __('feature_settings.payment_rate_auto_from') }}
+                        <input type="text" data-date wire:model="paymentRateAutoFrom" placeholder="2026-12-01" class="input-base mt-1 w-full" />
+                        <span class="mt-0.5 block text-[10px] text-gray-400">{{ __('feature_settings.payment_rate_auto_from_hint') }}</span>
+                        @error('paymentRateAutoFrom')<span class="block text-[11px] text-red-500">{{ $message }}</span>@enderror
+                    </label>
+                    <label class="block text-xs text-gray-600">{{ __('feature_settings.payment_rate_kind') }}
+                        <select wire:model="paymentRateKind" class="input-base mt-1 w-full">
+                            <option value="receive">{{ __('feature_settings.payment_rate_kind_receive') }}</option>
+                            <option value="base">{{ __('feature_settings.payment_rate_kind_base') }}</option>
+                        </select>
+                        <span class="mt-0.5 block text-[10px] text-gray-400">{{ __('feature_settings.payment_rate_kind_hint') }}</span>
+                    </label>
+                </div>
+                <div class="mt-2 flex justify-end">
+                    <button type="button" wire:click="saveFxSettings" class="btn-primary text-xs">{{ __('common.save') }}</button>
+                </div>
             </div>
 
             {{-- 📱 카톡자동화 「내 카톡 할 일」 on/off (jin 2026-11-10) — 회사별, 기본 꺼짐. 기획 docs/design/kakao-automation.md

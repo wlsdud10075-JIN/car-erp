@@ -43,6 +43,8 @@ class Settlement extends Model
         'attributed_month',
         // 2026-09-08 jin — 내수(국내 판매) 건인가. **정산 생성 시점에 박제**하고 이후 바뀌지 않는다.
         'is_domestic',
+        // 2026-11-17 jin — 「환차를 정산에서 뺐나」 박제(배치 제출·지급 때). NULL = 아직 안 정함 → 설정(Setting::settlementFxExcludedFrom)을 따른다.
+        'fx_excluded',
         // 2026-09-12 jin — 신규 정산 게이트 예외(사유 기반). 판정은 `gate_override_at` 유무 하나.
         'gate_override_reason', 'gate_override_by', 'gate_override_at',
         'gate_override_blockers', 'gate_override_unpaid_amount',
@@ -62,6 +64,7 @@ class Settlement extends Model
         'secondary_cost_krw' => 'decimal:2',
         'confirmed_snapshot' => 'array',
         'is_domestic' => 'boolean',
+        'fx_excluded' => 'boolean',
         'gate_override_at' => 'datetime',
         'gate_override_blockers' => 'array',
         'gate_override_unpaid_amount' => 'decimal:2',
@@ -260,6 +263,11 @@ class Settlement extends Model
                 if ($s->settlement_type === 'per_unit' && $s->per_unit_amount === null) {
                     $s->per_unit_amount = $s->effective_per_unit_amount;
                 }
+            }
+
+            // 💱 환차 제외 판정 박제(jin 2026-11-17) — 지급되면 설정을 나중에 바꿔도 이 정산의 숫자가 안 움직이게. 스냅샷보다 먼저.
+            if ($becamePaid && $s->fx_excluded === null) {
+                $s->fx_excluded = $s->liveFxExcluded();
             }
 
             // H4 — status가 paid로 전환되는 시점에 vehicle 회계 컬럼 + 마진을 snapshot 캡처.
@@ -769,6 +777,63 @@ class Settlement extends Model
      *   완납 외화차량은 실제 입금된 환율로 1차 정산이 계산된다(= 환차가 1차에 반영).
      *   미완납·KRW 는 판매환율 그대로. 단일 출처 = Vehicle::settlement_exchange_rate.
      */
+    /**
+     * 💱 **이 정산이 환차를 빼나** (jin 2026-11-17). 박제값(fx_excluded)이 있으면 그것, 없으면 설정 기준 실시간 판정.
+     *   내수는 환율과 무관(false). 귀속월이 없으면 환차 포함(종전).
+     */
+    public function fxExcluded(): bool
+    {
+        if ($this->is_domestic) {
+            return false;
+        }
+
+        return $this->fx_excluded !== null ? (bool) $this->fx_excluded : $this->liveFxExcluded();
+    }
+
+    /** 설정만 보고 판정 — 귀속월 ≥ 시작 귀속월. 박제(pin)할 때 쓰는 값. */
+    public function liveFxExcluded(): bool
+    {
+        return self::fxExcludedForMonth($this->attributed_month);
+    }
+
+    /** 귀속월('Y-m-d'·Carbon·null)이 환차 제외 대상인가 — 드로어 미리보기(아직 정산 없음)도 같은 판정을 쓴다. */
+    public static function fxExcludedForMonth(\DateTimeInterface|string|null $month): bool
+    {
+        $from = Setting::settlementFxExcludedFrom();
+        if ($from === null || $month === null || $month === '') {
+            return false;
+        }
+        $ym = $month instanceof \DateTimeInterface ? $month->format('Y-m') : substr((string) $month, 0, 7);
+
+        return $ym >= $from;
+    }
+
+    /**
+     * 💱 **정산 환율 — 단일 출처** (jin 2026-11-17). 환차 제외면 판매환율, 아니면 실효 입금환율(Vehicle::settlement_exchange_rate, 08-06~).
+     *   판매금원화·건당 판정·월정산 환산·2차 분해가 전부 이걸 거친다. 🚫 settlement_exchange_rate 를 정산 계산에서 직접 부르지 말 것.
+     */
+    public function settlementRate(): float
+    {
+        $v = $this->vehicle;
+        if (! $v) {
+            return 0.0;
+        }
+
+        return $this->fxExcluded() ? (float) ($v->exchange_rate ?? 0) : (float) $v->settlement_exchange_rate;
+    }
+
+    /**
+     * 💱 배치 제출 때 일괄 박제 — openBatch 는 bulk update 라 saving 훅이 안 돈다. 아직 안 정한 정산만(이미 박제된 건 그대로).
+     *
+     * @param  iterable<int>  $ids
+     */
+    public static function pinFxForIds(iterable $ids): void
+    {
+        foreach (self::whereIn('id', collect($ids)->all())->whereNull('fx_excluded')->get(['id', 'attributed_month', 'is_domestic']) as $s) {
+            self::whereKey($s->id)->update(['fx_excluded' => ! $s->is_domestic && $s->liveFxExcluded()]);
+        }
+    }
+
     public function getSalesAmountKrwAttribute(): int
     {
         $v = $this->vehicle;
@@ -787,7 +852,7 @@ class Settlement extends Model
             + (float) ($v->auto_loading ?? 0)
             - (float) ($v->tax_dc ?? 0);
 
-        return (int) ($base * $v->settlement_exchange_rate);
+        return (int) ($base * $this->settlementRate());
     }
 
     public function getSettlementSalesKrwAttribute(): int
@@ -1394,7 +1459,23 @@ class Settlement extends Model
      */
     public function getCompanyNetAttribute(): int
     {
-        return $this->total_margin - $this->actual_payout - $this->shipping_fee;
+        // 💱 2026-11-17 — 환차를 정산에서 뺀 정산은 그 환차가 전부 회사 몫(companyFxKrw). 아닌 정산은 0(환차는 총마진에 이미 들어 있다).
+        return $this->total_margin - $this->actual_payout - $this->shipping_fee + $this->companyFxKrw();
+    }
+
+    /**
+     * 💱 **환차손익(회사)** (jin 2026-11-17 «갑자기 200~300원 차이 날 때를 대비해서»).
+     *   환차를 정산에서 뺀 정산(fxExcluded)만 — 실현 환차 전체(실입금KRW − 받은외화 × 판매환율, 운임비분 포함).
+     *   🚫 2차 마감 저장값(exchange_difference_krw)이 아니다 — 그건 마감 시점 환율로 다시 평가한 값이라 뜻이 다르다.
+     *   회사이익 4곳(관리자 대시보드·월정산 카드·월결산 알림톡·승인화면)이 company_net 이나 이 함수를 거친다.
+     */
+    public function companyFxKrw(): int
+    {
+        if (! $this->fxExcluded()) {
+            return 0;
+        }
+
+        return (int) round((float) ($this->computeExchangeDifference() ?? 0));
     }
 
     // ── karaba 이익율 정산 (Phase 3, 2026-07-22) — Setting::isKaraba() 전역 분기 시 사용. 엑셀 매입대장 실측 ──
@@ -1543,7 +1624,7 @@ class Settlement extends Model
     // ── 월정산 v3 (2026-10-09) — 프리랜서 환산 · 2차 변동 원자료 ───────────────────────────
     //   소비자는 App\Services\Payout\PersonPayoutBreakdown 하나. 여기엔 「한 정산의 숫자」만 둔다.
 
-    /** 판매금원화를 주어진 환율로 — null 이면 정산환율(실효). 내수는 환율과 무관. getSalesAmountKrwAttribute 와 같은 식. */
+    /** 판매금원화를 주어진 환율로 — null 이면 정산환율(settlementRate — 환차 제외 정산은 판매환율). 내수는 환율과 무관. getSalesAmountKrwAttribute 와 같은 식. */
     public function salesAmountKrwAt(?float $rate = null): int
     {
         $v = $this->vehicle;
@@ -1555,7 +1636,7 @@ class Settlement extends Model
         }
         $base = (float) ($v->sale_price ?? 0) + (float) ($v->commission ?? 0) + (float) ($v->auto_loading ?? 0) - (float) ($v->tax_dc ?? 0);
 
-        return (int) ($base * ($rate ?? $v->settlement_exchange_rate));
+        return (int) ($base * ($rate ?? $this->settlementRate()));
     }
 
     /** 총마진을 주어진 환율로 — getTotalMarginAttribute 와 같은 식(내수는 domestic_margin). */

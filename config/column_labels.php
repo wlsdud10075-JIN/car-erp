@@ -438,6 +438,7 @@ return [
         'staff_payout_viewers' => '사내직원 월정산 볼 사람',   // 2026-11-05 기능설정
         'kakao_viewers' => '카톡자동화 쓰는 사람',   // 2026-11-10 기능설정 공개 범위 표
         'kakao_params' => '카톡자동화 수치',   // 2026-11-10 기능설정
+        'fx_settings' => '환차·판매잔금 환율 설정',   // 2026-11-17 기능설정
         'kakao_collector_tokens' => '카톡 에이전트 연결(PC)',   // 2026-11-10 §11
         'unsecured_limit_krw' => '무담보 한도',
         'credit_score_weights' => '신용도 가중치',
@@ -617,6 +618,7 @@ return [
         'deal_type_cleared_on_buyer_change' => '거래 유형(DP/FD) 자동 해제 (바이어 변경)',
         'b2b_partner_toggled' => 'B2B 파트너스 관리대상 지정/해제',
         'buyer_deal_flag_toggled' => '바이어 DP·FD 진행 지정/해제',
+        'fx_settings_changed' => '환차·판매잔금 환율 설정 변경',
         'b2b_contract_uploaded' => 'B2B 계약서 업로드',
         'b2b_contract_superseded' => 'B2B 계약서 교체(원본 보관)',
         'b2b_contract_read' => 'B2B 계약서 열람',
