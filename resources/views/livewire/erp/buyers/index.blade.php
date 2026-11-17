@@ -1022,6 +1022,18 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'original_transaction_id' => $original->id,
                 'note'                   => '취소: ' . ($original->note ?? "#{$original->id}"),
             ]);
+
+            // 💳 현금에서 전환한 적립이면 그 현금 차감 줄도 지운다 — 배분이 cascade 로 사라져 현금이 돌아온다
+            //    (jin 2026-11-17 «적립금을 취소하면 다시 현금으로 돌아와야», heymanerp R.S.H 2,400 EUR 가 어디에도 없었다).
+            //    같은 트랜잭션이라 한쪽만 되는 일은 없다.
+            if ($original->transaction_type === 'EARNED' && $original->buyer_cash_fee_id) {
+                $fee = \App\Models\BuyerCashFee::where('buyer_id', $this->editingId)->find($original->buyer_cash_fee_id);
+                if ($fee) {
+                    \App\Models\AuditLog::recordEvent($fee, 'buyer_cash_savings_reverted');
+                    $fee->allocations()->delete();   // DB cascade 와 같은 일 — FK 를 끈 환경에서도 현금이 돌아오게
+                    $fee->delete();
+                }
+            }
             $ok = true;
         });
 

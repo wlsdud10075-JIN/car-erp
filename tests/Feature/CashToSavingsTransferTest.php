@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\BuyerCashFee;
 use App\Models\BuyerCashReceipt;
@@ -210,5 +211,78 @@ class CashToSavingsTransferTest extends TestCase
 
         $this->assertNotNull($fee->fresh(), '적립금 전환 행이 지워졌다 — 이중 크레딧');
         $this->assertSame(0.0, BuyerCashReceipt::balanceFor($b->id, 'EUR'));
+    }
+
+    // ── 적립금 취소 → 현금 복귀 (jin 2026-11-17, heymanerp R.S.H 331마3285 2,400 EUR) ──────────
+
+    /** 현금 탭에서 전환한 적립금을 적립금 탭에서 취소하면 현금이 그대로 돌아온다(전엔 현금이 차감된 채 남았다). */
+    public function test_cancelling_a_cash_transfer_returns_the_cash(): void
+    {
+        $this->enableCashLedger();
+        $this->actingAs($this->finance());
+        $b = $this->buyerWithCash(2400);
+        $fee = app(BuyerCashService::class)->transferToSavings($b->id, 'EUR', 2400, null, null);
+        $earned = SavingsStatus::where('buyer_id', $b->id)->sole();
+        $this->assertSame($fee->id, $earned->buyer_cash_fee_id, '적립 행이 현금 차감 줄을 기억한다');
+        $this->assertSame(0.0, BuyerCashReceipt::balanceFor($b->id, 'EUR'));
+
+        Volt::test('erp.buyers.index')
+            ->call('openEdit', $b->id)
+            ->call('cancelSavingsTransaction', $earned->id);
+
+        $this->assertSame(2400.0, BuyerCashReceipt::balanceFor($b->id, 'EUR'), '현금이 돌아와야 한다');
+        $this->assertNull($fee->fresh(), '현금 차감 줄이 지워진다');
+        $this->assertSame(0.0, (float) SavingsStatus::where('buyer_id', $b->id)->orderByDesc('id')->first()->balance, '적립금도 0');
+        $this->assertSame(1, AuditLog::where('action', 'buyer_cash_savings_reverted')->count());
+    }
+
+    /** 판매 탭 경로(차량에 붙은 적립)도 같은 짝을 남긴다. */
+    public function test_sales_tab_transfer_also_links_the_cash_row(): void
+    {
+        $this->enableCashLedger();
+        $this->actingAs($this->finance());
+        $b = $this->buyerWithCash(158);
+        $v = $this->vehicle($b);
+
+        $fee = app(BuyerCashService::class)->transferToSavings($b->id, 'EUR', 158, $v, null);
+
+        $this->assertSame($fee->id, SavingsStatus::where('buyer_id', $b->id)->sole()->buyer_cash_fee_id);
+    }
+
+    /** 현금과 무관한 적립(수기 적립)은 취소해도 현금을 건드리지 않는다. */
+    public function test_cancelling_a_manual_savings_leaves_cash_alone(): void
+    {
+        $this->enableCashLedger();
+        $this->actingAs($this->finance());
+        $b = $this->buyerWithCash(500);
+        $other = app(BuyerCashService::class)->transferToSavings($b->id, 'EUR', 100, null, null);   // 다른 전환 — 남아야 한다
+        $manual = SavingsStatus::create(['buyer_id' => $b->id, 'currency' => 'EUR', 'transaction_type' => 'EARNED', 'savings' => 50, 'balance' => 150]);
+
+        Volt::test('erp.buyers.index')
+            ->call('openEdit', $b->id)
+            ->call('cancelSavingsTransaction', $manual->id);
+
+        $this->assertNotNull($other->fresh());
+        $this->assertSame(400.0, BuyerCashReceipt::balanceFor($b->id, 'EUR'));
+    }
+
+    /** 11-17 전에 이미 취소된 전환은 정리 명령으로 현금을 돌려놓는다(기본 dry-run). */
+    public function test_repair_command_returns_cash_for_already_cancelled_transfers(): void
+    {
+        $this->enableCashLedger();
+        $this->actingAs($this->finance());
+        $b = $this->buyerWithCash(2400);
+        $fee = app(BuyerCashService::class)->transferToSavings($b->id, 'EUR', 2400, null, null);
+        $earned = SavingsStatus::where('buyer_id', $b->id)->sole();
+        // 옛 동작 재현 — 적립금만 취소되고 현금 차감은 남은 상태
+        SavingsStatus::create(['buyer_id' => $b->id, 'currency' => 'EUR', 'transaction_type' => 'CANCELLED', 'savings' => -2400, 'balance' => 0, 'original_transaction_id' => $earned->id]);
+        $this->assertSame(0.0, BuyerCashReceipt::balanceFor($b->id, 'EUR'));
+
+        $this->artisan('buyer-cash:revert-cancelled-savings')->assertSuccessful();
+        $this->assertNotNull($fee->fresh(), 'dry-run 은 안 지운다');
+
+        $this->artisan('buyer-cash:revert-cancelled-savings', ['--apply' => true])->assertSuccessful();
+        $this->assertNull($fee->fresh());
+        $this->assertSame(2400.0, BuyerCashReceipt::balanceFor($b->id, 'EUR'));
     }
 }

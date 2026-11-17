@@ -1480,13 +1480,13 @@ class Vehicle extends Model
      * 호출자: vehicles/index::save() 가 canConfirmFinance 사용자 입력 시 호출.
      * 동시성: syncSavingsUsage 패턴 동일 — buyer×currency lockForUpdate + 잔액 누적.
      */
-    public function syncSavingsDeposit(float $amount): void
+    public function syncSavingsDeposit(float $amount, ?int $buyerCashFeeId = null): void
     {
         if ($amount <= 0 || ! $this->buyer_id) {
             return;
         }
 
-        DB::transaction(function () use ($amount) {
+        DB::transaction(function () use ($amount, $buyerCashFeeId) {
             $latest = SavingsStatus::where('buyer_id', $this->buyer_id)
                 ->where('currency', $this->currency)
                 ->lockForUpdate()
@@ -1506,6 +1506,7 @@ class Vehicle extends Model
                 'savings' => $amount,
                 'balance' => $newBalance,
                 'note' => "차량 {$this->vehicle_number} 판매 탭 적립금 적립",
+                'buyer_cash_fee_id' => $buyerCashFeeId,   // 현금에서 온 적립이면 그 차감 줄 — 취소가 같이 되돌린다(2026-11-17)
             ]);
         });
     }

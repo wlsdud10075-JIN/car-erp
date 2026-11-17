@@ -559,6 +559,7 @@ return [
         'buyer_cash_receipt_added' => '바이어 현금 입금 기재',
         'buyer_cash_fee_added' => '바이어 현금 수수료 처리',
         'buyer_cash_to_savings' => '바이어 남은 현금 → 적립금 전환',
+        'buyer_cash_savings_reverted' => '적립금 취소 → 현금 복귀',
         'overpay_converted_to_company_income' => '과입금 → 회사이익 전환',
         // 🚫 매입취소 미수 마감 / 마감 취소 (2026-10-16 — 마감은 07-18 부터 찍혔는데 사전엔 없었다)
         'purchase_cancel_closed' => '매입취소 미수 마감(손실 확정)',
