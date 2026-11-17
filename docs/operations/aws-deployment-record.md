@@ -935,6 +935,14 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-17 (2) — master `11a01c8e` · 마이그 2 (jin «배포해줘», 15:49 업무시간)
+
+- **차명칸 셀에 맞춤** — 3사 × 통관 SET Ver.1·2 등록증 E5 · 말소증 E7(9파일 18칸).
+- **일별 환율 = 네이버 날짜별 확정값** + 매매기준율(base_rate, 마이그 1). 00:30·09:00 수집, 아침 점검 임계 5일. 🖥️ 3사 `exchange:snapshot-daily --pages=9 --prune` 적용 — 445행 갱신(7/7~, xlsx 이력 4일과 사실상 같은 값)·비영업일 naver 행 210 삭제. karaba `health_check_exchange_days` 2→5(같은 날 낮).
+- **정산 환차 제외 · 판매잔금 환율 자동 기록 · 환차손익(회사)** — 기능설정 3칸, 3사 모두 **비어 있음(꺼짐) 확인**. `settlements.fx_excluded` 박제(마이그 1, 기존 제출·지급·마감분 false 백필), `final_payments.rate_source_date·rate_kind`.
+- **관제센터 SKILLS 칸** 세션별 네 묶음 · **바이어 적립금 내역** 전체 + 월별 접기 + 한 건 한 줄(누르면 상세).
+- 잡 5개 success · 3사 `11a01c8e` · `/login` 200. dev 로컬 전체 3,951 통과(+ 이후 관련 테스트). cherry-pick 8개, 가이드·기록 커밋 제외.
+
 ## 2026-11-17 — master `9d8cd201` · 마이그 2 (jin «배포해줘. 점심시간이야»)
 
 - **적립금 취소 → 현금 복귀** — 현금→적립금 전환의 두 줄을 `savings_statuses.buyer_cash_fee_id` 로 이어, 적립금 취소가 현금 차감 줄도 지운다. 이미 꼬인 건 `buyer-cash:revert-cancelled-savings --apply` 로 정리: heymanerp R.S.H(10) 2,400 EUR · karabaerp Kushtrim(76) 100 EUR 현금 복귀(실행 전후 잔액 0 → 2,400 / 0 → 100, 적립금 잔액 무변화). 기존 전환 연결 heyman 11/12 · karaba 4/4.
