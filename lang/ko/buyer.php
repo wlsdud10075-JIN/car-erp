@@ -231,6 +231,7 @@ return [
         'cancel_confirm' => '이 거래를 취소하시겠습니까?',
         'cancel_title' => '취소',
         'no_history' => '내역이 없습니다.',
+        'month_count' => ':n건 — 누르면 펼침/접힘',
         't_earned' => '적립',
         't_used' => '사용',
         't_refund' => '반환',

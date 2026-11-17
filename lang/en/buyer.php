@@ -228,6 +228,7 @@ return [
         'cancel_confirm' => 'Cancel this transaction?',
         'cancel_title' => 'Cancel',
         'no_history' => 'No history.',
+        'month_count' => ':n — click to expand/collapse',
         't_earned' => 'Earned',
         't_used' => 'Used',
         't_refund' => 'Refund',
