@@ -16,7 +16,7 @@ new class extends Component
     private function maxUnreadId(): int
     {
         $user = auth()->user();
-        if (! $user || ! $user->canAccessClearance()) {
+        if (! $user || ! $user->canSeeAlarms()) {
             return 0;
         }
 
@@ -30,7 +30,7 @@ new class extends Component
     public function poll(): void
     {
         $user = auth()->user();
-        if (! $user || ! $user->canAccessClearance()) {
+        if (! $user || ! $user->canSeeAlarms()) {
             return;
         }
         $fresh = TaskAlarm::query()->visibleTo($user)->unread()
@@ -56,7 +56,7 @@ new class extends Component
         abort_unless((bool) auth()->user()?->canSeeAlarm($alarm), 403);
         $updates = ['confirmed_at' => now(), 'confirmed_by' => auth()->id()];
         // 매입 도착 알람 — 수동 [확인] = 해소(사라짐). jin 2026-06-23.
-        if ($alarm->type === 'purchase_arrival') {
+        if (in_array($alarm->type, ['purchase_arrival', TaskAlarm::TYPE_PRICE_CHANGED], true)) {   // 💱 판매가 수정도 [확인] = 해소
             $updates['resolved_at'] = now();
             $updates['resolved_reason'] = 'manual_confirm';
         }
@@ -66,7 +66,7 @@ new class extends Component
     public function with(): array
     {
         $user = auth()->user();
-        if (! $user || ! $user->canAccessClearance()) {
+        if (! $user || ! $user->canSeeAlarms()) {
             return ['alarms' => collect(), 'unreadCount' => 0, 'moreCount' => 0];
         }
 
@@ -131,6 +131,7 @@ new class extends Component
                             $isArrival = $type === 'purchase_arrival';
                             $isDocDeadline = $type === 'document_deadline';
                             $isBalanceDue = $type === 'purchase_balance_due';
+                            $isPrice = $type === \App\Models\TaskAlarm::TYPE_PRICE_CHANGED;   // 💱 판매가·환율 수정(jin 2026-11-18)
                             // board 요청·확인 신호 (2026-08-09) — 처리 자리는 차량관리 드로어다.
                             //   type 을 여기서 열거하지 말 것: 신호가 늘면 색·문구가 조용히 빠진다.
                             $boardMeta = \App\Models\BoardRequest::metaByAlarmType($type);
@@ -138,15 +139,17 @@ new class extends Component
                             $isBoardPurchase = $isBoard && ($boardMeta['color'] ?? '') !== 'purple';
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
-                            $soon = ! $isShip && ! $isArrival && ! $isBoard && $dday !== null && $dday <= 3;
+                            $soon = ! $isPrice && ! $isShip && ! $isArrival && ! $isBoard && $dday !== null && $dday <= 3;
                             // board 신호도 차량관리 드로어로 연다 — 거기서 뱃지·금액을 함께 본다(jin 2026-08-09).
                             $href = route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]);
                         @endphp
-                        <div class="border-b border-gray-100 border-l-[3px] px-3 py-2.5 hover:bg-amber-50/50 {{ $isBoard ? ($isBoardPurchase ? 'border-l-blue-500' : 'border-l-purple-500') : ($isArrival ? 'border-l-blue-500' : ($isShip ? 'border-l-teal-500' : ($soon ? 'border-l-red-500' : 'border-l-amber-400'))) }}">
+                        <div class="border-b border-gray-100 border-l-[3px] px-3 py-2.5 hover:bg-amber-50/50 {{ $isBoard ? ($isBoardPurchase ? 'border-l-blue-500' : 'border-l-purple-500') : ($isPrice ? 'border-l-red-500' : ($isArrival ? 'border-l-blue-500' : ($isShip ? 'border-l-teal-500' : ($soon ? 'border-l-red-500' : 'border-l-amber-400')))) }}">
                             <a href="{{ $href }}" wire:navigate class="block">
                                 <div class="flex items-center justify-between">
                                     <span class="text-[13px] font-bold text-gray-800">{{ $meta['vehicle_number'] ?? ('#'.$a->vehicle_id) }}</span>
-                                    @if ($isBoard)
+                                    @if ($isPrice)
+                                        <span class="rounded-full bg-rose-100 px-1.5 py-0.5 text-[11px] font-bold text-rose-700">{{ __('alarm.badge_price') }}</span>
+                                    @elseif ($isBoard)
                                         <span class="rounded-full {{ $isBoardPurchase ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700' }} px-1.5 py-0.5 text-[11px] font-bold">{{ __('alarm.badge_board') }}</span>
                                     @elseif ($isShip)
                                         <span class="rounded-full bg-teal-100 px-1.5 py-0.5 text-[11px] font-bold text-teal-700">{{ $meta['shipping_method'] ?? '' }}</span>
@@ -162,10 +165,16 @@ new class extends Component
                                         </span>
                                     @endif
                                 </div>
+                                @if ($isPrice)
+                                <x-erp.price-change-lines :meta="$meta" :limit="2" class="mt-0.5" />
+                                @else
                                 <div class="mt-0.5 text-[12.5px] text-gray-600">{{ $isBoard ? __($boardMeta['task']) : ($isArrival ? __('alarm.task_arrival') : ($isShip ? __('alarm.task_shipping') : ($isDocDeadline ? __('alarm.task_document_deadline') : ($isBalanceDue ? __('alarm.task_balance_due') : __('alarm.task_clearance'))))) }}@if (! $isShip && ! $isArrival && ! $isBoard && $a->due_date) · {{ $a->due_date->format('m-d') }}@endif</div>
+                                @endif
                             </a>
                             <div class="mt-1 flex items-center justify-between">
-                                @if ($isBoard)
+                                @if ($isPrice)
+                                    <span class="text-[11.5px] font-semibold text-rose-700">{{ __('alarm.price_action') }}</span>
+                                @elseif ($isBoard)
                                     <span class="text-[11.5px] font-semibold {{ $isBoardPurchase ? 'text-blue-700' : 'text-purple-700' }}">{{ __($boardMeta['action']) }}</span>
                                 @elseif ($isShip)
                                     <span class="text-[11.5px] font-semibold text-teal-700">{{ __('alarm.task_shipping') }}</span>

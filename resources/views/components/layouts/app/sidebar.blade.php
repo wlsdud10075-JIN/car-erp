@@ -78,7 +78,7 @@
     $showDomesticPayouts = $user->canSeeDomesticPayout() || $pendingDomesticPayouts > 0;
 
     // 2026-06-18 ETA 통관서류 알람 — 미확인(미해소+미확인) 건수. canAccessClearance 만 계산.
-    $alarmUnread = $user->canAccessClearance()
+    $alarmUnread = $user->canSeeAlarms()   // 💱 재무도 판매가 수정 알림을 받는다(jin 2026-11-18)
         ? \App\Models\TaskAlarm::query()->visibleTo($user)->unread()->count()
         : 0;
 
@@ -209,7 +209,7 @@
                     'href' => route('erp.alarms.index'),
                     'icon' => 'bell',
                     'active' => request()->routeIs('erp.alarms.*'),
-                    'show' => $user->canAccessClearance(),
+                    'show' => $user->canSeeAlarms(),
                     'badge' => $alarmUnread > 0 ? $alarmUnread : null,
                 ],
                 // board 영업포털 선적요청 목록 (배치별 묶음).

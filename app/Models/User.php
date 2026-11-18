@@ -863,8 +863,26 @@ class User extends Authenticatable
      * 업무 알람 [확인]·열람 재인가 단일 출처 (IDOR 차단 — Review.md #26 패턴).
      * v1 = eta_clearance(target_role 수출통관). 볼 수 있는 사람 = admin·수출통관·관리(본인 팀).
      */
+    /**
+     * 💱 판매가·환율 수정 알림을 받는 사람 (jin 2026-11-18 «관리직 = 영업 외 전체»).
+     * ⚠️ `canAccessClearance()` 와 다르다 — 재무도 받는다. 영업은 추후 읽기 전용으로 바뀔 예정이라 뺀다.
+     */
+    public function canSeePriceAlarms(): bool
+    {
+        return $this->isAdmin() || $this->isManager() || in_array($this->role, ['수출통관', '재무', '관리'], true);
+    }
+
+    /** 알람함·벨을 볼 수 있나 — 통관 알람 대상이거나 판매가 수정 알림 대상. */
+    public function canSeeAlarms(): bool
+    {
+        return $this->canAccessClearance() || $this->canSeePriceAlarms();
+    }
+
     public function canSeeAlarm(TaskAlarm $alarm): bool
     {
+        if ($alarm->target_role === TaskAlarm::ROLE_PRICE_WATCH) {
+            return $this->canSeePriceAlarms();
+        }
         // 매입 도착 알람(purchase_arrival, target_role='관리') — admin 전체 / 관리 본인 팀.
         if ($alarm->target_role === '관리') {
             if ($this->isAdmin() || $this->isManager()) {
