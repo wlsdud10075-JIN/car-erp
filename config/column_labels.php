@@ -115,6 +115,7 @@ return [
         'forwarding_company_id' => '포워딩사',
         'export_declaration_amount' => '면장금액',
         'shipping_date' => '선적일',
+        'export_route' => '수출 정보 묶음',   // 2026-11-18 일괄 기입 감사줄 — 반입지·포워딩사·선적항·선적방법·인코텀즈·도착항·컨사이니를 한 단어로 접은 것
         'arrival_date' => '도착일자',
         // 2026-07-31 — 감사로그에 쌓이는데 매핑이 없어 영문으로 노출되던 것들.
         'eta_date' => '도착 예정일(ETA)',
