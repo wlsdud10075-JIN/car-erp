@@ -4169,6 +4169,29 @@ class Vehicle extends Model
         return AlimtalkRecipients::escalationDays('erp_deregistration_reminder', '영업');
     }
 
+    /** 「바이어 지정됨」 필터가 돌아보는 기간(일) — jin 2026-11-18 «최근 5일». */
+    public const BUYER_ASSIGNED_RECENT_DAYS = 5;
+
+    /**
+     * 🆕 최근 바이어가 정해진 차 (jin 2026-11-18) — 「바이어 미정」이 꺼진 지 N일 안이고, 지금 바이어가 있고, 다시 미정이 아닌 차.
+     *
+     * 미정 플래그는 바이어를 넣으면 저장 훅(saving)이 조용히 내린다 → 「미정」 필터에서 그냥 사라져 실무자가 어느 차인지 몰랐다.
+     * 새 칸을 만들지 않고 **감사로그**(buyer_undecided 는 AUDITED_COLUMNS, 1→0 이 남는다)를 읽는다.
+     */
+    public function scopeBuyerAssignedRecently(Builder $q, ?int $days = null): Builder
+    {
+        $since = now()->subDays($days ?? self::BUYER_ASSIGNED_RECENT_DAYS);
+
+        return $q->whereNotNull('vehicles.buyer_id')
+            ->where(fn ($w) => $w->where('vehicles.buyer_undecided', false)->orWhereNull('vehicles.buyer_undecided'))
+            ->whereIn('vehicles.id', AuditLog::query()
+                ->select('auditable_id')
+                ->where('auditable_type', self::class)
+                ->where('column_name', 'buyer_undecided')
+                ->where('old_value', '1')
+                ->where('created_at', '>=', $since));
+    }
+
     /**
      * 💰 미수금 있는 차 (jin 2026-10-22 차량관리 「미수금」 토글) — 채권관리 미수 KPI 와 같은 기준(미수 KRW 캐시 > 0).
      * 결제대기(유예)·거래완료도 미수가 있으면 포함한다. 과입금(음수)·환율 미입력(캐시 null)은 빠진다.
