@@ -6435,6 +6435,10 @@ new #[Layout('components.layouts.app')] class extends Component {
         $previewVehicle->is_deregistered = $this->is_deregistered;
         $previewVehicle->deregistration_document = $this->deregistration_document_path ?: ($this->deregistrationDocFile ? 'pending' : null);
         $previewVehicle->sale_price = (float) str_replace(',', '', $this->sale_price_str ?: '0');
+        // 통화·환율도 form 값으로 (jin 11-18 ssancarerp 214나4709 — 환율 0 인 차에 판매가·환율을 한 번에 넣으면
+        //   게이트가 DB 의 옛 환율 0 을 봐서 「환율 미입력 외화」로 막았다. 실제 저장은 form 값이 들어간다.)
+        $previewVehicle->currency = $this->currency ?: $previewVehicle->currency;
+        $previewVehicle->exchange_rate = (float) str_replace(',', '', $this->exchange_rate_str ?: '0');
         $previewVehicle->export_buyer_id = $this->export_buyer_id_str !== '' ? (int) $this->export_buyer_id_str : null;
         $previewVehicle->shipping_date = $this->shipping_date ?: null;
         $previewVehicle->export_declaration_document = $this->export_declaration_document_path ?: ($this->exportDeclarationDocFile ? 'pending' : null);
