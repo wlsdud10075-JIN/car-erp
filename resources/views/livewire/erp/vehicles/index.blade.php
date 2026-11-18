@@ -9608,6 +9608,11 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     @else
                         <span class="font-sans text-xs font-semibold text-gray-500">{{ __('vehicle.panel.vin_none') }}</span>
                     @endif
+                    {{-- 🔋 연료 = 하이브리드·전기만 차대번호 옆에 (jin 2026-11-18). 경유·휘발유는 늘 띄우면 묻힌다. 값은 NICE 원문 그대로. --}}
+                    @php $fuelTag = trim($nice_reg_fuel_type); @endphp
+                    @if($fuelTag !== '' && (str_contains($fuelTag, '하이브리드') || $fuelTag === '전기'))
+                        <span data-fuel-badge class="ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 font-sans text-[10px] font-bold {{ $fuelTag === '전기' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700' }}">{{ $fuelTag }}</span>
+                    @endif
                     {{-- 보증금 매입 마커 (2026-07-23) — 판매완료=초록 / 미완납=주황. 신규 등록(editingId=null)엔 비노출 --}}
                     @if($editingId !== null && $deposit_purchase_state !== null)
                         <span class="ml-1 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ $deposit_purchase_state === 'paid' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700' }}"
