@@ -194,6 +194,18 @@ class BulkVehicleShippingDateService
         return null;
     }
 
+    /** 일괄 출처 감사줄의 칸 목록 — 묶음 칸(+이어받은 바이어·컨사이니)은 'export_route' 로 접고 60자 안에 맞춘다. */
+    public static function auditColumns(array $cols): string
+    {
+        $route = array_merge(self::ROUTE_FIELDS, ['bl_buyer_id', 'export_buyer_id', 'export_consignee_id']);
+        $plain = array_values(array_diff($cols, $route));
+        if (count($plain) !== count($cols)) {
+            $plain[] = 'export_route';
+        }
+
+        return mb_substr(implode(',', $plain), 0, 60);
+    }
+
     /**
      * 대상의 바이어 — 한 명이면 그 id, 섞였거나 바이어 없는 차가 있으면 null(묶음 비활성).
      *
@@ -440,7 +452,9 @@ class BulkVehicleShippingDateService
                         'auditable_type' => Vehicle::class,
                         'auditable_id' => $vehicle->id,
                         'action' => 'bulk_shipping_date_applied',
-                        'column_name' => implode(',', array_keys($diff)),
+                        // ⚠️ audit_logs.column_name = varchar(60) — 묶음 10칸을 그대로 이으면 MySQL 이 1406 으로 거부한다(SQLite 는 통과, §8 #36).
+                        //    묶음 칸은 'export_route' 한 단어로 접는다(칸별 old→new 는 Vehicle 감사 훅이 따로 남긴다).
+                        'column_name' => self::auditColumns(array_keys($diff)),
                         'old_value' => null,
                         'new_value' => $reason,
                         'ip_address' => request()?->ip(),
