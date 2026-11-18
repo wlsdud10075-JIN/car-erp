@@ -232,7 +232,7 @@ return [
     'deposit_badge_waiting' => 'Deposit-buy',
 
     'buyer_undecided_badge' => 'No buyer',
-    'buyer_assigned_badge' => 'Buyer set · last :days days',
+    'buyer_assigned_badge' => 'Buyer set',
     'buyer_assigned_title' => 'Vehicles that were "no buyer" and got a buyer within the last :days days (from the audit log). Removed again if set back to no buyer.',
     'purchase_unpaid_badge_title' => 'Purchase balance unpaid: :amount KRW - click to show only vehicles with an unpaid balance',
     'progress_pill' => [
