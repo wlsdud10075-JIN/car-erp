@@ -127,6 +127,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 대상 안에 서로 다른 반입지가 섞였을 때의 분포 — 선박명 충돌 경고와 같은 장치. */
     public array $bulkLoadingConflict = [];
 
+    /** 🚢 수출 정보 묶음(빈칸만 채움, 한 바이어일 때만 — jin 2026-11-18). 키 = BulkVehicleShippingDateService::ROUTE_FIELDS. */
+    public bool $bulkRouteOn = false;
+
+    public array $bulkRoute = [];
+
     // 컨테이너 접두어 일괄 교체 (jin 2026-09-01) — `6.08_G RORO 12-33_5` → `6.09_A RORO 12-33_5`.
     //   선적이 밀려 한 배가 통째로 다음 배로 넘어갈 때 쓴다. 뒤 화물 자리는 그대로 둔다.
     public string $bulkContainerFrom = '';
@@ -3306,8 +3311,45 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkContainerFrom = '';
         $this->bulkContainerTo = '';
         $this->bulkDateReason = '';
+        $this->bulkRouteOn = false;
+        $this->bulkRoute = [];
         $this->bulkDateOpen = true;
-        unset($this->bulkContainerPrefixes, $this->bulkDateTargetCount);
+        unset($this->bulkContainerPrefixes, $this->bulkDateTargetCount, $this->bulkRouteInfo);
+    }
+
+    /** 🚢 수출 정보 묶음 켜기 — 그 바이어의 가장 많은 조합으로 미리 채운다(대상이 한 바이어일 때만, jin 11-18). */
+    public function updatedBulkRouteOn(): void
+    {
+        unset($this->bulkRouteInfo);
+        $info = $this->bulkRouteInfo;
+        $this->bulkRoute = ($this->bulkRouteOn && $info['buyer_id'])
+            ? app(\App\Services\BulkVehicleShippingDateService::class)->routeDefaults($info['buyer_id'])
+            : [];
+    }
+
+    /**
+     * 묶음 판정·미리보기 — 대상 바이어(한 명인가) · 칸별 빈 차 수 · 컨사이니 현재 분포 · 그 바이어의 컨사이니 목록.
+     * ⚠️ 모달이 닫혔거나 묶음을 안 켰으면 계산하지 않는다.
+     */
+    #[Computed]
+    public function bulkRouteInfo(): array
+    {
+        $blank = ['buyer_id' => null, 'buyer_name' => null, 'buyers' => 0, 'no_buyer' => 0, 'preview' => null, 'consignees' => collect()];
+        if (! $this->bulkDateOpen || ! $this->bulkRouteOn) {
+            return $blank;
+        }
+        $svc = app(\App\Services\BulkVehicleShippingDateService::class);
+        $q = $this->bulkDateTargetQuery();
+        $t = $svc->routeTargetBuyer($q);
+        if ($t['buyer_id'] === null) {
+            return array_merge($blank, $t);
+        }
+
+        return array_merge($t, [
+            'buyer_name' => \App\Models\Buyer::withTrashed()->find($t['buyer_id'])?->name,
+            'preview' => $svc->routePreview($q),
+            'consignees' => Consignee::where('buyer_id', $t['buyer_id'])->where('is_active', true)->orderBy('name')->get(['id', 'name']),
+        ]);
     }
 
     /**
@@ -3422,6 +3464,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ($this->bulkContainerFrom !== '' || $this->bulkContainerTo !== '')
                     ? ['from' => $this->bulkContainerFrom, 'to' => $this->bulkContainerTo]
                     : null,
+                $this->bulkRouteOn ? $this->bulkRoute : null,
             );
         } catch (\Throwable $e) {
             $this->dispatch('notify', message: $e->getMessage(), type: 'error');
@@ -3430,6 +3473,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         $this->bulkDateOpen = false;
+        $this->bulkRouteOn = false;
+        unset($this->bulkRouteInfo);
         $this->bulkVesselConflict = [];
         $this->bulkLoadingConflict = [];
         unset($this->vehicles, $this->bulkContainerPrefixes, $this->bulkDateTargetCount);
@@ -13000,6 +13045,62 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     @endforeach
                 </select>
                 <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_date.loading_hint') }}</p>
+            </div>
+            {{-- 🚢 수출 정보 묶음 (jin 2026-11-18) — 빈칸만 채움 · 대상이 한 바이어일 때만. 알바니아 RORO 실측 98.9% 가 한 조합. --}}
+            <div class="rounded-md border border-gray-200 p-2" data-bulk-route>
+                <label class="flex items-center gap-2 text-sm font-medium text-gray-700">
+                    <input type="checkbox" wire:model.live="bulkRouteOn" class="rounded border-gray-300" />
+                    {{ __('vehicle.bulk_date.route_toggle') }}
+                </label>
+                <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_date.route_hint') }}</p>
+                @if($bulkRouteOn)
+                    @php $ri = $this->bulkRouteInfo; @endphp
+                    @if(! $ri['buyer_id'])
+                        <p class="mt-2 rounded bg-amber-50 px-2 py-1.5 text-xs text-amber-800" data-bulk-route-blocked>
+                            {{ __('vehicle.bulk_date.route_need_one_buyer', ['buyers' => $ri['buyers'], 'none' => $ri['no_buyer']]) }}
+                        </p>
+                    @else
+                        @php $re = $ri['preview']['empty']; @endphp
+                        <p class="mt-2 text-xs font-medium text-primary-text">{{ __('vehicle.bulk_date.route_buyer', ['name' => $ri['buyer_name']]) }}</p>
+                        <p class="text-[11px] text-gray-500">{{ __('vehicle.bulk_date.route_defaults_note') }}</p>
+                        <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            @foreach([
+                                ['bl_loading_location', __('vehicle.field.loading_location'), $this->unloadingPorts->map(fn ($p) => [$p->name, $p->display_name])],
+                                ['forwarding_company_id', __('vehicle.field.forwarder'), $this->forwardingCompanies->map(fn ($f) => [(string) $f->id, $f->name])],
+                                ['port_of_loading', __('vehicle.field.port_loading'), $this->loadingPorts->map(fn ($p) => [$p->name, $p->display_name])],
+                                ['shipping_method', __('vehicle.field.shipping_method'), collect([['RORO', 'RORO'], ['CONTAINER', 'CONTAINER']])],
+                                ['incoterms', __('vehicle.field.incoterms'), collect([['FOB', 'FOB'], ['CFR', 'CFR']])],
+                                ['discharge_port_id', __('vehicle.field.discharge_port'), $this->dischargePorts->map(fn ($p) => [(string) $p->id, $p->display_name])],
+                            ] as [$rk, $rl, $ropts])
+                            <div>
+                                <label class="label-base">{{ $rl }} <span class="text-[10px] font-normal text-gray-400">· {{ __('vehicle.bulk_date.route_empty_count', ['count' => $re[$rk] ?? 0]) }}</span></label>
+                                <select wire:model="bulkRoute.{{ $rk }}" class="input-base">
+                                    <option value="">{{ __('vehicle.bulk_date.loading_keep') }}</option>
+                                    @foreach($ropts as [$ov, $ol])
+                                    <option value="{{ $ov }}">{{ $ol }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                            @endforeach
+                        </div>
+                        <div class="mt-2">
+                            <label class="label-base">{{ __('vehicle.bulk_date.route_consignee') }} <span class="text-[10px] font-normal text-gray-400">· {{ __('vehicle.bulk_date.route_empty_count', ['count' => $re['bl_consignee_id'] ?? 0]) }}</span></label>
+                            <select wire:model="bulkRoute.bl_consignee_id" class="input-base" data-bulk-route-consignee>
+                                <option value="">{{ __('vehicle.bulk_date.route_consignee_pick') }}</option>
+                                @foreach($ri['consignees'] as $c)
+                                <option value="{{ $c->id }}">{{ $c->name }}</option>
+                                @endforeach
+                            </select>
+                            <div class="mt-1 rounded bg-gray-50 px-2 py-1.5 text-xs" data-bulk-route-consignee-now>
+                                <p class="text-gray-500">{{ __('vehicle.bulk_date.route_consignee_now') }}</p>
+                                @foreach($ri['preview']['consignees'] as $cn => $cc)
+                                <p class="flex justify-between gap-2"><span class="{{ $cn === '' ? 'text-gray-400' : 'text-gray-700' }}">{{ $cn === '' ? __('vehicle.bulk_date.route_consignee_empty') : $cn }}</span><span class="tabular-nums text-gray-500">{{ number_format($cc) }}{{ __('vehicle.bulk_date.unit') }}</span></p>
+                                @endforeach
+                            </div>
+                            <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bulk_date.route_consignee_hint') }}</p>
+                        </div>
+                    @endif
+                @endif
             </div>
             {{-- 컨테이너 접두어 교체 (jin 2026-09-01) — 선적이 밀려 한 배가 다음 배로 넘어갈 때.
                  앞 토큰만 갈아끼우고 뒤 화물 자리(`RORO 12-33_5`)는 그대로 둔다.

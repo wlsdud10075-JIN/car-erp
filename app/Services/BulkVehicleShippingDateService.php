@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\AuditLog;
+use App\Models\Consignee;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Auth\Access\AuthorizationException;
@@ -55,6 +56,18 @@ class BulkVehicleShippingDateService
      *    빈 문자열·`-`·한글 메모가 실재한다, §8 #97). 그래서 일괄로 찍어도 단계가 넘어가지 않는다.
      */
     public const FIELDS = ['shipping_date', 'eta_date', 'vessel_name', 'export_declaration_number', 'container_number', 'bl_number', 'bl_loading_location'];
+
+    /**
+     * 🚢 **수출 정보 묶음 — 빈칸만 채움** (jin 2026-11-18 «알바니아 로로는 반입지·포워딩사·선적항·선적방법·인코텀즈·도착항이 거의 같다»).
+     *
+     * 실측 ssancarerp(06-01~, RORO+DURRESS 1,287대) — 5칸 조합 하나가 1,273대(98.9%). 그래서 같은 바이어 묶음엔 한 번에 찍는다.
+     * 🔑 위 FIELDS(덮어쓰기)와 **규칙이 다르다** — 이미 값이 있는 칸은 건드리지 않는다(jin (가) — FOB·BUSAN 같은 예외를 지킨다).
+     * 🔑 **대상이 한 바이어일 때만**(jin «바이어가 같다는 조건») — 컨사이니가 바이어에 종속이라 섞이면 무결성이 깨진다.
+     * 🚪 반입지가 채워지면 수출 진입 게이트(말소·컨사이니·입금률)를 탄다. 선적방법 RORO + 대기 허용 도착항을 **같은 저장에서**
+     *    넣으므로 `isShippingWaitRoute()` 가 서서 입금률(C5)은 건너뛴다 — 말소 체크·컨사이니는 그대로 막는다.
+     * 컨사이니는 선적(bl) 칸에 넣고, 비어 있는 통관(export) 컨사이니·선적/통관 바이어도 같이 채운다(패널 inheritParties 와 같은 방향).
+     */
+    public const ROUTE_FIELDS = ['bl_loading_location', 'forwarding_company_id', 'port_of_loading', 'shipping_method', 'incoterms', 'discharge_port_id', 'bl_consignee_id'];
 
     /** 날짜로 다룰 컬럼(8자리 정규화·형식 검사 대상). 나머지는 문자열 그대로. */
     private const DATE_FIELDS = ['shipping_date', 'eta_date'];
@@ -182,14 +195,109 @@ class BulkVehicleShippingDateService
     }
 
     /**
+     * 대상의 바이어 — 한 명이면 그 id, 섞였거나 바이어 없는 차가 있으면 null(묶음 비활성).
+     *
+     * @return array{buyer_id: ?int, buyers: int, no_buyer: int}
+     */
+    public function routeTargetBuyer(Builder $query): array
+    {
+        $ids = $query->clone()->reorder()->select('buyer_id')->distinct()->pluck('buyer_id');
+        $noBuyer = $ids->contains(fn ($id) => $id === null) ? $query->clone()->whereNull('buyer_id')->count() : 0;
+        $real = $ids->filter()->values();
+
+        return [
+            'buyer_id' => ($real->count() === 1 && $noBuyer === 0) ? (int) $real->first() : null,
+            'buyers' => $real->count(),
+            'no_buyer' => $noBuyer,
+        ];
+    }
+
+    /**
+     * 묶음 기본값 — 그 바이어 차량에서 **가장 많은 조합**(6칸이 다 찬 차만). 없으면 회사 전체 최근 6개월의 가장 많은 조합.
+     * 컨사이니는 그 바이어의 활성 컨사이니가 **1명일 때만** 미리 고른다(2명 이상이면 사람이 고른다 — jin 11-18).
+     *
+     * @return array<string, string> ROUTE_FIELDS => 값(문자열)
+     */
+    public function routeDefaults(int $buyerId): array
+    {
+        $cols = array_values(array_diff(self::ROUTE_FIELDS, ['bl_consignee_id']));
+        $top = function (Builder $q) use ($cols): ?array {
+            foreach ($cols as $c) {
+                $q->whereNotNull($c)->where($c, '<>', '');
+            }
+            $row = $q->reorder()->selectRaw(implode(',', $cols).', COUNT(*) as n')->groupBy($cols)->orderByDesc('n')->first();
+
+            return $row ? collect($cols)->mapWithKeys(fn ($c) => [$c => (string) $row->{$c}])->all() : null;
+        };
+
+        $out = $top(Vehicle::query()->where('buyer_id', $buyerId))
+            ?? $top(Vehicle::query()->where('created_at', '>=', now()->subMonths(6)))
+            ?? array_fill_keys($cols, '');
+
+        $consignees = Consignee::where('buyer_id', $buyerId)->where('is_active', true)->pluck('id');
+        $out['bl_consignee_id'] = $consignees->count() === 1 ? (string) $consignees->first() : '';
+
+        return $out;
+    }
+
+    /**
+     * 미리보기 — 칸마다 「지금 빈 차」 수 + 컨사이니 현재 분포(이름 => 대수, 빈칸 = '').
+     *
+     * @return array{empty: array<string,int>, consignees: array<string,int>, total: int}
+     */
+    public function routePreview(Builder $query): array
+    {
+        $empty = [];
+        foreach (self::ROUTE_FIELDS as $c) {
+            $empty[$c] = $query->clone()->where(fn ($w) => $w->whereNull($c)->orWhere($c, ''))->count();
+        }
+        $byCons = $query->clone()->reorder()->selectRaw('bl_consignee_id, COUNT(*) as n')->groupBy('bl_consignee_id')->pluck('n', 'bl_consignee_id');
+        $names = Consignee::withTrashed()->whereIn('id', $byCons->keys()->filter())->pluck('name', 'id');
+        $consignees = [];
+        foreach ($byCons as $id => $n) {
+            $consignees[$id ? (string) ($names[$id] ?? '#'.$id) : ''] = (int) $n;
+        }
+        arsort($consignees);
+
+        return ['empty' => $empty, 'consignees' => $consignees, 'total' => $query->clone()->count()];
+    }
+
+    /**
      * @param  Builder  $query  대상 차량 쿼리(화면 필터를 서버에서 재도출한 것)
      * @param  array<string, string|null>  $values  FIELDS 중 채운 것만 — 빈 칸은 그대로 유지된다
      * @param  string  $reason  일괄 적용 사유(선박명 등) — 감사에 남는다
      * @param  ?array{from:string,to:string}  $containerPrefix  컨테이너 접두어 교체 (null=안 함)
+     * @param  ?array<string, string>  $routeFill  수출 정보 묶음(ROUTE_FIELDS) — **빈칸만 채움**, 대상이 한 바이어일 때만 (null=안 함)
      * @return array{applied:int, unchanged:int, skipped:list<array{id:int,number:?string,reason:string}>}
      */
-    public function apply(Builder $query, array $values, User $by, string $reason, ?array $containerPrefix = null): array
+    public function apply(Builder $query, array $values, User $by, string $reason, ?array $containerPrefix = null, ?array $routeFill = null): array
     {
+        $routeBuyerId = null;
+        if ($routeFill !== null) {
+            $routeFill = array_filter(
+                array_map(fn ($v) => trim((string) ($v ?? '')), array_intersect_key($routeFill, array_flip(self::ROUTE_FIELDS))),
+                fn ($v) => $v !== ''
+            );
+            if ($routeFill === []) {
+                $routeFill = null;
+            }
+        }
+        if ($routeFill !== null) {
+            $routeBuyerId = $this->routeTargetBuyer($query)['buyer_id'];
+            if ($routeBuyerId === null) {
+                throw new InvalidArgumentException('수출 정보 묶음은 대상 차량이 모두 같은 바이어일 때만 적용할 수 있습니다.');
+            }
+            if (isset($routeFill['shipping_method']) && ! in_array($routeFill['shipping_method'], ['RORO', 'CONTAINER'], true)) {
+                throw new InvalidArgumentException("선적방법 값이 올바르지 않습니다: {$routeFill['shipping_method']}");
+            }
+            if (isset($routeFill['incoterms']) && ! in_array($routeFill['incoterms'], ['FOB', 'CFR'], true)) {
+                throw new InvalidArgumentException("인코텀즈 값이 올바르지 않습니다: {$routeFill['incoterms']}");
+            }
+            if (isset($routeFill['bl_consignee_id'])
+                && ! Consignee::where('id', (int) $routeFill['bl_consignee_id'])->where('buyer_id', $routeBuyerId)->exists()) {
+                throw new InvalidArgumentException('고른 컨사이니가 대상 바이어의 컨사이니가 아닙니다.');
+            }
+        }
         if (! $by->canAccessClearance()) {
             throw new AuthorizationException('선적·통관 정보 일괄 기입 권한 없음 (수출통관/관리 전용)');
         }
@@ -235,7 +343,12 @@ class BulkVehicleShippingDateService
             throw new InvalidArgumentException('컨테이너 번호는 「전체 기입」과 「접두어 치환」을 동시에 할 수 없습니다.');
         }
 
-        if ($payload === [] && $containerPrefix === null) {
+        // 반입지를 위(덮어쓰기)와 묶음(빈칸만) 양쪽에 다 넣으면 덮어쓰기가 이긴다 — 묶음 쪽은 뺀다(사람이 명시로 고른 쪽 우선).
+        if ($routeFill !== null && isset($payload['bl_loading_location'])) {
+            unset($routeFill['bl_loading_location']);
+        }
+
+        if ($payload === [] && $containerPrefix === null && $routeFill === null) {
             throw new InvalidArgumentException('일괄 기입할 값을 최소 하나는 입력해야 합니다.');
         }
 
@@ -243,9 +356,9 @@ class BulkVehicleShippingDateService
         $unchanged = 0;
         $skipped = [];
 
-        DB::transaction(function () use ($query, $payload, $containerPrefix, $by, $reason, &$applied, &$unchanged, &$skipped) {
+        DB::transaction(function () use ($query, $payload, $containerPrefix, $routeFill, $routeBuyerId, $by, $reason, &$applied, &$unchanged, &$skipped) {
             // chunkById — 수백~수천 대여도 메모리 안전. update 가 정렬 대상 컬럼을 안 건드려서 재방문 없음.
-            $query->clone()->chunkById(200, function ($vehicles) use ($payload, $containerPrefix, $by, $reason, &$applied, &$unchanged, &$skipped) {
+            $query->clone()->chunkById(200, function ($vehicles) use ($payload, $containerPrefix, $routeFill, $routeBuyerId, $by, $reason, &$applied, &$unchanged, &$skipped) {
                 foreach ($vehicles as $vehicle) {
                     if (! $by->canScopeVehicle($vehicle)) {
                         $skipped[] = ['id' => $vehicle->id, 'number' => $vehicle->vehicle_number, 'reason' => 'no_scope'];
@@ -274,6 +387,30 @@ class BulkVehicleShippingDateService
                         }
                     }
 
+                    // 🚢 수출 정보 묶음 — 빈 칸만. 컨사이니를 넣으면 비어 있는 선적·통관 바이어와 통관 컨사이니도 같은 값으로(패널 이어받기 방향).
+                    if ($routeFill !== null) {
+                        $isEmpty = fn (string $c) => ($vehicle->{$c} ?? '') === '' || $vehicle->{$c} === null;
+                        foreach ($routeFill as $column => $value) {
+                            // 선적 바이어가 판매 바이어와 다른 차엔 컨사이니를 안 넣는다(컨사이니는 바이어 종속 — 엉뚱한 쌍이 된다).
+                            if ($column === 'bl_consignee_id' && ! $isEmpty('bl_buyer_id') && (int) $vehicle->bl_buyer_id !== $routeBuyerId) {
+                                continue;
+                            }
+                            if ($isEmpty($column) && ! array_key_exists($column, $diff)) {
+                                $diff[$column] = in_array($column, ['forwarding_company_id', 'discharge_port_id', 'bl_consignee_id'], true) ? (int) $value : $value;
+                            }
+                        }
+                        if (array_key_exists('bl_consignee_id', $diff)) {
+                            foreach (['bl_buyer_id', 'export_buyer_id'] as $bc) {
+                                if ($isEmpty($bc)) {
+                                    $diff[$bc] = $routeBuyerId;
+                                }
+                            }
+                            if ($isEmpty('export_consignee_id')) {
+                                $diff['export_consignee_id'] = $diff['bl_consignee_id'];
+                            }
+                        }
+                    }
+
                     if ($diff === []) {
                         $unchanged++;
 
@@ -285,6 +422,7 @@ class BulkVehicleShippingDateService
                         // 🚪 수출 진입 게이트(C4 말소 체크 · 컨사이니 · C5 입금률)는 모델 훅이 아니라 **패널 저장이 직접 부른다**
                         //    (vehicles/index::save → guardStageOrderForExport). 반입지는 그 게이트의 진입 신호라 여기서도 같은 함수를
                         //    부른다 — 안 부르면 일괄 기입이 게이트를 통째로 우회한다. 선적일·ETA 만 찍는 종전 호출은 그대로(동작 보존).
+                        //    묶음이 반입지를 채우는 경우도 같다(빈칸 → 값 = 수출 진입).
                         if (array_key_exists('bl_loading_location', $diff)) {
                             $vehicle->guardStageOrderForExport();
                         }
