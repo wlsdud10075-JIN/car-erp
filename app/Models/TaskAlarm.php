@@ -15,7 +15,46 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class TaskAlarm extends Model
 {
     /** message_meta 에 저장 허용된 키 (개인정보 §29 — RRN·성명·계좌·연락처 금지). */
-    public const ALLOWED_META = ['vehicle_number', 'eta_date', 'unpaid_amount_krw', 'shipping_method', 'bl_type'];
+    public const ALLOWED_META = ['vehicle_number', 'eta_date', 'unpaid_amount_krw', 'shipping_method', 'bl_type', 'currency', 'changes'];
+
+    /**
+     * 💱 판매가·환율 수정 알림 (jin 2026-11-18) — 이미 판매가가 있던 차의 판매가·TAX D/C·커미션·판매환율이 **실제로** 바뀌면 뜬다.
+     * 처음 기입(판매가 0 → 값)은 안 뜬다. 받는 사람 = 영업 외 전체(User::canSeePriceAlarms). [확인] = 해소(누구 하나가 보면 사라짐).
+     * 같은 차의 안 본 알림이 있으면 새로 만들지 않고 `changes` 에 덧붙인다(하루에 여러 번 고쳐도 한 줄).
+     */
+    public const TYPE_PRICE_CHANGED = 'sale_price_changed';
+
+    public const ROLE_PRICE_WATCH = '관리직';
+
+    /** 지켜보는 칸 => 「실제로 바뀌었다」로 칠 최소 차이(반올림·표기 차이 제외). */
+    public const PRICE_WATCH = ['sale_price' => 1, 'tax_dc' => 1, 'commission' => 1, 'exchange_rate' => 0.01];
+
+    /** 한 알림에 쌓는 변경 줄 상한 — 넘으면 오래된 것부터 버린다. */
+    private const MAX_CHANGES = 20;
+
+    /** @param  list<array{field:string, old:float, new:float, at:string, by:?int}>  $changes */
+    public static function recordPriceChange(Vehicle $vehicle, array $changes): void
+    {
+        $open = self::query()->where('type', self::TYPE_PRICE_CHANGED)->where('vehicle_id', $vehicle->id)
+            ->whereNull('resolved_at')->whereNull('confirmed_at')->latest('id')->first();
+        if ($open) {
+            $meta = $open->message_meta ?? [];
+            $meta['changes'] = array_slice(array_merge($meta['changes'] ?? [], $changes), -self::MAX_CHANGES);
+            $meta['currency'] = $vehicle->currency;
+            $open->update(['message_meta' => self::sanitizeMeta($meta), 'due_date' => now()->toDateString()]);
+
+            return;
+        }
+        self::create([
+            'type' => self::TYPE_PRICE_CHANGED,
+            'vehicle_id' => $vehicle->id,
+            'target_role' => self::ROLE_PRICE_WATCH,
+            'due_date' => now()->toDateString(),
+            'message_meta' => self::sanitizeMeta([
+                'vehicle_number' => $vehicle->vehicle_number, 'currency' => $vehicle->currency, 'changes' => $changes,
+            ]),
+        ]);
+    }
 
     protected $fillable = [
         'type', 'vehicle_id', 'target_role', 'due_date', 'message_meta',
@@ -84,6 +123,10 @@ class TaskAlarm extends Model
                         $q3->whereHas('vehicle', fn ($v) => $v->whereIn('salesman_id', $user->getSubordinateSalesmanIds()));
                     }
                 });
+            }
+            // 💱 판매가·환율 수정 알림 — 영업 외 전체(팀 범위 없음, jin 2026-11-18)
+            if ($user->canSeePriceAlarms()) {
+                $outer->orWhere('target_role', self::ROLE_PRICE_WATCH);
             }
             // 아무 type 도 볼 수 없으면 빈 결과.
             $outer->orWhereRaw('1 = 0');

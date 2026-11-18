@@ -8,7 +8,7 @@ new #[Layout('components.layouts.app')] class extends Component
 {
     public function mount(): void
     {
-        abort_unless((bool) auth()->user()?->canAccessClearance(), 403);
+        abort_unless((bool) auth()->user()?->canSeeAlarms(), 403);   // 💱 재무도(판매가 수정 알림, jin 2026-11-18)
     }
 
     public function confirm(int $id): void
@@ -20,7 +20,7 @@ new #[Layout('components.layouts.app')] class extends Component
         abort_unless((bool) auth()->user()?->canSeeAlarm($alarm), 403);
         $updates = ['confirmed_at' => now(), 'confirmed_by' => auth()->id()];
         // 매입 도착 알람 — 수동 [확인] = 해소(사라짐). jin 2026-06-23.
-        if ($alarm->type === 'purchase_arrival') {
+        if (in_array($alarm->type, ['purchase_arrival', TaskAlarm::TYPE_PRICE_CHANGED], true)) {   // 💱 판매가 수정도 [확인] = 해소
             $updates['resolved_at'] = now();
             $updates['resolved_reason'] = 'manual_confirm';
         }
@@ -35,7 +35,7 @@ new #[Layout('components.layouts.app')] class extends Component
         if (! $v) {
             return;
         }
-        abort_unless((bool) $user?->canScopeVehicle($v), 403);
+        abort_unless((bool) $user?->canAccessClearance() && $user->canScopeVehicle($v), 403);   // 재무는 알람함에 들어와도 ETA 보정은 못 한다
 
         if (! $date) {
             $this->dispatch('notify', message: __('alarm.eta_required'), type: 'warning');
@@ -93,7 +93,8 @@ new #[Layout('components.layouts.app')] class extends Component
         if (! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
             $cq->whereIn('salesman_id', $user->getSubordinateSalesmanIds());
         }
-        $correctionVehicles = $cq->orderBy('shipping_date')->limit(50)->get();
+        // 통관 권한 없는 사람(재무)에겐 ETA 보정 칸을 안 보인다 — 판매가 수정 알림만 받는다.
+        $correctionVehicles = $user->canAccessClearance() ? $cq->orderBy('shipping_date')->limit(50)->get() : collect();
 
         return ['buyerGroups' => $buyerGroups, 'correctionVehicles' => $correctionVehicles];
     }
@@ -161,6 +162,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             $isArrival = $type === 'purchase_arrival';
                             $isDocDeadline = $type === 'document_deadline';
                             $isBalanceDue = $type === 'purchase_balance_due';
+                            $isPrice = $type === \App\Models\TaskAlarm::TYPE_PRICE_CHANGED;   // 💱 판매가·환율 수정(jin 2026-11-18)
                             // board 요청·확인 신호 (2026-08-09) — 처리 자리는 차량관리 드로어다.
                             //   type 을 여기서 열거하지 말 것: 신호가 늘면 색·문구가 조용히 빠진다.
                             $boardMeta = \App\Models\BoardRequest::metaByAlarmType($type);
@@ -168,7 +170,7 @@ new #[Layout('components.layouts.app')] class extends Component
                             $isBoardPurchase = $isBoard && ($boardMeta['color'] ?? '') !== 'purple';
                             $unpaid = $meta['unpaid_amount_krw'] ?? null;
                             $dday = $a->due_date ? (int) now()->startOfDay()->diffInDays($a->due_date->copy()->startOfDay(), false) : null;
-                            $soon = ! $isShip && ! $isArrival && ! $isBoard && $dday !== null && $dday <= 3;
+                            $soon = ! $isPrice && ! $isShip && ! $isArrival && ! $isBoard && $dday !== null && $dday <= 3;
                             // board 신호도 차량관리 드로어로 연다 — 거기서 뱃지·금액을 함께 본다(jin 2026-08-09).
                             $href = route('erp.vehicles.index', ['openVehicle' => $a->vehicle_id]);
                         @endphp
@@ -177,7 +179,10 @@ new #[Layout('components.layouts.app')] class extends Component
                                 {{ $meta['vehicle_number'] ?? ('#'.$a->vehicle_id) }}
                             </a>
                             <span class="text-xs tabular-nums text-gray-400">{{ $a->due_date?->format('Y-m-d') ?? '—' }}</span>
-                            @if ($isBoard)
+                            @if ($isPrice)
+                                <span class="rounded-full bg-rose-100 px-1.5 py-0.5 text-[11px] font-bold text-rose-700" data-alarm-price>{{ __('alarm.badge_price') }}</span>
+                                <x-erp.price-change-lines :meta="$meta" :limit="5" class="basis-full sm:basis-auto" />
+                            @elseif ($isBoard)
                                 <span class="rounded-full {{ $isBoardPurchase ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700' }} px-1.5 py-0.5 text-[11px] font-bold">{{ __('alarm.badge_board') }}</span>
                                 <span class="text-[12px] font-semibold {{ $isBoardPurchase ? 'text-blue-700' : 'text-purple-700' }}">
                                     {{ __($boardMeta['action']) }}

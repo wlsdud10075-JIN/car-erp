@@ -1241,6 +1241,25 @@ class Vehicle extends Model
                 }
             }
 
+            // 💱 판매가·환율 수정 알림 (jin 2026-11-18) — 이미 판매가가 있던 차에서만(처음 기입은 제외).
+            //    판정은 감사와 같은 isRealChange + 최소 차이(반올림 103006.44→103006 류 제외). 조건·받는 사람 = TaskAlarm::PRICE_WATCH.
+            if ((float) $vehicle->getOriginal('sale_price') > 0) {
+                $priceChanges = [];
+                foreach (TaskAlarm::PRICE_WATCH as $col => $minDiff) {
+                    if (! AuditLog::isRealChange($vehicle, $col)) {
+                        continue;
+                    }
+                    $old = (float) $vehicle->getOriginal($col);
+                    $new = (float) $vehicle->getAttribute($col);
+                    if (abs($old - $new) >= $minDiff) {
+                        $priceChanges[] = ['field' => $col, 'old' => $old, 'new' => $new, 'at' => now()->format('m-d H:i'), 'by' => auth()->id()];
+                    }
+                }
+                if ($priceChanges !== []) {
+                    TaskAlarm::recordPriceChange($vehicle, $priceChanges);
+                }
+            }
+
             // 💴 「2차 가능」(jin 2026-10-06) — 비용 칸(10개) 중 하나라도 **실제로** 바뀌었으면 이 차의 2차 대기
             //    정산을 2차 가능으로 표시한다. 명세서 기입 일괄·패널 수동 입력 모두 이 훅을 지난다.
             //    같은 `isRealChange` 를 쓴다 — 재저장의 「0.00 → 0」으로 전 차량이 2차 가능이 되면 필터가 무의미(§8 #108).
