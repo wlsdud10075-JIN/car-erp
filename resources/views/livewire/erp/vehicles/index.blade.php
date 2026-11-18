@@ -2737,6 +2737,19 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
     }
 
+    /** 🆕 최근 바이어 지정된 차 수 — 미정 수와 같은 방식(작업 필터는 빼고 센다). 0 이면 버튼이 안 뜬다. */
+    #[Computed]
+    public function buyerAssignedCount(): int
+    {
+        $task = $this->taskFilter;
+        $this->taskFilter = '';
+        try {
+            return (int) $this->filteredVehicleQuery(true, false)->buyerAssignedRecently()->count();
+        } finally {
+            $this->taskFilter = $task;
+        }
+    }
+
     public function updatedSalesmanId(): void
     {
         unset($this->vehicles);
@@ -3565,6 +3578,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->taskFilter === 'receivable', fn ($q) => $q->hasReceivable())
             // 🏷️ 바이어 미정 (jin 2026-11-05) — 목록 뱃지와 같은 칸(buyer_undecided). 바이어가 정해지면 저장 훅이 플래그를 내린다.
             ->when($this->taskFilter === 'buyer_undecided', fn ($q) => $q->where('buyer_undecided', true))
+            // 🆕 최근 바이어 지정됨 (jin 2026-11-18 «최근 5일») — 조건은 Vehicle::scopeBuyerAssignedRecently 단일 출처(감사로그 1→0).
+            ->when($this->taskFilter === 'buyer_assigned', fn ($q) => $q->buyerAssignedRecently())
             ->when($this->salesmanId !== '', fn ($q) => $q->where('salesman_id', $this->salesmanId))
             ->when($this->buyerId !== '', fn ($q) => $q->where('buyer_id', $this->buyerId))
             ->when($this->action !== '', fn ($q) => $this->applyActionFilter($q))
@@ -8679,8 +8694,11 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 🏷️ 바이어 미정 (jin 2026-11-05 «있다가 없어지기도 하는 토글이라» 계약금·매입잔금 줄로) — 미정 차가 있을 때만(켜져 있으면 계속).
             $undecidedOn = $taskFilter === 'buyer_undecided';
             $undecidedCount = $this->buyerUndecidedCount;
+            // 🆕 최근 바이어 지정됨 (jin 2026-11-18) — 미정에서 빠진 차가 조용히 사라지지 않게. 있을 때만(켜져 있으면 계속).
+            $assignedOn = $taskFilter === 'buyer_assigned';
+            $assignedCount = $this->buyerAssignedCount;
         @endphp
-        @if($brqCounts !== [] || $undecidedCount > 0 || $undecidedOn)
+        @if($brqCounts !== [] || $undecidedCount > 0 || $undecidedOn || $assignedCount > 0 || $assignedOn)
         <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3">
             {{-- 색 = 목록 뱃지와 같은 slate(jin «뱃지 색과 동일시»). ⚠️ slate-200·600 은 이 버튼이 처음 써서 빌드가 있어야 먹는다(§8 #50 — 배포는 npm run build).
                  켜고 끄는 건 「말소 필요」·「미수금」과 같은 작업 필터(taskFilter, 하나만 켜짐) — 자리만 이 줄이다. --}}
@@ -8690,6 +8708,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                     class="rounded-full px-2.5 py-0.5 text-xs transition
                            {{ $undecidedOn ? 'bg-slate-600 text-white shadow-sm font-semibold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200 font-medium' }}">
                 {{ $undecidedOn ? '✓ ' : '' }}🏷️ {{ __('vehicle.buyer_undecided_badge') }} ({{ number_format($undecidedCount) }})
+            </button>
+            @endif
+            @if($assignedCount > 0 || $assignedOn)
+            <button type="button" wire:click="toggleTask('buyer_assigned')" data-filter-buyer-assigned
+                    title="{{ __('vehicle.buyer_assigned_title', ['days' => \App\Models\Vehicle::BUYER_ASSIGNED_RECENT_DAYS]) }}"
+                    class="rounded-full px-2.5 py-0.5 text-xs font-medium transition
+                           {{ $assignedOn ? 'bg-emerald-600 text-white shadow-sm font-semibold' : 'bg-emerald-100 text-emerald-700' }}">
+                {{ $assignedOn ? '✓ ' : '' }}🆕 {{ __('vehicle.buyer_assigned_badge', ['days' => \App\Models\Vehicle::BUYER_ASSIGNED_RECENT_DAYS]) }} ({{ number_format($assignedCount) }})
             </button>
             @endif
             @foreach(\App\Models\BoardRequest::TYPE_META as $brqType => $brqMeta)
