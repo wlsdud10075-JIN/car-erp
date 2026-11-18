@@ -103,6 +103,19 @@ class BulkExportRouteFillTest extends TestCase
         $this->assertNull($v->fresh()->bl_loading_location);
     }
 
+    /**
+     * audit_logs.column_name 은 varchar(60) — 묶음 10칸을 그대로 이으면 운영 MySQL 이 1406 으로 거부한다(로컬 확인 때 jin 이 「적용」 에러로 발견).
+     * SQLite 는 길이를 안 지켜 기능 테스트가 원리상 못 잡는다 → 길이를 직접 단언한다.
+     */
+    public function test_audit_column_list_fits_sixty_chars(): void
+    {
+        $all = array_merge(BulkVehicleShippingDateService::FIELDS, BulkVehicleShippingDateService::ROUTE_FIELDS,
+            ['bl_buyer_id', 'export_buyer_id', 'export_consignee_id']);
+        $this->assertLessThanOrEqual(60, mb_strlen(BulkVehicleShippingDateService::auditColumns($all)));
+        $this->assertStringContainsString('export_route', BulkVehicleShippingDateService::auditColumns(['shipping_date', 'incoterms']));
+        $this->assertSame('shipping_date,eta_date', BulkVehicleShippingDateService::auditColumns(['shipping_date', 'eta_date']));
+    }
+
     public function test_existing_values_and_consignee_are_kept(): void
     {
         $a = Consignee::create(['buyer_id' => $this->buyer->id, 'name' => 'CONS A']);
