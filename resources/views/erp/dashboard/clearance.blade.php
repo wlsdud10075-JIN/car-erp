@@ -48,10 +48,13 @@
         <div class="min-h-[88px] rounded-lg border px-2 py-1.5 {{ $d['is_today'] ? 'border-violet-400 bg-violet-50' : 'border-gray-200 bg-white' }}">
             <div class="text-[11px] font-semibold {{ $d['is_today'] ? 'text-violet-700' : 'text-gray-500' }}">{{ $d['date']->locale(app()->getLocale())->isoFormat('ddd D') }}@if($d['is_today']) · {{ __('dashboard.v.today') }}@endif</div>
             @foreach($d['ships'] as $s)
-            <div class="mt-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800">🚢 {{ $t('week.ship', ['n' => $s['count']]) }}@if($s['vessel']) <span class="text-amber-600">({{ $s['vessel'] }})</span>@endif</div>
+            {{-- 🔗 누르면 차량관리에 이 차들만(jin 2026-11-18) — 대시보드가 센 id 를 그대로 넘겨 대수가 같다. --}}
+            <a href="{{ route('erp.vehicles.index', ['ids' => implode(',', $s['ids'])]) }}" wire:navigate data-week-ship
+               class="mt-1 block rounded bg-amber-50 px-1.5 py-0.5 text-[11px] text-amber-800 hover:bg-amber-100 hover:underline">🚢 {{ $t('week.ship', ['n' => $s['count']]) }}@if($s['vessel']) <span class="text-amber-600">({{ $s['vessel'] }})</span>@endif</a>
             @endforeach
             @if($d['eta'] > 0)
-            <div class="mt-1 rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800">⚓ {{ $t('week.eta', ['n' => $d['eta']]) }}</div>
+            <a href="{{ route('erp.vehicles.index', ['ids' => implode(',', $d['eta_ids'])]) }}" wire:navigate data-week-eta
+               class="mt-1 block rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] text-emerald-800 hover:bg-emerald-100 hover:underline">⚓ {{ $t('week.eta', ['n' => $d['eta']]) }}</a>
             @endif
         </div>
         @endforeach

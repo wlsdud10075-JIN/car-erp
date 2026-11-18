@@ -238,7 +238,7 @@ return [
     // board 요청·확인 신호 뱃지 (2026-08-09) — 권위 = docs/integration/board-portal-api.md §11.
     //   ⚠️ 라벨을 늘리지 말 것 — 차량번호 옆에 보증금매입(5~8자)·잔금지연(5자)과 나란히 선다.
     'buyer_undecided_badge' => '바이어미정',
-    'buyer_assigned_badge' => '바이어 지정됨 · 최근 :days일',
+    'buyer_assigned_badge' => '바이어지정',
     'buyer_assigned_title' => '「바이어 미정」이었다가 최근 :days일 안에 바이어가 정해진 차량입니다(감사로그 기준). 다시 미정이 되면 빠집니다.',
     // 💸 진행상태 옆 매입 미지급 병기 (jin 2026-09-10) — 뱃지 글자는 domain.progress.매입중 을 쓰고
     //    금액만 여기서 호버로 보여준다. 「판매중인데 매입 잔금이 남았다」를 목록에서 알아보려는 것.

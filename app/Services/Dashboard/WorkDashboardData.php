@@ -172,25 +172,32 @@ class WorkDashboardData
     {
         $start = ($start ?? CarbonImmutable::now())->startOfWeek();   // 월요일
         $end = $start->endOfWeek();
+        // 🔗 항목마다 차량 id 를 같이 든다 (jin 2026-11-18) — 누르면 차량관리 `?ids=` 로 **같은 차들**이 그대로 뜬다.
+        //    선박명 검색으로 넘기면 LIKE(V.2611 ↔ V.2611A)·다른 칸 일치·취소 차 때문에 대수가 어긋난다(SKILLS §9 정합성 원칙).
         $ships = $this->base($sids)->where('cancel_status', Vehicle::CANCEL_NONE)
             ->whereBetween('shipping_date', [$start->toDateString(), $end->toDateString()])
-            ->selectRaw('shipping_date, vessel_name, COUNT(*) as cnt')->groupBy('shipping_date', 'vessel_name')->get();
+            ->get(['id', 'shipping_date', 'vessel_name'])
+            ->groupBy(fn ($v) => $v->shipping_date?->toDateString().'|'.(string) $v->vessel_name);
         $etas = $this->base($sids)->where('cancel_status', Vehicle::CANCEL_NONE)
             ->whereBetween('eta_date', [$start->toDateString(), $end->toDateString()])
-            ->selectRaw('eta_date, COUNT(*) as cnt')->groupBy('eta_date')->get();
+            ->get(['id', 'eta_date'])
+            ->groupBy(fn ($v) => $v->eta_date?->toDateString());
         $days = [];
         for ($d = $start; $d->lte($end); $d = $d->addDay()) {
             $key = $d->toDateString();
+            $etaIds = $etas->get($key, collect())->pluck('id')->all();
             $days[] = [
                 'date' => $d,
                 'is_today' => $key === $this->today,
-                'ships' => $ships->filter(fn ($r) => $r->shipping_date?->toDateString() === $key)->map(fn ($r) => ['vessel' => $r->vessel_name, 'count' => (int) $r->cnt])->values(),
-                'eta' => (int) $etas->first(fn ($r) => $r->eta_date?->toDateString() === $key)?->cnt,
+                'ships' => $ships->filter(fn ($g, $k) => str_starts_with($k, $key.'|'))
+                    ->map(fn ($g) => ['vessel' => $g->first()->vessel_name, 'count' => $g->count(), 'ids' => $g->pluck('id')->all()])->values(),
+                'eta' => count($etaIds),
+                'eta_ids' => $etaIds,
             ];
         }
 
         return ['start' => $start, 'end' => $end, 'days' => $days,
-            'ship_total' => (int) $ships->sum('cnt'), 'eta_total' => (int) $etas->sum('cnt')];
+            'ship_total' => (int) $ships->sum(fn ($g) => $g->count()), 'eta_total' => (int) $etas->sum(fn ($g) => $g->count())];
     }
 
     /** 진행중 차량 — 서류 기준. 선적일 가까운 순(없는 차는 뒤로). */

@@ -79,7 +79,7 @@ class BuyerAssignedRecentFilterTest extends TestCase
 
         Volt::test('erp.vehicles.index')
             ->assertSeeHtml('data-filter-buyer-assigned')
-            ->assertSee('바이어 지정됨 · 최근 5일 (1)')
+            ->assertSee('바이어지정 (1)')
             ->call('toggleTask', 'buyer_assigned')
             ->assertSee('55마5555')
             ->assertDontSee('66바6666');
