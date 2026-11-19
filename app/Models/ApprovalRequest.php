@@ -140,8 +140,10 @@ class ApprovalRequest extends Model
     /** 이 사용자가 올린(또는 board 에서 누른) 요청인가 — 본인 건은 본인이 결정할 수 없다. */
     public function isRequestedBy(?User $user): bool
     {
+        // board 가 보내는 「누른 사람」 이메일은 ERP 로그인 이메일일 수도, 영업 명부(매핑) 이메일일 수도 있다 — 둘 다 본다.
         return $user !== null && ($this->requester_id === $user->id
-            || BoardPurchaseLockAllowance::requestedBy($this, $user->email));
+            || BoardPurchaseLockAllowance::requestedBy($this, $user->email)
+            || BoardPurchaseLockAllowance::requestedBy($this, $user->salesman?->email));
     }
 
     public function getStatusLabelAttribute(): string
