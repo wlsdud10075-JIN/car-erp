@@ -141,6 +141,46 @@ class PurchaseLockRequestController extends Controller
     }
 
     /**
+     * POST /purchase-lock-requests/{id}/cancel — 대기 중인 요청을 board 에서 거둔다 (jin 2026-11-19 «3대를 30대로 잘못하면 그쪽에서도 취소»).
+     * 결정(승인·거절)된 건은 못 거둔다(409). 범위 = 요청과 같다(그 영업의 바이어, super 전체). 거둔 뒤엔 바로 다시 요청할 수 있다.
+     */
+    public function cancel(Request $request, int $id): JsonResponse
+    {
+        [$salesman, $all] = $this->actor($request);
+        $data = $request->validate(['cancelled_by_name' => ['nullable', 'string', 'max:50']]);
+
+        $req = ApprovalRequest::query()->where('action_type', Allowance::TYPE)->where('target_type', Buyer::class)->find($id);
+        abort_if($req === null, 404, 'Not found');
+        $buyer = $this->buyerOrFail((int) $req->target_id, $salesman, $all);   // 남의 바이어 건은 404
+
+        $done = DB::transaction(function () use ($req, $buyer, $salesman, $data) {
+            $row = ApprovalRequest::query()->whereKey($req->id)->lockForUpdate()->first();
+            if ($row->status !== ApprovalRequest::STATUS_PENDING) {
+                return null;   // 그 사이 승인·거절됐다
+            }
+            $row->update(['status' => ApprovalRequest::STATUS_CANCELLED, 'decided_at' => now()]);
+            AuditLog::create([
+                'user_id' => $salesman?->user_id,
+                'approval_request_id' => $row->id,
+                'auditable_type' => Buyer::class,
+                'auditable_id' => $buyer->id,
+                'action' => 'board_purchase_lock_cancelled',
+                'column_name' => 'count:'.(int) ($row->payload['requested_count'] ?? 0),
+                'old_value' => null,
+                'new_value' => $data['cancelled_by_name'] ?? ($salesman?->name),
+            ]);
+
+            return $row;
+        });
+
+        if ($done === null) {
+            return response()->json(['error' => 'already_decided', 'request' => Allowance::present($req->fresh('approver'))], 409);
+        }
+
+        return response()->json(['id' => $done->id, 'status' => ApprovalRequest::STATUS_CANCELLED]);
+    }
+
+    /**
      * GET /purchase-lock-requests
      *   ?buyer_id=  → 그 바이어의 남은 대수 + 최근 요청 한 건(구매확정 직전 재조회)
      *   buyer_id 없이 ?since= → 그 뒤로 결정된(승인·거절) 건 목록(board 종·웹푸시)

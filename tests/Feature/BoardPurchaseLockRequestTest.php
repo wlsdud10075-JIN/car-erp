@@ -323,6 +323,35 @@ class BoardPurchaseLockRequestTest extends TestCase
         $this->assertSame(1, $this->signedGet(self::PATH, ['salesman_email' => $super->email, 'buyer_id' => $b->id])->assertOk()->json('latest.requested_count'));
     }
 
+    /** 3대를 30대로 잘못 올렸다 — board 에서 거두고 다시 올린다 (jin 2026-11-19). */
+    public function test_a_pending_request_can_be_withdrawn_from_board_and_requested_again(): void
+    {
+        $s = $this->salesman('a@ex.com');
+        $b = $this->lockedBuyer($s);
+        $id = $this->signedPost(self::PATH, $this->body($s, $b, ['requested_count' => 30]))->json('id');
+        $cancel = fn (int $rid, Salesman $who) => $this->signedPost(self::PATH.'/'.$rid.'/cancel', ['salesman_email' => $who->email, 'cancelled_by_name' => $who->name]);
+
+        // 남의 바이어 건은 못 거둔다
+        $cancel($id, $this->salesman('other@ex.com'))->assertStatus(404);
+        $this->assertSame('pending', ApprovalRequest::find($id)->status);
+
+        $cancel($id, $s)->assertOk()->assertJson(['id' => $id, 'status' => 'cancelled']);
+        $this->assertSame('cancelled', ApprovalRequest::find($id)->status);
+        $this->assertSame('cancelled', $this->signedGet(self::PATH, ['salesman_email' => $s->email, 'buyer_id' => $b->id])->json('latest.status'));
+        $this->assertSame(1, AuditLog::where('action', 'board_purchase_lock_cancelled')->count());
+        $this->assertSame(0, ApprovalRequest::actionable()->where('status', 'pending')->count(), '거둔 건은 승인큐·벨에서 사라진다');
+
+        // 거둔 뒤 바로 다시 요청할 수 있다
+        $again = $this->signedPost(self::PATH, $this->body($s, $b, ['requested_count' => 3]))->assertStatus(201)->json('id');
+
+        // 결정된 건은 못 거둔다
+        $this->approve($this->manager(), $again, 3);
+        $cancel($again, $s)->assertStatus(409)->assertJson(['error' => 'already_decided']);
+        $this->assertSame(3, Allowance::summary($b->id)['remaining']);
+        // 거둔 건은 결정 목록(종·웹푸시)에 안 섞인다
+        $this->assertSame([$again], array_column($this->signedGet(self::PATH, ['salesman_email' => $s->email])->json('data'), 'id'));
+    }
+
     public function test_decision_modal_shows_the_buyers_current_figures_not_amounts(): void
     {
         $s = $this->salesman('a@ex.com');

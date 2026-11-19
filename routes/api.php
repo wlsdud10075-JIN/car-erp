@@ -150,6 +150,7 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         // 🔐 매입 락 해제 요청(2026-11-19 jin) — 락 걸린 바이어로 「N대 더 등록」→ ERP 승인큐. 권위 §17. 🚫금액 미수신.
         Route::post('purchase-lock-requests', [PurchaseLockRequestController::class, 'store'])->name('purchase-lock-requests.store');
         Route::get('purchase-lock-requests', [PurchaseLockRequestController::class, 'index'])->name('purchase-lock-requests.index');
+        Route::post('purchase-lock-requests/{id}/cancel', [PurchaseLockRequestController::class, 'cancel'])->whereNumber('id')->name('purchase-lock-requests.cancel');
     });
 
 /*

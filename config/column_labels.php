@@ -591,6 +591,7 @@ return [
         'board_purchase_lock_used' => '매입 락 승인 대수 사용 (board)',
         'board_purchase_lock_overshoot' => '매입 락 승인 대수 초과 등록 (board)',
         'board_purchase_lock_requested' => '매입 락 해제 요청 (board)',
+        'board_purchase_lock_cancelled' => '매입 락 해제 요청 취소 (board)',
         'vehicle_deleted_with_reason' => '차량 삭제(사유 기재)',
         'capital_report_viewed' => '자금 보고서 열람',
         'purchase_proof_viewed' => '이체확인증 열람(딜러 알림톡 링크)',
