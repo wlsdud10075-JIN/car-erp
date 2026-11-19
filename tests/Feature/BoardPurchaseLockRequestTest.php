@@ -265,6 +265,13 @@ class BoardPurchaseLockRequestTest extends TestCase
         $this->approve($proxy, $id, 5);
         $this->assertSame('pending', ApprovalRequest::find($id)->status, '누른 사람은 자기 건을 승인할 수 없다');
 
+        // board 가 ERP 로그인 이메일이 아니라 그 사람의 영업 명부(매핑) 이메일을 보낸 경우에도 막힌다
+        $mapped = $this->manager('login@car-erp.test');
+        Salesman::create(['name' => '매핑관리', 'email' => 'mapped@board.test', 'is_active' => true, 'user_id' => $mapped->id]);
+        ApprovalRequest::whereKey($id)->update(['payload' => array_merge(ApprovalRequest::find($id)->payload, ['requested_by_email' => 'mapped@board.test'])]);
+        $this->approve($mapped, $id, 5);
+        $this->assertSame('pending', ApprovalRequest::find($id)->status);
+
         $this->approve($this->manager('other@car-erp.test'), $id, 5);
         $this->assertSame('approved', ApprovalRequest::find($id)->status);
     }

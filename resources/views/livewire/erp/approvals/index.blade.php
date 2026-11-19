@@ -156,7 +156,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 🔐 매입 락 해제(board) — 요청은 영업 명의로 오지만 관리가 대신 누를 수 있다. 누른 사람은 자기 건을 승인·거부할 수 없다.
         $isBoardLock = $req->action_type === ApprovalRequest::TYPE_BOARD_PURCHASE_LOCK;
-        if ($isBoardLock && \App\Services\BoardPurchaseLockAllowance::requestedBy($req, auth()->user()?->email)) {
+        if ($isBoardLock && $req->isRequestedBy(auth()->user())) {
             $this->dispatch('notify', message: __('approval.toast.self'), type: 'error');
             $this->closeDecisionModal();
 

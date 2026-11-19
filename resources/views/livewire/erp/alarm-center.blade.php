@@ -195,7 +195,7 @@ new class extends Component
                             <a href="{{ route('erp.approvals.index') }}" wire:navigate wire:key="bell-approval-{{ $ar->id }}"
                                class="block border-l-[3px] px-3 py-2 {{ $loop->first ? '' : 'border-t border-red-100' }} {{ $mine ? 'border-l-gray-300 bg-white' : 'border-l-red-500 hover:bg-red-100' }}">
                                 <div class="flex items-center justify-between gap-2">
-                                    <span class="truncate text-[13px] font-bold {{ $mine ? 'text-gray-500' : 'text-gray-800' }}">{{ $ar->bellTitle() }}</span>
+                                    <span class="truncate text-[13px] font-bold {{ $mine ? 'text-gray-500' : 'text-gray-800' }}" title="{{ $ar->bellTitle() }}">{{ $ar->bellTitle() }}</span>
                                     <span class="shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $mine ? 'bg-gray-100 text-gray-500' : 'bg-red-100 text-red-700' }}">{{ $mine ? __('alarm.approval_mine') : $ar->action_label }}</span>
                                 </div>
                                 <div class="mt-0.5 text-[12px] text-gray-600">
@@ -216,7 +216,7 @@ new class extends Component
                         @foreach ($myRequests as $mr)
                             <div class="border-l-[3px] border-l-gray-400 px-3 py-2" wire:key="bell-mine-{{ $mr->id }}">
                                 <div class="flex items-center justify-between gap-2">
-                                    <span class="truncate text-[13px] font-bold text-gray-800">{{ $mr->bellTitle() }}</span>
+                                    <span class="truncate text-[13px] font-bold text-gray-800" title="{{ $mr->bellTitle() }}">{{ $mr->bellTitle() }}</span>
                                     <span class="shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800">{{ __('alarm.my_requests_waiting') }}</span>
                                 </div>
                                 <div class="mt-0.5 text-[12px] text-gray-600">{{ $mr->action_label }} · {{ $mr->created_at->diffForHumans() }}</div>
