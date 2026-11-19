@@ -34,6 +34,20 @@ class VehiclePhotoLightboxSwipeTest extends TestCase
         $this->assertStringContainsString('@keydown.arrow-right.window="stepLightbox(1)"', $src);
         $this->assertStringContainsString('@touchend="lbTouchEnd($event)"', $src);
         $this->assertSame(2, substr_count($src, 'x-show="lightbox.items.length > 1" @click="stepLightbox('), '좌우 버튼은 2장 이상일 때만');
-        $this->assertStringContainsString("if (! this.lightbox.open || n < 2) return;", $src, '닫혀 있으면 화살표 키가 아무것도 안 한다');
+        $this->assertStringContainsString('if (! this.lightbox.open || n < 2) return;', $src, '닫혀 있으면 화살표 키가 아무것도 안 한다');
+    }
+
+    /** 🔍 Ctrl+휠 = 사진만 확대 (jin 2026-11-19 «뒤쪽 ERP 가 확대된다»). */
+    public function test_ctrl_wheel_zooms_the_photo_not_the_page(): void
+    {
+        $src = $this->source();
+        $this->assertStringContainsString('@wheel="lbWheel($event)"', $src, '확대 화면이 휠을 받는다');
+        $this->assertStringContainsString("if (! e.ctrlKey || ! this.lightbox.open || this.lightbox.kind !== 'image') return;", $src, 'Ctrl 없는 휠·PDF 는 건드리지 않는다');
+        $this->assertMatchesRegularExpression('/lbWheel\(e\) \{[^}]*?return;\s*e\.preventDefault\(\);/s', $src, '브라우저 전체 확대를 막는다');
+        $this->assertStringContainsString('data-lb-img draggable="false"', $src);
+        $this->assertStringContainsString('@mousedown="lbDragStart($event)" @dblclick="lbZoomReset()"', $src, '끌어서 이동 · 더블클릭 원복');
+        // 다음 사진·닫기·ESC 는 확대를 푼다
+        $this->assertSame(4, substr_count($src, 'this.lbZoomReset();'), '열기 · 닫기 · 넘기기 · 1배로 돌아올 때');
+        $this->assertStringContainsString('if (this.lightbox.open) { this.closeLightbox(); return; }', $src, 'ESC 도 닫기와 같은 길');
     }
 }
