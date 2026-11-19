@@ -891,7 +891,7 @@ prefix `/api/internal/board`, 인증·서명·replay = §1, 스코프 = §2(`sal
 - 🚫 ERP 가 배차(업체·기사·일시)를 저장하지 않는다 — 그건 board 탁송 탭. ERP 는 보관위치·비고(기존 칸)와 알림톡 한 줄뿐.
 - 🚫 보관위치 목록을 board 에 복사하지 않는다(16-3 `options`).
 
-## 17. 매입 락 해제 요청 — board → ERP 승인큐 (jin 2026-11-19 · ✅ 구현 dev — `PurchaseLockRequestController`, `BoardPurchaseLockAllowance`, 마이그 `2026_11_19_000001_make_approval_requester_nullable`, 가드 `BoardPurchaseLockRequestTest` 9 · `AlarmCenterApprovalSectionTest` 6)
+## 17. 매입 락 해제 요청 — board → ERP 승인큐 (jin 2026-11-19 · ✅ 구현 dev — `PurchaseLockRequestController`, `BoardPurchaseLockAllowance`, 마이그 `2026_11_19_000001_make_approval_requester_nullable`, 가드 `BoardPurchaseLockRequestTest` 11 · `AlarmCenterApprovalSectionTest` 6)
 
 락 걸린 바이어는 board 에서 구매확정이 막힌다. 예전엔 ERP 저장 때 관리자가 사유를 적고 등록했는데 board 가 매입 입구가 되며 그 길이 없어졌다.
 ⇒ board 가 「이 바이어로 **N대 더 등록**」을 요청 → ERP 승인큐에서 관리 이상이 승인(줄여서 승인 가능)·거절 → 승인된 대수만큼 board 구매확정 통과.
@@ -916,10 +916,19 @@ body: `salesman_email`(등록 영업) · `buyer_id` · `requested_count`(1~999) 
 | `404` | 그 영업의 바이어가 아니다(남의 것·없는 것 구분 안 함) |
 | `422` | 검증 실패 |
 
+### 17-1b. `POST /purchase-lock-requests/{id}/cancel` — 대기 중인 요청 거두기 (jin 11-19 «3대를 30대로 잘못하면 그쪽에서도 취소»)
+body: `salesman_email` · `cancelled_by_name`?(≤50). 범위 = 요청과 같다(그 영업의 바이어, super 전체).
+
+| 응답 | 뜻 |
+|---|---|
+| `200 { id, status:"cancelled" }` | 거뒀다 — 승인큐·벨에서 사라지고, 바로 다시 요청할 수 있다 |
+| `409 { error:"already_decided", request:{…latest} }` | 이미 승인·거절됐다(승인된 대수는 못 거둔다) |
+| `404` | 없는 건이거나 그 영업의 바이어 건이 아니다 |
+
 ### 17-2. `GET /purchase-lock-requests?buyer_id=&salesman_email=` — 한 바이어(구매확정 직전 재조회)
 `200 { buyer_id, allowance: { remaining, approved_count, expires_at } | null, latest: { id, status, requested_count, approved_count, used_count, reason, decision_note, requested_by_name, requested_at, decided_at, decided_by_name, expires_at } | null }`
 - `allowance` = 살아 있는 승인들의 합. `expires_at` = 가장 먼저 만료되는 시각. 남은 게 없으면 `null`. **board 판정 = `allowance.remaining >= 1` 하나.**
-- `latest.status` ∈ `pending` · `approved`(쓸 수 있음) · `rejected` · `exhausted`(다 씀) · `expired`(7일 지남).
+- `latest.status` ∈ `pending` · `approved`(쓸 수 있음) · `rejected` · `exhausted`(다 씀) · `expired`(7일 지남) · `cancelled`(board 에서 거둠).
 
 ### 17-3. `GET /purchase-lock-requests?salesman_email=&since=` — 결정된 건 목록(종·웹푸시)
 `buyer_id` 없이 부르면 목록. `since`(ISO8601, 기본 7일 전) 이후 승인·거절된 건, 그 영업의 바이어 범위, 최대 100. 행 = 17-2 `latest` + `buyer_id` · `buyer_name`.
