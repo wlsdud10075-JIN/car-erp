@@ -1,6 +1,6 @@
 # board 발 매입 락 해제 요청 → ERP 승인큐 + 알림 벨 「승인 대기」 구역
 
-> 상태: **설계 확정(jin 2026-11-19), 구현 미착수** — 착수는 jin 이 따로 말할 때.
+> 상태: **설계 확정(jin 2026-11-19), 구현 미착수** — 주말(11-21~22) 작업에 포함(jin «이건 주말작업할거고»). 순서 = ERP 연동 규격 문서 → board 통지 → ERP 구현·배포 → board 구현.
 > 목업: `docs/design/mock/2026-11-19/approval-bell.html` (노란 줄 버튼으로 상태 전환)
 > 관련: `docs/integration/board-collab.md` §3 2026-11-19 · board 쪽 구현은 board 세션 몫.
 
