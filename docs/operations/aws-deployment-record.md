@@ -935,6 +935,12 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-19 — 서버 작업(코드 배포 아님) · 3사 재부팅 (jin «지금 점심시간이야»·«ssancarerp 지금해»)
+
+- 🖥️ **3사 재부팅 — 커널 보안 패치 적용**(전부 「재부팅 필요」였다: karaba 22주·heyman 8주·ssancar 8주). 12:44 karabaerp(6.17→7.0.0-1017) → 12:45 heymanerp → 12:47 ssancarerp(7.0.0-1012→1017). 끊김 각 약 30초. 재부팅 뒤 nginx·php8.4-fpm·mysql·supervisor 워커·cron·tailscale·wg-carmodoo 터널 자동 기동, 실패 서비스 0, 아침 점검 3사 🟢, /login 200(heymanboard·ssancarboard 포함), NICE 접속 정상.
+- 🛡️ **NICE 조회 불통 11-18 16:28~11-19 10:17** — NICE 가 해외 IP(AWS 대역)를 차단. 54.116.7.83 화이트리스트 등록으로 해소. 우리 쪽 변경 없음.
+- 남은 서버 작업(주말, 건별 승인): fail2ban · 보안 헤더(ssancar·heyman) · SESSION_SECURE_COOKIE(ssancar·karaba). 보류: .env 권한·ufw·비번 정책·2FA. 정본 = 메모리 `project_security_checklist_2026_11_19`.
+
 ## 2026-11-18 (3) — master `9f6490a6` · 마이그 0 (jin «배포해줘»)
 
 - **차량관리 「🆕 바이어지정 (N)」** — 「바이어 미정」이었다가 최근 5일 안에 바이어가 정해진 차(감사로그 buyer_undecided 1→0, `Vehicle::scopeBuyerAssignedRecently`). 배포 전 실측 ssancarerp 8대.
