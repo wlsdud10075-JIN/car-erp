@@ -891,3 +891,50 @@ prefix `/api/internal/board`, 인증·서명·replay = §1, 스코프 = §2(`sal
 - 🚫 ERP 가 배차(업체·기사·일시)를 저장하지 않는다 — 그건 board 탁송 탭. ERP 는 보관위치·비고(기존 칸)와 알림톡 한 줄뿐.
 - 🚫 보관위치 목록을 board 에 복사하지 않는다(16-3 `options`).
 
+## 17. 매입 락 해제 요청 — board → ERP 승인큐 (jin 2026-11-19 · ✅ 구현 dev — `PurchaseLockRequestController`, `BoardPurchaseLockAllowance`, 마이그 `2026_11_19_000001_make_approval_requester_nullable`, 가드 `BoardPurchaseLockRequestTest` 9 · `AlarmCenterApprovalSectionTest` 6)
+
+락 걸린 바이어는 board 에서 구매확정이 막힌다. 예전엔 ERP 저장 때 관리자가 사유를 적고 등록했는데 board 가 매입 입구가 되며 그 길이 없어졌다.
+⇒ board 가 「이 바이어로 **N대 더 등록**」을 요청 → ERP 승인큐에서 관리 이상이 승인(줄여서 승인 가능)·거절 → 승인된 대수만큼 board 구매확정 통과.
+설계·결정 근거 = `docs/design/board-purchase-lock-approval.md`. 인증·스코프는 §2 그대로(읽기 HMAC + `salesman_email` 매핑, super `scope=all`).
+
+**규칙 (jin 확정)**
+- 판단은 대수뿐 — 🚫 **금액을 받지 않는다**(차값·판매가·통화·환율·첨부). 보내도 저장하지 않는다. 금액은 승인 전후로 자유롭게 바뀐다.
+- **단순 카운트**: 그 바이어로 **새 차량이 ERP 에 등록될 때**(purchase-sync 201) 1대 차감. 락이 걸렸는지는 안 따진다. 재전송(200)·바이어 미정·바이어 없는 건은 차감 없음.
+- 승인 후 **7일**(`BoardPurchaseLockAllowance::VALID_DAYS`) — 남은 대수는 소멸. 대수가 남아 있어도 추가 요청 가능, 승인되면 **더해진다**(승인 건마다 자기 7일, 먼저 만료되는 것부터 차감).
+- 그 바이어에 승인 대기 건이 있으면 새 요청은 안 받는다(409).
+- 승인 = 관리 이상 전원 중 먼저 본 사람. **요청을 누른 사람**(`requested_by_email`)과 명의 영업 본인은 그 건을 결정할 수 없다.
+- 구매확정 되돌림·차 삭제 후 재등록 = 대수 복구 없음(재등록은 한 번 더 차감). 대수가 0 인데 차가 들어와도 **sync 는 거부하지 않는다**(돈이 나간 뒤다) — 감사 `board_purchase_lock_overshoot`.
+
+### 17-1. `POST /purchase-lock-requests` — 요청
+body: `salesman_email`(등록 영업) · `buyer_id` · `requested_count`(1~999) · `reason`(5~500자) · `requested_by_name`(≤50) · `requested_by_email`(실제 누른 사람의 로그인 이메일) · `purchase_listing_id`?(정수) · `vehicle_number`? · `vehicle_label`?
+
+| 응답 | 뜻 |
+|---|---|
+| `201 { id, status:"pending", requested_count }` | 접수 |
+| `409 { error:"already_pending", request:{…17-2 latest} }` | 그 바이어에 대기 건이 있다 |
+| `409 { error:"not_locked" }` | 지금 그 바이어는 락이 아니다(요청 불필요) |
+| `404` | 그 영업의 바이어가 아니다(남의 것·없는 것 구분 안 함) |
+| `422` | 검증 실패 |
+
+### 17-2. `GET /purchase-lock-requests?buyer_id=&salesman_email=` — 한 바이어(구매확정 직전 재조회)
+`200 { buyer_id, allowance: { remaining, approved_count, expires_at } | null, latest: { id, status, requested_count, approved_count, used_count, reason, decision_note, requested_by_name, requested_at, decided_at, decided_by_name, expires_at } | null }`
+- `allowance` = 살아 있는 승인들의 합. `expires_at` = 가장 먼저 만료되는 시각. 남은 게 없으면 `null`. **board 판정 = `allowance.remaining >= 1` 하나.**
+- `latest.status` ∈ `pending` · `approved`(쓸 수 있음) · `rejected` · `exhausted`(다 씀) · `expired`(7일 지남).
+
+### 17-3. `GET /purchase-lock-requests?salesman_email=&since=` — 결정된 건 목록(종·웹푸시)
+`buyer_id` 없이 부르면 목록. `since`(ISO8601, 기본 7일 전) 이후 승인·거절된 건, 그 영업의 바이어 범위, 최대 100. 행 = 17-2 `latest` + `buyer_id` · `buyer_name`.
+
+### 17-4. `GET /buyers` — `purchase_lock_allowance: { remaining, expires_at } | null` 추가
+`purchase_locked` 는 **원판정 그대로**다(승인이 있어도 true). board 는 「locked 이고 `purchase_lock_allowance.remaining >= 1` 이면 통과」로 읽는다.
+
+### 17-5. purchase-sync — 선택 필드 `purchase_listing_id`, 응답 `purchase_lock`
+권위 = `purchase-sync-receiver.md` 「매입 락 해제 승인 차감」. 새 차량 응답(201)에 `purchase_lock: { consumed, remaining }`.
+
+### 17-6. ERP 화면
+- 승인큐(`erp/approvals`): 종류 「매입 락 해제 (board)」. 결정 창 = 바이어·요청 대수·요청한 차·영업/누른 사람·사유 + **지금** 계산한 바이어 미수(진행 대수·미수·미수율/락 기준) + 「승인할 대수」 칸(1~요청 대수).
+- 알림 벨: 위쪽 「승인 대기」 고정 구역 — 승인큐 전체 종류, `actionable()` + pending(사이드바 뱃지와 같은 집합). [확인] 없음, 결정돼야 사라진다. 알림톡은 없다.
+
+### 17-7. 흡수 금지
+- 🚫 금액·바이어 재무 숫자를 요청에 싣지 않는다 — 승인 화면의 미수는 ERP 가 그때 계산한다.
+- 🚫 「살아 있는 승인」 조건을 board 에 옮겨 적지 않는다 — `allowance` 만 본다(7일·합산·차감 순서는 ERP 가 바꿀 수 있다).
+- 🚫 purchase-sync 수신부가 락을 새로 검사하지 않는다(종전과 같다).

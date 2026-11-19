@@ -275,6 +275,18 @@
 - 📏 함정 — 말소 재촉 알림톡 본문은 구입처를 **12자에서 자른다**(`AlimtalkDeregistration::listOf`). 긴 법인명이면 대표자가 안 보인다(현행과 같음, 고치지 않는다).
 - 🚫 흡수 금지 — ERP 가 OCR·후보 판정을 하지 않는다. `purchase_from` 을 구조화 컬럼으로 쪼개지 않는다(자유서식 유지). 이 두 값을 board 로 **되돌려 주지 않는다**(§3 연락처 금지).
 - 가드(착수 때) = `PurchaseSyncReceiverTest` 에 합성 3형(둘 다/법인명만/대표자만) · 빈 칸만·`already_set` · 전화 하이픈 저장 · 감사 행 1건.
+## 연동 B — 매입 락 해제 승인 차감 (2026-11-19, jin · ✅ 구현 dev — `BoardPurchaseLockAllowance::consume`, 가드 `BoardPurchaseLockRequestTest`)
+
+`board-portal-api.md` §17 의 승인 대수를 **새 차량이 만들어질 때** 1대 쓴다. `contract_version` 상향 없음.
+
+| 필드 | 타입 | 뜻 |
+|---|---|---|
+| `purchase_listing_id` | int? | board 차 식별자(`purchase_listings.id`). 차감 기록에 「어느 차였나」로 남는다. 없어도 차감은 된다 |
+
+- 차감 조건 = **신규 생성(201) AND `buyer_id` 가 유효**. 재전송(200)·`buyer_undecided`·바이어 없는 건은 차감 없음. 락이 걸렸는지는 안 따진다(단순 카운트).
+- 살아 있는 승인(승인 후 7일 이내·남은 대수 있음) 중 먼저 만료되는 것부터. 남은 승인이 없어도 **등록은 종전대로 201** — 승인 이력이 있는 바이어면 감사 `board_purchase_lock_overshoot` 만 남는다.
+- 응답(201)에 `purchase_lock: { consumed: bool, remaining: int }`. 감사 = `board_purchase_lock_used`(new_value `사용/승인`, approval_request_id 연결).
+
 ## 응답 / 에러 계약
 | 상황 | 코드 | board 동작 |
 |---|---|---|
