@@ -35,7 +35,6 @@ class OpsRoutines
         '요청 결과 휴대폰 알림 · 탁송 배차 예약 발송' => ['when' => '매분', 'commands' => ['board:push-request-results', 'board:transport-send'], 'kinds' => ['board']],
         '관제 하트비트 · GPU PC 응답 확인' => ['when' => '매분 · 5분', 'commands' => ['ops-heartbeat', 'ops-gpu-ping'], 'kinds' => ['board']],
         '바이어 회신·상담 승격·검차 사진 확인(respond.io·ssancar.com)' => ['when' => '2분마다', 'commands' => ['board:poll-verdicts', 'board:poll-promotions', 'board:poll-ssancar-media'], 'kinds' => ['board']],
-        '업무일지 마감 알림' => ['when' => '5분마다', 'commands' => ['board:work-journal-cutoff'], 'kinds' => ['board']],
         '환율 갱신 · 챗봇 색인·GPU 점검' => ['when' => '매시 정각', 'commands' => ['board:refresh-rates', 'board:assistant-health'], 'kinds' => ['board']],
         '검차 큐 일일 대사(ssancar.com)' => ['when' => '매일 07:20', 'commands' => ['board:inspection-reconcile'], 'kinds' => ['board']],
         'board→ERP 전송 감사' => ['when' => '매일 07:40', 'commands' => ['board:purchase-sync-audit'], 'kinds' => ['board']],
