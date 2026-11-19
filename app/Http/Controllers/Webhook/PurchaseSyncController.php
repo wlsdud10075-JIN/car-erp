@@ -13,6 +13,7 @@ use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehiclePhoto;
 use App\Services\BizmAlimtalkService;
+use App\Services\BoardPurchaseLockAllowance;
 use App\Services\NiceApiService;
 use App\Support\AlimtalkRecipients;
 use App\Support\PhoneFormat;
@@ -120,6 +121,9 @@ class PurchaseSyncController extends Controller
             //   명시한다. 🚫 `buyer_id` 가 비었다는 사실만으로는 대신할 수 없다 — 그러면 **실수로 빠뜨린
             //   차**와 구분이 안 되고, 그 구분이 이 플래그의 존재 이유다(vehicles/index.blade.php:4629).
             'buyer_undecided' => ['nullable', 'boolean'],
+            // 2026-11-19 🔐 매입 락 해제 승인(board-portal-api.md §17) — board 차 식별자. 버전 상향 없음.
+            //   새 차량이 승인 대수를 1대 쓸 때 「어느 차였나」를 남기는 데만 쓴다(없어도 차감은 된다).
+            'purchase_listing_id' => ['nullable', 'integer'],
             // 2026-10-29 (jin, board 세션 결정) — 재전송 금액 **덮어쓰기** 플래그. board 「금액만 ERP 로 보내기」·저장 시 금액 변경 재전송에서만 붙는다.
             //   판매측 6칸(sale_price·sale_currency·sale_exchange_rate·transport_fee·transport_fee_usd·usd_exchange_rate)만. 신규 생성엔 무의미.
             'amounts_overwrite' => ['nullable', 'boolean'],
@@ -344,6 +348,19 @@ class PurchaseSyncController extends Controller
             Log::warning('[purchase-sync] vehicle_new 알림톡 실패', ['error' => $e->getMessage()]);
         }
 
+        // 🔐 매입 락 해제 승인 차감 (jin 2026-11-19) — 새 차량이 바이어를 달고 들어오면 그 바이어의 남은 승인 대수를 1대 쓴다.
+        //   단순 카운트(락 여부 안 따짐). 재전송(위 멱등 경로)·바이어 미정은 여기 안 온다. 대수가 없어도 등록은 막지 않는다.
+        $purchaseLock = ['consumed' => false, 'remaining' => 0];
+        if ($vehicle->buyer_id) {
+            try {
+                $purchaseLock = BoardPurchaseLockAllowance::consume(
+                    (int) $vehicle->buyer_id, $vehicle, isset($data['purchase_listing_id']) ? (int) $data['purchase_listing_id'] : null,
+                );
+            } catch (\Throwable $e) {
+                Log::warning('[purchase-sync] 매입 락 승인 차감 실패', ['vehicle_id' => $vehicle->id, 'error' => $e->getMessage()]);
+            }
+        }
+
         Log::info('[purchase-sync] vehicle 생성', [
             'vehicle_id' => $vehicle->id,
             'vehicle_number' => $data['vehicle_number'],
@@ -359,6 +376,7 @@ class PurchaseSyncController extends Controller
             'vehicle_id' => $vehicle->id,
             'attachments_added' => $attachmentsAdded,
             'attachments_failed' => $this->attachmentsFailed,
+            'purchase_lock' => $purchaseLock,
         ], 201);
     }
 

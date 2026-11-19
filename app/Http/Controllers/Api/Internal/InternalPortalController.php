@@ -13,6 +13,7 @@ use App\Models\SettlementPayoutAdjustment;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Services\BoardPurchaseLockAllowance;
 use App\Services\BuyerCreditScore;
 use App\Services\ExchangeRateService;
 use App\Services\PurchaseRegistrationGate;
@@ -734,8 +735,10 @@ class InternalPortalController extends Controller
         //   판정은 `PurchaseRegistrationGate` 단일 출처 — 조건을 여기 옮겨 적지 말 것(SKILLS §8 #44).
         //   ⚠️ 키가 없는 바이어 = 판정 근거 없음 = **통과**(락 아님). board 도 그렇게 읽어야 한다.
         $verdicts = PurchaseRegistrationGate::forBuyerIds($buyers->pluck('id')->all());
+        // 🔐 매입 락 해제 승인으로 남은 대수(2026-11-19, §17) — 락이어도 이게 1 이상이면 board 는 구매확정을 통과시킨다.
+        $allowances = BoardPurchaseLockAllowance::summaries($buyers->pluck('id')->all());
 
-        $data = $buyers->map(function (Buyer $b) use ($verdicts) {
+        $data = $buyers->map(function (Buyer $b) use ($verdicts, $allowances) {
             $v = $verdicts[$b->id] ?? null;
             $g = $v['gauge'] ?? null;
 
@@ -748,6 +751,10 @@ class InternalPortalController extends Controller
                 'salesman_name' => $b->salesman?->name,
                 // 평탄한 bool — board 가 최소 구현으로도 막을 수 있게.
                 'purchase_locked' => (bool) ($v['locked'] ?? false),
+                // 승인으로 남은 등록 대수 — 없으면 null. `purchase_locked` 는 원판정 그대로다(승인이 있어도 true).
+                'purchase_lock_allowance' => isset($allowances[$b->id])
+                    ? ['remaining' => $allowances[$b->id]['remaining'], 'expires_at' => $allowances[$b->id]['expires_at']]
+                    : null,
                 // 사람에게 "왜 막혔는지"를 보여주기 위한 근거. 락이 아니어도 함께 내려간다
                 // (남은 여력을 보고 판단하는 게 예방의 핵심이라 막힌 뒤에만 주면 늦다).
                 //

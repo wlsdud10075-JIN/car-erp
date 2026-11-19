@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\BoardPurchaseLockAllowance;
 use App\Services\InterVehicleTransferService;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -44,6 +45,12 @@ class ApprovalRequest extends Model
     /** 보증금 매입 funding (C2, jin 2026-07-21) — [관리]/업무관리자 기안 → 관리 승인 → 재무 실물확정. */
     public const TYPE_INTER_VEHICLE_PURCHASE_FUNDING = 'inter_vehicle_purchase_funding';
 
+    /**
+     * 🔐 board 발 매입 락 해제 (jin 2026-11-19) — 락 걸린 바이어로 「N대 더 등록」을 board 영업이 요청.
+     * target = Buyer, 승인 = 대수 부여(줄여서 승인 가능). 차감·만료·조회는 `BoardPurchaseLockAllowance` 한 곳.
+     */
+    public const TYPE_BOARD_PURCHASE_LOCK = 'board_purchase_lock';
+
     public const TYPES = [
         self::TYPE_INTER_BUYER_OVERLAP => '같은 바이어 미수+신규 거래',
         self::TYPE_SETTLEMENT_PAY => '정산 지급',
@@ -54,6 +61,7 @@ class ApprovalRequest extends Model
         self::TYPE_INTER_VEHICLE_TRANSFER_VOID => '자금 이체 취소',
         self::TYPE_INTER_VEHICLE_DEPOSIT_APPLY => '보증금 적용',
         self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING => '보증금 매입 선지급',
+        self::TYPE_BOARD_PURCHASE_LOCK => '매입 락 해제 (board)',
     ];
 
     /**
@@ -105,6 +113,37 @@ class ApprovalRequest extends Model
         return self::TYPES[$this->action_type] ?? $this->action_type;
     }
 
+    /**
+     * 🔔 알림 벨 「승인 대기」 구역의 한 줄 제목 — 무엇에 대한 요청인지 (jin 2026-11-19).
+     * 종류가 늘면 여기에 한 줄 — 없으면 종류 이름만 보인다(빈 줄은 안 된다).
+     */
+    public function bellTitle(): string
+    {
+        $p = $this->payload ?? [];
+
+        return match ($this->action_type) {
+            self::TYPE_BOARD_PURCHASE_LOCK => (string) ($p['buyer_name'] ?? $this->action_label),
+            self::TYPE_INTER_VEHICLE_TRANSFER, self::TYPE_INTER_VEHICLE_TRANSFER_VOID => ($p['source_vehicle_number'] ?? '?').' → '.($p['target_vehicle_number'] ?? '?'),
+            self::TYPE_SETTLEMENT_PAY => (string) (Settlement::with('vehicle:id,vehicle_number')->find($this->target_id)?->vehicle?->vehicle_number ?? $this->action_label),
+            default => (string) ($p['vehicle_number'] ?? $p['new_vehicle_number'] ?? $this->action_label),
+        };
+    }
+
+    /** 벨 둘째 줄에 덧붙일 말 — 제목이 잘려도 보여야 하는 것(매입 락 = 몇 대인가). 없으면 빈 문자열. */
+    public function bellDetail(): string
+    {
+        return $this->action_type === self::TYPE_BOARD_PURCHASE_LOCK
+            ? __('approval.lock.want', ['n' => (int) ($this->payload['requested_count'] ?? 0)])
+            : '';
+    }
+
+    /** 이 사용자가 올린(또는 board 에서 누른) 요청인가 — 본인 건은 본인이 결정할 수 없다. */
+    public function isRequestedBy(?User $user): bool
+    {
+        return $user !== null && ($this->requester_id === $user->id
+            || BoardPurchaseLockAllowance::requestedBy($this, $user->email));
+    }
+
     public function getStatusLabelAttribute(): string
     {
         return match ($this->status) {
@@ -147,6 +186,8 @@ class ApprovalRequest extends Model
                     self::TYPE_INTER_VEHICLE_PURCHASE_FUNDING => throw new \DomainException('보증금 적용·매입 선지급은 더 이상 지원하지 않습니다.'),
                     self::TYPE_SENSITIVE_ACTION => $this->executeSensitiveAction(),
                     self::TYPE_UNPAID_EXPORT_OVERRIDE => $this->executeUnpaidExportOverride(),
+                    // 승인 = 대수 부여. 실제 차감은 차가 ERP 에 등록될 때(purchase-sync) — 여기선 할 일이 없다.
+                    self::TYPE_BOARD_PURCHASE_LOCK => null,
                     default => throw new \LogicException("Unsupported action_type: {$this->action_type}"),
                 };
             });

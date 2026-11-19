@@ -5,6 +5,7 @@ use App\Http\Controllers\Api\Internal\BoardRequestController;
 use App\Http\Controllers\Api\Internal\InternalDocumentController;
 use App\Http\Controllers\Api\Internal\InternalPortalController;
 use App\Http\Controllers\Api\Internal\PeerPayoutController;
+use App\Http\Controllers\Api\Internal\PurchaseLockRequestController;
 use App\Http\Controllers\Api\Internal\ShippingRequestController;
 use App\Http\Controllers\Api\Internal\SigningRequestController;
 use App\Http\Controllers\Api\KakaoCollectorAuthController;
@@ -146,6 +147,9 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::post('requests', [BoardRequestController::class, 'store'])->name('requests.store');
         Route::get('requests', [BoardRequestController::class, 'index'])->name('requests.index');
         Route::post('requests/{batch}/cancel', [BoardRequestController::class, 'cancel'])->name('requests.cancel');
+        // 🔐 매입 락 해제 요청(2026-11-19 jin) — 락 걸린 바이어로 「N대 더 등록」→ ERP 승인큐. 권위 §17. 🚫금액 미수신.
+        Route::post('purchase-lock-requests', [PurchaseLockRequestController::class, 'store'])->name('purchase-lock-requests.store');
+        Route::get('purchase-lock-requests', [PurchaseLockRequestController::class, 'index'])->name('purchase-lock-requests.index');
     });
 
 /*

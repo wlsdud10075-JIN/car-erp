@@ -588,6 +588,9 @@ return [
         // 2026-07-31 — 운영 감사로그 실측으로 확인된 미매핑 액션(영문 노출분).
         'assistant_query' => '챗봇 질문',
         'purchase_gate_override' => '매입 게이트 예외 승인',
+        'board_purchase_lock_used' => '매입 락 승인 대수 사용 (board)',
+        'board_purchase_lock_overshoot' => '매입 락 승인 대수 초과 등록 (board)',
+        'board_purchase_lock_requested' => '매입 락 해제 요청 (board)',
         'vehicle_deleted_with_reason' => '차량 삭제(사유 기재)',
         'capital_report_viewed' => '자금 보고서 열람',
         'purchase_proof_viewed' => '이체확인증 열람(딜러 알림톡 링크)',

@@ -67,4 +67,15 @@ return [
     'eta_saved' => ':v ETA saved',
     'eta_required' => 'Please enter an arrival date.',
     'eta_invalid' => 'Invalid date format.',
+    // 📌 Approvals waiting (jin 2026-11-19)
+    'bell_approval' => 'Approve :n',
+    'approval_title' => ':n waiting for approval',
+    'approval_hint' => 'Stays until decided',
+    'approval_go' => 'Approve or reject in the queue →',
+    'approval_mine' => 'My request',
+    'approval_mine_hint' => 'You cannot decide your own request · waiting for another approver',
+    'my_requests_title' => ':n of my requests waiting',
+    'my_requests_waiting' => 'Waiting',
+    'section_alarms' => ':n alerts · press [Confirm] to clear',
+    'toast_approval' => 'New approval request (:n)',
 ];
