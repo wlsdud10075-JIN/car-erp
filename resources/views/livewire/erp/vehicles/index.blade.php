@@ -9573,15 +9573,46 @@ function vehicleColumnsToggle(columns, serverKnows) {
         const group = el ? el.closest('[data-lightbox-group]') : null;
         const items = group ? [...group.querySelectorAll('[data-lb-url]')].map(n => ({ url: n.dataset.lbUrl, name: n.dataset.lbName, kind: n.dataset.lbKind })) : [];
         const index = Math.max(0, items.findIndex(i => i.url === url));
+        this.lbZoomReset();
         this.lightbox = { open: true, url: url, name: name, kind: kind, items: items, index: index };
     },
-    closeLightbox() { this.lightbox.open = false; },
+    closeLightbox() { this.lightbox.open = false; this.lbZoomReset(); },
     stepLightbox(d) {
         const n = this.lightbox.items.length;
         if (! this.lightbox.open || n < 2) return;
         const i = (this.lightbox.index + d + n) % n;
+        this.lbZoomReset();
         this.lightbox = { ...this.lightbox, ...this.lightbox.items[i], index: i };
     },
+    // 🔍 Ctrl+휠 = 사진만 확대(브라우저 전체 확대를 가로챈다) · 확대 중 끌기 = 이동 · 더블클릭 = 원래 크기 — jin 2026-11-19
+    lbZoom: 1, lbPanX: 0, lbPanY: 0, lbDrag: null,
+    lbZoomReset() { this.lbZoom = 1; this.lbPanX = 0; this.lbPanY = 0; this.lbDrag = null; },
+    lbWheel(e) {
+        if (! e.ctrlKey || ! this.lightbox.open || this.lightbox.kind !== 'image') return;
+        e.preventDefault();
+        const img = e.currentTarget.querySelector('img[data-lb-img]');
+        if (! img) return;
+        const z = this.lbZoom;
+        const nz = Math.min(5, Math.max(1, z * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
+        if (nz === 1) { this.lbZoomReset(); return; }
+        // 마우스가 가리키는 지점이 그 자리에 남게 이동량을 보정한다(확대 기준점 = 사진 중심)
+        const r = img.getBoundingClientRect();
+        const k = 1 - nz / z;
+        this.lbPanX += (e.clientX - (r.left + r.width / 2)) * k;
+        this.lbPanY += (e.clientY - (r.top + r.height / 2)) * k;
+        this.lbZoom = nz;
+    },
+    lbDragStart(e) {
+        if (this.lbZoom <= 1) return;
+        e.preventDefault();
+        this.lbDrag = { x: e.clientX - this.lbPanX, y: e.clientY - this.lbPanY };
+    },
+    lbDragMove(e) {
+        if (! this.lbDrag) return;
+        this.lbPanX = e.clientX - this.lbDrag.x;
+        this.lbPanY = e.clientY - this.lbDrag.y;
+    },
+    lbDragEnd() { this.lbDrag = null; },
     lbTouchX: null, lbTouchY: null,
     lbTouchStart(e) { this.lbTouchX = e.changedTouches[0].clientX; this.lbTouchY = e.changedTouches[0].clientY; },
     lbTouchEnd(e) {
@@ -9594,7 +9625,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
         if ($wire.showPurchaseGate) { $wire.cancelPurchaseGate(); return; }   // 미수 게이트 모달이 최상위(z-110)
         if ($wire.quickAddOpen) { $wire.cancelQuickAdd(); return; }     // 바이어/컨사이니 quick-add 모달이 최상위 — ESC는 그것부터 닫음
         if ($wire.showMailModal) { $wire.closeMailModal(); return; }   // 메일 모달이 최상위 — ESC는 그것부터 닫음
-        if (this.lightbox.open) { this.lightbox.open = false; return; }
+        if (this.lightbox.open) { this.closeLightbox(); return; }
         if (this.confirmOpen) { this.confirmOpen = false; return; }
         if (this.dirty) { this.confirmOpen = true; } else { $wire.close(); }
     },
@@ -12112,6 +12143,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
 {{-- 차량 첨부 미리보기 라이트박스 (이미지·PDF) --}}
 <div x-show="lightbox.open" x-cloak x-transition.opacity
      class="fixed inset-0 z-[100] flex flex-col bg-black/80"
+     @wheel="lbWheel($event)" @mousemove.window="lbDragMove($event)" @mouseup.window="lbDragEnd()"
      @click.self="closeLightbox()">
     <div class="flex items-center justify-between px-4 py-3 text-white">
         <span class="truncate text-sm"><span x-show="lightbox.items.length > 1" class="mr-2 text-white/60" x-text="(lightbox.index + 1) + ' / ' + lightbox.items.length"></span><span x-text="lightbox.name"></span></span>
@@ -12122,14 +12154,16 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     class="rounded-full bg-white/20 px-2.5 py-0.5 text-lg leading-none hover:bg-white/30">×</button>
         </div>
     </div>
-    <div class="relative flex flex-1 items-center justify-center overflow-auto p-4" @click.self="closeLightbox()"
+    <div class="relative flex flex-1 items-center justify-center overflow-hidden p-4" @click.self="closeLightbox()"
          @touchstart.passive="lbTouchStart($event)" @touchend="lbTouchEnd($event)">
         <button type="button" x-show="lightbox.items.length > 1" @click="stepLightbox(-1)" aria-label="prev"
                 class="absolute left-2 top-1/2 z-10 h-11 w-11 -translate-y-1/2 rounded-full bg-white/20 text-2xl leading-none text-white hover:bg-white/35">&lsaquo;</button>
         <button type="button" x-show="lightbox.items.length > 1" @click="stepLightbox(1)" aria-label="next"
                 class="absolute right-2 top-1/2 z-10 h-11 w-11 -translate-y-1/2 rounded-full bg-white/20 text-2xl leading-none text-white hover:bg-white/35">&rsaquo;</button>
         <template x-if="lightbox.kind === 'image'">
-            <img :src="lightbox.url" :alt="lightbox.name" class="max-h-full max-w-full object-contain" />
+            <img :src="lightbox.url" :alt="lightbox.name" class="max-h-full max-w-full select-none object-contain" data-lb-img draggable="false"
+                 @mousedown="lbDragStart($event)" @dblclick="lbZoomReset()"
+                 :style="'transform: translate(' + lbPanX + 'px,' + lbPanY + 'px) scale(' + lbZoom + '); cursor: ' + (lbZoom > 1 ? (lbDrag ? 'grabbing' : 'grab') : 'auto')" />
         </template>
         <template x-if="lightbox.kind === 'pdf'">
             <iframe :src="lightbox.url" class="h-full w-full rounded bg-white sm:w-[800px]"></iframe>
