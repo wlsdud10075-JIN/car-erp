@@ -21,6 +21,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     public ?int $decisionId = null;
     public string $decisionMode = 'approve';   // approve / reject
     public string $decisionNote = '';
+    /** 🔐 매입 락 해제(board) — 승인할 대수. 요청 대수로 채워 두고 승인자가 줄일 수 있다(jin 2026-11-19). */
+    public string $decisionCount = '';
 
     public function mount(): void
     {
@@ -112,6 +114,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->decisionId = $id;
         $this->decisionMode = 'approve';
         $this->decisionNote = '';
+        $this->decisionCount = (string) (ApprovalRequest::find($id)?->payload['requested_count'] ?? '');
         $this->showDecisionModal = true;
     }
 
@@ -151,13 +154,29 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
 
+        // 🔐 매입 락 해제(board) — 요청은 영업 명의로 오지만 관리가 대신 누를 수 있다. 누른 사람은 자기 건을 승인·거부할 수 없다.
+        $isBoardLock = $req->action_type === ApprovalRequest::TYPE_BOARD_PURCHASE_LOCK;
+        if ($isBoardLock && \App\Services\BoardPurchaseLockAllowance::requestedBy($req, auth()->user()?->email)) {
+            $this->dispatch('notify', message: __('approval.toast.self'), type: 'error');
+            $this->closeDecisionModal();
+
+            return;
+        }
+        if ($isBoardLock && $this->decisionMode === 'approve') {
+            $max = (int) ($req->payload['requested_count'] ?? 0);
+            $this->validate(['decisionCount' => ['required', 'integer', 'min:1', 'max:'.$max]], [], ['decisionCount' => __('approval.lock.count')]);
+        }
+
         if ($this->decisionMode === 'reject') {
             $this->validate(['decisionNote' => ['required', 'string', 'min:5']],
                 ['decisionNote.required' => __('approval.toast.reject_min')]);
         }
 
         try {
-            DB::transaction(function () use ($req) {
+            DB::transaction(function () use ($req, $isBoardLock) {
+                if ($isBoardLock && $this->decisionMode === 'approve') {
+                    $req->payload = array_merge($req->payload ?? [], ['approved_count' => (int) $this->decisionCount]);
+                }
                 $req->update([
                     'status' => $this->decisionMode === 'approve' ? 'approved' : 'rejected',
                     'approver_id' => auth()->id(),
@@ -247,9 +266,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <tr class="border-b border-gray-100 hover:bg-gray-50">
                     <td class="py-3 pr-4 text-gray-500">{{ $r->created_at->format('Y-m-d H:i') }}</td>
                     <td class="py-3 pr-4 font-medium text-gray-800">{{ $r->action_label }}</td>
-                    <td class="py-3 pr-4 text-gray-700">{{ $r->requester?->name ?? '-' }}</td>
+                    <td class="py-3 pr-4 text-gray-700">{{ $r->requester?->name ?? ($r->payload['salesman_name'] ?? $r->payload['requested_by_name'] ?? '-') }}</td>
                     <td class="py-3 pr-4 text-gray-600 text-xs">
-                        @if($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
+                        @if($r->action_type === \App\Models\ApprovalRequest::TYPE_BOARD_PURCHASE_LOCK)
+                            <x-erp.board-purchase-lock :request="$r" />
+                        @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
                             @php $p = $r->payload ?? []; @endphp
                             <div class="font-semibold text-gray-800">{{ $p['buyer_name'] ?? __('approval.t.buyer', ['id' => $r->target_id]) }}</div>
                             <div class="text-gray-500">
@@ -383,9 +404,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endif
             </div>
             <div class="mt-1 text-xs text-gray-500">
-                {{ $r->requester?->name ?? '-' }} · {{ $r->created_at->format('Y-m-d H:i') }}
+                {{ $r->requester?->name ?? ($r->payload['salesman_name'] ?? $r->payload['requested_by_name'] ?? '-') }} · {{ $r->created_at->format('Y-m-d H:i') }}
             </div>
-            @if($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
+            @if($r->action_type === \App\Models\ApprovalRequest::TYPE_BOARD_PURCHASE_LOCK)
+                <x-erp.board-purchase-lock :request="$r" class="mt-1" />
+            @elseif($r->action_type === \App\Models\ApprovalRequest::TYPE_INTER_BUYER_OVERLAP)
                 @php $p = $r->payload ?? []; @endphp
                 <div class="mt-1 text-xs text-gray-700">
                     <span class="font-semibold">{{ $p['buyer_name'] ?? __('approval.t.buyer', ['id' => $r->target_id]) }}</span>
@@ -459,8 +482,22 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if(isset($dp['amount']))
             <div class="font-semibold text-gray-800">{{ number_format($dp['amount']) }} {{ $dp['currency'] ?? '' }}</div>
             @endif
+            @if($dr->action_type === \App\Models\ApprovalRequest::TYPE_BOARD_PURCHASE_LOCK)
+            <x-erp.board-purchase-lock :request="$dr" :detail="true" />
+            @else
             <div class="text-gray-500">{{ $dr->requester?->name ?? '-' }}@if($dr->reason) · {{ $dr->reason }}@endif</div>
+            @endif
         </div>
+        @if($dr->action_type === \App\Models\ApprovalRequest::TYPE_BOARD_PURCHASE_LOCK && $decisionMode === 'approve')
+        <div class="mt-3" data-lock-count>
+            <label class="label-base">{{ __('approval.lock.count') }} <span class="text-red-500">*</span></label>
+            <div class="flex items-center gap-2">
+                <input type="number" min="1" max="{{ (int) ($dp['requested_count'] ?? 1) }}" wire:model="decisionCount" class="input-base w-24 text-right">
+                <span class="text-xs text-gray-500">{{ __('approval.lock.count_hint', ['n' => (int) ($dp['requested_count'] ?? 0), 'days' => \App\Services\BoardPurchaseLockAllowance::VALID_DAYS]) }}</span>
+            </div>
+            @error('decisionCount')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        </div>
+        @endif
         @endif
 
         <p class="mt-2 text-sm text-gray-600">

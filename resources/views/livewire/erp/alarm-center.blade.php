@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\ApprovalRequest;
 use App\Models\TaskAlarm;
 use Livewire\Volt\Component;
 
@@ -8,9 +9,26 @@ new class extends Component
     /** 직전 폴링까지 본 최대 알람 id — 이 이후 새 알람이 생기면 토스트 1번. */
     public int $toastSeenId = 0;
 
+    /** 📌 승인 대기 — 직전 폴링까지 본 최대 승인요청 id (jin 2026-11-19). 알람과 따로 센다(id 체계가 다르다). */
+    public int $approvalSeenId = 0;
+
     public function mount(): void
     {
         $this->toastSeenId = $this->maxUnreadId();   // 기존 알람은 토스트 안 함(첫 로드 기준선)
+        $this->approvalSeenId = (int) ($this->pendingApprovals()?->max('id') ?? 0);
+    }
+
+    /**
+     * 📌 승인큐 대기 건 — **승인큐 화면·사이드바 뱃지와 같은 집합**(`actionable()` + pending). 승인권자(관리 이상)만.
+     * 🚫 조건을 여기서 바꾸지 말 것 — 벨에는 있는데 큐에는 없는(또는 반대) 숫자가 된다(§8 #44, 08-01 뱃지 사고).
+     */
+    private function pendingApprovals()
+    {
+        $user = auth()->user();
+
+        return $user && $user->canApprove()
+            ? ApprovalRequest::actionable()->where('status', ApprovalRequest::STATUS_PENDING)
+            : null;
     }
 
     private function maxUnreadId(): int
@@ -30,6 +48,14 @@ new class extends Component
     public function poll(): void
     {
         $user = auth()->user();
+        // 📌 새 승인 요청 — 보고 있는 승인권자에게 토스트 1번. 구역 자체는 결정될 때까지 벨에 남는다.
+        if ($q = $this->pendingApprovals()) {
+            $newIds = (clone $q)->where('id', '>', $this->approvalSeenId)->pluck('id');
+            if ($newIds->isNotEmpty()) {
+                $this->dispatch('notify', message: __('alarm.toast_approval', ['n' => $newIds->count()]), type: 'warning');
+                $this->approvalSeenId = (int) $newIds->max();
+            }
+        }
         if (! $user || ! $user->canSeeAlarms()) {
             return;
         }
@@ -63,11 +89,33 @@ new class extends Component
         $alarm->update($updates);
     }
 
+    /** 📌 승인 대기 구역 데이터 — 승인권자: 대기 전체(오래된 것부터 5건) / 그 외: 내가 ERP 에서 올린 대기 건. */
+    private function approvalSection(): array
+    {
+        $user = auth()->user();
+        $empty = ['approvals' => collect(), 'approvalCount' => 0, 'approvalMore' => 0, 'maxApprovalId' => 0, 'myRequests' => collect()];
+        if (! $user) {
+            return $empty;
+        }
+        if ($q = $this->pendingApprovals()) {
+            $count = (clone $q)->count();
+            $rows = (clone $q)->with('requester:id,name')->orderBy('created_at')->orderBy('id')->limit(5)->get();
+
+            return ['approvals' => $rows, 'approvalCount' => $count, 'approvalMore' => max(0, $count - $rows->count()),
+                'maxApprovalId' => (int) ((clone $q)->max('id') ?? 0), 'myRequests' => collect()];
+        }
+        // 승인권 없는 사람(수출통관·재무) — 자기가 올린 요청이 어떻게 됐는지만. 영업은 ERP 를 안 쓴다(board 에서 본다).
+        $empty['myRequests'] = ApprovalRequest::actionable()->where('status', ApprovalRequest::STATUS_PENDING)
+            ->where('requester_id', $user->id)->orderBy('created_at')->limit(5)->get();
+
+        return $empty;
+    }
+
     public function with(): array
     {
         $user = auth()->user();
         if (! $user || ! $user->canSeeAlarms()) {
-            return ['alarms' => collect(), 'unreadCount' => 0, 'moreCount' => 0];
+            return ['alarms' => collect(), 'unreadCount' => 0, 'moreCount' => 0, 'maxUnreadId' => 0] + $this->approvalSection();
         }
 
         $base = TaskAlarm::query()->visibleTo($user)->unread();
@@ -80,26 +128,31 @@ new class extends Component
             'unreadCount' => $unreadCount,
             'maxUnreadId' => $maxUnreadId,
             'moreCount' => max(0, $unreadCount - $alarms->count()),
-        ];
+        ] + $this->approvalSection();
     }
 }; ?>
 
 <div wire:poll.30s="poll">
-    @if ($unreadCount > 0)
+    @if ($unreadCount > 0 || $approvalCount > 0 || $myRequests->isNotEmpty())
         {{-- A동작: 진입 시 자동으로 뜨되, ✕로 닫으면 "새 알람(더 큰 id)이 올 때까지" 접힌 상태 유지.
              localStorage 에 마지막으로 본 maxId 저장 → 페이지 이동해도 다시 안 뜸. 새 알람(maxId↑) 오면 자동으로 다시 뜸. --}}
-        <div data-max-id="{{ $maxUnreadId }}"
+        <div data-max-id="{{ $maxUnreadId }}" data-max-approval-id="{{ $maxApprovalId }}"
              x-data="{
                 open: false,
                 init() {
                     const seen = parseInt(localStorage.getItem('alarmSeenId') || '0');
+                    const seenApproval = parseInt(localStorage.getItem('approvalSeenId') || '0');
                     // 📱 폰(sm 미만)에서는 새 알람이 있어도 접힌 벨로 시작 — 330px 카드가 390px 화면의 절반을 덮는다
                     //    (jin 2026-10-13 A안). 건수 배지는 벨에 남는다. 데스크탑은 종전대로 자동으로 펼친다.
                     const wide = window.matchMedia('(min-width: 640px)').matches;
-                    this.open = wide && parseInt(this.$el.dataset.maxId) > seen;
+                    // 📌 새 승인 요청(더 큰 id)이 와도 다시 펼친다 — 접어 둔 뒤 온 요청을 놓치지 않게.
+                    //    단 승인큐 화면에서는 승인 건 때문에 펼치지 않는다 — 그 화면이 곧 그 목록이고, 펼친 벨이 [승인]·[거부] 버튼을 가린다.
+                    const onQueue = window.location.pathname.indexOf('/erp/approvals') === 0;
+                    this.open = wide && (parseInt(this.$el.dataset.maxId) > seen || (! onQueue && parseInt(this.$el.dataset.maxApprovalId) > seenApproval));
                 },
                 dismiss() {
                     localStorage.setItem('alarmSeenId', this.$el.dataset.maxId);
+                    localStorage.setItem('approvalSeenId', this.$el.dataset.maxApprovalId);
                     this.open = false;
                 },
              }"
@@ -107,9 +160,15 @@ new class extends Component
 
             {{-- 접힌 상태: 폰(sm 미만)은 벨 아이콘 + 건수 배지만, sm 이상은 종전 「🔔 통관서류 알람 N」 pill (jin 2026-10-13). --}}
             <button x-show="!open" x-cloak @click="open = true" title="{{ __('alarm.bell_title') }}"
-                    class="flex items-center gap-2 rounded-full bg-gray-700 px-3 py-2.5 text-sm font-semibold text-white shadow-xl hover:bg-gray-800 sm:px-4">
+                    class="flex items-center gap-2 rounded-full bg-gray-700 px-3 py-2.5 text-sm font-semibold text-white shadow-xl hover:bg-gray-800 sm:px-4 {{ $approvalCount > 0 ? 'ring-2 ring-red-400' : '' }}">
                 <span class="text-base leading-none sm:text-sm">🔔</span><span class="hidden sm:inline">{{ __('alarm.bell_title') }}</span>
-                <span class="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[11px] font-bold">{{ $unreadCount }}</span>
+                {{-- 📌 승인 대기는 일반 알람 숫자와 따로 — 「결정해야 할 것」과 「봐야 할 것」은 다르다(jin 2026-11-19). --}}
+                @if ($approvalCount > 0)
+                <span class="inline-flex h-[18px] items-center justify-center whitespace-nowrap rounded-full bg-red-500 px-1.5 text-[11px] font-bold" data-bell-approval-count>{{ __('alarm.bell_approval', ['n' => $approvalCount]) }}</span>
+                @endif
+                @if ($unreadCount > 0)
+                <span class="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full {{ $approvalCount > 0 ? 'bg-gray-500' : 'bg-red-500' }} px-1 text-[11px] font-bold">{{ $unreadCount }}</span>
+                @endif
             </button>
 
             {{-- 열린 상태: 카드 스택 (하드캡 5 + "외 N건") --}}
@@ -122,7 +181,52 @@ new class extends Component
                     </span>
                 </div>
 
-                <div class="max-h-[60vh] overflow-y-auto">
+                {{-- 세로 60vh → 80vh (jin 2026-11-19 «지금보다 1/3 은 더 커져도») --}}
+                <div class="max-h-[80vh] overflow-y-auto">
+                    {{-- 📌 승인 대기 — [확인]이 없다. 승인·거절돼야 사라진다. 누르면 승인큐로. --}}
+                    @if ($approvalCount > 0)
+                    <div class="border-b-2 border-red-200 bg-red-50" data-bell-approvals>
+                        <div class="flex items-center justify-between px-3 pt-2 text-[11.5px] font-bold text-red-700">
+                            <span>📌 {{ __('alarm.approval_title', ['n' => $approvalCount]) }}</span>
+                            <span class="font-medium text-red-400">{{ __('alarm.approval_hint') }}</span>
+                        </div>
+                        @foreach ($approvals as $ar)
+                            @php $mine = $ar->isRequestedBy(auth()->user()); @endphp
+                            <a href="{{ route('erp.approvals.index') }}" wire:navigate wire:key="bell-approval-{{ $ar->id }}"
+                               class="block border-l-[3px] px-3 py-2 {{ $loop->first ? '' : 'border-t border-red-100' }} {{ $mine ? 'border-l-gray-300 bg-white' : 'border-l-red-500 hover:bg-red-100' }}">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="truncate text-[13px] font-bold {{ $mine ? 'text-gray-500' : 'text-gray-800' }}">{{ $ar->bellTitle() }}</span>
+                                    <span class="shrink-0 whitespace-nowrap rounded-full px-1.5 py-0.5 text-[11px] font-bold {{ $mine ? 'bg-gray-100 text-gray-500' : 'bg-red-100 text-red-700' }}">{{ $mine ? __('alarm.approval_mine') : $ar->action_label }}</span>
+                                </div>
+                                <div class="mt-0.5 text-[12px] text-gray-600">
+                                    {{ $ar->requester?->name ?? ($ar->payload['salesman_name'] ?? $ar->payload['requested_by_name'] ?? '-') }}@if ($ar->bellDetail() !== '') · <b class="text-red-700">{{ $ar->bellDetail() }}</b>@endif · {{ $ar->created_at->diffForHumans() }}
+                                </div>
+                                <div class="mt-0.5 text-[11.5px] font-semibold {{ $mine ? 'text-gray-400' : 'text-red-700' }}">{{ $mine ? __('alarm.approval_mine_hint') : __('alarm.approval_go') }}</div>
+                            </a>
+                        @endforeach
+                        @if ($approvalMore > 0)
+                            <a href="{{ route('erp.approvals.index') }}" wire:navigate class="block border-t border-red-100 py-1.5 text-center text-[12px] font-semibold text-red-700 hover:bg-red-100">{{ __('alarm.see_more', ['n' => $approvalMore]) }}</a>
+                        @endif
+                    </div>
+                    @endif
+                    {{-- 승인권 없는 사람 — 내가 올린 요청이 아직 대기 중인지 --}}
+                    @if ($myRequests->isNotEmpty())
+                    <div class="border-b-2 border-gray-200 bg-gray-50" data-bell-my-requests>
+                        <div class="px-3 pt-2 text-[11.5px] font-bold text-gray-600">📤 {{ __('alarm.my_requests_title', ['n' => $myRequests->count()]) }}</div>
+                        @foreach ($myRequests as $mr)
+                            <div class="border-l-[3px] border-l-gray-400 px-3 py-2" wire:key="bell-mine-{{ $mr->id }}">
+                                <div class="flex items-center justify-between gap-2">
+                                    <span class="truncate text-[13px] font-bold text-gray-800">{{ $mr->bellTitle() }}</span>
+                                    <span class="shrink-0 whitespace-nowrap rounded-full bg-amber-100 px-1.5 py-0.5 text-[11px] font-bold text-amber-800">{{ __('alarm.my_requests_waiting') }}</span>
+                                </div>
+                                <div class="mt-0.5 text-[12px] text-gray-600">{{ $mr->action_label }} · {{ $mr->created_at->diffForHumans() }}</div>
+                            </div>
+                        @endforeach
+                    </div>
+                    @endif
+                    @if ($unreadCount > 0 && ($approvalCount > 0 || $myRequests->isNotEmpty()))
+                        <div class="px-3 pt-2 text-[11.5px] font-bold text-gray-500">{{ __('alarm.section_alarms', ['n' => $unreadCount]) }}</div>
+                    @endif
                     @foreach ($alarms as $a)
                         @php
                             $meta = $a->message_meta ?? [];

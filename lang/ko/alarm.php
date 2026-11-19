@@ -68,4 +68,15 @@ return [
     'eta_saved' => ':v 도착일 저장됨',
     'eta_required' => '도착일을 입력하세요.',
     'eta_invalid' => '날짜 형식이 올바르지 않습니다.',
+    // 📌 승인 대기 구역 (jin 2026-11-19)
+    'bell_approval' => '승인 :n',
+    'approval_title' => '승인 대기 :n건',
+    'approval_hint' => '결정할 때까지 남습니다',
+    'approval_go' => '승인큐에서 승인·거절 →',
+    'approval_mine' => '내가 올린 요청',
+    'approval_mine_hint' => '본인 요청은 본인이 결정할 수 없습니다 · 다른 승인권자 대기 중',
+    'my_requests_title' => '내가 올린 승인 요청 :n건',
+    'my_requests_waiting' => '승인 대기 중',
+    'section_alarms' => '알림 :n건 · [확인]을 누르면 사라집니다',
+    'toast_approval' => '승인 요청이 새로 들어왔습니다 (:n건)',
 ];
