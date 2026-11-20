@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\Api\Internal\BoardClaimController;
 use App\Http\Controllers\Api\Internal\BoardRequestController;
+use App\Http\Controllers\Api\Internal\GeneralStockCapController;
 use App\Http\Controllers\Api\Internal\InternalDocumentController;
 use App\Http\Controllers\Api\Internal\InternalPortalController;
 use App\Http\Controllers\Api\Internal\PeerPayoutController;
@@ -143,6 +144,8 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('signing-requests', [SigningRequestController::class, 'status'])->name('signing-requests.status');
         // 재고 3분류 (2026-08-09) — board 「매입내역」(전량조회) 대체. erp/inventory 미러.
         Route::get('inventory', [InternalPortalController::class, 'inventory'])->name('inventory');
+        // 일반재고 인원당 상한 2억 — board 가 재고매입 체크 시 미리 묻는다 (jin 2026-11-20, board-portal-api.md §18)
+        Route::get('general-stock-cap', GeneralStockCapController::class)->name('general-stock-cap');
         // §11 요청·확인 신호(카톡 대체) — 입금요청/판매대금확인. 🚫금액 미수신(§11-2).
         Route::post('requests', [BoardRequestController::class, 'store'])->name('requests.store');
         Route::get('requests', [BoardRequestController::class, 'index'])->name('requests.index');
