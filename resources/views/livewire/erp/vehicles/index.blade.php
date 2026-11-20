@@ -10869,11 +10869,11 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     @endphp
                     @if($claimBalance > 0 || $claimUsedNow > 0)
                         <div data-claim-balance>
-                            <label class="label-base">{{ __('vehicle.field.claim_balance') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.claim_balance_note') }}</span></label>
+                            <label class="label-base whitespace-nowrap" title="{{ __('vehicle.panel.claim_balance_title') }}">{{ __('vehicle.field.claim_balance') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.claim_balance_note') }}</span></label>
                             <div class="input-base bg-gray-100 text-gray-600">{{ $currency }} {{ number_format($claimBalance, 2) }}</div>
                         </div>
                         <div data-claim-use>
-                            <label class="label-base">{{ __('vehicle.field.claim_used') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.claim_used_note') }}</span></label>
+                            <label class="label-base whitespace-nowrap" title="{{ __('vehicle.panel.claim_used_title') }}">{{ __('vehicle.field.claim_used') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.claim_used_note') }}</span></label>
                             <input wire:model="claim_used_str" type="text" data-money class="input-base" placeholder="0" />
                             @error('claim_used_str') <p class="mt-1 text-xs text-red-500">{{ $message }}</p> @enderror
                         </div>
