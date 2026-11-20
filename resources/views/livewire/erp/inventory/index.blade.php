@@ -147,8 +147,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 fn ($q2) => $q2->leftStock(),
                 fn ($q2) => $q2->inStock()
             ))
-            ->when($this->category === 'general', fn ($q) => $q->where(fn ($q2) => $q2->whereNull('sale_price')->orWhere('sale_price', '<=', 0)))
-            ->when($this->category === 'pre_ship', fn ($q) => $q->where('sale_price', '>', 0))
+            // 일반재고 = 바이어 미정 또는 판매가 없음 / 선적전 재고 = 바이어 지정 + 판매가 (jin 2026-11-20 — scopeGeneralStock 과 같은 기준)
+            ->when($this->category === 'general', fn ($q) => $q->where(fn ($q2) => $q2->whereNull('vehicles.buyer_id')->orWhereNull('vehicles.sale_price')->orWhere('vehicles.sale_price', '<=', 0)))
+            ->when($this->category === 'pre_ship', fn ($q) => $q->whereNotNull('vehicles.buyer_id')->where('vehicles.sale_price', '>', 0))
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
             ->when($this->salesmanFilter !== '', fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
@@ -270,21 +271,64 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 
     /**
-     * 영업담당자별 재고 카운트 (스트립 표시).
+     * 담당자별 재고 — 대수·매입가 합 (jin 2026-11-20 «재고탭에서 총금액 / 인원별 재고 금액»).
+     * all = 재고 전체(일반 + 선적전) / general = 일반재고만(인원당 상한 GENERAL_STOCK_PRICE_CAP 2억 비교 대상)
+     * / awaiting = 지급대기(매입 대금이 남은 차 — 입고 전이라 재고 총금액에는 안 들어간다).
+     * 금액 = 매입가(purchase_price) 합. 고른 탭·필터와 무관하게 「지금 재고」를 센다 — 카드가 여기서 고른 담당자 몫만 꺼내 쓴다.
+     *
+     * @return array{all: array<string, array{cnt:int, amount:int}>, general: array<string, array{cnt:int, amount:int}>, awaiting: array<string, array{cnt:int, amount:int}>} 키 = salesman_id('' = 미배정)
      */
     #[Computed]
-    public function stockCountsBySalesman(): array
+    public function stockBySalesman(): array
     {
         $user = auth()->user();
-        $q = Vehicle::query()->inStock();
-        if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
-            $q->whereIn('salesman_id', $user->getSubordinateSalesmanIds());
-        }
+        $group = function ($q) use ($user) {
+            if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
+                $q->whereIn('salesman_id', $user->getSubordinateSalesmanIds());
+            }
 
-        return $q->selectRaw('salesman_id, COUNT(*) as cnt')
-            ->groupBy('salesman_id')
-            ->pluck('cnt', 'salesman_id')
-            ->toArray();
+            return $q->selectRaw('salesman_id, COUNT(*) as cnt, COALESCE(SUM(purchase_price), 0) as amount')
+                ->groupBy('salesman_id')
+                ->get()
+                ->mapWithKeys(fn ($r) => [(string) $r->salesman_id => ['cnt' => (int) $r->cnt, 'amount' => (int) round((float) $r->amount)]])
+                ->all();
+        };
+
+        return [
+            'all' => $group(Vehicle::query()->inStock()),
+            'general' => $group(Vehicle::query()->generalStock()),
+            'awaiting' => $group(Vehicle::query()->awaitingPurchasePayment()),
+        ];
+    }
+
+    /**
+     * 금액 카드 4장(재고 총금액 · 지급대기 · 일반재고 · 선적전 재고) — 담당자 칩을 고르면 그 사람 몫, 아니면 볼 수 있는 전원 합.
+     * 선적전 = 전체 − 일반(두 스코프가 여집합이라 닫힌다).
+     *
+     * @return array{total: array{cnt:int, amount:int}, awaiting: array{cnt:int, amount:int}, general: array{cnt:int, amount:int}, pre_ship: array{cnt:int, amount:int}, over_cap_people:int}
+     */
+    #[Computed]
+    public function stockSummary(): array
+    {
+        $by = $this->stockBySalesman;
+        $pick = function (array $rows): array {
+            if ($this->salesmanFilter !== '') {
+                return $rows[(string) $this->salesmanFilter] ?? ['cnt' => 0, 'amount' => 0];
+            }
+
+            return ['cnt' => array_sum(array_column($rows, 'cnt')), 'amount' => array_sum(array_column($rows, 'amount'))];
+        };
+        $total = $pick($by['all']);
+        $general = $pick($by['general']);
+
+        return [
+            'total' => $total,
+            'awaiting' => $pick($by['awaiting']),
+            'general' => $general,
+            'pre_ship' => ['cnt' => $total['cnt'] - $general['cnt'], 'amount' => $total['amount'] - $general['amount']],
+            // 미배정('')은 사람이 아니라 상한 대상이 아니다
+            'over_cap_people' => count(array_filter($by['general'], fn ($r, $k) => $k !== '' && $r['amount'] > Vehicle::GENERAL_STOCK_PRICE_CAP, ARRAY_FILTER_USE_BOTH)),
+        ];
     }
 
     /** 재고 2분류 카운트 (스코프 반영, 담당자 스코프 존중). */
@@ -397,7 +441,7 @@ new #[Layout('components.layouts.app')] class extends Component
             $applied++;
         }
 
-        unset($this->inventoryVehicles, $this->stockCountsBySalesman);
+        unset($this->inventoryVehicles, $this->stockBySalesman, $this->stockSummary);
         $this->dispatch('notify',
             message: $applied > 0 ? __('inventory.out_applied', ['count' => $applied]) : __('inventory.out_nochange'),
             type: $applied > 0 ? 'success' : 'info');
@@ -480,26 +524,77 @@ new #[Layout('components.layouts.app')] class extends Component
         @endif
     </div>
 
-    {{-- 영업담당자별 재고 카운트 스트립 --}}
-    @if(count($this->stockCountsBySalesman))
-    <div class="card-tight overflow-x-auto">
-        <div class="flex items-center gap-2 text-xs">
-            <span class="font-semibold text-gray-500 whitespace-nowrap">{{ __('inventory.by_salesman') }}</span>
+    {{-- 재고 금액 카드 + 담당자 칩 (jin 2026-11-20). 칩은 이름만 — 누르면 아래 목록과 카드 금액이 그 담당자 것으로 바뀐다.
+         일반재고는 인원당 2억(GENERAL_STOCK_PRICE_CAP)까지 — 넘은 담당자는 칩과 카드가 빨갛게. --}}
+    @php
+        $stockBy = $this->stockBySalesman;
+        $sum = $this->stockSummary;
+        $stockCap = \App\Models\Vehicle::GENERAL_STOCK_PRICE_CAP;
+        $pickedSm = $salesmanFilter !== '' ? $this->salesmen->firstWhere('id', (int) $salesmanFilter) : null;
+        $cardOver = $salesmanFilter !== '' ? $sum['general']['amount'] > $stockCap : $sum['over_cap_people'] > 0;
+        $unassigned = $stockBy['all'][''] ?? null;
+        // 억원 단위로 줄여 적는다(jin 2026-11-20) — 원 단위 전체는 title 로
+        $eok = fn (int $won) => rtrim(rtrim(number_format($won / 100_000_000, 2), '0'), '.').__('inventory.unit_eok_won');
+    @endphp
+    @if($stockBy['all'] !== [] || $stockBy['awaiting'] !== [])
+    <div class="space-y-2" data-stock-by-salesman>
+        <div class="flex flex-wrap items-center gap-1.5 text-xs">
+            <span class="whitespace-nowrap font-semibold text-gray-500">{{ __('inventory.by_salesman') }}</span>
+            <button type="button" wire:click="$set('salesmanFilter', '')"
+                    class="shrink-0 whitespace-nowrap rounded-md border px-2.5 py-1 font-medium transition
+                           {{ $salesmanFilter === '' ? 'border-violet-600 bg-violet-600 text-white' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50' }}">{{ __('inventory.chip_all') }}</button>
             @foreach($this->salesmen as $sm)
-                @php $cnt = $this->stockCountsBySalesman[$sm->id] ?? 0; @endphp
-                <button wire:click="$set('salesmanFilter', '{{ $sm->id }}')"
-                        class="flex items-center gap-1 rounded-full px-2.5 py-0.5 transition
-                               {{ $salesmanFilter == $sm->id ? 'bg-violet-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200' }}">
-                    <span>{{ $sm->name }}</span>
-                    <span class="rounded-full bg-white/20 px-1.5 text-[10px] font-bold">{{ $cnt }}</span>
-                </button>
+                @php
+                    $picked = $salesmanFilter == $sm->id;
+                    $over = (($stockBy['general'][(string) $sm->id]['amount'] ?? 0) > $stockCap);
+                @endphp
+                @continue(! isset($stockBy['all'][(string) $sm->id]) && ! isset($stockBy['awaiting'][(string) $sm->id]) && ! $picked)
+                <button type="button" wire:click="$set('salesmanFilter', '{{ $picked ? '' : $sm->id }}')"
+                        @if($over) data-stock-over-cap title="{{ __('inventory.chip_over_cap_title') }}" @endif
+                        class="shrink-0 whitespace-nowrap rounded-md border px-2.5 py-1 font-medium transition
+                               {{ $picked ? 'border-violet-600 bg-violet-600 text-white' : ($over ? 'border-red-300 bg-red-50 text-red-700 hover:bg-red-100' : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50') }}">{{ $sm->name }}</button>
             @endforeach
-            @php $unassignedCnt = $this->stockCountsBySalesman[''] ?? $this->stockCountsBySalesman[null] ?? 0; @endphp
-            @if($unassignedCnt > 0)
-                <span class="rounded-full bg-amber-100 px-2.5 py-0.5 text-amber-800">
-                    {{ __('inventory.unassigned_strip', ['count' => $unassignedCnt]) }}
+            @if($unassigned && $unassigned['cnt'] > 0)
+                <span class="shrink-0 whitespace-nowrap rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-800" title="{{ number_format($unassigned['amount']) }}">
+                    {{ __('inventory.unassigned_strip', ['count' => $unassigned['cnt']]) }}
                 </span>
             @endif
+        </div>
+        {{-- 카드 4칸 — PC 는 화면 폭을 4등분, 폰은 2칸씩 두 줄 (jin 2026-11-20) --}}
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-4" data-stock-cards>
+            <div class="card-sm sm:px-4">
+                <div class="whitespace-nowrap text-xs text-gray-500">{{ __('inventory.card_total') }} <span class="text-gray-400">· {{ $pickedSm?->name ?? __('inventory.chip_all') }}</span></div>
+                <div class="mt-0.5 whitespace-nowrap text-xl font-bold text-gray-800" data-stock-total title="{{ number_format($sum['total']['amount']) }}">{{ $eok($sum['total']['amount']) }}</div>
+                <div class="whitespace-nowrap text-[11px] text-gray-400">{{ __('inventory.total', ['count' => number_format($sum['total']['cnt'])]) }}</div>
+            </div>
+            <div class="card-sm sm:px-4">
+                <div class="whitespace-nowrap text-xs text-gray-500">{{ __('inventory.card_awaiting') }}</div>
+                <div class="mt-0.5 whitespace-nowrap text-xl font-bold text-gray-800" data-stock-awaiting title="{{ number_format($sum['awaiting']['amount']) }}">{{ $eok($sum['awaiting']['amount']) }}</div>
+                <div class="whitespace-nowrap text-[11px] text-gray-400">{{ __('inventory.total', ['count' => number_format($sum['awaiting']['cnt'])]) }}</div>
+            </div>
+            <div class="card-sm sm:px-4 {{ $cardOver ? 'border-red-300 bg-red-50' : '' }}">
+                <div class="whitespace-nowrap text-xs text-gray-500">{{ __('inventory.cat_general') }}</div>
+                <div class="mt-0.5 whitespace-nowrap text-xl font-bold {{ $cardOver && $salesmanFilter !== '' ? 'text-red-600' : 'text-gray-800' }}" data-stock-general title="{{ number_format($sum['general']['amount']) }}">{{ $eok($sum['general']['amount']) }}</div>
+                <div class="text-[11px] {{ $cardOver ? 'font-semibold text-red-600' : 'text-gray-400' }}">
+                    {{ __('inventory.total', ['count' => number_format($sum['general']['cnt'])]) }} ·
+                    @if($salesmanFilter !== '')
+                        @if($cardOver)
+                            {{ __('inventory.cap_over_by', ['amount' => $eok($sum['general']['amount'] - $stockCap)]) }}
+                        @else
+                            {{ __('inventory.cap_room', ['amount' => $eok($stockCap - $sum['general']['amount'])]) }}
+                        @endif
+                    @elseif($sum['over_cap_people'] > 0)
+                        {{ __('inventory.cap_over_people', ['n' => $sum['over_cap_people']]) }}
+                    @else
+                        {{ __('inventory.stock_cap_hint') }}
+                    @endif
+                </div>
+            </div>
+            <div class="card-sm sm:px-4">
+                <div class="whitespace-nowrap text-xs text-gray-500">{{ __('inventory.cat_pre_ship') }}</div>
+                <div class="mt-0.5 whitespace-nowrap text-xl font-bold text-gray-800" data-stock-preship title="{{ number_format($sum['pre_ship']['amount']) }}">{{ $eok($sum['pre_ship']['amount']) }}</div>
+                <div class="whitespace-nowrap text-[11px] text-gray-400">{{ __('inventory.total', ['count' => number_format($sum['pre_ship']['cnt'])]) }}</div>
+            </div>
         </div>
     </div>
     @endif
@@ -626,7 +721,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         '통관중', '통관완료' => 'badge-green',
                         default => 'badge-gray',
                     };
-                    $isGeneral = ($v->sale_price ?? 0) <= 0;
+                    $isGeneral = $v->isGeneralStock();
                     $overCap = $isGeneral && $v->purchase_price > \App\Models\Vehicle::GENERAL_STOCK_PRICE_CAP;
                     $overAge = $isGeneral && $v->warehouse_in_date
                         && $v->warehouse_in_date->copy()->addMonths(\App\Models\Vehicle::GENERAL_STOCK_SELL_MONTHS)->isPast();

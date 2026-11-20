@@ -2909,7 +2909,7 @@ class Vehicle extends Model
         return $last ? Carbon::parse($last) : null;
     }
 
-    /** 일반재고 권장 매입 상한 — 초과 시 뱃지 표시만(하드 차단 아님, jin 2026-07-18). */
+    /** 일반재고 매입 상한 2억 — 대당 초과 뱃지(07-18) + 인원별 일반재고 합 상한(jin 2026-11-20, 재고 화면 스트립). */
     public const GENERAL_STOCK_PRICE_CAP = 200_000_000;
 
     /** 일반재고 권장 판매 기한(입고일 기준 개월) — 경과 시 뱃지 표시만. */
@@ -2937,18 +2937,29 @@ class Vehicle extends Model
 
     /**
      * 재고 2분류 (jin 2026-07-18):
-     *   일반재고(general)   = 재고 중 미판매(투기매입, 바이어 미정) = sale_price ≤ 0.
-     *   선적전 재고(pre_ship) = 재고 중 판매됨(항구 대기, 출고 전)   = sale_price > 0.
-     * 둘 다 inStock() 기반(매입완납 + 출고 전).
+     *   일반재고(general)   = 재고 중 아직 안 팔린 차 = 바이어 미정 **또는** 판매가 없음.
+     *   선적전 재고(pre_ship) = 재고 중 팔린 차(항구 대기, 출고 전) = 바이어 지정 **그리고** 판매가 > 0.
+     * 둘 다 inStock() 기반(매입완납 + 출고 전). 두 스코프는 서로 여집합이다.
+     *
+     * 🔀 2026-11-20 (jin «판매가+바이어 지정이 되어야 빠진다 · 바이어만 지정되고 판매가 없으면 아직 일반재고») —
+     *    구 기준은 판매가만 봤다(sale_price ≤ 0). 달라지는 칸은 「바이어 없이 판매가만 있는 차」(바이어 미정 판매)
+     *    하나 — 이제 일반재고다. 실측 3사 0대(11-20). 화면 행 판정은 isGeneralStock() — 🚫 조건을 옮겨 적지 말 것.
      */
     public function scopeGeneralStock($query)
     {
-        return $query->inStock()->where(fn ($q) => $q->whereNull('sale_price')->orWhere('sale_price', '<=', 0));
+        return $query->inStock()->where(fn ($q) => $q->whereNull('vehicles.buyer_id')
+            ->orWhereNull('vehicles.sale_price')->orWhere('vehicles.sale_price', '<=', 0));
     }
 
     public function scopePreShippingStock($query)
     {
-        return $query->inStock()->where('sale_price', '>', 0);
+        return $query->inStock()->whereNotNull('vehicles.buyer_id')->where('vehicles.sale_price', '>', 0);
+    }
+
+    /** 이 차가 「일반재고」 쪽인가(아직 안 팔림) — scopeGeneralStock 의 행 단위 짝. 재고 여부(inStock)는 따로 본다. */
+    public function isGeneralStock(): bool
+    {
+        return $this->buyer_id === null || (float) ($this->sale_price ?? 0) <= 0;
     }
 
     /**
