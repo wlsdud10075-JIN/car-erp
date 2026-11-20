@@ -473,6 +473,8 @@ return [
         'savings_deposit_note' => '(이번에 쌓을 금액 · 저장 후 비워짐)',
         // 💳 적립금 사용 1회성 (jin 2026-10-15)
         'savings_used_note' => '(이번에 쓸 금액 · 저장 후 비워짐)',
+        'claim_balance_note' => '(이 바이어의 인정된 클레임 중 아직 안 쓴 돈)',
+        'claim_used_note' => '(이 차에 쓴 합계 · 0 으로 저장하면 되돌림)',
         'non_cash_title' => '입금 외 정리',
         'non_cash_link' => '채권관리',
         'non_cash_hint' => '— 채권관리에서 입금 행 밖으로 정리된 것. 잔금 행에는 안 섞입니다(실입금·정산환율 기준). 입력은 채권관리·적립금 칸에서.',
@@ -673,6 +675,8 @@ return [
         'advance1' => '선수금1',
         'fee' => '송금 수수료',
         'savings_used' => '적립금 사용',
+        'claim_balance' => '클레임 누적금',
+        'claim_used' => '클레임 사용',
         'savings_deposit' => '적립금 적립',
         'savings_balance' => '누적 적립금',
         'unpaid_ratio' => '미납률',
@@ -1437,6 +1441,12 @@ return [
     'valmsg' => [
         'savings_negative' => '적립금 사용 금액은 0보다 커야 합니다. 잘못 쓴 사용은 바이어 적립금 탭에서 정정하세요.',
         'savings_over' => '적립금 잔액(:currency :balance)을 넘는 금액(:use)은 쓸 수 없습니다.',
+        'claim_negative' => '클레임 사용 금액은 0 이상이어야 합니다.',
+        'claim_no_buyer' => '바이어가 정해진 차에만 클레임을 쓸 수 있습니다.',
+        'claim_over_balance' => '클레임 누적금(:currency :balance)을 넘는 금액(:use)은 쓸 수 없습니다.',
+        'claim_over_unpaid' => '이 차의 남은 미수(:currency :unpaid)보다 많이(:use) 쓸 수 없습니다.',
+        'claim_row_locked' => '클레임으로 턴 줄은 여기서 고칠 수 없습니다. 차량 판매탭의 「클레임 사용」에서 바꾸세요.',
+        'claim_blocks_change' => '이 차에 클레임을 쓴 금액이 있어 바이어·통화를 바꿀 수 없습니다. 먼저 판매탭 「클레임 사용」을 0 으로 저장하세요.',
         'duplicate_final_payment_row' => '판매 잔금에 금액·날짜·메모가 똑같은 새 행이 두 개 있습니다. 하나를 지우거나 메모로 구분해 주세요.',
         'duplicate_purchase_payment_row' => '매입 잔금에 금액·날짜·메모가 똑같은 새 행이 두 개 있습니다. 하나를 지우거나 메모로 구분해 주세요.',
         'unlock_reason_required' => '잠금 해제 사유를 10자 이상 입력하세요.',
@@ -1502,4 +1512,5 @@ return [
         'bl_hint' => '통관 체크는 됐는데 B/L 업로드만 빈 차량 — 거래완료·매입취소·내수 제외',
     ],
     'shipment_bad_date' => '발송 접수일 「:value」 이(가) 날짜가 아닙니다. 2026-11-14 또는 20261114 처럼 적어 주세요.',
+    'claim_use_note' => '클레임 사용 — 판매탭에서 입력',
 ];

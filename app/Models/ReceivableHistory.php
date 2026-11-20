@@ -2,7 +2,9 @@
 
 namespace App\Models;
 
+use App\Exceptions\ClaimUsageException;
 use App\Services\BuyerCashService;
+use App\Services\ClaimUsage;
 use App\Support\PaymentAudit;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -72,8 +74,23 @@ class ReceivableHistory extends Model
      */
     public static bool $skipSavingsSync = false;
 
+    /** 판매탭 「클레임 사용」이 만든 상계 줄인가 (jin 2026-11-20) — 채권관리에서는 못 고친다(App\Services\ClaimUsage 만). */
+    public function isClaimUse(): bool
+    {
+        return $this->source === ClaimUsage::SOURCE;
+    }
+
     protected static function booted(): void
     {
+        // 🧾 클레임 사용 줄은 서비스만 고친다 — 화면마다 막지 않고 여기서 막는다. 차량 삭제(DB cascade)는 모델을 안 거쳐 무관.
+        $claimGuard = function (ReceivableHistory $h) {
+            if ($h->getOriginal('source') === ClaimUsage::SOURCE && ! ClaimUsage::$writing) {
+                throw new ClaimUsageException(__('vehicle.valmsg.claim_row_locked'));
+            }
+        };
+        static::updating($claimGuard);
+        static::deleting($claimGuard);
+
         // 🧾 감사 기록(jin 2026-11-03) — 현금·상계·기타·손실 줄. 판단·형식은 PaymentAudit 한 곳.
         static::created(fn (ReceivableHistory $h) => PaymentAudit::historyCreated($h));
         static::updated(fn (ReceivableHistory $h) => PaymentAudit::historyUpdated($h));

@@ -73,6 +73,9 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 🏷️ DP/FD 필터 (jin 2026-11-17 «B2B 파트너스에도 DP, FD 뱃지 필터 버튼») — '' · 'DP' · 'FD'. 바이어 지정 또는 그 유형 차량 보유. */
     #[Url(as: 'deal')] public string $dealFilter = '';
 
+    /** 🧾 「클레임 N건」 필터 (jin 2026-11-20) — 인정됐고 아직 쓸 돈이 남은 클레임이 있는 바이어만. 뱃지와 같은 기준(VehicleClaim::scopeOpen). ⚠️ 메서드명 ≠ 프로퍼티명(§8 #32). */
+    #[Url(as: 'claim')] public bool $openClaimOnly = false;
+
     public bool   $is_b2b_partner = false;
     /** 🏷️ 바이어 「DP·FD 진행 중」 — 각각 지정(jin 2026-11-17). 차량 거래 유형(vehicles.deal_type)과 따로. 관리 이상. */
     public bool   $is_dp = false;
@@ -374,6 +377,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    public function toggleOpenClaimOnly(): void
+    {
+        $this->openClaimOnly = ! $this->openClaimOnly;
+        unset($this->buyers, $this->openClaimBuyerCount);
+        $this->resetPage();
+    }
+
+    /** 칩 숫자 = 지금 조건(이 칩 제외)에서 쓸 돈이 남은 클레임이 있는 바이어 수 — 0 이면 칩을 안 그린다. */
+    #[Computed]
+    public function openClaimBuyerCount(): int
+    {
+        return $this->buyerQuery()->whereHas('claims', fn ($q) => $q->open())->count();
+    }
+
     /** 🏷️ DP/FD 버튼 — 같은 걸 다시 누르면 해제. ⚠️ 메서드명 ≠ 프로퍼티명(§8 #32). */
     public function toggleDealFilter(string $type): void
     {
@@ -429,11 +446,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return $this->buyerQuery()
             ->when($this->newOnly, fn ($q) => $q->newBuyers())
+            ->when($this->openClaimOnly, fn ($q) => $q->whereHas('claims', fn ($c) => $c->open()))
             ->with(['country', 'salesman'])
             // 🏷️ DP/FD 는 차량(거래)에 있다 — 바이어 목록은 **센 개수**만(요청서 02 ↔ 03 모순을 이렇게 닫음, 출처 하나).
             ->withCount([
                 'vehicles as dp_count' => fn ($q) => $q->where('deal_type', 'DP'),
                 'vehicles as fd_count' => fn ($q) => $q->where('deal_type', 'FD'),
+                'claims as open_claim_count' => fn ($q) => $q->open(),   // 🧾 「클레임 N건」 뱃지 (jin 2026-11-20)
             ])
             // 회의확장씬 #2 (2026-05-23) — 영업담당자별 그룹 정렬 (담당자별 묶음 + 이름순).
             ->orderByRaw('salesman_id IS NULL ASC')   // NULL 마지막
@@ -1735,6 +1754,15 @@ new #[Layout('components.layouts.app')] class extends Component {
             {{ $newOnly ? '✓ ' : '' }}{{ __('buyer.new_badge') }} ({{ number_format($this->newBuyerCount) }})
         </button>
     </div>
+    {{-- 🧾 「클레임 N건」 칩 (jin 2026-11-20) — 행 뱃지와 같은 모양. 해당 바이어가 없으면(그리고 꺼져 있으면) 안 그린다. --}}
+    @if($this->openClaimBuyerCount > 0 || $openClaimOnly)
+    <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3" data-open-claim-filter>
+        <button type="button" wire:click="toggleOpenClaimOnly" aria-pressed="{{ $openClaimOnly ? 'true' : 'false' }}" title="{{ __('buyer.claims.filter_hint') }}"
+                class="cursor-pointer whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800 {{ $openClaimOnly ? 'ring-2' : 'opacity-60 hover:opacity-100' }}">
+            {{ __('buyer.claims.badge_label') }} ({{ number_format($this->openClaimBuyerCount) }})
+        </button>
+    </div>
+    @endif
     @if(Setting::b2bPartnersEnabled())
     {{-- 🏷️ DP/FD 버튼축(jin 11-17 «B2B 파트너스에도 DP, FD 뱃지 필터 버튼») — 차량관리 거래 유형 토글과 같은 모양. 같은 걸 다시 누르면 해제. --}}
     <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3" data-deal-filter>
@@ -1778,7 +1806,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                     data-currency="원"
                 @endif
             >
-                <td class="py-3 pr-4 font-medium text-gray-800">{{ $b->name }}@if($b->isNewBuyer())<span class="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-buyer-new title="{{ __('buyer.new_badge_hint', ['date' => $b->created_at->format('Y-m-d')]) }}">{{ __('buyer.new_badge') }}</span>@endif</td>
+                <td class="py-3 pr-4 font-medium text-gray-800">{{ $b->name }}@if($b->isNewBuyer())<span class="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-buyer-new title="{{ __('buyer.new_badge_hint', ['date' => $b->created_at->format('Y-m-d')]) }}">{{ __('buyer.new_badge') }}</span>@endif@if(($b->open_claim_count ?? 0) > 0)<span class="ml-1.5 whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800" data-buyer-open-claim title="{{ __('buyer.claims.badge_hint') }}">{{ __('buyer.claims.badge', ['n' => $b->open_claim_count]) }}</span>@endif</td>
                 <td class="py-3 pr-4 text-gray-500">
                     @if($b->salesman)
                         <span class="badge badge-blue">{{ $b->salesman->name }}</span>
@@ -1830,7 +1858,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     @forelse($this->buyers as $b)
     <div class="card-tight flex items-center justify-between cursor-pointer" wire:click="openEdit({{ $b->id }})">
         <div>
-            <div class="font-medium text-gray-800">{{ $b->name }}@if($b->isNewBuyer())<span class="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-buyer-new title="{{ __('buyer.new_badge_hint', ['date' => $b->created_at->format('Y-m-d')]) }}">{{ __('buyer.new_badge') }}</span>@endif</div>
+            <div class="font-medium text-gray-800">{{ $b->name }}@if($b->isNewBuyer())<span class="ml-1.5 rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700" data-buyer-new title="{{ __('buyer.new_badge_hint', ['date' => $b->created_at->format('Y-m-d')]) }}">{{ __('buyer.new_badge') }}</span>@endif@if(($b->open_claim_count ?? 0) > 0)<span class="ml-1.5 whitespace-nowrap rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800" data-buyer-open-claim title="{{ __('buyer.claims.badge_hint') }}">{{ __('buyer.claims.badge', ['n' => $b->open_claim_count]) }}</span>@endif</div>
             <div class="text-xs text-gray-500">{{ $b->country?->name ?? '' }} {{ $b->contact_email ? '· '.$b->contact_email : '' }}</div>
             @php $svm = array_filter($this->savingsBalances[$b->id] ?? [], fn ($v) => abs((float) $v) >= 0.005); @endphp
             @if($svm)
