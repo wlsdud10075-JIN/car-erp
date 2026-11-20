@@ -997,6 +997,14 @@ class Vehicle extends Model
     // ── Boot: 진행상태/채권 캐시 자동 갱신 ─────────────────────────
     protected static function booted(): void
     {
+        // 🧹 일이 끝난 알림 정리 (jin 2026-11-20) — 반입지·선적일·B/L 파일·통관 체크가 들어가면 그 차의 선적요청·B/L 요청·
+        //    통관서류·새 차 도착 알림이 사라진다. 판정 = TaskAlarm::resolveSettled(열린 알림이 없으면 쿼리 1개).
+        static::saved(function (Vehicle $vehicle) {
+            if ($vehicle->wasChanged(['bl_loading_location', 'shipping_date', 'bl_document', 'is_export_cleared', 'eta_date', 'progress_status_cache'])) {
+                TaskAlarm::resolveSettledFor($vehicle->id);
+            }
+        });
+
         // 🧾 클레임을 쓴 차는 바이어·통화를 바꿀 수 없다 (jin 2026-11-20) — 사용 내역이 그 바이어·그 통화의 클레임에 물려 있다.
         //    먼저 판매탭 「클레임 사용」을 0 으로 되돌린 뒤 바꾼다. 화면은 저장 전에 같은 안내를 띄운다(이건 그 뒤의 안전망).
         static::updating(function (Vehicle $vehicle) {
