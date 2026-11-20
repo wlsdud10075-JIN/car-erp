@@ -96,7 +96,7 @@ class ClaimUsage
                 if ($total <= 0) {
                     $row?->delete();
                 } else {
-                    $note = __('vehicle.claim_use_note');
+                    $note = trans('vehicle.claim_use_note', [], 'ko');   // 저장되는 글이라 화면 언어와 무관하게 한국어로 고정
                     if ($row) {
                         $row->update(['amount' => $total]);
                     } else {
