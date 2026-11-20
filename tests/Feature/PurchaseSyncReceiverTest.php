@@ -8,6 +8,7 @@ use App\Models\Consignee;
 use App\Models\PurchaseBalancePayment;
 use App\Models\Salesman;
 use App\Models\Settlement;
+use App\Models\TaskAlarm;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehiclePhoto;
@@ -1041,6 +1042,22 @@ class PurchaseSyncReceiverTest extends TestCase
     }
 
     /** 플래그가 있으면 판매측 6칸을 덮어쓴다 — 바뀐 칸만 fields_overwritten, 같은 값·안 보낸 칸은 어디에도 없음, 감사 출처 행 1. */
+    /** board 가 판매가를 고쳐 다시 보내면 ERP 화면에서 고친 것과 똑같이 「판매가·환율 수정 알림」이 뜬다(누가 = 연동). */
+    public function test_amounts_overwrite_raises_the_sale_price_changed_alarm(): void
+    {
+        $id = $this->soldViaSync('43오4309');
+        $this->assertSame(0, TaskAlarm::where('type', TaskAlarm::TYPE_PRICE_CHANGED)->count(), '처음 기입은 알림이 아니다');
+
+        $this->postSigned($this->validPayload([
+            'vehicle_number' => '43오4309', 'amounts_overwrite' => true, 'sale_price' => 5200, 'sale_currency' => 'USD', 'sale_exchange_rate' => 1350,
+        ]))->assertStatus(200);
+
+        $alarm = TaskAlarm::where('type', TaskAlarm::TYPE_PRICE_CHANGED)->where('vehicle_id', $id)->sole();
+        $change = collect($alarm->message_meta['changes'])->firstWhere('field', 'sale_price');
+        $this->assertSame(5200.0, (float) $change['new']);
+        $this->assertNull($change['by'], '로그인 없는 경로 — 화면에는 「연동」으로 뜬다');
+    }
+
     public function test_amounts_overwrite_replaces_sale_side_fields_and_audits(): void
     {
         $id = $this->soldViaSync('43오4301');
