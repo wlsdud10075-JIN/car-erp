@@ -10853,40 +10853,15 @@ function vehicleColumnsToggle(columns, serverKnows) {
                            class="input-base {{ $canManagePayBreakdown ? '' : 'bg-gray-100 text-gray-500' }}"
                            placeholder="0" @if(!$canManagePayBreakdown) disabled @endif />
                 </div>
-                {{-- 💳 적립금 사용 = 「이번에 쓸 금액」 1회성 (jin 2026-10-15). 잔액 초과는 저장이 막는다. 이력·합계는 여기 안 둔다(«굳이 여기서 볼 필요 없다» — 바이어 적립금 탭·「입금 외 정리」 줄). --}}
-                <div data-savings-use>
-                    <label class="label-base">{{ __('vehicle.field.savings_used') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.savings_used_note') }}</span></label>
-                    <input wire:model="savings_used_str" type="text" data-money class="input-base" placeholder="0" />
-                    @error('savings_used_str') <p class="mt-1 text-xs text-red-500">{{ $message }}</p> @enderror
-                </div>
-                {{-- 🧾 클레임 누적금 · 클레임 사용 (jin 2026-11-20) — 인정된 클레임만큼 바이어가 대금을 덜 보냈을 때 이 차 미수를 턴다.
+                {{-- 🧾 칸 순서 (jin 2026-11-20 «화면을 맞추자») — 윗줄 = 보는 값: 송금수수료 · 누적 적립금 · 클레임 누적금 /
+                     아랫줄 = 넣는 값: 적립금 적립 · 적립금 사용 · 클레임 사용. 클레임 칸이 없을 때도 줄이 안 밀리게 빈 칸으로 자리를 잡는다.
                      「클레임 사용」은 이 차에 쓴 합계다(적립금 칸처럼 더하는 칸이 아니다). 저장하면 채권관리에 상계 줄이 생긴다. --}}
-                @if($editingId)
-                    @php
-                        $claimBuyerId = $buyer_id_str !== '' ? (int) $buyer_id_str : null;
-                        $claimBalance = \App\Services\ClaimUsage::balance($claimBuyerId, $currency);
-                        $claimUsedNow = \App\Services\ClaimUsage::usedOn($editingId);
-                    @endphp
-                    @if($claimBalance > 0 || $claimUsedNow > 0)
-                        <div data-claim-balance>
-                            <label class="label-base whitespace-nowrap" title="{{ __('vehicle.panel.claim_balance_title') }}">{{ __('vehicle.field.claim_balance') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.claim_balance_note') }}</span></label>
-                            <div class="input-base bg-gray-100 text-gray-600">{{ $currency }} {{ number_format($claimBalance, 2) }}</div>
-                        </div>
-                        <div data-claim-use>
-                            <label class="label-base whitespace-nowrap" title="{{ __('vehicle.panel.claim_used_title') }}">{{ __('vehicle.field.claim_used') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.claim_used_note') }}</span></label>
-                            <input wire:model="claim_used_str" type="text" data-money class="input-base" placeholder="0" />
-                            @error('claim_used_str') <p class="mt-1 text-xs text-red-500">{{ $message }}</p> @enderror
-                        </div>
-                    @endif
-                @endif
-                {{-- 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 + 누적 표시 --}}
-                @php $canConfirmFinanceLocal = auth()->user()?->canConfirmFinance() ?? false; @endphp
-                <div>
-                    <label class="label-base">{{ __('vehicle.field.savings_deposit') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.savings_deposit_note') }}</span></label>
-                    <input wire:model="savings_deposit_str" type="text" data-money
-                           class="input-base {{ $canConfirmFinanceLocal ? '' : 'bg-gray-100 text-gray-500' }}"
-                           placeholder="0" @if(!$canConfirmFinanceLocal) disabled @endif />
-                </div>
+                @php
+                    $claimBuyerId = $buyer_id_str !== '' ? (int) $buyer_id_str : null;
+                    $claimBalance = $editingId ? \App\Services\ClaimUsage::balance($claimBuyerId, $currency) : 0.0;
+                    $claimUsedNow = $editingId ? \App\Services\ClaimUsage::usedOn($editingId) : 0.0;
+                    $showClaim = $claimBalance > 0 || $claimUsedNow > 0;
+                @endphp
                 <div>
                     <label class="label-base">{{ __('vehicle.field.savings_balance') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.savings_balance_note') }}</span></label>
                     <div class="input-base bg-gray-50 text-gray-700">
@@ -10897,6 +10872,35 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         @endif
                     </div>
                 </div>
+                @if($showClaim)
+                <div data-claim-balance>
+                    <label class="label-base whitespace-nowrap" title="{{ __('vehicle.panel.claim_balance_title') }}">{{ __('vehicle.field.claim_balance') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.claim_balance_note') }}</span></label>
+                    <div class="input-base bg-gray-100 text-gray-600">{{ $currency }} {{ number_format($claimBalance, 2) }}</div>
+                </div>
+                @else
+                    <div class="hidden sm:block"></div>
+                @endif
+                {{-- 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 + 누적 표시 --}}
+                @php $canConfirmFinanceLocal = auth()->user()?->canConfirmFinance() ?? false; @endphp
+                <div>
+                    <label class="label-base">{{ __('vehicle.field.savings_deposit') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.savings_deposit_note') }}</span></label>
+                    <input wire:model="savings_deposit_str" type="text" data-money
+                           class="input-base {{ $canConfirmFinanceLocal ? '' : 'bg-gray-100 text-gray-500' }}"
+                           placeholder="0" @if(!$canConfirmFinanceLocal) disabled @endif />
+                </div>
+                {{-- 💳 적립금 사용 = 「이번에 쓸 금액」 1회성 (jin 2026-10-15). 잔액 초과는 저장이 막는다. 이력·합계는 여기 안 둔다(«굳이 여기서 볼 필요 없다» — 바이어 적립금 탭·「입금 외 정리」 줄). --}}
+                <div data-savings-use>
+                    <label class="label-base">{{ __('vehicle.field.savings_used') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.savings_used_note') }}</span></label>
+                    <input wire:model="savings_used_str" type="text" data-money class="input-base" placeholder="0" />
+                    @error('savings_used_str') <p class="mt-1 text-xs text-red-500">{{ $message }}</p> @enderror
+                </div>
+                @if($showClaim)
+                <div data-claim-use>
+                    <label class="label-base whitespace-nowrap" title="{{ __('vehicle.panel.claim_used_title') }}">{{ __('vehicle.field.claim_used') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.claim_used_note') }}</span></label>
+                    <input wire:model="claim_used_str" type="text" data-money class="input-base" placeholder="0" />
+                    @error('claim_used_str') <p class="mt-1 text-xs text-red-500">{{ $message }}</p> @enderror
+                </div>
+                @endif
             </div>
 
             {{-- 판매 미입금 요약 (매입 미지급 요약과 동일 스타일, 저장 후 반영 스냅샷) — 미입금률·잔여잔금 통합 --}}
