@@ -5,6 +5,7 @@ namespace Tests;
 use App\Models\ForwardingCompany;
 use App\Models\Setting;
 use App\Models\Settlement;
+use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 
 abstract class TestCase extends BaseTestCase
@@ -28,5 +29,6 @@ abstract class TestCase extends BaseTestCase
         // 💰 채권 위험도 파라미터(게이트 임계·오래됨·유예)도 같은 이유로 버린다 (2026-09-14).
         //    설정을 `DB::table()->insert` 로 심는 시더·테스트는 모델 이벤트를 안 태워 메모가 남는다.
         Setting::flushRiskParamMemo();
+        Vehicle::$readjustSaveVehicleId = null;   // 재조정 저장 플래그(요청 단위) — 테스트 사이로 새지 않게
     }
 }

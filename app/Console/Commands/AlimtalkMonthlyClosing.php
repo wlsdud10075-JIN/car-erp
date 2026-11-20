@@ -186,7 +186,10 @@ class AlimtalkMonthlyClosing extends Command
             ? (int) $v->sale_price
             : (int) ((float) $v->sale_price * (float) ($v->exchange_rate ?? 0)));
 
-        $settlements = self::settlementsFor($month);
+        // 🚪 미수로 지급보류 중인 정산은 세지 않는다 (jin 2026-11-20) — 아직 지급되지 않았고 월정산 배치에도 안 들어간 돈이다.
+        //    세면 승인 때 본 월정산 카드의 회사이익과 어긋난다(실측 ssancarerp 10월: 1건 328,082원). 완납되면 열린 달로 옮겨져
+        //    (Settlement::reanchorReleased) 그 달 결산에 들어간다. ⚠️ settlementsFor 자체는 그대로 — 「보고할 정산이 있나」 판정이 같이 쓴다.
+        $settlements = self::settlementsFor($month)->reject(fn (Settlement $s) => $s->isPayoutHeldByUnpaid())->values();
 
         $totalMargin = (int) $settlements->sum(fn (Settlement $s) => (int) $s->total_margin);
         $totalPayout = (int) $settlements->sum(fn (Settlement $s) => (int) $s->actual_payout);

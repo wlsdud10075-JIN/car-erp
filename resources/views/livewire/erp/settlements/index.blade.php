@@ -1042,6 +1042,21 @@ new #[Layout('components.layouts.app')] class extends Component
 
         if ($this->editingId) {
             $existing = Settlement::findOrFail($this->editingId);
+            // 🔒 2차 마감된 정산은 비고만 고친다 (jin 2026-11-20 «2차 마감 뒤 돈은 회계 재조정으로만»).
+            //    드로어는 매번 전 칸을 보내므로 「실제로 바뀐 칸이 있나」로 가른다 — 비고만 고친 저장은 통과.
+            //    (지급 뒤 상태 내리기는 Settlement::saving 이 막는다. closeOne 이 마감 뒤 건당액·이월을 쓰므로 금액 칸 잠금은 모델이 아니라 여기.)
+            if ($existing->secondary_status === 'closed') {
+                $same = fn ($a, $b) => (is_numeric($a) || is_numeric($b)) ? abs((float) $a - (float) $b) < 0.0001 : (string) ($a ?? '') === (string) ($b ?? '');
+                foreach (['vehicle_id', 'salesman_id', 'settlement_type', 'settlement_ratio', 'per_unit_amount', 'other_deduction', 'settlement_status'] as $col) {
+                    if (! $same($data[$col] ?? null, $existing->{$col})) {
+                        $this->addError('settlement_status', __('settlement.guard.closed_readonly'));
+                        $this->dispatch('notify', message: __('settlement.guard.closed_readonly'), type: 'error');
+
+                        return;
+                    }
+                }
+                $data = ['note' => $data['note']];
+            }
             if ($this->settlement_status === 'confirmed' && ! $existing->confirmed_at) {
                 $data['confirmed_at'] = $now;
             }
@@ -2986,6 +3001,8 @@ new #[Layout('components.layouts.app')] class extends Component
                     @if($s->isPayoutHeldByUnpaid())
                     <span class="badge badge-red ml-1" title="{{ __('settlement.held.tooltip', ['amount' => number_format($s->vehicle?->sale_unpaid_amount ?? 0)]) }}">{{ __('settlement.held.badge') }}</span>
                     @endif
+                    {{-- 📅 보류가 풀려 마감된 달에서 옮겨진 정산 (jin 2026-11-20) --}}
+                    @if($s->reanchored_from)<span class="badge badge-blue ml-1" data-reanchored title="{{ __('settlement.reanchored.tooltip', ['from' => $s->reanchored_from->format('n'), 'to' => $s->attributed_month?->format('n')]) }}">{{ __('settlement.reanchored.badge', ['from' => $s->reanchored_from->format('n')]) }}</span>@endif
                     {{-- 🚪 게이트 예외 (jin 2026-09-12) — 미수가 남아 있는데 사유를 달고 통과시킨 건.
                          ⚠️ 표시가 없으면 매달 「왜 이건 지급됐지」가 된다(§8 #60). --}}
                     @if($s->hasGateOverride())
@@ -3105,9 +3122,10 @@ new #[Layout('components.layouts.app')] class extends Component
             <div class="font-semibold text-gray-700">{{ __('settlement.mobile_actual') }}: ₩{{ number_format($s->actual_payout) }}</div>
         </div>
         {{-- 폰에도 같은 뱃지(지급보류·게이트 예외·지급 대상 아님·승인·2차) — 테이블 칸과 같은 @if (11-12 A3) --}}
-        @if($s->isPayoutExcludedBySalesman() || $s->isPayoutHeldByUnpaid() || $s->hasGateOverride() || ($mPa && in_array($mPa->status, ['pending', 'rejected'], true)) || $mSecondaryLabel)
+        @if($s->reanchored_from || $s->isPayoutExcludedBySalesman() || $s->isPayoutHeldByUnpaid() || $s->hasGateOverride() || ($mPa && in_array($mPa->status, ['pending', 'rejected'], true)) || $mSecondaryLabel)
         <div class="mt-2 flex flex-wrap items-center gap-1 text-[11px]" data-mobile-badges>
             @if($s->isPayoutExcludedBySalesman())<span class="badge badge-gray">{{ __('settlement.payout_excluded.badge') }}</span>@endif
+            @if($s->reanchored_from)<span class="badge badge-blue" data-reanchored title="{{ __('settlement.reanchored.tooltip', ['from' => $s->reanchored_from->format('n'), 'to' => $s->attributed_month?->format('n')]) }}">{{ __('settlement.reanchored.badge', ['from' => $s->reanchored_from->format('n')]) }}</span>@endif
             @if($s->isPayoutHeldByUnpaid())<span class="badge badge-red">{{ __('settlement.held.badge') }}</span><span class="text-gray-500">{{ __('settlement.held.tooltip', ['amount' => number_format($s->vehicle?->sale_unpaid_amount ?? 0)]) }}</span>@endif
             @if($s->hasGateOverride())<span class="badge badge-amber">{{ __('settlement.gate.badge') }}</span>@endif
             @if($mPa && $mPa->status === 'pending')<span class="badge badge-amber">{{ __('settlement.approval_pending') }}</span>
@@ -3779,6 +3797,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 <span class="section-dot bg-amber-500"></span>
                 <span class="section-title">{{ __('settlement.section_status') }}</span>
             </div>
+            @if($editingId && \App\Models\Settlement::whereKey($editingId)->value('secondary_status') === 'closed')
+            <p class="mb-1 rounded bg-amber-50 px-2 py-1 text-[11px] text-amber-800" data-closed-readonly>🔒 {{ __('settlement.guard.closed_notice') }}</p>
+            @endif
             <select wire:model="settlement_status" class="input-base">
                 <option value="pending">{{ __('settlement.status.pending') }}</option>
                 <option value="calculating">{{ __('settlement.status.calculating') }}</option>

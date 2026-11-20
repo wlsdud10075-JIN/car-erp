@@ -68,6 +68,8 @@ Schedule::command('alimtalk:poll-report')->hourly()->withoutOverlapping();
 //   00:30 = 전날 마감이 확정된 뒤 · 09:00 = 재시도(한 페이지 10영업일을 매번 다시 넣어 빠진 날도 메운다).
 //   판매잔금 「전날 마감」 자동 기록(12월~)의 소스라 아침 업무 전에 전날 행이 있어야 한다.
 Schedule::command('exchange:snapshot-daily')->dailyAt('00:30')->withoutOverlapping();
+// 📅 보류가 풀려 마감된 달에 남은 정산을 열린 달로 (jin 2026-11-20) — 저장 계기가 안 울린 경로 보정.
+Schedule::command('settlements:reanchor-closed-month --apply')->dailyAt('05:20')->withoutOverlapping();
 Schedule::command('exchange:snapshot-daily')->dailyAt('09:00')->withoutOverlapping();
 
 // 시스템 점검 요약 → 시스템관리자 텔레그램 1통 (jin 2026-09-11, SKILLS §8 #88 후속).

@@ -4583,6 +4583,86 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 큐 10 H4 — paid 정산이 있는 차량의 회계 민감 컬럼 변경 차단.
      * 회계 마감된 정산의 표시값(snapshot 기반)과 vehicle 컬럼 사이 drift 방지.
      */
+    /**
+     * 🔒 **2차 마감된 차 — 확정된 지급 줄은 회계 재조정 뒤에만 고친다** (jin 2026-11-20 «2차 마감 뒤 돈은 회계 재조정으로만»).
+     *
+     * 이 패널은 판매 입금 줄·매입 지급 줄을 bulk 쿼리로 고치고 지운다(모델 잠금 훅을 안 탄다) — 그 구간에 마감 판정이 없어
+     * 마감 차의 **확정 매입 지급 줄**(과 채권관리 거울이 없는 적재분 판매 입금 줄, 매입탭 계약금·매도비 칸)을 그대로 고칠 수 있었다.
+     * 재무처리·채권관리 화면은 모델 훅이 막는다 — 같은 규칙을 여기에 맞춘다.
+     *
+     * 잠그는 것 = 모델 훅과 같다: **확정된 줄**의 금액·날짜(판매는 환율도)·삭제. 새 줄 추가·미확정 줄·비고·전시문은 그대로 된다.
+     * 열리는 길 = 정산관리 마감 행의 [🔓 회계 재조정] 토큰(이 저장 한 번).
+     * ⚠️ 「이번 저장이 만든 변화인가」로 가른다(§8 #65) — 아무것도 안 바꾼 저장(메모·서류)은 절대 막지 않는다. 숫자는 숫자로 비교.
+     *
+     * @return string|null 막아야 하면 안내 문구
+     */
+    private function closedVehiclePaymentRowBlock(\Closure $toDate): ?string
+    {
+        $v = $this->editingId ? Vehicle::find($this->editingId) : null;
+        if (! $v || ! $v->hasClosedSecondarySettlement()) {
+            return null;
+        }
+        if (\Illuminate\Support\Facades\Cache::has(Vehicle::ledgerUnlockCacheKey($v->id))) {
+            return null;   // 회계 재조정 저장
+        }
+        $num = fn ($s) => (float) str_replace(',', '', (string) ($s ?? ''));
+        $day = fn ($s) => ($d = $toDate((string) ($s ?? ''))) ? substr($d, 0, 10) : null;
+        $rowChanged = function ($p, ?array $row, bool $withRate) use ($num, $day): bool {
+            if ($row === null) {
+                return true;   // 지웠다
+            }
+            if (($row['amount'] ?? '') === '' && ($row['payment_date'] ?? '') === '') {
+                return false;   // 저장 루프가 건너뛰는 빈 줄 — 아무 일도 안 일어난다
+            }
+            if (abs($num($row['amount'] ?? '') - (float) $p->amount) > 0.001) {
+                return true;
+            }
+            if ($day($row['payment_date'] ?? '') !== $p->payment_date?->format('Y-m-d')) {
+                return true;
+            }
+            if ($withRate) {
+                $new = ($row['exchange_rate'] ?? '') !== '' ? $num($row['exchange_rate']) : null;
+                $old = $p->exchange_rate !== null ? (float) $p->exchange_rate : null;
+                if (($new === null) !== ($old === null) || ($new !== null && abs($new - $old) > 0.0001)) {
+                    return true;
+                }
+            }
+
+            return false;
+        };
+
+        // 매입 지급 줄 (이체 연결 줄은 원래 읽기 전용)
+        $submitted = collect($this->purchaseBalancePayments)->filter(fn ($r) => ! empty($r['id']))->keyBy('id');
+        foreach ($v->purchaseBalancePayments()->whereNotNull('confirmed_at')->whereNull('transfer_id')->get() as $p) {
+            if ($rowChanged($p, $submitted->get($p->id), false)) {
+                return __('vehicle.toast.closed_payment_rows_locked', ['what' => __('vehicle.toast.closed_what_purchase')]);
+            }
+        }
+        // 매입탭 계약금·매도비 칸 (재무 이상만 저장된다 — save 의 동기화와 같은 비교)
+        if (auth()->user()?->canConfirmFinance()) {
+            foreach (['down' => $this->down_payment_str, 'selling_fee' => $this->selling_fee_payment_str] as $type => $str) {
+                $sum = (float) $v->purchaseBalancePayments()->where('type', $type)->whereNotNull('confirmed_at')->whereNull('transfer_id')->sum('amount');
+                if (abs($num($str) - $sum) >= 0.01) {
+                    return __('vehicle.toast.closed_payment_rows_locked', ['what' => __('vehicle.toast.closed_what_purchase')]);
+                }
+            }
+        }
+        // 판매 입금 줄 — 채권관리 거울·이체 연결 줄은 원래 읽기 전용이라 뺀다(save 의 $lockedFinalIds 와 같은 목록)
+        $lockedFinalIds = array_merge(
+            \App\Models\ReceivableHistory::where('vehicle_id', $v->id)->whereNotNull('final_payment_id')->pluck('final_payment_id')->all(),
+            FinalPayment::where('vehicle_id', $v->id)->whereNotNull('transfer_id')->pluck('id')->all(),
+        );
+        $rateAuto = \App\Models\Setting::paymentRateAutoActive() && $this->currency !== 'KRW';   // 자동 기록이면 확정 줄 환율은 서버가 그대로 둔다
+        $submittedFp = collect($this->finalPayments)->filter(fn ($r) => ! empty($r['id']))->keyBy('id');
+        foreach ($v->finalPayments()->whereNotNull('confirmed_at')->whereNotIn('id', $lockedFinalIds)->get() as $p) {
+            if ($rowChanged($p, $submittedFp->get($p->id), ! $rateAuto)) {
+                return __('vehicle.toast.closed_payment_rows_locked', ['what' => __('vehicle.toast.closed_what_sale')]);
+            }
+        }
+
+        return null;
+    }
+
     private function guardFinancialDriftAfterPaid(): void
     {
         $existing = Vehicle::find($this->editingId);
@@ -6913,6 +6993,19 @@ new #[Layout('components.layouts.app')] class extends Component {
             }
         }
 
+        // 🔒 2차 마감 차의 확정 지급 줄 — 회계 재조정 뒤에만 (jin 2026-11-20). 저장을 시작하기 전에 막는다(아무것도 안 쓴다).
+        if ($blocked = $this->closedVehiclePaymentRowBlock($toDate)) {
+            $this->addError('purchase_price_str', $blocked);
+            $this->dispatch('notify', message: $blocked, type: 'error');
+
+            return;
+        }
+        // 🔓 이 저장이 「회계 재조정 저장」인가 — 시작할 때 한 번 정한다(Vehicle::$readjustSaveVehicleId 주석).
+        //    저장이 성공하면 아래에서 토큰을 한 번 지운다 → 한 번의 재조정 = 한 번의 저장. 실패하면 토큰은 남는다(다시 저장할 수 있게).
+        $readjustSave = $this->editingId
+            && \Illuminate\Support\Facades\Cache::has(Vehicle::ledgerUnlockCacheKey((int) $this->editingId));
+        Vehicle::$readjustSaveVehicleId = $readjustSave ? (int) $this->editingId : null;
+
         $existingPurchaseIdsBefore = $this->editingId
             ? PurchaseBalancePayment::where('vehicle_id', $this->editingId)->pluck('id')->toArray()
             : [];
@@ -7411,6 +7504,10 @@ new #[Layout('components.layouts.app')] class extends Component {
             // 잔금 bulk delete/update는 모델 이벤트가 안 뜸 → 명시적으로 캐시 갱신
             $vehicle->refreshCaches();
             });
+            if ($readjustSave) {   // 🔓 재조정 저장 끝 — 토큰을 여기서 한 번 지운다
+                \Illuminate\Support\Facades\Cache::forget(Vehicle::ledgerUnlockCacheKey((int) $this->editingId));
+            }
+            Vehicle::$readjustSaveVehicleId = null;
         } catch (\App\Exceptions\StaleFormException $e) {
             // 옛 폼 (jin 2026-10-02) — 롤백됐고 아무것도 안 썼다. 안내한 뒤 패널을 **다시 열어** 남이 저장한 값을 보여준다
             //   (안 열면 같은 옛 폼으로 또 저장을 누른다). 사용자 입력은 사라진다 — 그게 중복보다 싸다.

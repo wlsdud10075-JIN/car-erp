@@ -99,6 +99,15 @@ return [
         'badge' => 'Not payable',
         'tooltip' => 'Salesman ":name" is excluded from payouts, so this settlement never joins a monthly batch. Change it in the salesman settings.',
     ],
+    'reanchored' => [
+        'badge' => 'Moved from :from',
+        'tooltip' => 'When the unpaid hold cleared, the :from payout batch was already approved, so this settlement was moved to the open month :to. It joins the next monthly batch.',
+    ],
+    'guard' => [
+        'paid_no_revert' => 'A paid settlement cannot be moved back to an earlier status.',
+        'closed_readonly' => 'This settlement is closed (2nd settlement). Only the note can be edited.',
+        'closed_notice' => '2nd settlement closed — amounts, status and salesman are locked (only the note is saved).',
+    ],
     'held' => [
         'badge' => 'Payout held',
         'filter' => 'Held only',
