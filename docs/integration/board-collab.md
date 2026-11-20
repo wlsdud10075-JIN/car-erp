@@ -58,6 +58,7 @@ board (앞단: 매입·검차·경매)  ──연동 B──▶  car-erp (재고
 > 형식: `YYYY-MM-DD` · **무엇** — 왜 · 근거(`파일:줄`·실측값) · 상태(jin 승인 / 승인 대기 / 접음)
 
 - **2026-11-19** · **board 발 매입 락 해제 요청 → ERP 승인큐(선승인형) + 알림 벨 「승인 대기」 구역** — 락 걸린 바이어는 board 구매확정이 막히고 우회 길이 없었다(예전엔 ERP 저장 때 관리자 사유로 등록). 바이어 + 등록 대수 N(요청에 담겨 오고 승인자가 줄일 수 있음, 등록마다 1대 차감하는 단순 카운트 — 같은 날 오후 «차 1대·1회»에서 변경)·승인 후 7일, 금액은 승인 대상 아님, 관리 이상 전원이 처리, 알림톡 없이 벨. 접은 것 = 보류 등록형(B) · 금액 변경 시 승인 무효 · 담당 영업별 분리 · 월정산 결재를 벨에 올리기(나중에 붙이면 업무관리자 이상만). 설계 = `docs/design/board-purchase-lock-approval.md`. 상태 = **ERP 구현 완료(dev) · master 배포 대기**(jin 11-19 저녁 «지금 진행하자» — 주말에서 당김). 규격 = `board-portal-api.md` §17. board 구현은 board dev(ERP 배포 통지 뒤 배포).
+- **2026-11-20** · **일반재고 인원당 상한 2억 — board 발 재고매입 차단** — 담당자 일반재고(매입 완납·바이어 미정·판매가 없음) 합 + 이번 매입가가 2억을 넘으면 purchase-sync 가 409 `general_stock_cap_exceeded` 로 거절하고, board 는 재고매입 체크 때 `GET /general-stock-cap` 으로 미리 묻는다(jin: 일반재고만 센다·지급 전 차는 안 센다·기존 합 + 이번 차 > 2억이면 차단·board 화면과 ERP 수신 이중). 같은 날 일반재고 뜻이 「판매가 없음」→「바이어 미정 + 판매가 없음」으로 바뀌어 `/inventory` general·pre_ship 구성이 달라진다. 규격 = `purchase-sync-receiver.md` 「일반재고 인원당 상한 2억」 · `board-portal-api.md` §18. 상태 = ERP 구현 완료(dev) · master 미배포.
 
 - **2026-11-12** · **관제센터 요약 API 를 board 도 붙여 달라** — jin 전용 관제 화면(ERP·BOARD·GPU PC 한곳)에 board 칸이 「미연결」로 남는다. 계약 = `docs/design/ops-control-center.md` §4(같은 서명 규칙, 새 시크릿 `OPS_HMAC_SECRET`). 상태 = jin 착수 승인(11-12 «다음단계 진행»), board 구현은 board 세션 몫.
 

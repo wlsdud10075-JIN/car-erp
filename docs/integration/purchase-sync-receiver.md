@@ -287,6 +287,36 @@
 - 살아 있는 승인(승인 후 7일 이내·남은 대수 있음) 중 먼저 만료되는 것부터. 남은 승인이 없어도 **등록은 종전대로 201** — 승인 이력이 있는 바이어면 감사 `board_purchase_lock_overshoot` 만 남는다.
 - 응답(201)에 `purchase_lock: { consumed: bool, remaining: int }`. 감사 = `board_purchase_lock_used`(new_value `사용/승인`, approval_request_id 연결).
 
+## 연동 B — 일반재고 인원당 상한 2억 (2026-11-20 jin · ✅ 구현 dev — `GeneralStockCap`, 가드 `GeneralStockCapTest` 7건)
+
+jin «인원별 재고 금액은 최대 2억 … 넘기는 차량이 생길 때 board 에서 재고매입 체크해도 넘어올 수 없게».
+
+- **언제 보나**: 신규 생성 경로에서만(차량번호가 이미 있으면 종전 멱등 200 — 재전송·`amounts_overwrite` 는 안 막는다).
+  들어온 차가 **바이어도 판매가도 없을 때**(= 일반재고가 될 차). `buyer_undecided` 플래그가 아니라 실제 값으로 본다 —
+  무효 `buyer_id`(null 로 떨어짐)도 바이어 없음이다. 바이어가 있거나 `sale_price > 0` 이면 판정하지 않는다.
+- **무엇을 세나**: 그 담당자의 **일반재고** 매입가 합 = `Vehicle::scopeGeneralStock`(매입 완납 · 출고 전 · 바이어 미정 · 판매가 없음).
+  ERP 재고 화면 「일반재고」 카드와 같은 숫자. 🚫 **지급 전(지급대기) 차는 안 센다**(jin 결정) — 지급 전인 재고매입이 연달아 오면 전부 통과한다.
+- **판정**: `기존 합 + 이번 매입가(purchase_price_krw ?? final_price) > 200,000,000` 이면 거절. 정확히 2억은 통과.
+- **담당자**: 수신과 같은 매칭(`car_erp_salesman_id` → `salesman_email`). 못 찾으면 적용하지 않는다(통과, 수동 배정 대기).
+- **거절 응답**: **HTTP 409**, 차량·NICE 조회·첨부·알람·알림톡 전부 없음.
+
+```json
+{
+  "error": "general_stock_cap_exceeded",
+  "message": "담당자의 일반재고(바이어 미정) 합계가 상한을 넘어 재고매입으로 등록할 수 없습니다.",
+  "general_stock_cap": {
+    "applies": true, "blocked": true,
+    "salesman_id": 12, "salesman_name": "김영업",
+    "cap": 200000000, "used": 150000000, "count": 3,
+    "incoming": 60000000, "remaining": 50000000
+  }
+}
+```
+
+- 🚫 board 는 409 `general_stock_cap_exceeded` 를 **자동 재시도하지 않는다** — 일반재고가 팔리거나 바이어가 지정돼야 풀린다.
+- 사전 조회 = `board-portal-api.md §18`(같은 함수 `GeneralStockCap::check`, 같은 답). 화면에서 미리 막더라도 수신 거절은 그대로 둔다(그 사이 한도가 찰 수 있다).
+- ERP 화면에서 직접 등록하거나 기존 차의 바이어를 지우는 것은 막지 않는다.
+
 ## 응답 / 에러 계약
 | 상황 | 코드 | board 동작 |
 |---|---|---|

@@ -947,3 +947,40 @@ body: `salesman_email` · `cancelled_by_name`?(≤50). 범위 = 요청과 같다
 - 🚫 금액·바이어 재무 숫자를 요청에 싣지 않는다 — 승인 화면의 미수는 ERP 가 그때 계산한다.
 - 🚫 「살아 있는 승인」 조건을 board 에 옮겨 적지 않는다 — `allowance` 만 본다(7일·합산·차감 순서는 ERP 가 바꿀 수 있다).
 - 🚫 purchase-sync 수신부가 락을 새로 검사하지 않는다(종전과 같다).
+
+## 18. 일반재고 인원당 상한 2억 — 재고매입 사전 조회 (jin 2026-11-20 · ✅ 구현 dev — `GeneralStockCapController`, `GeneralStockCap`, 가드 `GeneralStockCapTest` 7)
+
+board 가 「재고매입(바이어 미정)」을 체크할 때 미리 묻는다. 실제 차단은 purchase-sync 수신이 한다(`purchase-sync-receiver.md` 「일반재고 인원당 상한 2억」) — 여기는 같은 판정을 미리 보여 주는 읽기 전용 창구다.
+
+### 18-1. `GET /api/internal/board/general-stock-cap`
+
+서명·헤더는 §1 과 같다(읽기 HMAC).
+
+| 파라미터 | 필수 | 뜻 |
+|---|---|---|
+| `salesman_email` | ✅ | 누른 사람(로그인 이메일) |
+| `car_erp_salesman_id` | | 차량 담당자를 명시할 때(대리 등록). purchase-sync 와 같은 우선순위 — 있으면 이쪽이 이긴다 |
+| `incoming` | | 이번 차 매입가(원, 정수). purchase-sync 로 보낼 `purchase_price_krw`(없으면 `final_price`)와 **같은 값**. 생략하면 0 |
+
+응답 200:
+
+```json
+{ "applies": true, "blocked": false, "salesman_id": 12, "salesman_name": "김영업",
+  "cap": 200000000, "used": 150000000, "count": 3, "incoming": 40000000, "remaining": 50000000 }
+```
+
+- `used`·`count` = 그 담당자의 일반재고(매입 완납 · 출고 전 · 바이어 미정 · 판매가 없음) 매입가 합·대수. 지급 전 차는 안 들어간다.
+- `blocked` = `used + incoming > cap`. `incoming` 을 안 보내면 늘 false 이고 `remaining` 만 쓴다.
+- `applies=false` = 담당자를 못 찾음(한도 미적용, `salesman_id` null). 수신도 그대로 통과시킨다.
+- 422 = 파라미터 형식 오류 · 401 = 서명 실패.
+
+### 18-2. board 가 할 일 (제안 — board 화면은 board 가 정한다)
+
+- 「재고매입」 체크 시(또는 매입가 입력 뒤) 조회 → `blocked=true` 면 체크·구매확정을 막고 `used`/`cap`/`remaining` 을 보여 준다.
+- 구매확정 전송 뒤 409 `general_stock_cap_exceeded` 가 오면 같은 안내(자동 재시도 금지).
+- 바이어를 지정하거나 판매가를 넣어 보내는 차는 조회·차단 대상이 아니다.
+
+### 18-3. 같이 바뀐 것 — `/inventory` 의 `general`·`pre_ship` 뜻 (2026-11-20)
+
+- `category=general` = 바이어 미정 **그리고** 판매가 없음 / `category=pre_ship` = 바이어 지정 **또는** 판매가 있음.
+- 구 기준은 판매가만 봤다 — 바이어만 지정하고 판매가를 안 넣은 차가 `general` 에서 `pre_ship` 으로 옮겨 간다(실측 ssancarerp 14대 · heymanerp 7대). 응답 형식은 그대로다.
