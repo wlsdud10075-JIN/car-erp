@@ -2937,23 +2937,24 @@ class Vehicle extends Model
 
     /**
      * 재고 2분류 (jin 2026-07-18):
-     *   일반재고(general)   = 재고 중 아직 안 팔린 차 = 바이어 미정 **또는** 판매가 없음.
-     *   선적전 재고(pre_ship) = 재고 중 팔린 차(항구 대기, 출고 전) = 바이어 지정 **그리고** 판매가 > 0.
+     *   일반재고(general)   = 재고 중 바이어 미정 **그리고** 판매가 없음(투기매입 — 아직 아무에게도 안 팔린 차).
+     *   선적전 재고(pre_ship) = 재고 중 바이어 지정 **또는** 판매가 > 0(팔 곳이 정해진 차, 출고 전).
      * 둘 다 inStock() 기반(매입완납 + 출고 전). 두 스코프는 서로 여집합이다.
      *
-     * 🔀 2026-11-20 (jin «판매가+바이어 지정이 되어야 빠진다 · 바이어만 지정되고 판매가 없으면 아직 일반재고») —
-     *    구 기준은 판매가만 봤다(sale_price ≤ 0). 달라지는 칸은 「바이어 없이 판매가만 있는 차」(바이어 미정 판매)
-     *    하나 — 이제 일반재고다. 실측 3사 0대(11-20). 화면 행 판정은 isGeneralStock() — 🚫 조건을 옮겨 적지 말 것.
+     * 🔀 2026-11-20 (jin «바이어가 지정되면 그건 선적전 … 일반재고는 바이어미정+판매가없음, 이걸로 같이 세는 걸로») —
+     *    구 기준은 판매가만 봤다(sale_price ≤ 0). 바이어만 지정하고 판매가를 안 넣은 차가 일반재고에 남아
+     *    인원당 2억 한도(GeneralStockCap)를 채웠다(실측 ssancarerp 14대 3.12억 · heymanerp 7대 0.68억이 선적전으로 옮겨 간다).
+     *    한도 판정도 이 스코프를 그대로 쓴다. 화면 행 판정은 isGeneralStock() — 🚫 조건을 옮겨 적지 말 것.
      */
     public function scopeGeneralStock($query)
     {
-        return $query->inStock()->where(fn ($q) => $q->whereNull('vehicles.buyer_id')
-            ->orWhereNull('vehicles.sale_price')->orWhere('vehicles.sale_price', '<=', 0));
+        return $query->inStock()->whereNull('vehicles.buyer_id')
+            ->where(fn ($q) => $q->whereNull('vehicles.sale_price')->orWhere('vehicles.sale_price', '<=', 0));
     }
 
     public function scopePreShippingStock($query)
     {
-        return $query->inStock()->whereNotNull('vehicles.buyer_id')->where('vehicles.sale_price', '>', 0);
+        return $query->inStock()->where(fn ($q) => $q->whereNotNull('vehicles.buyer_id')->orWhere('vehicles.sale_price', '>', 0));
     }
 
     /**
@@ -2971,10 +2972,10 @@ class Vehicle extends Model
         );
     }
 
-    /** 이 차가 「일반재고」 쪽인가(아직 안 팔림) — scopeGeneralStock 의 행 단위 짝. 재고 여부(inStock)는 따로 본다. */
+    /** 이 차가 「일반재고」 쪽인가(바이어 미정 + 판매가 없음) — scopeGeneralStock 의 행 단위 짝. 재고 여부(inStock)는 따로 본다. */
     public function isGeneralStock(): bool
     {
-        return $this->buyer_id === null || (float) ($this->sale_price ?? 0) <= 0;
+        return $this->buyer_id === null && (float) ($this->sale_price ?? 0) <= 0;
     }
 
     /**
