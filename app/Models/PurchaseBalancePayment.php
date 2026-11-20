@@ -61,6 +61,12 @@ class PurchaseBalancePayment extends Model
         static::saved(function (PurchaseBalancePayment $p) {
             $p->vehicle?->refreshCaches();
 
+            // 🧹 일이 끝난 알림 정리 (jin 2026-11-20) — 지급 줄이 확정되면 「새 차 도착」이 사라진다(계약금뿐 아니라 잔금·매도비도).
+            //    refreshCaches 가 raw update 라 Vehicle::saved 가 안 뜬다 → 지급 경로는 여기가 진입점이다.
+            if (Schema::hasTable('task_alarms')) {
+                TaskAlarm::resolveSettledFor((int) $p->vehicle_id);
+            }
+
             // 계약금(down) 입력 → 매입 도착 알람 자동 해소 (jin 2026-06-23, purchase_arrival).
             if ($p->type === 'down' && (int) $p->amount > 0 && Schema::hasTable('task_alarms')) {
                 TaskAlarm::where('type', 'purchase_arrival')

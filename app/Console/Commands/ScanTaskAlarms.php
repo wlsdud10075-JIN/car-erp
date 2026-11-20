@@ -33,6 +33,11 @@ class ScanTaskAlarms extends Command
             // 매매상 잔금 10일 알림 (karaba) — 계약금일 산정 위해 purchaseBalancePayments eager load.
             $balanceMatched = Vehicle::query()->with('purchaseBalancePayments')->action('purchase_balance_due')->get();
 
+            // 🧹 일이 끝난 알림 정리 (jin 2026-11-20) — 알람 생성 게이트(alarm_enabled)와 무관하게 돈다.
+            //    board 발 알림(새 차 도착·선적요청)은 게이트가 꺼진 회사에도 쌓이기 때문이다.
+            $settled = TaskAlarm::resolveSettled(null, $dryRun);
+            $this->info(($dryRun ? '[dry-run] ' : '').'일이 끝난 알림 정리 — '.collect($settled)->map(fn ($n, $k) => "{$k} {$n}")->implode(' · '));
+
             if ($dryRun) {
                 $existingOpen = TaskAlarm::where('type', 'eta_clearance')->open()->count();
                 $docOpen = TaskAlarm::where('type', 'document_deadline')->open()->count();
