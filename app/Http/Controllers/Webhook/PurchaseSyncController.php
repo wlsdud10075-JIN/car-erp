@@ -14,6 +14,7 @@ use App\Models\Vehicle;
 use App\Models\VehiclePhoto;
 use App\Services\BizmAlimtalkService;
 use App\Services\BoardPurchaseLockAllowance;
+use App\Services\GeneralStockCap;
 use App\Services\NiceApiService;
 use App\Support\AlimtalkRecipients;
 use App\Support\PhoneFormat;
@@ -181,6 +182,24 @@ class PurchaseSyncController extends Controller
         // car_erp_salesman_id(명시 오버라이드) 우선 → 없으면 salesman_email 매칭.
         // 둘 다 못 찾으면 salesman_id = null(수동 배정 대기).
         $salesmanId = $this->resolveSalesmanId($data['car_erp_salesman_id'] ?? null, $data['salesman_email']);
+
+        // ── 🧱 일반재고 인원당 상한 2억 (jin 2026-11-20) ─────────────────
+        // 바이어도 판매가도 없이 오는 차 = 재고매입(일반재고가 될 차). 그 담당자의 일반재고 합 + 이번 매입가가 상한을 넘으면
+        //   차량을 만들지 않고 409 로 돌려보낸다(NICE·첨부·알람·알림톡 전). 재전송(위 멱등 200)은 안 막는다.
+        //   판정 = GeneralStockCap::check — board 사전 조회와 같은 함수. 권위 = purchase-sync-receiver.md 「일반재고 상한」.
+        [$capBuyerId] = $this->resolveBuyerConsignee($data['buyer_id'] ?? null, $data['consignee_id'] ?? null);
+        if ($capBuyerId === null && (float) ($data['sale_price'] ?? 0) <= 0) {
+            $cap = GeneralStockCap::check($salesmanId, (int) ($data['purchase_price_krw'] ?? $data['final_price'] ?? 0));
+            if ($cap['blocked']) {
+                Log::info('[purchase-sync] 일반재고 상한 초과 — 거절', ['vehicle_number' => $data['vehicle_number']] + $cap);
+
+                return response()->json([
+                    'error' => GeneralStockCap::ERROR,
+                    'message' => '담당자의 일반재고(바이어 미정) 합계가 상한을 넘어 재고매입으로 등록할 수 없습니다.',
+                    'general_stock_cap' => $cap,
+                ], 409);
+            }
+        }
 
         // ── vehicle 생성 (매입 단계) ───────────────────────────────────
         // sales_channel 은 set 하지 않음 — enum 이 'export' 단일로 축소됨(2026-05-14). default 사용.
@@ -833,26 +852,7 @@ class PurchaseSyncController extends Controller
      */
     private function resolveSalesmanId(?int $overrideId, string $email): ?int
     {
-        if ($overrideId !== null) {
-            $salesman = Salesman::find($overrideId);
-            if ($salesman) {
-                return $salesman->id;
-            }
-        }
-
-        // 🚫 영업만(sales) — 관리직 「직원」 미러 행이 차량 담당자로 꽂히지 않게(2026-10-14, SalesmanResolver 와 같은 규칙).
-        $salesman = Salesman::where('email', $email)->sales()->first();
-        if ($salesman) {
-            return $salesman->id;
-        }
-
-        $user = User::where('email', $email)->first();
-        if ($user && $user->salesman?->isSales()) {
-            return $user->salesman->id;
-        }
-
-        Log::info('[purchase-sync] 영업 매칭 실패 — 수동 배정 대기', ['email' => $email]);
-
-        return null;
+        // 단일 출처 — board 의 일반재고 상한 조회(GeneralStockCapController)가 같은 매칭을 써야 답이 안 갈린다.
+        return GeneralStockCap::resolveSalesmanId($overrideId, $email);
     }
 }
