@@ -296,7 +296,11 @@ class PayoutBatchExportService
         }
         $laborRow = $put('공통 인건비 (검차·업무관리·관리·재무)', $laborTerms === [] ? 0 : '='.ltrim(implode('+', $laborTerms), '+'));
         $domRow = $domesticSplit ? $put('내수직원 총 회사수익', (int) ($totals['domestic_profit'] ?? 0)) : null;
-        $netRow = $put('회사 순이익', "=G{$contribRow}-G{$laborRow}".($domRow ? "+G{$domRow}" : ''), $extraPaidOutside === 0);
+        // 💱 환차손익(회사) — 환차를 정산에서 뺀 정산의 실현 환차(BatchPayoutBreakdown totals.company_fx). 사람별 기여 열엔 없으므로
+        //    여기서 안 더하면 화면 카드의 회사 순이익과 갈린다(jin 2026-11-20). 0 이면 줄을 안 만든다(환차 포함 방식의 종전 출력 그대로).
+        $companyFx = (int) ($totals['company_fx'] ?? 0);
+        $fxRow = $companyFx !== 0 ? $put('환차손익(회사)', $companyFx) : null;
+        $netRow = $put('회사 순이익', "=G{$contribRow}-G{$laborRow}".($domRow ? "+G{$domRow}" : '').($fxRow ? "+G{$fxRow}" : ''), $extraPaidOutside === 0);
         if ($extraPaidOutside !== 0) {   // (가) 월정산 밖으로 준 추가금은 그 달 회사이익에서 뺀다
             $extraPaidRow = $put('추가 지급(월정산 밖, 회사이익 차감)', $extraPaidOutside);
             $put('회사 순이익(월정산 밖 추가 지급 반영)', "=G{$netRow}-G{$extraPaidRow}", true);
