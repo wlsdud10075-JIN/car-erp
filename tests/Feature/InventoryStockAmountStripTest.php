@@ -134,6 +134,30 @@ class InventoryStockAmountStripTest extends TestCase
             ->assertSee(__('inventory.cap_over_by', ['amount' => $this->eok('0.1')]));
     }
 
+    public function test_over_age_filter_chip_matches_the_row_badge(): void
+    {
+        $this->admin();
+        $kim = Salesman::create(['name' => '김재고', 'type' => 'employee', 'is_active' => true]);
+        $fresh = $this->stock($kim, '11가4001', 10_000_000);                    // 어제 완납 — 3개월 안 됨
+        $old = $this->stock($kim, '11가4002', 10_000_000);
+        $sold = $this->stock($kim, '11가4003', 10_000_000, 12_000_000);         // 오래됐어도 팔린 차는 대상 아님
+        foreach ([$old, $sold] as $v) {
+            $v->purchaseBalancePayments()->toBase()->update(['payment_date' => now()->subMonths(4)->toDateString()]);
+        }
+
+        $this->assertSame([$old->id], Vehicle::query()->generalStockOverAge()->pluck('id')->all());
+
+        Volt::test('erp.inventory.index')
+            ->assertSeeHtml('data-filter-over-age')
+            ->assertSee('11가4001')
+            ->call('toggleOverAge')
+            ->assertSet('overAgeOnly', true)
+            ->assertSee('11가4002')->assertDontSee('11가4001')->assertDontSee('11가4003')
+            ->call('resetFilters')
+            ->assertSet('overAgeOnly', false)
+            ->assertSee('11가4001');
+    }
+
     public function test_chips_never_wrap_inside_and_the_row_wraps_instead(): void
     {
         $src = file_get_contents(resource_path('views/livewire/erp/inventory/index.blade.php'));
