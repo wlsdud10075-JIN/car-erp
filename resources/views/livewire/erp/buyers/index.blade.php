@@ -2526,7 +2526,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <td class="px-2 py-1.5 whitespace-nowrap"><span class="badge {{ $c->result === 'accepted' ? 'badge-green' : 'badge-gray' }}">{{ __('buyer.claims.result_'.$c->result) }}</span></td>
                             <td class="px-2 py-1.5 whitespace-nowrap">{{ $c->compensation_type ? __('buyer.claims.type_'.$c->compensation_type) : '—' }}</td>
                             <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono">{{ $c->currency }} {{ number_format((float) $c->confirmed_amount, 2) }}</td>
-                            <td class="px-2 py-1.5 text-gray-600">{{ \Illuminate\Support\Str::limit((string) $c->result_reason, 80) }}@if($c->handler_name)<span class="block text-gray-400">{{ $c->handler_name }}@if($c->approved_by_name) · {{ $c->approved_by_name }}@endif</span>@endif</td>
+                            <td class="px-2 py-1.5 text-gray-600"><span @if(mb_strlen((string) $c->result_reason) > 80) title="{{ $c->result_reason }}" class="cursor-help" @endif data-claim-reason>{{ \Illuminate\Support\Str::limit((string) $c->result_reason, 80) }}</span>@if($c->handler_name)<span class="block text-gray-400">{{ $c->handler_name }}@if($c->approved_by_name) · {{ $c->approved_by_name }}@endif</span>@endif</td>
                         </tr>
                     @endforeach
                     </tbody>
