@@ -30,6 +30,7 @@ return [
     'scenes_en' => [
         'vehicle-register' => ['Register a vehicle', 'Pull the vehicle record, fill in the purchase tab and save'],
         'board-purchase-sync' => ['Board purchase confirmed → vehicle created', 'Confirming a purchase in Board creates the vehicle in the ERP'],
+        'board-purchase-lock-approval' => ['Approve Board purchase-lock requests', 'Decide in the approval queue how many more vehicles a locked buyer may register'],
         'board-payment-request' => ['Handle Board deposit / balance requests', 'Confirm or reject a payment request from Board in the vehicle panel'],
         'purchase-payment' => ['Pay the dealer and send the payment notice', 'Enter and confirm the deposit and balance, then notify the dealer by KakaoTalk'],
         'deregistration-notice' => ['Deregistration and sending the certificate', 'Upload the certificate, send it to the dealer and request the tax invoice'],
@@ -63,6 +64,7 @@ return [
     'scenes' => [
         'vehicle-register' => ['purchase', '차량 등록', '원부조회로 차량 정보를 불러오고 매입 탭을 채워 저장합니다', ['관리'], '신규 등록 원부조회 NICE 차대번호'],
         'board-purchase-sync' => ['purchase', 'board 매입 확정 → 차량 자동 생성', 'board에서 매입을 확정하면 ERP에 차량이 만들어집니다', ['관리'], '매입 연동 송금인 첨부'],
+        'board-purchase-lock-approval' => ['purchase', 'board 매입 락 해제 요청 승인', '락 걸린 바이어로 몇 대를 더 등록하게 할지 승인큐에서 결정합니다', ['관리', '업무관리자'], '승인큐 승인 대기 벨 매입 락 바이어 락 등록 대수 구매확정 막힘'],
         'board-payment-request' => ['purchase', 'board 매입잔금·계약금 요청 처리', 'board가 보낸 지급 요청을 차량 패널에서 확인하거나 거절합니다', ['재무', '관리'], '입금요청 계약금 매입잔금'],
         'purchase-payment' => ['purchase', '매입 지급과 딜러 입금완료 알림', '계약금·잔금을 넣고 확정한 뒤 딜러에게 입금완료 알림톡을 보냅니다', ['재무'], '딜러알림 이체확인증 잔금 계약금'],
         'deregistration-notice' => ['purchase', '말소와 말소등록증 전달', '말소증을 올리고 딜러에게 말소등록증·세금계산서 요청을 보냅니다', ['수출통관', '재무'], '말소 세금계산서'],
