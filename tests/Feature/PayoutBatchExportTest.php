@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\DomesticFeeStatement;
+use App\Models\FinalPayment;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
 use App\Models\Setting;
@@ -124,6 +125,41 @@ class PayoutBatchExportTest extends TestCase
         $this->assertNotContains('최검차 · 검차직원', array_merge(...$items), '카드형은 폐기');
 
         $this->assertDatabaseHas('export_logs', ['user_id' => $manager->id, 'target' => 'settlements', 'scope' => 'payout_batch']);
+    }
+
+    /**
+     * 💱 환차를 정산에서 뺀 달 — 엑셀 「회사 순이익」에도 환차손익(회사)이 들어가 화면 카드와 같아야 한다 (jin 2026-11-20).
+     *   사람별 기여 열에는 환차가 없어서, 요약 수식에 그 항이 없으면 카드와 엑셀이 환차만큼 갈린다.
+     */
+    public function test_company_fx_is_in_the_excel_company_net_when_fx_is_excluded(): void
+    {
+        Setting::updateOrCreate(['key' => 'settlement_fx_excluded_from_'.Setting::companyTemplateSet()], ['value' => '2026-10', 'type' => 'string']);
+        Setting::flushRiskParamMemo();
+        $manager = $this->user('manager');
+        $sm = Salesman::create(['name' => '환차프리', 'is_active' => true, 'type' => 'freelance']);
+        $v = Vehicle::create([
+            'vehicle_number' => '22나2222', 'sales_channel' => 'export', 'salesman_id' => $sm->id, 'dhl_request' => false,
+            'currency' => 'EUR', 'exchange_rate' => 1716, 'sale_price' => 7837, 'transport_fee' => 1159,
+            'sale_date' => '2026-08-01', 'purchase_date' => '2026-07-01', 'purchase_price' => 13_200_000, 'selling_fee' => 440_000,
+        ]);
+        foreach ([5000, 3996] as $amt) {
+            FinalPayment::create(['vehicle_id' => $v->id, 'type' => 'balance', 'amount' => $amt, 'exchange_rate' => 1718, 'payment_date' => '2026-08-05', 'confirmed_at' => now()]);
+        }
+        Settlement::create([
+            'vehicle_id' => $v->id, 'salesman_id' => $sm->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50,
+            'settlement_status' => 'confirmed', 'confirmed_at' => '2026-10-05', 'attributed_month' => '2026-10-01',
+        ]);
+        $batch = SettlementPayoutBatch::submitForMonth($manager, '2026-10');
+
+        $bd = $batch->breakdownForDisplay();
+        $fx = (int) $bd['totals']['company_fx'];
+        $this->assertSame((int) round(8996 * (1718 - 1716)), $fx, '전제 — 이 배치엔 회사 몫 환차가 있다');
+
+        $people = $this->open($this->actingAs($manager)->get(route('erp.payout-batches.export', $batch)))
+            ->getSheetByName('사람별 지급')->toArray(null, true, false, false);
+        $byLabel = collect($people)->keyBy(2);
+        $this->assertSame($fx, (int) $byLabel['환차손익(회사)'][6]);
+        $this->assertSame((int) $bd['totals']['company_net'], (int) $byLabel['회사 순이익'][6], '엑셀 회사 순이익 = 화면 카드');
     }
 
     public function test_domestic_batch_excel_follows_the_fee_sheet_and_is_gated(): void
