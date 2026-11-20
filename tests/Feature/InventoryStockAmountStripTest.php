@@ -16,7 +16,7 @@ use Tests\TestCase;
  *
  * 지키는 것: ①금액 = 매입가 합 ②지급 전 차는 재고가 아니라 안 센다 ③칩은 이름만·재고 없는 담당자는 안 그린다·줄바꿈 금지
  *            ④금액은 카드 4장(재고 총금액·지급대기·일반재고·선적전 재고), 억원 단위, 담당자를 고르면 그 사람 금액
- *            ⑤일반재고 = 바이어 미정 또는 판매가 없음(둘 다 있어야 빠진다) ⑥인원당 일반재고 2억을 넘으면 빨갛게.
+ *            ⑤일반재고 = 바이어 미정 + 판매가 없음(바이어가 지정되면 선적전 재고) ⑥인원당 일반재고 2억을 넘으면 빨갛게.
  */
 class InventoryStockAmountStripTest extends TestCase
 {
@@ -98,24 +98,27 @@ class InventoryStockAmountStripTest extends TestCase
         $this->assertSame(['cnt' => 0, 'amount' => 0], $page->instance()->stockSummary['total']);
     }
 
-    public function test_a_car_leaves_general_stock_only_with_both_a_buyer_and_a_sale_price(): void
+    public function test_general_stock_is_no_buyer_and_no_sale_price(): void
     {
         $this->admin();
         $kim = Salesman::create(['name' => '김재고', 'type' => 'employee', 'is_active' => true]);
         $free = $this->stock($kim, '11가2001', 50_000_000);
         $held = $this->stock($kim, '11가2002', 70_000_000);
-        // 바이어만 지정하고 판매가는 아직 — 아직 일반재고다 (jin 2026-11-20)
+        // 바이어만 지정하고 판매가는 아직 — 바이어가 정해졌으니 선적전 재고다 (jin 2026-11-20)
         $held->update(['buyer_id' => Buyer::create(['name' => 'HELD BUYER', 'is_active' => true])->id]);
         $sold = $this->stock($kim, '11가2003', 30_000_000, 40_000_000);   // 바이어 + 판매가 → 선적전 재고
 
-        $this->assertEqualsCanonicalizing([$free->id, $held->id], Vehicle::query()->generalStock()->pluck('id')->all());
-        $this->assertSame([$sold->id], Vehicle::query()->preShippingStock()->pluck('id')->all());
-        $this->assertTrue($held->fresh()->isGeneralStock());
+        $this->assertSame([$free->id], Vehicle::query()->generalStock()->pluck('id')->all());
+        $this->assertEqualsCanonicalizing([$held->id, $sold->id], Vehicle::query()->preShippingStock()->pluck('id')->all());
+        $this->assertTrue($free->isGeneralStock());
+        $this->assertFalse($held->fresh()->isGeneralStock());
         $this->assertFalse($sold->isGeneralStock());
-        $this->assertSame(120_000_000, Volt::test('erp.inventory.index')->instance()->stockSummary['general']['amount']);
+        $this->assertSame(50_000_000, Volt::test('erp.inventory.index')->instance()->stockSummary['general']['amount']);
 
         Volt::test('erp.inventory.index')->call('setCategory', 'general')
-            ->assertSee('11가2001')->assertSee('11가2002')->assertDontSee('11가2003');
+            ->assertSee('11가2001')->assertDontSee('11가2002')->assertDontSee('11가2003');
+        Volt::test('erp.inventory.index')->call('setCategory', 'pre_ship')
+            ->assertDontSee('11가2001')->assertSee('11가2002')->assertSee('11가2003');
     }
 
     public function test_salesman_over_the_general_stock_cap_is_flagged(): void

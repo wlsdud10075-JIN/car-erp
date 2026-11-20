@@ -150,9 +150,9 @@ new #[Layout('components.layouts.app')] class extends Component
                 fn ($q2) => $q2->leftStock(),
                 fn ($q2) => $q2->inStock()
             ))
-            // 일반재고 = 바이어 미정 또는 판매가 없음 / 선적전 재고 = 바이어 지정 + 판매가 (jin 2026-11-20 — scopeGeneralStock 과 같은 기준)
-            ->when($this->category === 'general', fn ($q) => $q->where(fn ($q2) => $q2->whereNull('vehicles.buyer_id')->orWhereNull('vehicles.sale_price')->orWhere('vehicles.sale_price', '<=', 0)))
-            ->when($this->category === 'pre_ship', fn ($q) => $q->whereNotNull('vehicles.buyer_id')->where('vehicles.sale_price', '>', 0))
+            // 일반재고 = 바이어 미정 + 판매가 없음 / 선적전 재고 = 바이어 지정 또는 판매가 (jin 2026-11-20 — scopeGeneralStock 과 같은 기준)
+            ->when($this->category === 'general', fn ($q) => $q->whereNull('vehicles.buyer_id')->where(fn ($q2) => $q2->whereNull('vehicles.sale_price')->orWhere('vehicles.sale_price', '<=', 0)))
+            ->when($this->category === 'pre_ship', fn ($q) => $q->where(fn ($q2) => $q2->whereNotNull('vehicles.buyer_id')->orWhere('vehicles.sale_price', '>', 0)))
             ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
             ->when($this->salesmanFilter !== '', fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
