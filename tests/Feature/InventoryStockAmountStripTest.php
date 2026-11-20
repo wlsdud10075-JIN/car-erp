@@ -152,6 +152,7 @@ class InventoryStockAmountStripTest extends TestCase
 
         Volt::test('erp.inventory.index')
             ->assertSeeHtml('data-filter-over-age')
+            ->assertSeeHtml('class="badge badge-amber cursor-pointer')   // 필터칩 = 행 뱃지와 같은 모양
             ->assertSee('11가4001')
             ->call('toggleOverAge')
             ->assertSet('overAgeOnly', true)

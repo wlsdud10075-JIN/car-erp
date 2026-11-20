@@ -645,10 +645,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 {{ __('inventory.location_none') }}
             </button>
         </div>
-        {{-- 「3개월 경과」 필터칩 (jin 2026-11-20) — 행 뱃지와 같은 기준. 일반재고에만 해당하므로 전체·일반재고 탭에서만 보인다. --}}
+        {{-- 「3개월 경과」 필터칩 (jin 2026-11-20) — 행 뱃지와 같은 기준·**같은 모양**(jin «뱃지로 표시되는 건 그 뱃지 그대로 필터가»): 꺼짐 = 흐리게, 켜짐 = 테두리. 일반재고에만 해당하므로 전체·일반재고 탭에서만 보인다. --}}
         @if(in_array($category, ['', 'general'], true))
             <button type="button" wire:click="toggleOverAge" data-filter-over-age
-                    class="whitespace-nowrap rounded-md border px-2.5 py-1 text-xs {{ $overAgeOnly ? 'border-amber-500 bg-amber-100 font-semibold text-amber-800' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
+                    class="badge badge-amber cursor-pointer whitespace-nowrap text-[10px] {{ $overAgeOnly ? 'ring-2' : 'opacity-60 hover:opacity-100' }}">
                 {{ __('inventory.badge_over_age') }}
             </button>
         @endif
