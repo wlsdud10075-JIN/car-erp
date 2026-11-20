@@ -175,6 +175,10 @@ return [
     ],
 
     'claims' => [
+        'badge' => ':n claim(s)',
+        'badge_label' => 'Claims',
+        'badge_hint' => 'Accepted claims with an unused amount. Disappears once fully used via “Claim use” on a vehicle Sale tab.',
+        'filter_hint' => 'Only buyers with an unused claim amount. Click again to clear.',
         'save_first' => 'Save the buyer first.',
         'count' => 'Claims',
         'accepted' => 'Accepted',

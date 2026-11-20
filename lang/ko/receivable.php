@@ -189,6 +189,10 @@ return [
     ],
     'list_title' => '회수 이력 목록 (최신순)',
     'list_empty' => '회수 이력이 없습니다.',
+    'open_vehicle_sale' => '차량 판매탭 열기 →',
+    'claim_row_badge' => '클레임',
+    'claim_row_title' => '판매탭 「클레임 사용」이 만든 줄입니다. 바이어의 클레임 누적금에서 빠집니다.',
+    'claim_row_edit' => '판매탭에서 수정 →',
     'mirror_title' => '판매 잔금과 연동됨',
     'delete_confirm' => '이 회수 이력을 삭제하시겠습니까? 미러링된 입금 기록도 함께 삭제됩니다.',
 ];

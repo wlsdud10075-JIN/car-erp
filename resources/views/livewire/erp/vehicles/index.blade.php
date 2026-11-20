@@ -91,6 +91,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Url] public string $ids = '';
     // 정산 등 외부 화면에서 ?openVehicle=ID 로 진입 → 해당 차량 편집 패널 자동 오픈.
     #[Url] public ?int $openVehicle = null;
+    // 같이 열 탭(jin 2026-11-20 — 채권관리에서 그 차 판매탭으로 바로). 목록 밖 값이면 종전대로 매입 탭.
+    #[Url] public string $openTab = '';
 
     // 재고관리(일반재고) 등에서 ?create=1 로 진입 → 신규 매입 등록 패널 자동 오픈 (jin 2026-07-18).
     #[Url] public bool $create = false;
@@ -1567,6 +1569,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Locked]
     public array $loadedPaymentBreakdown = [];
     public string $savings_used_str     = '';   // 💳 「이번에 쓸 금액」 1회성 (jin 2026-10-15) — 저장하면 누적(vehicles.savings_used)에 더하고 비운다. 이력은 여기서 안 보여준다(바이어 적립금 탭).
+    public string $claim_used_str       = '';   // 🧾 「클레임 사용」 — 이 차에 쓴 **합계**(적립금 칸과 달리 누적값 자체를 고친다, jin 2026-11-20). 저장 = App\Services\ClaimUsage.
     // 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 (한 번 저장 → SavingsStatus EARNED 거래 → reset).
     // 누적 표시는 buyerSavingsBalance computed (SavingsStatus 단일 출처).
     public string $savings_deposit_str  = '';
@@ -1991,7 +1994,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($this->openVehicle) {
             try {
                 $this->openEdit($this->openVehicle);
-                $this->dispatch('switch-tab', tab: 'purchase');
+                $this->dispatch('switch-tab', tab: in_array($this->openTab, ['basic', 'purchase', 'sale', 'export', 'bl', 'dhl', 'docs'], true) ? $this->openTab : 'purchase');
             } catch (\Throwable $e) {
                 // 접근 불가(스코프/미존재) — 조용히 목록만 표시
             }
@@ -4811,7 +4814,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private const NON_FORM_PROPS = [
         'search', 'dateType', 'dateFrom', 'dateTo', 'progressFilter', 'excludeStatuses', 'sailingFilter',
         'shipmentFilter', 'shipmentMonth', 'boardFilters', 'cancelFilter', 'taskFilter', 'freightExact',
-        'vinSearch', 'action', 'salesmanId', 'ids', 'openVehicle', 'create', 'buyerId', 'perPage',
+        'vinSearch', 'action', 'salesmanId', 'ids', 'openVehicle', 'openTab', 'create', 'buyerId', 'perPage',
         'sortColumn', 'sortDirection', 'sortExtra', 'visibleColumns', 'page', 'paginators',
         // 미입금 우회 승인 칸 — 차량 폼이 아니라 [승인 기록] 전용 입력이다(2026-11-14)
         'overrideStage', 'overrideReason',
@@ -5127,6 +5130,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->toArray();
         // 💳 적립금 사용 칸은 1회성 (jin 2026-10-15 «100 쓰고 빈칸, 300 쓰고 FIFO 로 누적») — 누적은 「입금 외 정리」 줄과 바이어 적립금 탭에서.
         $this->savings_used_str     = '';
+        $claimUsed = \App\Services\ClaimUsage::usedOn($v->id);
+        $this->claim_used_str       = $claimUsed > 0 ? number_format($claimUsed, fmod($claimUsed, 1) == 0.0 ? 0 : 2) : '';
         $this->savings_deposit_str  = '';   // 입력란은 항상 빈 값 (누적은 buyerSavingsBalance computed)
         // 바이어 현금 원장 (jin 2026-09-05) — 「이 잔금이 어느 입금에서 나왔나」 **역방향 추적**.
         //   현금 탭은 「입금 → 어느 차」를 보여주지만 그 반대는 볼 데가 없었다(jin 지적).
@@ -6106,7 +6111,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'down_payment_str', 'selling_fee_payment_str',
             'exchange_rate_str', 'usd_rate_memo', 'sale_price_str', 'tax_dc_str',
             'commission_str', 'transport_fee_str', 'transport_fee_usd_str', 'auto_loading_str',
-            'sale_other_costs_str', 'savings_used_str',
+            'sale_other_costs_str', 'savings_used_str', 'claim_used_str',
             // 22-A-3a 사용자 정정 — 4 _str 복귀 (재무·관리자 입력)
             'deposit_down_payment_str', 'interim_payment_str',
             'advance_payment1_str', 'fee_str',
@@ -6924,6 +6929,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                         throw new \App\Exceptions\StaleFormException(__('vehicle.toast.stale_form'));
                     }
                     $vehicle->update($data);
+                    // 🧾 클레임 사용 — 이 차에 쓴 합계를 맞춘다(같으면 아무 일도 안 한다). 잔액·미수 초과는 ClaimUsageException(DomainException)
+                    //    → 트랜잭션이 되돌아가고 아래 catch 가 토스트로 알린다. 마감된 차도 미수가 있으면 쓴다(차량 칸이 아니라 회수 줄이다).
+                    \App\Services\ClaimUsage::setForVehicle($vehicle, $toFloat($this->claim_used_str), auth()->id());
                 } else {
                     $vehicle = Vehicle::create($data);
                 }
@@ -8277,7 +8285,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'down_payment_str','selling_fee_payment_str','purchase_remittance_memo','registration_number','reg_cert_number','deregistration_date','deregistrationBuyerPhone',
             'sale_date','exchange_rate_str','buyer_id_str','consignee_id_str',
             'sale_price_str','tax_dc_str','commission_str','transport_fee_str','transport_fee_usd_str','auto_loading_str',
-            'sale_other_costs_str','savings_used_str','savings_deposit_str',
+            'sale_other_costs_str','savings_used_str','claim_used_str','savings_deposit_str',
             'deposit_down_payment_str','interim_payment_str','advance_payment1_str','fee_str',
             'export_buyer_id_str','export_consignee_id_str','forwarding_company_id_str',
             'export_declaration_amount_str','export_declaration_number','shipping_date','eta_date','shipping_method','port_of_loading',
@@ -10851,6 +10859,26 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     <input wire:model="savings_used_str" type="text" data-money class="input-base" placeholder="0" />
                     @error('savings_used_str') <p class="mt-1 text-xs text-red-500">{{ $message }}</p> @enderror
                 </div>
+                {{-- 🧾 클레임 누적금 · 클레임 사용 (jin 2026-11-20) — 인정된 클레임만큼 바이어가 대금을 덜 보냈을 때 이 차 미수를 턴다.
+                     「클레임 사용」은 이 차에 쓴 합계다(적립금 칸처럼 더하는 칸이 아니다). 저장하면 채권관리에 상계 줄이 생긴다. --}}
+                @if($editingId)
+                    @php
+                        $claimBuyerId = $buyer_id_str !== '' ? (int) $buyer_id_str : null;
+                        $claimBalance = \App\Services\ClaimUsage::balance($claimBuyerId, $currency);
+                        $claimUsedNow = \App\Services\ClaimUsage::usedOn($editingId);
+                    @endphp
+                    @if($claimBalance > 0 || $claimUsedNow > 0)
+                        <div data-claim-balance>
+                            <label class="label-base">{{ __('vehicle.field.claim_balance') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.claim_balance_note') }}</span></label>
+                            <div class="input-base bg-gray-100 text-gray-600">{{ $currency }} {{ number_format($claimBalance, 2) }}</div>
+                        </div>
+                        <div data-claim-use>
+                            <label class="label-base">{{ __('vehicle.field.claim_used') }} <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.claim_used_note') }}</span></label>
+                            <input wire:model="claim_used_str" type="text" data-money class="input-base" placeholder="0" />
+                            @error('claim_used_str') <p class="mt-1 text-xs text-red-500">{{ $message }}</p> @enderror
+                        </div>
+                    @endif
+                @endif
                 {{-- 회의확장씬 #12 (2026-05-22) — 적립금 적립 입력 + 누적 표시 --}}
                 @php $canConfirmFinanceLocal = auth()->user()?->canConfirmFinance() ?? false; @endphp
                 <div>

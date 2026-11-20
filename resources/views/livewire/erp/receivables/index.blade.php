@@ -574,6 +574,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $h || $h->vehicle_id !== $this->selectedVehicleId) {
             return;
         }
+        // 🧾 클레임으로 턴 줄은 판매탭 「클레임 사용」에서만 고친다(삭제는 모델 가드가 같은 문구로 막는다).
+        if ($h->isClaimUse()) {
+            session()->flash('panel_error', __('vehicle.valmsg.claim_row_locked'));
+
+            return;
+        }
 
         $this->historyEditId = $h->id;
         $this->hCollectedAt = $h->collected_at?->format('Y-m-d') ?? '';
@@ -1712,6 +1718,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <div>
                     <div class="text-xs uppercase tracking-wide text-gray-400">{{ __('receivable.history') }}</div>
                     <div class="mt-0.5 text-lg font-bold text-gray-800">{{ $sv->vehicle_number }}</div>
+                    {{-- 차량관리 → 채권관리 링크는 있었는데 반대 방향이 없었다(jin 2026-11-20) — 그 차 판매탭으로 바로. --}}
+                    <a href="{{ route('erp.vehicles.index', ['openVehicle' => $sv->id, 'openTab' => 'sale']) }}" wire:navigate data-open-vehicle-sale
+                       class="mt-0.5 inline-block text-xs text-violet-600 hover:underline">{{ __('receivable.open_vehicle_sale') }}</a>
                     <div class="mt-0.5 text-xs text-gray-500">
                         {{ $sv->brand }} {{ $sv->model_type }}<x-erp.deal-badge :type="$sv->deal_type" /> · {{ __('receivable.col.salesman') }} {{ $sv->salesman?->name ?? '-' }}
                     </div>
@@ -1946,6 +1955,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <div class="flex items-center gap-2 text-sm">
                                 <span class="font-medium text-gray-800">{{ $h->collected_at->format('Y-m-d') }}</span>
                                 <span class="badge {{ $methodBadge }}">{{ $methodLabel }}</span>
+                                @if ($h->isClaimUse())
+                                <span class="badge badge-amber" data-claim-row title="{{ __('receivable.claim_row_title') }}">{{ __('receivable.claim_row_badge') }}</span>
+                                @endif
                                 {{-- 「기타」 줄 중 소급 적재가 남긴 것 — 실제로 받은 돈이 아니라 **아직 받을 돈**이다.
                                      표시가 없으면 진짜 회수한 「기타」와 구분이 안 돼 청구 대상을 못 고른다.
                                      판정 = ReceivableHistory::scopeImportCleared 와 같은 표식(jin 2026-09-10). --}}
@@ -1976,8 +1988,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                             @endif
                         </div>
                         <div class="flex items-center gap-2">
+                            @if ($h->isClaimUse())
+                            <a href="{{ route('erp.vehicles.index', ['openVehicle' => $sv->id, 'openTab' => 'sale']) }}" wire:navigate class="whitespace-nowrap text-xs text-violet-600 hover:underline">{{ __('receivable.claim_row_edit') }}</a>
+                            @else
                             <button type="button" wire:click="editHistory({{ $h->id }})" class="text-xs text-violet-600 hover:underline">{{ __('common.edit') }}</button>
                             <button type="button" wire:click="deleteHistory({{ $h->id }})" wire:confirm="{{ __('receivable.delete_confirm') }}" class="text-xs text-red-500 hover:underline">{{ __('common.delete') }}</button>
+                            @endif
                         </div>
                     </div>
 

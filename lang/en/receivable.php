@@ -181,6 +181,10 @@ return [
     ],
     'list_title' => 'Collection history (latest first)',
     'list_empty' => 'No collection history.',
+    'open_vehicle_sale' => 'Open vehicle Sale tab →',
+    'claim_row_badge' => 'Claim',
+    'claim_row_title' => 'Created by “Claim use” on the Sale tab. It is taken from the buyer claim balance.',
+    'claim_row_edit' => 'Edit on Sale tab →',
     'mirror_title' => 'Mirrored with final_payments',
     'delete_confirm' => 'Delete this collection record? The mirrored payment record will also be deleted.',
 ];

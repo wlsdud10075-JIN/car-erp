@@ -2,6 +2,8 @@
 
 namespace App\Models;
 
+use App\Exceptions\ClaimUsageException;
+use App\Services\ClaimUsage;
 use App\Services\LockThresholdResolver;
 use App\Support\AlimtalkRecipients;
 use App\Support\SearchTerm;
@@ -995,6 +997,14 @@ class Vehicle extends Model
     // ── Boot: 진행상태/채권 캐시 자동 갱신 ─────────────────────────
     protected static function booted(): void
     {
+        // 🧾 클레임을 쓴 차는 바이어·통화를 바꿀 수 없다 (jin 2026-11-20) — 사용 내역이 그 바이어·그 통화의 클레임에 물려 있다.
+        //    먼저 판매탭 「클레임 사용」을 0 으로 되돌린 뒤 바꾼다. 화면은 저장 전에 같은 안내를 띄운다(이건 그 뒤의 안전망).
+        static::updating(function (Vehicle $vehicle) {
+            if ($vehicle->isDirty(['buyer_id', 'currency']) && ClaimUsage::usedOn($vehicle->id) > 0) {
+                throw new ClaimUsageException(__('vehicle.valmsg.claim_blocks_change'));
+            }
+        });
+
         static::saving(function (Vehicle $vehicle) {
             // 차량번호 앞뒤 공백 제거 (jin 2026-07-27) — 엑셀 적재·복붙에서 " 239수1388" / "114마1731  "
             //   처럼 공백이 섞여 들어와 검색·중복판정이 어긋났다. 진입점 통합(UI·시드·import 전부).

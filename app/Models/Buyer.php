@@ -192,6 +192,12 @@ class Buyer extends Model
         return $this->hasMany(Consignee::class);
     }
 
+    /** board 에서 넘어온 클레임 기록 (2026-11-11). 「쓸 돈이 남은 인정 건」은 VehicleClaim::scopeOpen. */
+    public function claims(): HasMany
+    {
+        return $this->hasMany(VehicleClaim::class);
+    }
+
     public function savingsStatuses(): HasMany
     {
         return $this->hasMany(SavingsStatus::class);
