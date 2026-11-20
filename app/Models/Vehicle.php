@@ -2956,6 +2956,21 @@ class Vehicle extends Model
         return $query->inStock()->whereNotNull('vehicles.buyer_id')->where('vehicles.sale_price', '>', 0);
     }
 
+    /**
+     * 일반재고 중 입고 3개월(GENERAL_STOCK_SELL_MONTHS) 경과 — 재고 화면 「3개월 경과」 뱃지의 SQL 짝 (필터칩, jin 2026-11-20).
+     * 입고일 = 매입 완납일 = 오늘까지의 마지막 확정 지급일(getWarehouseInDateAttribute 와 같은 정의).
+     */
+    public function scopeGeneralStockOverAge($query)
+    {
+        $today = now()->toDateString();
+        $cutoff = now()->subMonths(self::GENERAL_STOCK_SELL_MONTHS)->toDateString();
+
+        return $query->generalStock()->whereRaw(
+            '(select max(p.payment_date) from purchase_balance_payments p where p.vehicle_id = vehicles.id and p.confirmed_at is not null and p.payment_date <= ?) <= ?',
+            [$today, $cutoff]
+        );
+    }
+
     /** 이 차가 「일반재고」 쪽인가(아직 안 팔림) — scopeGeneralStock 의 행 단위 짝. 재고 여부(inStock)는 따로 본다. */
     public function isGeneralStock(): bool
     {

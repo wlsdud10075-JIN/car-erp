@@ -115,6 +115,9 @@ new #[Layout('components.layouts.app')] class extends Component
      */
     #[Url(as: 'loc')] public array $locationFilters = [];
 
+    /** 「3개월 경과」 필터칩 (jin 2026-11-20) — 일반재고 중 입고 3개월이 지난 차만. 행 뱃지와 같은 기준(Vehicle::scopeGeneralStockOverAge). */
+    #[Url(as: 'aged')] public bool $overAgeOnly = false;
+
     /** 출고일 draft (vehicle_id => 'Y-m-d' | ''). 즉시저장 아님 — 여러 차량 지정 후 「적용」으로 일괄 저장. */
     public array $warehouseOut = [];
 
@@ -157,6 +160,7 @@ new #[Layout('components.layouts.app')] class extends Component
             // 컨사이니 필터 — 3칸 어디에 들어 있든 잡는다. consignee_id 만 보면 07-09 이후 차량이 전부 0건.
             ->when($this->consigneeFilter !== '', fn ($q) => $q->whereEffectiveConsignee($this->consigneeFilter))
             ->when($this->statusFilter !== '', fn ($q) => $q->where('progress_status_cache', $this->statusFilter))
+            ->when($this->overAgeOnly && in_array($this->category, ['', 'general'], true), fn ($q) => $q->generalStockOverAge())
             ->when($this->locationFilters !== [], function ($q) {
                 $picked = array_values(array_diff($this->locationFilters, ['__none']));
                 $wantNone = in_array('__none', $this->locationFilters, true);
@@ -449,11 +453,18 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function resetFilters(): void
     {
-        $this->reset(['salesmanFilter', 'statusFilter', 'search', 'buyerFilter', 'consigneeFilter', 'locationFilters']);
+        $this->reset(['salesmanFilter', 'statusFilter', 'search', 'buyerFilter', 'consigneeFilter', 'locationFilters', 'overAgeOnly']);
         $this->resetPage();
     }
 
     /** 위치 필터 pill 클릭 — 누를 때마다 추가/해제(다중). 전부 해제하면 전체. */
+    public function toggleOverAge(): void
+    {
+        $this->overAgeOnly = ! $this->overAgeOnly;
+        unset($this->inventoryVehicles);
+        $this->resetPage();
+    }
+
     public function toggleLocationFilter(string $location): void
     {
         if (in_array($location, $this->locationFilters, true)) {
@@ -634,6 +645,13 @@ new #[Layout('components.layouts.app')] class extends Component
                 {{ __('inventory.location_none') }}
             </button>
         </div>
+        {{-- 「3개월 경과」 필터칩 (jin 2026-11-20) — 행 뱃지와 같은 기준. 일반재고에만 해당하므로 전체·일반재고 탭에서만 보인다. --}}
+        @if(in_array($category, ['', 'general'], true))
+            <button type="button" wire:click="toggleOverAge" data-filter-over-age
+                    class="whitespace-nowrap rounded-md border px-2.5 py-1 text-xs {{ $overAgeOnly ? 'border-amber-500 bg-amber-100 font-semibold text-amber-800' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
+                {{ __('inventory.badge_over_age') }}
+            </button>
+        @endif
         <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
         <button wire:click="resetFilters" class="text-xs text-violet-600 hover:underline">{{ __('common.reset_filters') }}</button>
         <select wire:model.live="perPage" class="input-filter ml-auto">
