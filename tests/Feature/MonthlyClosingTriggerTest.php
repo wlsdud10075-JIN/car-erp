@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Console\Commands\AlimtalkMonthlyClosing;
 use App\Models\AlimtalkLog;
 use App\Models\Buyer;
+use App\Models\FinalPayment;
 use App\Models\Salesman;
 use App\Models\Setting;
 use App\Models\Settlement;
@@ -64,6 +65,9 @@ class MonthlyClosingTriggerTest extends TestCase
             'salesman_id' => $sm->id, 'purchase_date' => '2026-05-01', 'purchase_price' => 5_000_000,
             'sale_date' => '2026-06-01', 'sale_price' => 10_000_000, 'currency' => 'KRW', 'exchange_rate' => 1,
         ]);
+
+        // 완납 차 — 미수가 남은 확정 정산은 「지급보류」라 월결산이 세지 않는다(2026-11-20).
+        FinalPayment::withoutEvents(fn () => FinalPayment::create(['vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 10_000_000, 'payment_date' => '2026-06-10', 'confirmed_at' => now()]));
 
         return Settlement::create([
             'vehicle_id' => $v->id, 'salesman_id' => $sm->id,

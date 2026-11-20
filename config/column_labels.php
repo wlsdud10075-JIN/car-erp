@@ -541,6 +541,7 @@ return [
         'rejected' => '반려',
         'ledger_field_unlocked' => '확정금액 수정 허용',
         'settlement_gate_overridden' => '정산 게이트 예외 처리',
+        'settlement_reanchored' => '귀속월 자동 이동(보류 해제)',
         'settlement_gate_override_released' => '정산 게이트 예외 해제',
         'bulk_cost_applied' => '비용 일괄 기입',
         'lock_toggle_changed' => '락 켜기/끄기',

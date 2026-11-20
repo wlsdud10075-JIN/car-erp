@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Console\Commands\AlimtalkMonthlyClosing;
 use App\Models\AlimtalkLog;
 use App\Models\Buyer;
+use App\Models\FinalPayment;
 use App\Models\PayrollEntry;
 use App\Models\Salesman;
 use App\Models\Setting;
@@ -124,6 +125,8 @@ class AlimtalkOffSwitchTest extends TestCase
             'purchase_date' => '2026-05-01', 'purchase_price' => 5_000_000,
             'sale_date' => '2026-06-01', 'sale_price' => 10_000_000, 'currency' => 'KRW', 'exchange_rate' => 1,
         ]);
+        // 완납 차 — 미수가 남은 확정 정산은 「지급보류」라 월결산이 세지 않는다(2026-11-20).
+        FinalPayment::withoutEvents(fn () => FinalPayment::create(['vehicle_id' => $v->id, 'type' => 'balance', 'amount' => 10_000_000, 'payment_date' => '2026-06-10', 'confirmed_at' => now()]));
         $s = Settlement::create([
             'vehicle_id' => $v->id, 'salesman_id' => $sm->id, 'settlement_status' => 'confirmed', 'settlement_type' => 'per_unit',
             'per_unit_amount' => 100_000, 'confirmed_at' => '2026-06-20 10:00:00', 'attributed_month' => '2026-06-01 00:00:00',

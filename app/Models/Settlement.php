@@ -7,6 +7,7 @@ use App\Support\AlimtalkRecipients;
 use App\Support\SettlementCkBatch;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\SoftDeletes;
@@ -41,6 +42,7 @@ class Settlement extends Model
         'confirmed_at', 'paid_at', 'confirmed_snapshot', 'note',
         // A-3 (2026-07-08) — 귀속월 고정 (완납월 1일). submitForMonth 앵커.
         'attributed_month',
+        'reanchored_from',
         // 2026-09-08 jin — 내수(국내 판매) 건인가. **정산 생성 시점에 박제**하고 이후 바뀌지 않는다.
         'is_domestic',
         // 2026-11-17 jin — 「환차를 정산에서 뺐나」 박제(배치 제출·지급 때). NULL = 아직 안 정함 → 설정(Setting::settlementFxExcludedFrom)을 따른다.
@@ -53,6 +55,7 @@ class Settlement extends Model
     protected $casts = [
         'confirmed_at' => 'datetime',
         'attributed_month' => 'date',
+        'reanchored_from' => 'date',
         'paid_at' => 'datetime',
         'secondary_closed_at' => 'datetime',
         'secondary_ready_at' => 'datetime',
@@ -213,6 +216,15 @@ class Settlement extends Model
                 ]);
             }
 
+            // 🔒 지급된 정산은 상태를 내릴 수 없다 (jin 2026-11-20 «막아»). 드로어에서 paid → 확정/대기로 내리면 지급된 돈이
+            //    대시보드에서 사라지고, 대기로 내린 뒤에는 삭제까지 됐다(삭제 가드는 confirmed·paid·마감만 막는다).
+            //    로그인한 저장에만(콘솔·시드·적재는 통과 — 기존 가드들과 같은 선).
+            if ($s->exists && $s->getOriginal('settlement_status') === 'paid' && $s->settlement_status !== 'paid' && auth()->check()) {
+                throw ValidationException::withMessages([
+                    'settlement_status' => __('settlement.guard.paid_no_revert'),
+                ]);
+            }
+
             // H3 — status ∈ {confirmed, paid}이면 settlement_type별 값 > 0 강제.
             if (in_array($s->settlement_status, ['confirmed', 'paid'], true)) {
                 // ratio = 비율>0 필요. per_unit = 차등 tier 자동 산정이라 항상 값 결정됨
@@ -364,6 +376,75 @@ class Settlement extends Model
      *    `SettlementPayoutBatch::eligibleSettlementIds` · 목록 뱃지. 하나만 빠지면
      *    「뱃지는 없는데 필터엔 잡히는」 형태가 된다(§8 #44·#81).
      */
+    /**
+     * 📅 **마감된 달에 남은 「보류가 풀린」 정산을 열린 달로 옮긴다** (jin 2026-11-20 (가) «완납되는 순간 자동으로»).
+     *
+     * 미수로 지급보류된 정산은 귀속월이 그대로라, 그 달 월정산이 승인(마감)된 뒤 완납되면 어느 제출에도 안 잡혔다
+     * (그 달을 다시 제출하거나 사람이 귀속월을 옮겨야 했다 — 화면에 아무 표시도 없었다).
+     *
+     * 대상 = 지급 전(대기·계산·확정) · 미배치 · 귀속월이 **마감된 달** · 지금 보류가 아님(미수 0 이거나 게이트 예외) ·
+     *        지급 대상 담당자 · 퇴사 배치 몫 아님.
+     *   🚫 지급 제외 계정(헤이맨)·퇴사 배치 몫을 빼지 않으면 달이 마감될 때마다 영원히 앞으로 굴러간다.
+     * 목적지 = 이번 달부터 **마감도 아니고 제출(결재 중)도 아닌** 첫 달(`movableMonths` 와 같은 조건 —
+     *   결재 중인 달로 보내면 그 배치에 못 들어가고 승인 뒤 또 마감 달에 남는다).
+     * 표시 = `reanchored_from`(옮기기 전 귀속월) → 정산관리 뱃지. 감사로그 한 줄.
+     *
+     * @return int 옮긴 건수
+     */
+    public static function reanchorReleasedForVehicle(int $vehicleId): int
+    {
+        return self::reanchorReleased(self::query()->where('vehicle_id', $vehicleId));
+    }
+
+    /** @param  Builder<Settlement>|null  $scope  null = 전체(일일 점검) */
+    public static function reanchorReleased($scope = null, bool $dryRun = false): int
+    {
+        $rows = ($scope ?? self::query())
+            ->whereIn('settlement_status', ['pending', 'calculating', 'confirmed'])->whereNull('payout_batch_id')->whereNotNull('attributed_month')
+            ->with(['vehicle', 'salesman'])->get();
+        $moved = 0;
+        $target = null;
+        foreach ($rows as $s) {
+            if (! SettlementPayoutBatch::isMonthClosed($s->attributed_month->format('Y-m'))) {
+                continue;
+            }
+            $stillHeld = ! $s->hasGateOverride() && (int) ($s->vehicle?->sale_unpaid_amount ?? 0) > 0;   // 아직 미수 — 그 달에 그대로 둔다
+            if ($stillHeld || $s->isPayoutExcludedBySalesman() || $s->isReservedForLeaverBatch()) {
+                continue;
+            }
+            $target ??= self::firstOpenMonth();
+            if ($target->format('Y-m') === $s->attributed_month->format('Y-m')) {
+                continue;
+            }
+            $moved++;
+            if ($dryRun) {
+                continue;
+            }
+            $old = $s->attributed_month->copy()->startOfMonth();
+            // 캐스트를 거쳐 조용히 저장한다(moveAttributedMonthTo 와 같은 이유 — 월 스코프가 시간 경계로 비교한다).
+            $s->forceFill(['attributed_month' => $target->copy(), 'reanchored_from' => $s->reanchored_from ?? $old])->saveQuietly();
+            AuditLog::recordChange($s, 'attributed_month', $old->format('Y-m-d'), $target->format('Y-m-d'), 'settlement_reanchored');
+        }
+
+        return $moved;
+    }
+
+    /** 이번 달부터 마감(승인)도 제출(결재 중)도 아닌 첫 달 1일. */
+    public static function firstOpenMonth(): Carbon
+    {
+        $cursor = Carbon::now()->startOfMonth();
+        for ($i = 0; $i < 24; $i++) {
+            $ym = $cursor->format('Y-m');
+            if (! SettlementPayoutBatch::isMonthClosed($ym)
+                && ! SettlementPayoutBatch::monthly()->where('month', $ym)->where('status', SettlementPayoutBatch::STATUS_PENDING)->exists()) {
+                break;
+            }
+            $cursor->addMonth();
+        }
+
+        return $cursor;
+    }
+
     public function isPayoutHeldByUnpaid(): bool
     {
         return $this->settlement_status === 'confirmed'

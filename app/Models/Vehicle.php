@@ -747,9 +747,23 @@ class Vehicle extends Model
         if (! $this->id) {
             return null;
         }
+        // 🔓 차량 패널의 「재조정 저장」 중이면 여기서 당기지 않는다 (jin 2026-11-20) — 그 저장이 끝날 때 패널이 한 번 지운다.
+        //    당기면 같은 저장 안의 뒤쪽 판정(발송 금액·지급 줄·새 입금)이 토큰을 못 찾는다.
+        if (self::$readjustSaveVehicleId === $this->id) {
+            return Cache::get(self::ledgerUnlockCacheKey($this->id));
+        }
 
         return Cache::pull(self::ledgerUnlockCacheKey($this->id));
     }
+
+    /**
+     * 🔓 **지금 재조정 저장 중인 차량 id** (jin 2026-11-20 «2차 마감 뒤 돈은 회계 재조정으로만»).
+     * 차량 패널 save() 가 「이 저장은 회계 재조정 토큰을 쓴 저장」이라고 시작할 때 한 번 정하고, 끝나면 토큰을 지운다.
+     *   ① 한 번의 저장 안에서 차량 칸·지급 줄·발송 금액이 **같은 토큰**을 본다(먼저 쓴 쪽이 당겨 가 뒤쪽이 조용히 막히지 않게)
+     *   ② 빈 칸 첫 입력처럼 모델 가드가 토큰을 안 쓰는 저장에서도 **저장 한 번으로 토큰이 끝난다**(5분간 남지 않게).
+     * 요청 단위 값 — 테스트는 Tests\TestCase::setUp 이 비운다.
+     */
+    public static ?int $readjustSaveVehicleId = null;
 
     /**
      * 큐 21 — Cache key 단일 출처. Service / Component / Model 모두 동일 키 사용.
@@ -2124,6 +2138,9 @@ class Vehicle extends Model
             ...$this->shippingCacheValues(),
             ...$this->autoWarehouseOutValues(),
         ]);
+        // 📅 미수 보류가 풀린 정산이 **마감된 달**에 남아 있으면 열린 달로 옮긴다 (jin 2026-11-20 (가)).
+        //    입금·회수 줄 저장은 전부 여기를 지난다. 그 밖(raw update·시간 경과)은 매일 `settlements:reanchor-closed-month --apply`.
+        Settlement::reanchorReleasedForVehicle($this->id);
     }
 
     /**

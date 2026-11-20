@@ -3,7 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Models\Settlement;
-use App\Models\SettlementPayoutBatch;
 use Illuminate\Console\Command;
 
 /**
@@ -27,46 +26,14 @@ class ReanchorClosedMonthSettlements extends Command
 
     public function handle(): int
     {
+        // 🔀 2026-11-20 (jin (가)) — 판정을 Settlement::reanchorReleased 한 곳으로 옮겼다. 대상이 좁아졌다:
+        //    확정 · 미배치 · 마감된 달 귀속 · **지금 보류가 아님** · 지급 대상 담당자 · 퇴사 배치 몫 아님.
+        //    (구: pending·지급 제외 계정까지 옮겼다 — 헤이맨 정산이 달이 마감될 때마다 앞으로 굴러간다.)
+        //    입금·회수 줄 저장 때는 그 차만 즉시 옮기고(Vehicle::refreshCaches), 여기는 그 밖의 경로를 매일 보정한다.
         $apply = (bool) $this->option('apply');
-
-        // 현재 열린 달 = 이번 달부터 마감 안 된 첫 달.
-        $cursor = now()->startOfMonth();
-        while (SettlementPayoutBatch::isMonthClosed($cursor->format('Y-m'))) {
-            $cursor->addMonth();
-        }
-        $openMonth = $cursor->format('Y-m-d');
-
-        $rows = Settlement::whereNull('payout_batch_id')
-            ->whereIn('settlement_status', ['pending', 'confirmed'])
-            ->whereNotNull('attributed_month')
-            ->get(['id', 'salesman_id', 'attributed_month', 'settlement_status']);
-
-        $targets = $rows->filter(
-            fn (Settlement $s) => SettlementPayoutBatch::isMonthClosed($s->attributed_month->format('Y-m'))
-                && $s->attributed_month->format('Y-m-d') !== $openMonth
-        );
-
-        if ($targets->isEmpty()) {
-            $this->info('이월 대상 없음 (마감월로 귀속된 미지급 정산 없음).');
-
-            return self::SUCCESS;
-        }
-
-        $this->info(sprintf('현재 열린 달 = %s. 이월 대상 %d건 (귀속월별):', substr($openMonth, 0, 7), $targets->count()));
-        $byMonth = $targets->groupBy(fn (Settlement $s) => $s->attributed_month->format('Y-m'));
-        foreach ($byMonth->sortKeys() as $ym => $group) {
-            $this->line(sprintf('  %s → %s : %d건 (id: %s)', $ym, substr($openMonth, 0, 7), $group->count(), $group->pluck('id')->implode(',')));
-        }
-
-        if (! $apply) {
-            $this->warn('[dry-run] 실제 이월하려면 --apply 를 붙이세요.');
-
-            return self::SUCCESS;
-        }
-
-        $ids = $targets->pluck('id')->all();
-        Settlement::whereIn('id', $ids)->update(['attributed_month' => $openMonth]);
-        $this->info(sprintf('✅ %d건 → %s 이월 완료.', count($ids), substr($openMonth, 0, 7)));
+        $n = Settlement::reanchorReleased(null, ! $apply);
+        $open = Settlement::firstOpenMonth()->format('Y-m');
+        $this->info(($apply ? '' : '[dry-run] ')."보류가 풀려 마감된 달에 남은 정산 {$n}건 → {$open}".($apply ? ' 이동 완료.' : ' (실제 이동은 --apply)'));
 
         return self::SUCCESS;
     }
