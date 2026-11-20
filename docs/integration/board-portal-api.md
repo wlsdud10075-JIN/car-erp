@@ -970,7 +970,7 @@ board 가 「재고매입(바이어 미정)」을 체크할 때 미리 묻는다
 ```
 
 - `used`·`count` = 그 담당자의 일반재고(매입 완납 · 출고 전 · 바이어 미정 · 판매가 없음) 매입가 합·대수. 지급 전 차는 안 들어간다.
-- `blocked` = `used + incoming > cap`. `incoming` 을 안 보내면 늘 false 이고 `remaining` 만 쓴다.
+- `blocked` = `used + incoming > cap`. `incoming` 을 안 보내면 0 으로 계산한다 — 이미 `used` 가 `cap` 을 넘은 담당자는 그래도 `blocked=true` 다(2026-11-20 board 실측으로 정정: 「늘 false」가 아니다).
 - `applies=false` = 담당자를 못 찾음(한도 미적용, `salesman_id` null). 수신도 그대로 통과시킨다.
 - 422 = 파라미터 형식 오류 · 401 = 서명 실패.
 
