@@ -33,6 +33,9 @@ return [
     'nice' => [
         'provide_url' => env('NICE_PROVIDE_URL', ''),     // /provide/api/nice-lookup/ 까지 포함한 전체 URL
         'provide_token' => env('NICE_PROVIDE_TOKEN', ''),  // X-SSANCAR-API-KEY 헤더 토큰
+        // 🔐 게이트웨이가 받아들일 토큰(쉼표로 여러 개) — 비우면 이 박스의 provide_token 하나. (2026-11-22 보안: 무인증 → 토큰 검사)
+        //    3사 ERP 가 같은 NICE_PROVIDE_TOKEN 을 보낸다(11-22 지문 대조). 회사마다 다른 값을 쓰게 되면 여기에 나열한다.
+        'gateway_tokens' => env('NICE_GATEWAY_TOKENS', ''),
 
         // 전역 동시 조회 상한 — NICE 조회 1건이 게이트웨이 박스(54.116.7.83) 워커를 최대 90초 점유.
         // 모든 NICE 조회가 ProvideNiceLookupController 한 곳을 지나므로 여기서만 전역 상한 가능.
