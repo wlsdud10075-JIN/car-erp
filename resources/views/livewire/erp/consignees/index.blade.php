@@ -135,8 +135,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $user || $user->isAdmin() || $user->isManager()) {
             return null;
         }
-        if ($user->role === '영업' && $user->salesman) {
-            $sid = $user->salesman->id;
+        if ($user->role === '영업') {
+            $sid = $user->ownSalesmanScopeId();
 
             return fn ($q) => $q->where(fn ($q2) => $q2
                 ->where('salesman_id', $sid)

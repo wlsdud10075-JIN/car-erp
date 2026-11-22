@@ -245,14 +245,15 @@ class TaxInvoiceRequestTest extends TestCase
 
     // ── ④ 권한 ─────────────────────────────────────────────────────────
 
-    public function test_sales_cannot_send(): void
+    /** 🔓 2026-11-22 (jin «누구나로 변경») — 딜러 수동 알림톡은 역할로 나누지 않는다. 막는 것은 차량 범위(canScopeVehicle)뿐. */
+    public function test_sales_is_no_longer_refused_by_role(): void
     {
         $this->alimtalkReady();
         $this->companyReady();
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
         $this->actingAs($sales);
 
-        Volt::test('erp.vehicles.index')->call('sendTaxInvoiceAlimtalk')->assertStatus(403);
+        Volt::test('erp.vehicles.index')->call('sendTaxInvoiceAlimtalk')->assertStatus(200);   // 미저장 차 → 「먼저 저장」 안내(403 아님)
     }
 
     public function test_clearance_and_finance_can_send(): void

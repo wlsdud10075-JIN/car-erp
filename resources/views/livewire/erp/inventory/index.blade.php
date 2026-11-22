@@ -171,7 +171,7 @@ new #[Layout('components.layouts.app')] class extends Component
     public function inventoryVehicles()
     {
         $user = auth()->user();
-        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman;
+        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업';
         $restrictToManagerScope = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
@@ -193,7 +193,7 @@ new #[Layout('components.layouts.app')] class extends Component
             // 일반재고 = 바이어 미정 + 판매가 없음 / 선적전 재고 = 바이어 지정 또는 판매가 (jin 2026-11-20 — scopeGeneralStock 과 같은 기준)
             ->when($this->category === 'general', fn ($q) => $q->whereNull('vehicles.buyer_id')->where(fn ($q2) => $q2->whereNull('vehicles.sale_price')->orWhere('vehicles.sale_price', '<=', 0)))
             ->when($this->category === 'pre_ship', fn ($q) => $q->where(fn ($q2) => $q2->whereNotNull('vehicles.buyer_id')->orWhere('vehicles.sale_price', '>', 0)))
-            ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
+            ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->ownSalesmanScopeId()))
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
             ->when($this->salesmanFilter !== '', fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
             ->when($this->buyerFilter !== '', fn ($q) => $q->where('buyer_id', $this->buyerFilter))
@@ -266,8 +266,8 @@ new #[Layout('components.layouts.app')] class extends Component
             $subIds = $user->getSubordinateSalesmanIds();
             $q->where(fn ($q2) => $q2->whereIn('salesman_id', $subIds)
                 ->orWhereHas('vehicles', fn ($q3) => $q3->whereIn('salesman_id', $subIds)));
-        } elseif ($user->role === '영업' && $user->salesman) {
-            $ownId = $user->salesman->id;
+        } elseif ($user->role === '영업') {
+            $ownId = $user->ownSalesmanScopeId();
             $q->where(fn ($q2) => $q2->where('salesman_id', $ownId)
                 ->orWhereHas('vehicles', fn ($q3) => $q3->where('salesman_id', $ownId)));
         }
@@ -370,8 +370,8 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         $user = auth()->user();
         $scoped = function ($q) use ($user) {
-            if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman) {
-                $q->where('salesman_id', $user->salesman->id);
+            if ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업') {
+                $q->where('salesman_id', $user->ownSalesmanScopeId());
             } elseif ($user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
                 $q->whereIn('salesman_id', $user->getSubordinateSalesmanIds());
             }

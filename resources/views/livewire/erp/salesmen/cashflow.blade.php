@@ -27,7 +27,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         $user     = auth()->user();
 
         // 비관리자는 자신의 캐시플로우만 접근 가능
-        if (! $user->isAdmin() && $salesman->user_id !== $user->id) {
+        // 🔑 관리 이상은 남의 현금흐름도 연다 (jin 2026-11-22 «넓혀줘») — 업무관리자 이상은 전원, 관리는 본인 담당 영업만.
+        //    구: 최고·시스템관리자만 → 이월 [청산](canApprove)을 사실상 대표만 누를 수 있었다.
+        $canSeeOthers = $user->canAccessAdmin()
+            || ($user->canApprove() && in_array($salesman->id, $user->getSubordinateSalesmanIds(), true));
+        if (! $canSeeOthers && $salesman->user_id !== $user->id) {
             abort(403);
         }
 

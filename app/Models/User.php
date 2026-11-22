@@ -835,6 +835,16 @@ class User extends Authenticatable
     }
 
     /**
+     * 영업 본인 범위의 Salesman id — 목록·엑셀의 「본인 것만」 조건이 쓴다.
+     * 🚪 연결된 담당자가 없으면 0(= 어떤 행과도 안 맞는다) — jin 2026-11-22 «없다면 막는 게 맞음».
+     *    구: 조건에 `&& $user->salesman` 이 붙어 있어 연결 없는 영업 계정은 제한이 꺼지고 **전체가 보였다**.
+     */
+    public function ownSalesmanScopeId(): int
+    {
+        return (int) ($this->salesman?->id ?? 0);
+    }
+
+    /**
      * Review.md #3/#4 (2026-06-09) — 차량 접근 스코프 단일 출처.
      *
      * 영업 = 본인 담당 차량 / 관리 = 본인 팀(subordinate 영업) 차량 / admin·super·수출통관·재무 = 전체.
@@ -848,7 +858,8 @@ class User extends Authenticatable
         }
 
         if ($this->role === '영업') {
-            return $vehicle->salesman_id === $this->salesman?->id;
+            // 담당자(Salesman) 연결이 없는 영업 계정은 아무 차도 못 본다 — 구: null === null 이라 담당자 없는 차가 열렸다(jin 2026-11-22).
+            return $this->salesman !== null && $vehicle->salesman_id === $this->salesman->id;
         }
 
         if ($this->role === '관리') {
