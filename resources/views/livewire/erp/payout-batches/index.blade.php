@@ -510,7 +510,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         $netTransfer = (int) ($bd['totals']['transfer_total'] ?? 0) - $heldSum + $extraSum;
                     @endphp
                     @unless($b->isDomesticBatch())
-                    <x-payout.totals :totals="$bd['totals']" :settlement-total="(int) $b->total_payout" :held-total="$heldSum" :extra-total="$extraSum" :extra-paid-outside="$extraPaidOutside" />
+                    <x-payout.totals :totals="$bd['totals']" :settlement-total="(int) $b->total_payout" :held-total="$heldSum" :extra-total="$extraSum" :extra-paid-outside="$extraPaidOutside" :leaver-net="$b->leaverCompanyNet()" />
                     @endunless
                     @if($holdable && $canEditLedger)
                     <div class="flex flex-wrap items-center justify-between gap-2 rounded-md border {{ $finalized ? 'border-blue-200 bg-blue-50' : 'border-dashed border-blue-300 bg-white' }} px-2.5 py-1.5 text-[11px]" data-finalize-row>

@@ -4922,6 +4922,20 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($current === null || $this->formFingerprint === '' || $current === $this->formFingerprint) {
             return;
         }
+        // 🪟 **내 저장과 겹친 점검인가** (jin 2026-11-22 «로컬에 나밖에 없는데 다른 창이 먼저 저장했다고 뜬다»).
+        //    패널은 섬이라 저장 요청(섬)과 30초 tick(루트)이 **동시에** 나갈 수 있다(Livewire 는 같은 scope 끼리만 줄을 세운다).
+        //    tick 은 저장 전 스냅샷(입력 중·옛 지문)을 들고 와서, 방금 한 자기 저장을 「남이 먼저 저장」으로 읽었다.
+        //    이 화면(컴포넌트 id)이 방금 저장해 만든 지문이면 남의 저장이 아니다 → 저장이 끝낸 모양 그대로 맞춘다.
+        $own = \Illuminate\Support\Facades\Cache::get($this->selfSaveKey());
+        if (is_array($own) && (int) ($own['vehicle'] ?? 0) === (int) $this->editingId && ($own['fp'] ?? null) === $current) {
+            if (! empty($own['keep'])) {
+                $this->openEdit((int) $this->editingId);
+            } else {
+                $this->close();
+            }
+
+            return;
+        }
         if ($this->formDirty) {
             $this->remoteChanged = true;
             $this->dispatch('notify', message: __('vehicle.remote.banner'), type: 'warning');
@@ -4930,6 +4944,12 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         $this->openEdit($this->editingId);
         $this->dispatch('notify', message: __('vehicle.remote.reloaded'), type: 'success');
+    }
+
+    /** 이 화면(컴포넌트)이 방금 저장한 차량·지문을 잠깐 적어 두는 자리 — syncWithRemote 가 자기 저장을 가려낸다. */
+    private function selfSaveKey(): string
+    {
+        return 'vehicle_self_save:'.$this->getId();
     }
 
     /** 다른 탭(같은 브라우저)이 「차량에 뭔가 썼다」고 알려 왔다 — app.js BroadcastChannel → Livewire.dispatch. */
@@ -7587,6 +7607,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->futureDates = [];
 
         $this->unsetComputedProperties();
+
+        // 🪟 자기 저장 표식 — 이 저장과 겹쳐 나간 30초 점검이 「남이 먼저 저장」으로 오인하지 않게(syncWithRemote 주석).
+        if ($vehicle && ! $wasCreating) {
+            \Illuminate\Support\Facades\Cache::put($this->selfSaveKey(), [
+                'vehicle' => $vehicle->id, 'fp' => $vehicle->editFingerprint(), 'keep' => (bool) $keepOpen,
+            ], 120);
+        }
 
         // 큐 6 H14 — 신규 차량 등록 시 다음 단계로 동선 안내.
         // 패널을 닫지 않고 방금 만든 차량을 다시 로드(openEdit)한 뒤,
