@@ -191,11 +191,19 @@ trait StackedHeaderSort
      *   ['col', 칼럼]            숫자·날짜·불리언 칸
      *   ['text', 칼럼]           글자 칸(빈 문자열도 뒤로)
      *   ['rel', 표, 외래키, 칸?]  다른 표의 값(기본 name) — 예: ['rel', 'buyers', 'consignees.buyer_id']
+     *   ['expr', 식]             두 값으로 가르는 식 — 예: ['expr', '(confirmed_at IS NOT NULL)'] = ▲ 대기 먼저 · ▼ 확정 먼저
+     *   ['rev', 칼럼]            헤더 뜻과 칼럼 방향이 반대인 칸 — 예: 「경과」(▲ 짧은 것 = 최근 시각부터)
      * 빈 값은 방향과 무관하게 뒤로 보낸다. 🚫 선언은 코드 상수만 — 화면에서 온 값을 넣지 말 것(raw SQL 이다).
      */
     protected function applySortSpec($q, array $spec, string $dir)
     {
         $dir = $dir === 'desc' ? 'desc' : 'asc';
+        if ($spec[0] === 'expr') {
+            return $q->orderByRaw("{$spec[1]} {$dir}");
+        }
+        if ($spec[0] === 'rev') {
+            return $q->orderByRaw($this->emptyLastExpression($spec[1], false))->orderBy($spec[1], $dir === 'asc' ? 'desc' : 'asc');
+        }
         if ($spec[0] === 'rel') {
             $expr = '(SELECT '.($spec[3] ?? 'name')." FROM {$spec[1]} WHERE {$spec[1]}.id = {$spec[2]} LIMIT 1)";
 

@@ -41,14 +41,15 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 탭을 바꾸면 정렬은 기본으로 돌아간다(`updatedTabType`).
      */
     private const SORTABLE_TRANSFER = [
-        'amount' => ['col', 'amount'], 'status' => ['text', 'status'], 'elapsed' => ['col', 'updated_at'],
+        'amount' => ['col', 'amount'], 'status' => ['text', 'status'], 'elapsed' => ['rev', 'updated_at'],   // ▲ = 경과가 짧은 것(방금 처리된 것)부터
     ];
 
     private const SORTABLE_PAYMENT = [
         'vehicle' => ['rel', 'vehicles', '{T}.vehicle_id', 'vehicle_number'],
         'progress' => ['rel', 'vehicles', '{T}.vehicle_id', 'progress_status_cache'],
         'amount' => ['col', 'amount'], 'payment_date' => ['col', 'payment_date'],
-        'memo' => ['text', 'note'], 'status' => ['col', 'confirmed_at'],
+        'memo' => ['text', 'note'],
+        'status' => ['expr', '(confirmed_at IS NOT NULL)'],   // ▲ 대기 먼저 · ▼ 확정 먼저(확정 시각순이 아니다)
     ];
 
     private function sortSpecs(): array
