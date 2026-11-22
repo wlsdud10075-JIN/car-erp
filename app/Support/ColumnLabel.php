@@ -52,7 +52,7 @@ class ColumnLabel
         }
         $table = self::resolveTable($modelOrTable);
         if ($table === null) {
-            return $columnName;
+            return self::columnAny($columnName);   // 사전에 표가 없는 대상(클레임 등)도 같은 이름을 빌린다
         }
 
         // 회사 프로파일별 비용 라벨(karaba 점검비·기타비)은 Vehicle::costLabel 이 단일 출처다.
@@ -61,10 +61,11 @@ class ColumnLabel
             return Vehicle::costLabel($columnName);
         }
 
-        $label = config("column_labels.$table.$columnName", $columnName);
+        $label = config("column_labels.$table.$columnName");
 
-        // 방어 — 사전에 중첩 구조가 들어와도 500 대신 영문 fallback (columnAny 와 동일 정책).
-        return is_string($label) ? $label : $columnName;
+        // 그 표의 사전에 없으면 다른 표의 같은 이름을 빌린다(jin 2026-11-22 «영어로 된 것들 한글로») — 영문 그대로 뜨는 것보다 낫다.
+        //   방어 — 사전에 중첩 구조가 들어와도 500 대신 폴백(columnAny 와 동일 정책).
+        return is_string($label) ? $label : self::columnAny($columnName);
     }
 
     /**
@@ -152,6 +153,11 @@ class ColumnLabel
         // 2026-10-23 — 사내직원 명부에 달마다 쌓이는 급여대장·헤이맨 정산금(`payroll_2026-09` · `heyman_pay_2026-09`).
         if (preg_match('/^(payroll|heyman_pay)_(\d{4}-\d{2})$/', $columnName, $m)) {
             return ($m[1] === 'payroll' ? '급여대장' : '헤이맨 정산금')." ({$m[2]})";
+        }
+
+        // board 매입 락 해제 요청 — `count:3` 처럼 대수를 실어 적는다(2026-11-20).
+        if (preg_match('/^count:(\d+)$/', $columnName, $m)) {
+            return "요청 대수 ({$m[1]}대)";
         }
 
         return null;
