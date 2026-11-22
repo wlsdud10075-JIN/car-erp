@@ -14,6 +14,7 @@ $base    = "$env:USERPROFILE\nightly"
 $htdocs  = 'C:\xampp\htdocs'
 $repo    = "$htdocs\car-erp"
 $board   = "$htdocs\board"
+$ssancar = "$htdocs\ssancar"
 $php     = "$env:USERPROFILE\php\php.exe"
 $key     = "$env:USERPROFILE\.ssh\car_erp_key"
 $today   = Get-Date -Format 'yyyyMMdd'
@@ -57,7 +58,7 @@ function ResolveCodex {
 
 # 1) pull ------------------------------------------------------------------
 if (-not $SkipPull) {
-    foreach ($r in @($repo, $board)) { [void](RunCapture 'git' @('-C', $r, 'pull', '-q', '--ff-only') $null 120) }
+    foreach ($r in @($repo, $board, $ssancar)) { if (Test-Path $r) { [void](RunCapture 'git' @('-C', $r, 'pull', '-q', '--ff-only') $null 120) } }
 }
 $headErp   = (RunCapture 'git' @('-C', $repo,  'rev-parse', '--short', 'HEAD')).out.Trim()
 $headBoard = (RunCapture 'git' @('-C', $board, 'rev-parse', '--short', 'HEAD')).out.Trim()
@@ -108,25 +109,33 @@ if ($v1.blocked.Count) { [void]$rep.AppendLine(($v1.blocked | ForEach-Object { '
 [void]$rep.AppendLine($v1.text)
 
 # 2b) 개발 현황판 ← 배포 기록 (PHP 가 직접, Codex 안 거침) ----------------------------
-$devScript = "$repo\scripts\notion-dev-status-sync.php"
+#     2026-11-22 (jin «각각 세션에 얘기해서 새벽에 자동으로 우리처럼») — board(원본 = git origin/master) · ssancar.com(원본 = _ops/log 월별 기록)도 같은 현황판에.
+#     스크립트는 각자 레포에 있다. 레포·스크립트가 없으면 건너뛴다(ssancar 는 회사 PC 에 클론이 있어야 돈다). exit 1 = 빠진 카드 있음(그때만 --apply), 2 = 오류.
+$devTargets = @(
+    @{ name = 'car-erp';     cwd = $repo;    script = "$repo\scripts\notion-dev-status-sync.php" }
+    @{ name = 'board';       cwd = $board;   script = "$board\scripts\notion-dev-status-sync.php" }
+    @{ name = 'ssancar.com'; cwd = $ssancar; script = "$ssancar\_ops\dev\notion_dev_status_sync.php" }
+)
 [void]$rep.AppendLine('## 개발 현황판 (배포 기록 동기화)')
-if (Test-Path $devScript) {
-    Push-Location $repo
+foreach ($dt in $devTargets) {
+    [void]$rep.AppendLine("### $($dt.name)")
+    if (-not (Test-Path $dt.script)) { Log "dev-status $($dt.name): 스크립트 없음 - 건너뜀"; [void]$rep.AppendLine("스크립트 없음($($dt.script)) - 건너뜀."); [void]$rep.AppendLine(''); continue }
+    Push-Location $dt.cwd
     try {
-        $d1 = RunCapture $php @($devScript, '--verify') $null 300
-        Log "dev-status verify: exit $($d1.code)"
+        $d1 = RunCapture $php @($dt.script, '--verify') $null 300
+        Log "dev-status $($dt.name) verify: exit $($d1.code)"
         $dLines = ($d1.out -split "`r?`n")
         [void]$rep.AppendLine((($(if ($dLines.Count -gt 60) { @('… (앞부분 생략)') + $dLines[-60..-1] } else { $dLines })) -join "`n").Trim())
         if ($Apply -and $d1.code -eq 1) {
-            $d2 = RunCapture $php @($devScript, '--apply') $null 600
-            Log "dev-status apply: exit $($d2.code)"
+            $d2 = RunCapture $php @($dt.script, '--apply') $null 600
+            Log "dev-status $($dt.name) apply: exit $($d2.code)"
             [void]$rep.AppendLine('')
-            [void]$rep.AppendLine("### --apply (exit $($d2.code))")
+            [void]$rep.AppendLine("#### --apply (exit $($d2.code))")
             [void]$rep.AppendLine((($d2.out -split "`r?`n") | Select-Object -Last 40) -join "`n")
         }
     } finally { Pop-Location }
-} else { [void]$rep.AppendLine('scripts/notion-dev-status-sync.php 없음 — car-erp dev 가 아직 안 당겨졌는지 확인.') }
-[void]$rep.AppendLine('')
+    [void]$rep.AppendLine('')
+}
 
 # 3) Codex 발행 (-Apply + 불일치 있을 때만) ------------------------------------
 if ($Apply -and $v1.mismatch -gt 0) {
