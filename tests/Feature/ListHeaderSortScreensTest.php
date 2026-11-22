@@ -49,7 +49,10 @@ class ListHeaderSortScreensTest extends TestCase
             foreach ($keys as $key) {
                 $c = Volt::test("erp.{$screen}.index")->call('clickSort', $key);
                 $c->assertOk()->assertSet('sortColumn', $key);   // 허용 키가 아니면 조용히 무시된다 — 헤더와 선언이 어긋난 것
-                $c->call('clickSort', $key)->assertOk()->assertSet('sortDirection', 'desc');
+                // 금액·계산 칸은 큰 것부터(▼ → ▲), 나머지는 ▲ → ▼
+                $big = in_array($key, ['savings', 'paid_ratio', 'total_margin', 'margin_rate', 'settlement_amount', 'actual_payout'], true);
+                $c->assertSet('sortDirection', $big ? 'desc' : 'asc');
+                $c->call('clickSort', $key)->assertOk()->assertSet('sortDirection', $big ? 'asc' : 'desc');
             }
         }
     }
@@ -113,9 +116,9 @@ class ListHeaderSortScreensTest extends TestCase
         $asc = array_keys($payout);
 
         $c = Volt::test('erp.settlements.index')->set('monthFilter', '')->set('perPage', 10)->call('clickSort', 'actual_payout');
-        $c->assertSet('sortColumn', 'actual_payout')->assertSeeInOrder(array_slice($asc, 0, 10));
-        $c->call('clickSort', 'actual_payout')->assertSet('sortDirection', 'desc')->assertSeeInOrder(array_slice(array_reverse($asc), 0, 10));
-        $c->call('clickSort', 'actual_payout')->assertSet('sortColumn', '');            // ▲ → ▼ → 기본
+        $c->assertSet('sortColumn', 'actual_payout')->assertSet('sortDirection', 'desc')->assertSeeInOrder(array_slice(array_reverse($asc), 0, 10));
+        $c->call('clickSort', 'actual_payout')->assertSet('sortDirection', 'asc')->assertSeeInOrder(array_slice($asc, 0, 10));
+        $c->call('clickSort', 'actual_payout')->assertSet('sortColumn', '');            // ▼ → ▲ → 기본
 
         // 계산 칸은 한 칸만 — DB 칸 정렬 중에 누르면 그 정렬은 풀리고, 계산 칸 정렬 중에 DB 칸을 누르면 그 칸 하나로 바뀐다
         $c->call('clickSort', 'status')->call('clickSort', 'total_margin')->assertSet('sortColumn', 'total_margin')->assertSet('sortExtra', []);
@@ -123,7 +126,7 @@ class ListHeaderSortScreensTest extends TestCase
 
         // 페이지를 넘겨도 줄이 이어진다 — 10건씩이면 2쪽은 11·12번째
         $rows = Volt::test('erp.settlements.index')->set('monthFilter', '')->set('perPage', 10)
-            ->call('clickSort', 'actual_payout')->call('gotoPage', 2)->instance()->settlements;
+            ->call('clickSort', 'actual_payout')->call('clickSort', 'actual_payout')->call('gotoPage', 2)->instance()->settlements;
         $this->assertSame(12, $rows->total());
         $this->assertSame([$asc[10], $asc[11]], $rows->map(fn ($s) => $s->vehicle->vehicle_number)->all());
     }
@@ -157,9 +160,9 @@ class ListHeaderSortScreensTest extends TestCase
         $mk('EUR-MIXED', ['EUR' => 800, 'USD' => 50]);   // 큰 쪽(EUR) 묶음
 
         $c = Volt::test('erp.buyers.index')->call('clickSort', 'savings')->assertSet('sortColumn', 'savings');
-        $c->assertSeeInOrder(['EUR-SMALL', 'EUR-MIXED', 'EUR-BIG', 'USD-BIG', 'NO-SAVINGS']);
-        // ▼ — 통화 묶음 순서는 그대로, 묶음 안의 금액만 뒤집힌다. USD 9,000 이 EUR 5,000 앞으로 오지 않는다.
-        $c->call('clickSort', 'savings')->assertSeeInOrder(['EUR-BIG', 'EUR-MIXED', 'EUR-SMALL', 'USD-BIG', 'NO-SAVINGS']);
+        // 첫 클릭 = ▼(큰 것부터). 통화 묶음 순서는 방향과 무관 — USD 9,000 이 EUR 5,000 앞으로 오지 않는다.
+        $c->assertSet('sortDirection', 'desc')->assertSeeInOrder(['EUR-BIG', 'EUR-MIXED', 'EUR-SMALL', 'USD-BIG', 'NO-SAVINGS']);
+        $c->call('clickSort', 'savings')->assertSet('sortDirection', 'asc')->assertSeeInOrder(['EUR-SMALL', 'EUR-MIXED', 'EUR-BIG', 'USD-BIG', 'NO-SAVINGS']);
         $c->call('clickSort', 'savings')->assertSet('sortColumn', '');
         // 한 칸만 — 다른 정렬 중에 누르면 그 정렬은 풀린다
         $c->call('clickSort', 'name')->call('clickSort', 'savings')->assertSet('sortColumn', 'savings')->assertSet('sortExtra', []);

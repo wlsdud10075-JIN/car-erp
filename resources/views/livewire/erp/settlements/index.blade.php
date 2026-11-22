@@ -44,7 +44,7 @@ new #[Layout('components.layouts.app')] class extends Component
      *    - 공식을 SQL 에 옮기지 않는다(두 벌이 되면 화면 숫자와 순서가 어긋난다) — 값은 화면이 찍는 그 accessor 다.
      *    - 상한 `COMPUTED_SORT_MAX` — ssancarerp 실측(11-22) 한 달 430~603건 · 1,000건 계산 0.98초. 넘으면 정렬하지 않고 안내한다
      *      (이 화면은 30초마다 다시 그려서 그 계산이 반복된다).
-     *    - 계산 칸은 **한 칸만**(겹쳐 누르기 없음) — 누르면 다른 정렬은 풀린다. ▲ → ▼ → 기본.
+     *    - 계산 칸은 **한 칸만**(겹쳐 누르기 없음) — 누르면 다른 정렬은 풀린다. ▼(큰 것부터) → ▲ → 기본.
      */
     private const COMPUTED_SORT = ['paid_ratio', 'total_margin', 'margin_rate', 'settlement_amount', 'actual_payout'];
 
@@ -77,8 +77,13 @@ new #[Layout('components.layouts.app')] class extends Component
         if (! $this->sortable($col)) {
             return;
         }
-        if ($this->sortColumn === $col && $this->sortDirection === 'desc') {
-            $this->resetSort();
+        // 🔽 금액·계산 칸은 **큰 것부터**(▼ → ▲ → 기본) — jin 2026-11-22 «두 번 눌러야 최고 금액이 맨 위로 온다». 글자 칸은 종전대로 ▲ 먼저.
+        if ($this->sortColumn === $col) {
+            if ($this->sortDirection === ($toComputed ? 'asc' : 'desc')) {
+                $this->resetSort();
+            } else {
+                $this->setSort($col);   // 방향 뒤집기
+            }
 
             return;
         }
@@ -87,7 +92,10 @@ new #[Layout('components.layouts.app')] class extends Component
 
             return;
         }
-        $this->setSort($col);   // 같은 칸이면 ▲ → ▼, 다른 칸이면 그 칸 ▲ 하나만
+        $this->setSort($col);   // 그 칸 하나만
+        if ($toComputed) {
+            $this->sortDirection = 'desc';
+        }
     }
 
     protected function applySortKey($q, string $col, string $dir)
