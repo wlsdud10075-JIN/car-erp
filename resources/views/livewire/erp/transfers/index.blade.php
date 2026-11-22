@@ -46,7 +46,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     private const SORTABLE_PAYMENT = [
         'vehicle' => ['rel', 'vehicles', '{T}.vehicle_id', 'vehicle_number'],
-        'progress' => ['rel', 'vehicles', '{T}.vehicle_id', 'progress_status_cache'],
+        'progress' => ['order', '(SELECT progress_status_cache FROM vehicles WHERE vehicles.id = {T}.vehicle_id LIMIT 1)', self::PROGRESS_ORDER],   // 업무 순서(글자순 아님)
         'amount' => ['col', 'amount'], 'payment_date' => ['col', 'payment_date'],
         'memo' => ['text', 'note'],
         'status' => ['expr', '(confirmed_at IS NOT NULL)'],   // ▲ 대기 먼저 · ▼ 확정 먼저(확정 시각순이 아니다)
@@ -67,7 +67,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $spec = $this->sortSpecs()[$col];
         $table = $this->tabType === 'sale_payment' ? 'final_payments' : 'purchase_balance_payments';
 
-        return $this->applySortSpec($q, array_map(fn ($v) => str_replace('{T}', $table, $v), $spec), $dir);
+        return $this->applySortSpec($q, array_map(fn ($v) => is_string($v) ? str_replace('{T}', $table, $v) : $v, $spec), $dir);
     }
 
     protected function afterSortChanged(): void
