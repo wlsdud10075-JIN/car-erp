@@ -2200,12 +2200,9 @@ new #[Layout('components.layouts.app')] class extends Component
             class="rounded border px-2.5 py-1.5 text-sm font-medium {{ $overrideOnly ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-gray-300 bg-white text-gray-500 hover:bg-gray-50' }}">
         {{ __('settlement.gate.filter') }}
     </button>
-    <select wire:model="salesmanFilter" class="input-filter">
-        <option value="0">{{ __('settlement.filter_all_salesman') }}</option>
-        @foreach($this->salesmen as $sm)
-        <option value="{{ $sm->id }}">{{ $sm->name }}</option>
-        @endforeach
-    </select>
+    {{-- 🔽 드롭박스콤보공용 (jin 2026-11-22 «지금 할 때 하는 게 낫지 않나») — 담당자도 치면서 찾는다. 비우면(×) 전체. --}}
+    <x-erp.combobox wire:key="stl-sm-filter-{{ $salesmanFilter }}" model="salesmanFilter" :options="$this->salesmen"
+        :selected="$salesmanFilter" empty-value="0" placeholder="{{ __('settlement.filter_all_salesman') }}" class="w-40" deferred />
     {{-- 정산 귀속월(attributed_month=완납월, 1일~말일) 솔팅 + 익월 10일 지급 라벨 (A-3 2026-07-08). --}}
     <select wire:model="monthFilter" class="input-filter" title="{{ __('settlement.filter_month_title') }}">
         <option value="">{{ __('settlement.filter_all_month') }}</option>
@@ -3669,12 +3666,9 @@ new #[Layout('components.layouts.app')] class extends Component
             {{-- 담당자 --}}
             <div class="mb-3">
                 <label class="label-base">{{ __('settlement.field_salesman') }}</label>
-                <select wire:model="salesman_id" class="input-base">
-                    <option value="">{{ __('settlement.salesman_none') }}</option>
-                    @foreach($this->salesmen as $sm)
-                    <option value="{{ $sm->id }}">{{ $sm->name }}</option>
-                    @endforeach
-                </select>
+                {{-- 🔽 드롭박스콤보공용 (2026-11-22) — 비우면(×) 미지정. 저장 때 같이 간다(deferred). --}}
+                <x-erp.combobox wire:key="stl-sm-edit-{{ $editingId }}-{{ $salesman_id }}" model="salesman_id" :options="$this->salesmen"
+                    :selected="$salesman_id" placeholder="{{ __('settlement.salesman_none') }}" deferred />
             </div>
 
             {{-- 정산방식 --}}

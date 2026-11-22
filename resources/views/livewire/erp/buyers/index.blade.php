@@ -1745,13 +1745,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
     <x-erp.search-bar :placeholder="__('buyer.search_ph')" width="w-64">
     {{-- 회의확장씬 #2 Phase 3-1 (a) (2026-05-23) — 영업담당자 select 필터 --}}
-    <select wire:model="salesmanFilter" class="input-filter">
-        <option value="">{{ __('buyer.all_salesmen') }}</option>
-        <option value="{{ self::SALESMAN_NONE }}">{{ __('buyer.no_salesman_filter') }}</option>
-        @foreach($this->salesmen as $sm)
-            <option value="{{ $sm->id }}">{{ $sm->name }}</option>
-        @endforeach
-    </select>
+    {{-- 🔽 드롭박스콤보공용 (jin 2026-11-22 «지금 할 때 하는 게 낫지 않나») — 담당자도 치면서 찾는다. 비우면(×) 전체. --}}
+    <x-erp.combobox wire:key="buyer-sm-filter-{{ $salesmanFilter }}" model="salesmanFilter" :options="$this->salesmen"
+        :selected="$salesmanFilter" :extra="[self::SALESMAN_NONE => __('buyer.no_salesman_filter')]"
+        placeholder="{{ __('buyer.all_salesmen') }}" class="w-40" deferred />
     @if(Setting::b2bPartnersEnabled())
     {{-- 🤝 B2B 파트너스 필터 (jin 2026-11-01) — 사이드바 「B2B 파트너스」 = ?b2b=1 --}}
     <select wire:model="b2bFilter" class="input-filter">
@@ -2061,12 +2058,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 {{-- 회의확장씬 #5-1 (2026-05-22) — 영업담당자 직접 지정 ([관리] 솔팅 직접 관계) --}}
                 <div>
                     <label class="label-base">{{ __('buyer.field.salesman') }}</label>
-                    <select wire:model="salesman_id_str" class="input-base">
-                        <option value="">{{ __('buyer.field.salesman_unassigned') }}</option>
-                        @foreach($this->salesmen as $s)
-                        <option value="{{ $s->id }}">{{ $s->name }}</option>
-                        @endforeach
-                    </select>
+                    {{-- 🔽 드롭박스콤보공용 (2026-11-22) — 비우면(×) 미지정. 저장 때 같이 간다(deferred). --}}
+                    <x-erp.combobox wire:key="buyer-sm-edit-{{ $editingId }}-{{ $salesman_id_str }}" model="salesman_id_str" :options="$this->salesmen"
+                        :selected="$salesman_id_str" placeholder="{{ __('buyer.field.salesman_unassigned') }}" deferred />
                     <p class="mt-1 text-xs text-gray-400">{{ __('buyer.field.salesman_note') }}</p>
                     @error('salesman_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                 </div>

@@ -6,13 +6,17 @@
     'disabled' => false,
     'required' => false,
     'deferred' => false,     // true = 고르기만 하고 서버로는 [조회]·저장 때 같이 보낸다(목록 필터 — 조회 버튼이 있는 줄)
+    'extra' => [],           // 목록 맨 위 특수 선택지 [값 => 이름] — 예: 담당자 「미지정」(2026-11-22). 「전체」는 비운 상태(placeholder)다
+    'emptyValue' => '',      // × 로 비울 때 서버에 보낼 값 — 프로퍼티가 int 면 '0'
 ])
 @php
     // item 8(b) — 바이어/컨사이니 자동완성 콤보박스 (드롭다운 + 텍스트 검색 겸용).
     //   선택 시 $wire.set(model, id) → 서버 updated 훅(컨사이니 종속·전파) 발화.
     //   wire:key(호출측)를 selected 값에 묶으면 서버 변경(quick-add·전파·버이어변경) 시 재init.
-    $optList = collect($options)->map(fn ($o) => ['id' => (string) $o->id, 'name' => (string) $o->name])->values();
-    $selectedName = collect($options)->firstWhere('id', (int) $selected)?->name ?? '';
+    $extraList = collect($extra)->map(fn ($name, $id) => ['id' => (string) $id, 'name' => (string) $name])->values();
+    $optList = $extraList->concat(collect($options)->map(fn ($o) => ['id' => (string) $o->id, 'name' => (string) $o->name]))->values();
+    $selectedName = $extraList->firstWhere('id', (string) $selected)['name']
+        ?? collect($options)->firstWhere('id', (int) $selected)?->name ?? '';
 @endphp
 {{-- ⚠️ class 는 반드시 merge — 예전엔 {{ $attributes }} 와 class="relative" 를 따로 찍었다.
      호출측이 class 를 주면(재고관리 w-44) 같은 속성이 두 번 렌더돼 뒤엣것(relative)이 무시되고,
@@ -34,7 +38,7 @@
         },
         clear() {
             this.selectedName = ''; this.query = ''; this.open = false;
-            $wire.set('{{ $model }}', '', {{ $deferred ? 'false' : 'true' }});
+            $wire.set('{{ $model }}', @js((string) $emptyValue), {{ $deferred ? 'false' : 'true' }});
         },
         syncBack() { this.query = this.selectedName; },
      }"

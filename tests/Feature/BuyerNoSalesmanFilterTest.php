@@ -82,6 +82,14 @@ class BuyerNoSalesmanFilterTest extends TestCase
     public function test_the_option_is_visible_in_the_dropdown(): void
     {
         $this->actingAs($this->admin());
-        Volt::test('erp.buyers.index')->assertSee(__('buyer.no_salesman_filter'));
+        // 🔽 2026-11-22 — select → 콤보(치면서 찾기). 선택지는 콤보의 목록 데이터(JSON, 한글은 \uXXXX)로 실린다.
+        $html = Volt::test('erp.buyers.index')->html();
+        $this->assertStringContainsString('buyer-sm-filter-', $html);
+        $needle = str_replace('\\', '\\\\', trim(json_encode(__('buyer.no_salesman_filter')), '"'));
+        $this->assertTrue(
+            str_contains($html, $needle) || str_contains($html, __('buyer.no_salesman_filter')),
+            '담당자 필터 콤보에 「미지정」 선택지가 없다'
+        );
+        $this->assertStringContainsString('__none', $html);
     }
 }
