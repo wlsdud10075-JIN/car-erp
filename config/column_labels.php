@@ -502,6 +502,11 @@ return [
     // audit_logs.auditable_type 표시에 사용
     'models' => [
         'KakaoCollectorToken' => '카톡 수집 프로그램',
+        'ShippingRequest' => '선적요청',
+        'VehicleShipment' => '발송(EMS·DHL)',
+        'UnpaidExportOverride' => '미입금 우회 승인',
+        'SettlementPayoutAdjustment' => '월정산 조정 줄',
+        'PayoutHold' => '지급보류·추가금',
         'KakaoRoom' => '카톡 방',
         'VehicleClaim' => '클레임',
         'Vehicle' => '차량',
