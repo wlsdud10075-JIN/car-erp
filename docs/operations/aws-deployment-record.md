@@ -935,6 +935,15 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-22 (2) — master `1de45871` · 마이그 0 · 보안 4건 (jin «1. 배포해. 2. 진행해»)
+
+- run 44983045812 잡 5개 success · 3사 서버 `1de45871` · /login 200. 로컬 전체 4,048 통과(건너뜀 1). cherry-pick 1커밋.
+- **① NICE 게이트웨이 토큰 검사 + IP별 분당 60회** — `POST /provide/api/nice-lookup` 이 인증 없이 열려 있었다. `X-SSANCAR-API-KEY` 를 검사(틀리면 401, NICE 미호출). 3사 NICE_PROVIDE_TOKEN 지문 동일(값은 안 봄) → 서버 설정 변경 없음. 배포 뒤 토큰 없는 호출 401 확인 · 게이트웨이 config 지문 = 3사 지문. ⚠️ 정상 조회는 jin·실무자가 3사에서 한 번씩 눌러 확인(나는 조회 버튼을 안 누른다).
+- **② fail2ban 3사 설치**(1.0.2, sshd 감옥만 · 실패 5회/10분 → 1시간 · systemd 백엔드). 허용 목록 = 3사 서버 IP · 내부망(172.26/16 · 10.6.0/24) · Tailscale(100.64/10) · 작업 PC(39.118.236.191). 설정 `/etc/fail2ban/jail.local`. `NEEDRESTART_MODE=l` 로 설치해 다른 서비스 재시작 없음. nginx 스캔 감옥은 안 켰다(ssancarerp 접근 로그가 자체 형식이라 기본 필터가 안 맞는다 — 필요하면 따로).
+- **③ 보안 헤더 3사** — `/etc/nginx/snippets/security-headers.conf`(X-Frame-Options SAMEORIGIN · nosniff · Referrer-Policy · HSTS 1년)를 ERP 서버 블록에 include. karabaerp 는 기존 두 줄을 같은 묶음으로 교체. 백업 `/etc/nginx/{ssancar-erp|car-erp}.bak-20261122`. `nginx -t` → reload → 헤더 4개·/login 200 확인. board 사이트 블록은 안 건드렸다.
+- **④ SESSION_SECURE_COOKIE=true** ssancarerp·karabaerp `.env`(heymanerp 는 원래 있음) + `config:cache`. 백업 `.env.bak-20261122`. 쿠키에 `secure` 확인(3사).
+- 되돌리기: ③ 백업 복사 + reload / ④ `.env` 줄 삭제 + config:cache / ② `systemctl disable --now fail2ban`.
+
 ## 2026-11-22 — master `e488386e` · 마이그 1 (jin «배포할 거 빨리 수정 완료해서 배포하고»)
 
 - run 44979128629 잡 5개 success · 3사 서버 `e488386e` · /login 200 · 마이그 `2026_11_20_000002_add_reanchored_from_to_settlements` Ran(3사). 로컬 전체 4,046 통과(건너뜀 1). cherry-pick 4커밋.
