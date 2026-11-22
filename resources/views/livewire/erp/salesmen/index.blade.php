@@ -9,6 +9,7 @@ use App\Services\Payroll\PayrollStatementImporter;
 use App\Support\ListFilters;
 use App\Support\ListSearch;
 use App\Support\SearchTerm;
+use App\Support\StackedHeaderSort;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -415,6 +416,30 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     use ListSearch;    // 🔎 검색공용
     use ListFilters;   // 🏷️ 필터칩공용
+    use StackedHeaderSort;   // 🔼🔽 헤더정렬공용 (jin 2026-11-22 «헤더가 있는 곳은 전체 적용»)
+
+    /** 헤더 키 → 정렬 선언(`applySortSpec`). 표의 일곱 칸 전부(이름 옆 이월·보류 뱃지는 계산값이라 정렬 기준이 아니다). */
+    private const SORTABLE = [
+        'name' => ['text', 'name'], 'type' => ['text', 'type'], 'account' => ['rel', 'users', 'salesmen.user_id'],
+        'phone' => ['text', 'phone'], 'email' => ['text', 'email'], 'memo' => ['text', 'memo'], 'status' => ['col', 'is_active'],
+    ];
+
+    protected function sortableKeys(): array
+    {
+        return array_keys(self::SORTABLE);
+    }
+
+    protected function applySortKey($q, string $col, string $dir)
+    {
+        return $this->applySortSpec($q, self::SORTABLE[$col], $dir);
+    }
+
+    protected function afterSortChanged(): void
+    {
+        unset($this->salesmen);
+        $this->resetPage();
+    }
+
 
     /** 🔎 검색 대상 — 표에 보이는 칸만(검색공용 ListSearch). */
     protected function searchColumns(): array
@@ -608,10 +633,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when(! auth()->user()?->canSeeDomesticPayout(), fn ($q) => $q->where('type', '!=', 'domestic_staff'))
             ->tap(fn ($q) => $this->applySearch($q))
             ->tap(fn ($q) => $this->applyChipFilters($q))
-            ->orderBy('name')
-            // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
-            //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
-            ->orderBy('id')
+            // 🔼🔽 헤더를 눌렀으면 그 순서, 아니면 종전 기본(이름순).
+            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q
+                ->orderBy('name')
+                // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
+                //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
+                ->orderBy('id'))
             ->paginate($this->perPage);
     }
 
@@ -1285,14 +1312,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     <table class="w-full text-sm">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">{{ __('salesman.col.name') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('salesman.col.type') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('salesman.col.account') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('name', __('salesman.col.name')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('type', __('salesman.col.type')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('account', __('salesman.col.account')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('phone', __('common.phone')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('email', __('common.email')) }}</th>
                 {{-- 📝 메모 (jin 2026-11-09) — 드로어 메모를 목록에도. 길면 잘라 보여주고 title 로 전체(폰은 카드 쪽에서 2줄 clamp, §8 #98) --}}
-                <th class="pb-2 pr-4 font-medium">{{ __('common.memo') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('memo', __('common.memo')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('status', __('common.status')) }}</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>

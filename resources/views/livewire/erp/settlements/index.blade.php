@@ -9,6 +9,7 @@ use App\Support\ListFilters;
 use App\Support\ListSearch;
 use App\Support\SearchTerm;
 use Illuminate\Validation\ValidationException;
+use App\Support\StackedHeaderSort;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -22,6 +23,35 @@ new #[Layout('components.layouts.app')] class extends Component
     // ── 목록 필터 ──────────────────────────────────────────────────
     use ListSearch;    // 🔎 검색공용 — 이 화면의 검색 규칙은 Settlement::scopeSearchTerm(차량번호·비고)이라 applySearch 를 덮어쓴다
     use ListFilters;   // 🏷️ 필터칩공용 — 행 뱃지 「내수」·「○월에서 이동」
+    use StackedHeaderSort;   // 🔼🔽 헤더정렬공용 (jin 2026-11-22 «헤더가 있는 곳은 전체 적용»)
+
+    /** 헤더 키 → 정렬 선언(`applySortSpec`). 입금률·총마진·마진율·정산액·실지급액은 **저장하지 않고 매번 계산하는 값**이라 뺐다(SQL 로 정렬할 수 없다 — 공식을 SQL 에 옮기면 두 벌이 된다). */
+    private const SORTABLE = [
+        'vehicle_no' => ['rel', 'vehicles', 'settlements.vehicle_id', 'vehicle_number'],
+        'salesman' => ['rel', 'salesmen', 'settlements.salesman_id'],
+        'progress' => ['rel', 'vehicles', 'settlements.vehicle_id', 'progress_status_cache'],
+        'type' => ['text', 'settlement_type'],
+        'purchase_price' => ['rel', 'vehicles', 'settlements.vehicle_id', 'purchase_price'],
+        'exchange_diff' => ['col', 'exchange_difference_krw'],
+        'status' => ['text', 'settlement_status'], 'secondary' => ['text', 'secondary_status'],
+    ];
+
+    protected function sortableKeys(): array
+    {
+        return array_keys(self::SORTABLE);
+    }
+
+    protected function applySortKey($q, string $col, string $dir)
+    {
+        return $this->applySortSpec($q, self::SORTABLE[$col], $dir);
+    }
+
+    protected function afterSortChanged(): void
+    {
+        unset($this->settlements);
+        $this->resetPage();
+    }
+
 
     protected function searchColumns(): array
     {
@@ -257,10 +287,12 @@ new #[Layout('components.layouts.app')] class extends Component
             ))
             ->when($this->dateTo, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '<=', $this->dateTo)
             ))
-            ->latest()
-            // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
-            //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
-            ->orderByDesc('id')
+            // 🔼🔽 헤더를 눌렀으면 그 순서, 아니면 종전 기본(최근 생성순).
+            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q
+                ->latest()
+                // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
+                //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
+                ->orderByDesc('id'))
             ->paginate($this->perPage);
     }
 
@@ -2860,24 +2892,24 @@ new #[Layout('components.layouts.app')] class extends Component
     <table class="w-full text-sm">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.vehicle_no') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.salesman') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.progress') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('vehicle_no', __('settlement.col.vehicle_no')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('salesman', __('settlement.col.salesman')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('progress', __('settlement.col.progress')) }}</th>
                 {{-- 2026-05-20 #2 피드백 — 입금률 게이지 (거래완료 미완납 시 정산 진행 차단 정보) --}}
                 <th class="pb-2 pr-4 font-medium" style="min-width: 110px;">{{ __('settlement.col.paid_ratio') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.type') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('type', __('settlement.col.type')) }}</th>
                 {{-- 매입가 — 사내직원 차등 tier 트리거(≥1억→총마진×25%). 방식↔총마진 사이 기준값. --}}
-                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.purchase_price') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ $this->sortTh('purchase_price', __('settlement.col.purchase_price'), 'right') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right">{{ \App\Models\Setting::isKaraba() ? __('settlement.label_operating_profit') : __('settlement.col.total_margin') }}</th>
                 {{-- 📊 마진율 (jin 2026-09-18) — 총마진 ÷ 판매금원화. 내수는 「—」. --}}
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.margin_rate') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.settlement_amount') }}</th>
                 <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.actual_payout') }}</th>
                 {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차익 컬럼 (closed 정산만 stored value 표시). --}}
-                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.exchange_diff') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ $this->sortTh('exchange_diff', __('settlement.col.exchange_diff'), 'right') }}</th>
                 {{-- 2026-10-06 jin 「상태 하나로 전부 나열되어 있으니 보기 어렵다」 — 상태(1차) / 2차 정산(뱃지+이월) / 작업(버튼) 세 칸. --}}
-                <th class="pb-2 pr-4 font-medium">{{ __('settlement.col.status') }}</th>
-                <th class="pb-2 pr-4 font-medium" data-th-secondary>{{ __('settlement.col.secondary') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('status', __('settlement.col.status')) }}</th>
+                <th class="pb-2 pr-4 font-medium" data-th-secondary>{{ $this->sortTh('secondary', __('settlement.col.secondary')) }}</th>
                 <th class="pb-2 font-medium text-right" data-th-actions>{{ __('settlement.col.actions') }}</th>
             </tr>
         </thead>

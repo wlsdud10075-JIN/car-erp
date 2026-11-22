@@ -5,6 +5,7 @@ use App\Models\Consignee;
 use App\Models\Country;
 use App\Support\ListFilters;
 use App\Support\ListSearch;
+use App\Support\StackedHeaderSort;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -15,6 +16,30 @@ new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
     use ListSearch;    // 🔎 검색공용 — $search(#[Url]) · searchNow() · applySearch()
     use ListFilters;   // 🏷️ 필터칩공용 — 행 뱃지와 같은 모양의 칩
+    use StackedHeaderSort;   // 🔼🔽 헤더정렬공용 (jin 2026-11-22 «헤더가 있는 곳은 전체 적용»)
+
+    /** 헤더 키 → 정렬 선언(`applySortSpec`). 표의 다섯 칸 전부. */
+    private const SORTABLE = [
+        'name' => ['text', 'name'], 'buyer' => ['rel', 'buyers', 'consignees.buyer_id'],
+        'country' => ['rel', 'countries', 'consignees.country_id'], 'email' => ['text', 'contact_email'], 'status' => ['col', 'is_active'],
+    ];
+
+    protected function sortableKeys(): array
+    {
+        return array_keys(self::SORTABLE);
+    }
+
+    protected function applySortKey($q, string $col, string $dir)
+    {
+        return $this->applySortSpec($q, self::SORTABLE[$col], $dir);
+    }
+
+    protected function afterSortChanged(): void
+    {
+        unset($this->consignees);
+        $this->resetPage();
+    }
+
 
     public string $buyerFilter = '';
 
@@ -73,10 +98,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->tap(fn ($q) => $this->applySearch($q))
             ->tap(fn ($q) => $this->applyChipFilters($q))
             ->when($this->buyerFilter, fn($q) => $q->where('buyer_id', $this->buyerFilter))
-            ->orderBy('name')
-            // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
-            //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
-            ->orderBy('id')
+            // 🔼🔽 헤더를 눌렀으면 그 순서, 아니면 종전 기본(이름순).
+            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q
+                ->orderBy('name')
+                // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
+                //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
+                ->orderBy('id'))
             ->paginate($this->perPage);
     }
 
@@ -287,11 +314,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     <table class="w-full text-sm">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">{{ __('consignee.col.name') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('consignee.col.buyer') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.country') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('consignee.col.email') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('name', __('consignee.col.name')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('buyer', __('consignee.col.buyer')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('country', __('common.country')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('email', __('consignee.col.email')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('status', __('common.status')) }}</th>
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>

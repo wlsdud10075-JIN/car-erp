@@ -186,6 +186,25 @@ trait StackedHeaderSort
         return $q->orderBy($idColumn, $dir);
     }
 
+    /**
+     * 선언 한 줄을 ORDER BY 로 — 화면마다 같은 분기를 다시 쓰지 않게 (2026-11-22 정렬 헤더를 다섯 화면에 붙이며).
+     *   ['col', 칼럼]            숫자·날짜·불리언 칸
+     *   ['text', 칼럼]           글자 칸(빈 문자열도 뒤로)
+     *   ['rel', 표, 외래키, 칸?]  다른 표의 값(기본 name) — 예: ['rel', 'buyers', 'consignees.buyer_id']
+     * 빈 값은 방향과 무관하게 뒤로 보낸다. 🚫 선언은 코드 상수만 — 화면에서 온 값을 넣지 말 것(raw SQL 이다).
+     */
+    protected function applySortSpec($q, array $spec, string $dir)
+    {
+        $dir = $dir === 'desc' ? 'desc' : 'asc';
+        if ($spec[0] === 'rel') {
+            $expr = '(SELECT '.($spec[3] ?? 'name')." FROM {$spec[1]} WHERE {$spec[1]}.id = {$spec[2]} LIMIT 1)";
+
+            return $q->orderByRaw("{$expr} IS NULL ASC")->orderByRaw("{$expr} {$dir}");
+        }
+
+        return $q->orderByRaw($this->emptyLastExpression($spec[1], $spec[0] === 'text'))->orderBy($spec[1], $dir);
+    }
+
     /** 빈 값(NULL·'')을 방향과 무관하게 뒤로 보내는 ORDER BY 조각 — 날짜 칸은 `= ''` 비교를 넣지 말 것(MySQL 이 거부). */
     protected function emptyLastExpression(string $col, bool $text): string
     {

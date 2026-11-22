@@ -15,6 +15,7 @@ use App\Services\BuyerRebindService;
 use App\Support\ListFilters;
 use App\Support\ListSearch;
 use App\Support\SearchTerm;
+use App\Support\StackedHeaderSort;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -28,6 +29,31 @@ new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination, WithFileUploads;
     use ListSearch;    // 🔎 검색공용
     use ListFilters;   // 🏷️ 필터칩공용
+    use StackedHeaderSort;   // 🔼🔽 헤더정렬공용 (jin 2026-11-22 «헤더가 있는 곳은 전체 적용»)
+
+    /** 헤더 키 → 정렬 선언(`applySortSpec`). 적립금 칸은 통화별 잔액을 따로 계산한 값이라 뺐다. */
+    private const SORTABLE = [
+        'name' => ['text', 'name'], 'salesman' => ['rel', 'salesmen', 'buyers.salesman_id'],
+        'country' => ['rel', 'countries', 'buyers.country_id'], 'email' => ['text', 'contact_email'],
+        'phone' => ['text', 'contact_phone'], 'status' => ['col', 'is_active'], 'b2b' => ['col', 'is_b2b_partner'],
+    ];
+
+    protected function sortableKeys(): array
+    {
+        return array_keys(self::SORTABLE);
+    }
+
+    protected function applySortKey($q, string $col, string $dir)
+    {
+        return $this->applySortSpec($q, self::SORTABLE[$col], $dir);
+    }
+
+    protected function afterSortChanged(): void
+    {
+        unset($this->buyers);
+        $this->resetPage();
+    }
+
 
     /** 🔎 검색 대상 — 표에 보이는 칸만(검색공용 ListSearch). */
     protected function searchColumns(): array
@@ -471,12 +497,14 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'claims as open_claim_count' => fn ($q) => $q->open(),   // 🧾 「클레임 N건」 뱃지 (jin 2026-11-20)
             ])
             // 회의확장씬 #2 (2026-05-23) — 영업담당자별 그룹 정렬 (담당자별 묶음 + 이름순).
-            ->orderByRaw('salesman_id IS NULL ASC')   // NULL 마지막
-            ->orderBy('salesman_id')
-            ->orderBy('name')
-            // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
-            //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
-            ->orderBy('id')
+            // 🔼🔽 헤더를 눌렀으면 그 순서, 아니면 종전 기본(담당자별 묶음 + 이름순).
+            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q
+                ->orderByRaw('salesman_id IS NULL ASC')   // NULL 마지막
+                ->orderBy('salesman_id')
+                ->orderBy('name')
+                // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
+                //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
+                ->orderBy('id'))
             ->paginate($this->perPage);
     }
 
@@ -1794,14 +1822,14 @@ new #[Layout('components.layouts.app')] class extends Component {
     <table class="w-full text-sm">
         <thead>
             <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                <th class="pb-2 pr-4 font-medium">{{ __('buyer.col_name') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.contact') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.country') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.email') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.phone') }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('name', __('buyer.col_name')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('salesman', __('common.contact')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('country', __('common.country')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('email', __('common.email')) }}</th>
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('phone', __('common.phone')) }}</th>
                 <th class="pb-2 pr-4 font-medium" data-savings-col>{{ __('buyer.col_savings') }}</th>
-                <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
-                @if(Setting::b2bPartnersEnabled())<th class="pb-2 pr-4 font-medium">{{ __('buyer.col_b2b') }}</th>@endif
+                <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('status', __('common.status')) }}</th>
+                @if(Setting::b2bPartnersEnabled())<th class="pb-2 pr-4 font-medium">{{ $this->sortTh('b2b', __('buyer.col_b2b')) }}</th>@endif
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>

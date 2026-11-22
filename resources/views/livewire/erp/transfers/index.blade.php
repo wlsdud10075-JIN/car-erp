@@ -11,6 +11,7 @@ use App\Services\InterVehicleTransferService;
 use App\Services\PaymentConfirmationService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Support\StackedHeaderSort;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -32,6 +33,48 @@ use Livewire\WithPagination;
  */
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
+    use StackedHeaderSort;   // 🔼🔽 헤더정렬공용 (jin 2026-11-22 «헤더가 있는 곳은 전체 적용»)
+
+    /**
+     * 헤더 키 → 정렬 선언. **탭마다 표가 다르다** — 자금 이체 / 잔금(판매·매입, `{T}` = 그 탭의 표).
+     * 뺀 칸: 자금 이체의 유형·경로·바이어·승인자(상태에서 파생되거나 차량 둘을 잇는 글) · 잔금의 바이어/구입처(탭에 따라 다른 칸).
+     * 탭을 바꾸면 정렬은 기본으로 돌아간다(`updatedTabType`).
+     */
+    private const SORTABLE_TRANSFER = [
+        'amount' => ['col', 'amount'], 'status' => ['text', 'status'], 'elapsed' => ['col', 'updated_at'],
+    ];
+
+    private const SORTABLE_PAYMENT = [
+        'vehicle' => ['rel', 'vehicles', '{T}.vehicle_id', 'vehicle_number'],
+        'progress' => ['rel', 'vehicles', '{T}.vehicle_id', 'progress_status_cache'],
+        'amount' => ['col', 'amount'], 'payment_date' => ['col', 'payment_date'],
+        'memo' => ['text', 'note'], 'status' => ['col', 'confirmed_at'],
+    ];
+
+    private function sortSpecs(): array
+    {
+        return $this->tabType === 'transfer' ? self::SORTABLE_TRANSFER : self::SORTABLE_PAYMENT;
+    }
+
+    protected function sortableKeys(): array
+    {
+        return array_keys($this->sortSpecs());
+    }
+
+    protected function applySortKey($q, string $col, string $dir)
+    {
+        $spec = $this->sortSpecs()[$col];
+        $table = $this->tabType === 'sale_payment' ? 'final_payments' : 'purchase_balance_payments';
+
+        return $this->applySortSpec($q, array_map(fn ($v) => str_replace('{T}', $table, $v), $spec), $dir);
+    }
+
+    protected function afterSortChanged(): void
+    {
+        unset($this->transfers, $this->salePayments, $this->purchasePayments);
+        $this->resetPage();
+    }
+
 
     /** 큐 20-C — 'transfer' (자금 이체) / 'sale_payment' (판매 잔금) / 'purchase_payment' (매입 잔금) */
     #[Url]
@@ -162,6 +205,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->statusFilter = 'awaiting';
         $this->selectedPaymentIds = [];
         $this->stageFilter = '';
+        [$this->sortColumn, $this->sortDirection, $this->sortExtra] = ['', 'asc', []];   // 탭마다 표가 달라 정렬 키가 안 이어진다
     }
 
     public function updatedStageFilter(): void
@@ -301,9 +345,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function transfers()
     {
         return $this->transfersQuery()
-            ->orderByDesc('updated_at')
-            // 동점 tie-break (jin 2026-09-11) — SKILLS §8 #92. 정렬키가 같으면 페이지가 흔들린다.
-            ->orderByDesc('id')
+            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q
+                ->orderByDesc('updated_at')
+                // 동점 tie-break (jin 2026-09-11) — SKILLS §8 #92. 정렬키가 같으면 페이지가 흔들린다.
+                ->orderByDesc('id'))
             ->paginate($this->perPage);
     }
 
@@ -338,9 +383,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return $this->salePaymentsQuery()
             ->with(['vehicle:id,vehicle_number,nice_reg_vin,buyer_id,currency,progress_status_cache', 'vehicle.buyer:id,name', 'financeConfirmer:id,name'])
-            ->orderByDesc('created_at')
-            // 동점 tie-break (jin 2026-09-11) — SKILLS §8 #92. 정렬키가 같으면 페이지가 흔들린다.
-            ->orderByDesc('id')
+            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q
+                ->orderByDesc('created_at')
+                // 동점 tie-break (jin 2026-09-11) — SKILLS §8 #92. 정렬키가 같으면 페이지가 흔들린다.
+                ->orderByDesc('id'))
             ->paginate($this->perPage);
     }
 
@@ -370,9 +416,10 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         return $this->purchasePaymentsQuery()
             ->with(['vehicle:id,vehicle_number,nice_reg_vin,purchase_from,salesman_id,progress_status_cache', 'vehicle.salesman:id,name', 'financeConfirmer:id,name'])
-            ->orderByDesc('created_at')
-            // 동점 tie-break (jin 2026-09-11) — SKILLS §8 #92. 정렬키가 같으면 페이지가 흔들린다.
-            ->orderByDesc('id')
+            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q
+                ->orderByDesc('created_at')
+                // 동점 tie-break (jin 2026-09-11) — SKILLS §8 #92. 정렬키가 같으면 페이지가 흔들린다.
+                ->orderByDesc('id'))
             ->paginate($this->perPage);
     }
 
@@ -1126,10 +1173,10 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.type') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.route') }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.buyer') }}</th>
-                    <th class="pb-2 pr-4 font-medium text-right">{{ __('transfer.col.amount') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.status') }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right">{{ $this->sortTh('amount', __('transfer.col.amount'), 'right') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('status', __('transfer.col.status')) }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.approver') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.elapsed') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('elapsed', __('transfer.col.elapsed')) }}</th>
                     <th class="pb-2 font-medium text-right">{{ __('transfer.col.action') }}</th>
                 </tr>
             </thead>
@@ -1331,13 +1378,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 @endphp
                 <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
                     <th class="w-8 pb-2 pr-2"><input type="checkbox" class="rounded" @checked($pageAll) wire:click="togglePageSelection(@js($pageIds))" title="{{ __('transfer.selected.page_hint') }}" /></th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.vehicle') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.progress') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('vehicle', __('transfer.col.vehicle')) }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('progress', __('transfer.col.progress')) }}</th>
                     <th class="pb-2 pr-4 font-medium">{{ $isSale ? __('transfer.col.buyer') : __('transfer.col.buyer_or_purchase') }}</th>
-                    <th class="pb-2 pr-4 font-medium text-right">{{ __('transfer.col.amount') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ $isSale ? __('transfer.col.date_sale') : __('transfer.col.date_purchase') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.memo') }}</th>
-                    <th class="pb-2 pr-4 font-medium">{{ __('transfer.col.status') }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right">{{ $this->sortTh('amount', __('transfer.col.amount'), 'right') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('payment_date', $isSale ? __('transfer.col.date_sale') : __('transfer.col.date_purchase')) }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('memo', __('transfer.col.memo')) }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('status', __('transfer.col.status')) }}</th>
                     <th class="pb-2 font-medium text-right">{{ __('transfer.col.action') }}</th>
                 </tr>
             </thead>
