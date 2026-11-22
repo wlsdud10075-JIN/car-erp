@@ -2241,6 +2241,10 @@ new #[Layout('components.layouts.app')] class extends Component
                 if ($wire.monthFilter) p.set('month', $wire.monthFilter);
                 if ($wire.dateFrom) p.set('dateFrom', $wire.dateFrom);
                 if ($wire.dateTo) p.set('dateTo', $wire.dateTo);
+                if ($wire.overrideOnly) p.set('ovr', '1');
+                const chips = $wire.chipFilters || {};   // 🏷️ 필터칩도 화면 그대로(2026-11-22)
+                if (chips.domestic) p.set('domestic', '1');
+                if (chips.reanchored) p.set('reanchored', '1');
                 window.location.href = '{{ route('erp.settlements.export') }}?' + p.toString();
             })()"
             class="inline-flex items-center gap-1 rounded-md border border-gray-300 bg-white px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-gray-50">

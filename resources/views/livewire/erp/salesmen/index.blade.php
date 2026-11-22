@@ -430,6 +430,9 @@ new #[Layout('components.layouts.app')] class extends Component {
                 '1' => ['label' => __('common.active'), 'class' => 'badge badge-green'],
                 '0' => ['label' => __('common.inactive'), 'class' => 'badge badge-gray'],
             ]],
+            // 🚪 행의 「퇴사 (날짜)」 뱃지와 같은 기준 — 퇴사일이 적힌 사람(jin 2026-11-22 «활성/비활성/퇴사 이건 있어도 될 것 같은데»).
+            'left' => ['type' => 'bool', 'label' => __('salesman.left_chip'), 'class' => 'badge badge-gray',
+                'apply' => fn ($q) => $q->whereNotNull('left_at')],
         ];
     }
 

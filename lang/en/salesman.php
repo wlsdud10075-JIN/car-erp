@@ -7,6 +7,7 @@ return [
     'create_btn' => 'Add person',
     'register_in_users' => 'Register people in User Management',
     'register_in_users_hint' => 'Employees, freelancers, inspectors and management/clearance/finance staff registered in User Management appear here automatically.',
+    'left_chip' => 'Left',
     'search_ph' => 'Name · email · phone',
     'empty' => 'No people registered.',
     'cashflow' => 'Cashflow',
