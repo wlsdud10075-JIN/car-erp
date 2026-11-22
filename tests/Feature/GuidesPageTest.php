@@ -55,7 +55,7 @@ class GuidesPageTest extends TestCase
         $this->scene('purchase-payment', '<div class="gd-step"><p>확정한 줄 옆 딜러알림을 누르면 이체확인증을 붙여 넣는 창이 뜹니다.</p></div>');
 
         $all = collect(GuideCatalog::all())->keyBy('slug');
-        $this->assertCount(30, $all);
+        $this->assertCount(31, $all);
         $this->assertSame('new', $all['purchase-payment']['status']);
         $this->assertSame('wait', $all['vehicle-register']['status']);
         $this->assertSame(range(1, 30), $all->pluck('no')->values()->all());
