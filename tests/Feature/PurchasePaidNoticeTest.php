@@ -262,8 +262,8 @@ class PurchasePaidNoticeTest extends TestCase
         $html = $this->panelHtml($v);
 
         $this->assertPanelHas($html, 'deregistrationBuyerPhone', '딜러 전화번호 입력칸');
-        // 말소 발송 버튼은 여전히 그 권한자에게만 — 칸만 공유하고 버튼은 각자 권한이다.
-        $this->assertPanelLacks($html, 'sendDeregistrationAlimtalk', '말소 발송 버튼');
+        // 🔓 2026-11-22 (jin «누구나로 변경») — 딜러 수동 알림톡 버튼은 역할로 나누지 않는다. 재무에게도 말소 발송 버튼이 보인다.
+        $this->assertPanelHas($html, 'sendDeregistrationAlimtalk', '말소 발송 버튼');
     }
 
     /**

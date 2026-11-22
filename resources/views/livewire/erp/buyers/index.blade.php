@@ -596,7 +596,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         //   - 운영자가 UI 에서 buyer.salesman_id 일괄 입력하면 자연스럽게 직접 관계로 수렴
         // admin/super: 전체 (분기 X)
         $user = auth()->user();
-        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman;
+        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업';
         $restrictToManagerScope = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
@@ -608,8 +608,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ->orWhereHas('vehicles', fn ($q3) => $q3->where('deal_type', $this->dealFilter))
             ))
             ->when($restrictToOwnSalesman, fn ($q) => $q->where(fn ($q2) => $q2
-                ->where('salesman_id', $user->salesman->id)
-                ->orWhereHas('vehicles', fn ($q3) => $q3->where('salesman_id', $user->salesman->id))
+                ->where('salesman_id', $user->ownSalesmanScopeId())
+                ->orWhereHas('vehicles', fn ($q3) => $q3->where('salesman_id', $user->ownSalesmanScopeId()))
             ))
             ->when($restrictToManagerScope, fn ($q) => $q->where(fn ($q2) => $q2
                 ->whereIn('salesman_id', $managerScopeSalesmanIds)

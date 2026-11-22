@@ -30,7 +30,7 @@ class VehicleExportController extends Controller
     {
         $user = $request->user();
 
-        $restrictOwn = ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman;
+        $restrictOwn = ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업';
         $restrictMgr = ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $subIds = $restrictMgr ? $user->getSubordinateSalesmanIds() : [];
 
@@ -113,7 +113,7 @@ class VehicleExportController extends Controller
                 'salesman', 'buyer', 'consignee', 'blConsignee', 'exportConsignee', 'settlements',
                 'finalPayments', 'receivableHistories',
             ])
-            ->when($restrictOwn, fn ($q) => $q->where('salesman_id', $user->salesman->id))
+            ->when($restrictOwn, fn ($q) => $q->where('salesman_id', $user->ownSalesmanScopeId()))
             ->when($restrictMgr, fn ($q) => $q->whereIn('salesman_id', $subIds))
             ->when($salesmanId !== '', fn ($q) => $q->where('salesman_id', $salesmanId))
             ->when($ids !== [], fn ($q) => $q->whereIn('id', $ids))

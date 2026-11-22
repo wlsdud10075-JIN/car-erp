@@ -3548,14 +3548,14 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         // 2026-05-20 #3 — 영업 role 본인 차량 한정. admin/super/관리/통관/재무는 전체.
         $user = auth()->user();
-        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman;
+        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업';
 
         // 회의확장씬 #11 (2026-05-22) — [관리] 본인 담당 영업의 차량만.
         $restrictToManagerScope = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
         return Vehicle::query()
-            ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->salesman->id))
+            ->when($restrictToOwnSalesman, fn ($q) => $q->where('salesman_id', $user->ownSalesmanScopeId()))
             ->when($restrictToManagerScope, fn ($q) => $q->whereIn('salesman_id', $managerScopeSalesmanIds))
             // 통합검색 — 조건은 `Vehicle::scopeSearchAny` **단일 출처**다(2026-09-05 추출).
             //   🚫 여기에 옮겨 적지 말 것. 바이어 정산현황 화면이 같은 검색을 쓰는데,
@@ -3661,7 +3661,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function buyers()
     {
         $user = auth()->user();
-        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업' && $user->salesman;
+        $restrictToOwnSalesman = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '영업';
         $restrictToManagerScope = $user && ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $managerScopeSalesmanIds = $restrictToManagerScope ? $user->getSubordinateSalesmanIds() : [];
 
@@ -3676,7 +3676,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $outer->where(function ($q) use ($restrictToOwnSalesman, $restrictToManagerScope, $user, $managerScopeSalesmanIds) {
                     $q->where('is_active', true);
                     if ($restrictToOwnSalesman) {
-                        $ownId = $user->salesman->id;
+                        $ownId = $user->ownSalesmanScopeId();
                         $q->where(fn ($s) => $s->where('salesman_id', $ownId)
                             ->orWhereHas('vehicles', fn ($v) => $v->where('salesman_id', $ownId)));
                     } elseif ($restrictToManagerScope) {
@@ -4046,8 +4046,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $q2->whereIn('salesman_id', $subIds)
                     ->orWhereHas('vehicles', fn ($q3) => $q3->whereIn('salesman_id', $subIds));
             });
-        } elseif ($user->role === '영업' && $user->salesman) {
-            $ownId = $user->salesman->id;
+        } elseif ($user->role === '영업') {
+            $ownId = $user->ownSalesmanScopeId();
             $q->where(function ($q2) use ($ownId) {
                 $q2->where('salesman_id', $ownId)
                     ->orWhereHas('vehicles', fn ($q3) => $q3->where('salesman_id', $ownId));
@@ -5038,7 +5038,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // admin/super, 통관/재무는 우회. (claudereview B — openEdit 관리 미스코핑 보정)
         $user = auth()->user();
         if (! $user->isAdmin() && ! $user->isManager() && $user->role === '영업') {
-            abort_unless($v->salesman_id === $user->salesman?->id, 403, __('vehicle.toast.edit_own_only'));
+            abort_unless($user->salesman !== null && $v->salesman_id === $user->salesman->id, 403, __('vehicle.toast.edit_own_only'));
         } elseif (! $user->isAdmin() && ! $user->isManager() && $user->role === '관리') {
             abort_unless(in_array($v->salesman_id, $user->getSubordinateSalesmanIds(), true), 403, __('vehicle.toast.edit_team_only'));
         }
@@ -5685,11 +5685,7 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function sendTaxInvoiceAlimtalk(): void
     {
-        abort_unless(
-            auth()->user()?->canAccessClearance() || auth()->user()?->canAccessSettlement(),
-            403,
-        );
-
+        // 🔓 권한을 나누지 않는다 — 그 차를 볼 수 있는 사람이면 보낸다(아래 canScopeVehicle, jin 2026-11-22 «누구나로 변경»).
         if ($this->editingId === null) {
             $this->dispatch('notify', message: __('vehicle.taxinvoice.save_first'), type: 'warning');
 
@@ -5778,7 +5774,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     private function deliverPurchasePaid(string $kind, ?int $pbpId, ?\App\Models\PurchaseBalancePayment $proofRow): void
     {
         abort_unless(in_array($kind, ['down', 'balance'], true), 422);
-        abort_unless((bool) auth()->user()?->canConfirmFinance(), 403);
+        // 🔓 딜러 수동 알림톡 3종은 권한을 나누지 않는다 — 그 차를 볼 수 있으면 보낸다(jin 2026-11-22 «누구나로 변경»).
 
         if ($this->editingId === null) {
             $this->dispatch('notify', message: __('vehicle.paidnotice.save_first'), type: 'warning');
@@ -5967,7 +5963,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function openPaidNotice(string $kind, ?int $pbpId = null): void
     {
         abort_unless(in_array($kind, ['down', 'balance'], true), 422);
-        abort_unless((bool) auth()->user()?->canConfirmFinance(), 403);
+        // 🔓 딜러 수동 알림톡 3종은 권한을 나누지 않는다 — 그 차를 볼 수 있으면 보낸다(jin 2026-11-22 «누구나로 변경»).
         if ($this->editingId === null) {
             $this->dispatch('notify', message: __('vehicle.paidnotice.save_first'), type: 'warning');
 
@@ -6018,8 +6014,8 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function sendPaidNotice(bool $withProof): void
     {
-        abort_unless((bool) auth()->user()?->canConfirmFinance(), 403);
-        $n = $this->paidNotice;
+        $n = $this->paidNotice;   // 🔓 권한을 나누지 않는다(jin 2026-11-22) — 창을 열 때 차량 범위를 재인가했다
+
         if ($n === null) {
             return;
         }
@@ -10567,7 +10563,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                                placeholder="0" @if(!$canConfirmFinance) disabled @endif />
                         {{-- 딜러에게 「계약금 입금완료」 통지 (jin 2026-08-12). 확정 계약금이 있을 때만.
                              ⚠️ 저장 전 입력값이 아니라 **DB 확정분**을 보낸다(액션에서 다시 읽는다). --}}
-                        @if($canConfirmFinance && $editingId !== null && $this->paidNoticeEnabled && $this->confirmedDownPayment > 0)
+                        @if($editingId !== null && $this->paidNoticeEnabled && $this->confirmedDownPayment > 0)
                         <button type="button" wire:click="openPaidNotice('down')"
                                 title="{{ __('vehicle.paidnotice.btn_title') }}"
                                 class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-600">
@@ -10656,7 +10652,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
                              ⚠️ 합계 버튼 하나로 만들면 안 된다: 운영 239대 중 24대가 잔금을 2~3회로
                                 나눠 지급하는데, 두 번째 알림에 누계를 실으면 받는 분이 "추가로 그만큼
                                 더 들어왔다"로 읽는다. 이 줄의 금액을 이 줄이 보낸다. --}}
-                        @if($canConfirmFinance && $this->paidNoticeEnabled && ($row['type'] ?? 'balance') === 'balance')
+                        @if($this->paidNoticeEnabled && ($row['type'] ?? 'balance') === 'balance')
                         <button type="button" wire:click="openPaidNotice('balance', {{ $row['id'] }})"
                                 title="{{ __('vehicle.paidnotice.btn_title') }}"
                                 class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-amber-600">
@@ -10788,12 +10784,10 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         <div class="mt-2 flex gap-2">
                             {{-- 🚨 Livewire 4: wire:model.blur 는 서버로 안 간다(브라우저 값만 맞춤) — updatedDeregistrationBuyerPhone(하이픈 정리·번호 형식 경고)이 칸을 벗어날 때 돌려면 .live.blur (2026-11-16 씬 점검이 찾음) --}}
                             <input wire:model.live.blur="deregistrationBuyerPhone" data-phone type="tel" class="input-base text-sm" placeholder="010-0000-0000" autocomplete="off" />
-                            @if(auth()->user()->canHandleDeregistration())
                             <button type="button" wire:click="sendDeregistrationAlimtalk" class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.deregnotice.send_btn') }}</button>
-                            @endif
                             {{-- 세금계산서 발행 요청 (jin 2026-09-11) — 사업자등록증을 링크로 함께 보낸다.
                                  🚦 BizM 승인(tmplId)이 있어야 뜬다. 권한 = 재무·수출통관·관리 이상(영업 제외). --}}
-                            @if($this->taxInvoiceNoticeEnabled && (auth()->user()->canAccessClearance() || auth()->user()->canAccessSettlement()))
+                            @if($this->taxInvoiceNoticeEnabled)
                             <button type="button" wire:click="sendTaxInvoiceAlimtalk"
                                     wire:confirm="{{ __('vehicle.taxinvoice.confirm') }}"
                                     class="btn-primary shrink-0 whitespace-nowrap">{{ __('vehicle.taxinvoice.send_btn') }}</button>

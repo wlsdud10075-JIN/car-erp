@@ -9,6 +9,7 @@ use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -191,5 +192,50 @@ class MoneyRuleAnswers20261122Test extends TestCase
         // 종전 출력 — 지급 제외 계정 정산이 없으면 줄이 없다
         $plain = (string) $this->blade('<x-payout.totals :totals="$t" />', ['t' => $bd['totals']]);
         $this->assertStringNotContainsString('data-excluded-net', $plain);
+    }
+
+    // ── 역할 편 ① — 담당자 연결 없는 영업 계정은 아무것도 못 본다 («없다면 막는 게 맞음») ─────────
+
+    public function test_a_sales_account_without_a_salesman_sees_nothing(): void
+    {
+        $sm = $this->freelancer('담당자A');
+        $mine = $this->krwVehicle($sm);
+        $orphan = Vehicle::create(['vehicle_number' => 'MR-NOSM', 'sales_channel' => 'export']);   // 담당자 없는 차
+
+        $unlinked = $this->user('user', '영업');
+        $this->assertSame(0, $unlinked->ownSalesmanScopeId());
+        $this->assertFalse($unlinked->canScopeVehicle($mine));
+        $this->assertFalse($unlinked->canScopeVehicle($orphan), '담당자 없는 차도 열리면 안 된다(구: null === null)');
+
+        $this->actingAs($unlinked);
+        $html = Volt::test('erp.vehicles.index')->set('dateFrom', '')->set('dateTo', '')->call('applyFilters')->html();
+        $this->assertStringNotContainsString($mine->vehicle_number, $html, '연결 없는 영업에게 목록이 전체로 열렸다');
+        $this->assertStringNotContainsString('MR-NOSM', $html);
+
+        $linked = $this->user('user', '영업');
+        $sm->update(['user_id' => $linked->id]);
+        $this->assertTrue($linked->fresh()->canScopeVehicle($mine), '연결된 영업은 종전대로 본인 차를 본다');
+    }
+
+    // ── 역할 편 ⑤ — 관리 이상은 남의 현금흐름 화면을 연다 («넓혀줘») ─────────────────────────────
+
+    public function test_managers_can_open_someone_elses_cashflow(): void
+    {
+        $sm = $this->freelancer('담당자B');
+        $salesUser = $this->user('user', '영업');
+        $sm->update(['user_id' => $salesUser->id]);
+
+        $this->actingAs($this->user('manager'));
+        Volt::test('erp.salesmen.cashflow', ['id' => $sm->id])->assertOk();
+
+        $gwanri = $this->user('user', '관리');
+        $this->actingAs($gwanri);
+        Volt::test('erp.salesmen.cashflow', ['id' => $sm->id])->assertStatus(403);   // 관리는 본인 담당 영업만
+        DB::table('manager_salesman')->insert(['manager_user_id' => $gwanri->id, 'salesman_user_id' => $salesUser->id]);
+        $this->actingAs($gwanri->fresh());
+        Volt::test('erp.salesmen.cashflow', ['id' => $sm->id])->assertOk();
+
+        $this->actingAs($this->user('user', '재무'));
+        Volt::test('erp.salesmen.cashflow', ['id' => $sm->id])->assertStatus(403);
     }
 }

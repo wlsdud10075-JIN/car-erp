@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\DocumentAccessLog;
+use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -71,9 +72,12 @@ class VehicleDocumentControllerTest extends TestCase
         $user = User::factory()->create(['permission' => 'user', 'role' => '영업']);
         $this->actingAs($user);
 
+        // 영업은 본인 담당 차만 — 담당자(Salesman) 연결이 없으면 아무 차도 못 연다(jin 2026-11-22).
+        $sm = Salesman::create(['name' => '영업', 'is_active' => true, 'user_id' => $user->id]);
         $vehicle = Vehicle::create([
             'vehicle_number' => '12가1234',
             'sales_channel' => 'export',
+            'salesman_id' => $sm->id,
         ]);
 
         $response = $this->get(route('erp.vehicles.documents.show', [$vehicle->id, 'deregistration']));

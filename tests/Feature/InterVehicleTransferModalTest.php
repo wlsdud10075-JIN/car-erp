@@ -6,6 +6,7 @@ use App\Models\ApprovalRequest;
 use App\Models\Buyer;
 use App\Models\FinalPayment;
 use App\Models\InterVehicleTransfer;
+use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -26,8 +27,12 @@ class InterVehicleTransferModalTest extends TestCase
         $buyer = Buyer::create(['name' => 'TOKYO AUTO', 'is_active' => true]);
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업']);
 
+        // 담당자(Salesman) 연결 — 연결 없는 영업 계정은 아무 차도 못 본다(jin 2026-11-22).
+        $salesSm = Salesman::create(['name' => '영업', 'is_active' => true, 'user_id' => $sales->id]);
+
         $source = Vehicle::create([
             'vehicle_number' => '99가0001',
+            'salesman_id' => $salesSm->id,
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
             'sale_date' => '2026-05-01',
@@ -40,6 +45,7 @@ class InterVehicleTransferModalTest extends TestCase
 
         $target = Vehicle::create([
             'vehicle_number' => '99가0002',
+            'salesman_id' => $salesSm->id,
             'sales_channel' => 'export',
             'buyer_id' => $buyer->id,
             'sale_date' => '2026-05-01',
