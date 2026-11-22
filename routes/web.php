@@ -23,8 +23,9 @@ use Illuminate\Support\Facades\Route;
 use Livewire\Volt\Volt;
 
 // NICE 게이트웨이 (Django ssancar-erp 이식) — ssancarerp 박스(heymancar.com)에서 NICE 직접 2단계 호출.
-// heymanerp 등 다른 박스는 NICE IP 화이트리스트 밖이라 이 경로를 그대로 경유. 인증·토큰 없음(Django @csrf_exempt 동일, CSRF 제외=bootstrap/app.php).
-Route::post('provide/api/nice-lookup', ProvideNiceLookupController::class);
+// heymanerp 등 다른 박스는 NICE IP 화이트리스트 밖이라 이 경로를 그대로 경유. CSRF 제외=bootstrap/app.php.
+// 🔐 2026-11-22 — 토큰 검사(X-SSANCAR-API-KEY, 컨트롤러) + IP별 분당 60회. 호출자는 3사 ERP 서버 3대뿐이다(동시 4건 상한은 컨트롤러).
+Route::post('provide/api/nice-lookup', ProvideNiceLookupController::class)->middleware('throttle:60,1');
 
 // 국내 바이어 말소등록증 전달 링크 (2026-07-04) — 알림톡으로 보낸 만료 서명 링크. 로그인 없음(signed 서명이 인가).
 // 차량 id + 고정 문서(말소등록증)만 서명 → 파일 경로는 URL 에 안 실림(IDOR/traversal 차단). 3일 만료(발급측 지정).
