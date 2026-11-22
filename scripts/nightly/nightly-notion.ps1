@@ -72,26 +72,28 @@ $targets = @(
     @{ name = 'car-erp 기능 카드';     cwd = $repo;  script = "$repo\scripts\notion-cards\publish.php" },
     @{ name = 'car-erp 부서 가이드';   cwd = $repo;  script = "$repo\scripts\notion-guide-publish.php" },
     @{ name = 'car-erp 워크플로우·에러'; cwd = $repo;  script = "$repo\scripts\notion-workflow-lock-guide.php" },
-    @{ name = 'board 기능 카드';       cwd = $board; script = "$board\scripts\notion-cards\publish.php" }
+    # board 카드는 Codex 없이 PHP 가 직접 맞춘다(`--sync --apply`, board dev 536ba32 · jin 2026-11-22 «새벽에 자동으로 돌아가면 되지 않아?»).
+    # 98장이라 --verify 한 번이 수 분 — 제한을 늘린다.
+    @{ name = 'board 기능 카드';       cwd = $board; script = "$board\scripts\notion-cards\publish.php"; timeout = 900; sync = $true }
 )
 
 function RunVerify {
     $sb = New-Object System.Text.StringBuilder
-    $mismatch = 0; $blocked = @()
+    $mismatch = 0; $blocked = @(); $bad = @()
     foreach ($t in $targets) {
         Push-Location $t.cwd
-        try { $r = RunCapture $php @($t.script, '--verify') $null 300 } finally { Pop-Location }
+        try { $r = RunCapture $php @($t.script, '--verify') $null $(if ($t.timeout) { $t.timeout } else { 300 }) } finally { Pop-Location }
         $lines = ($r.out -split "`r?`n")
         $tail = if ($lines.Count -gt 80) { @('… (앞부분 생략)') + $lines[-80..-1] } else { $lines }
         [void]$sb.AppendLine("### $($t.name) (exit $($r.code))")
         [void]$sb.AppendLine(($tail -join "`n").Trim())
         [void]$sb.AppendLine('')
-        if ($r.code -ne 0) { $mismatch++ }
+        if ($r.code -ne 0) { $mismatch++; $bad += $t.name }
         # 알려진 정상: ERP 허브엔 「영업」 페이지가 없다(빌더에만 있음, 영업은 board 를 쓴다) — 매일 뜨면 소음이라 뺀다.
         $blocked += ($lines | Where-Object { $_ -match 'running log|페이지 없음|NOTION_TOKEN|허브 없음' -and $_ -notmatch '영업 — 페이지 없음' })
         Log "$($t.name): exit $($r.code)"
     }
-    return @{ text = $sb.ToString(); mismatch = $mismatch; blocked = $blocked }
+    return @{ text = $sb.ToString(); mismatch = $mismatch; blocked = $blocked; bad = $bad }
 }
 
 $v1 = RunVerify
@@ -137,8 +139,24 @@ foreach ($dt in $devTargets) {
     [void]$rep.AppendLine('')
 }
 
-# 3) Codex 발행 (-Apply + 불일치 있을 때만) ------------------------------------
-if ($Apply -and $v1.mismatch -gt 0) {
+# 2c) PHP 가 직접 맞추는 대상(sync) — -Apply 이고 그 대상이 불일치일 때만. Codex 로 넘기지 않는다 -------------
+$synced = $false
+$codexMismatch = $v1.mismatch
+foreach ($t in $targets) {
+    if (-not $t.sync -or ($v1.bad -notcontains $t.name)) { continue }
+    $codexMismatch--
+    if (-not $Apply) { continue }
+    Push-Location $t.cwd
+    try { $s = RunCapture $php @($t.script, '--sync', '--apply') $null 1800 } finally { Pop-Location }
+    Log "$($t.name) sync apply: exit $($s.code)"
+    [void]$rep.AppendLine("## $($t.name) — --sync --apply (exit $($s.code))")
+    [void]$rep.AppendLine((($s.out -split "`r?`n") | Select-Object -Last 40) -join "`n")
+    [void]$rep.AppendLine('')
+    $synced = $true
+}
+
+# 3) Codex 발행 (-Apply + Codex 몫의 불일치가 있을 때만) ------------------------
+if ($Apply -and $codexMismatch -gt 0) {
     $codex = ResolveCodex
     if (-not $codex) { Log 'codex.exe 못 찾음'; [void]$rep.AppendLine('## Codex`n`ncodex.exe 를 찾지 못해 발행을 건너뜀.') }
     else {
@@ -157,8 +175,14 @@ if ($Apply -and $v1.mismatch -gt 0) {
         [void]$rep.AppendLine($v2.text)
     }
 }
-elseif ($Apply) { [void]$rep.AppendLine('## Codex`n`n불일치 0 — 발행할 것 없음.') }
+elseif ($Apply) { [void]$rep.AppendLine('## Codex`n`nCodex 몫의 불일치 0 — 발행할 것 없음.') }
 else { [void]$rep.AppendLine('## Codex`n`n관찰 모드(-Apply 없음) — 발행하지 않음. 불일치 목록은 위 1차 --verify.') }
+
+if ($synced -and -not $v2) {   # sync 만 있었던 날 — 맞춘 뒤 다시 대조
+    $v2 = RunVerify
+    [void]$rep.AppendLine("## 2차 --verify (sync 뒤) — 불일치 스크립트 $($v2.mismatch)/4")
+    [void]$rep.AppendLine($v2.text)
+}
 
 $rep.ToString() | Out-File $report -Encoding utf8
 Log "report written ($((Get-Item $report).Length) bytes)"
