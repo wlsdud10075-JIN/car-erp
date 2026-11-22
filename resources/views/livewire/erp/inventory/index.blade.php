@@ -630,12 +630,9 @@ new #[Layout('components.layouts.app')] class extends Component
     {{-- 필터 --}}
     <div class="card flex flex-wrap items-center gap-2">
         <x-erp.search-bar :placeholder="__('inventory.search_ph')" width="w-64">
-        <select wire:model="salesmanFilter" class="input-filter">
-            <option value="">{{ __('inventory.all_salesmen') }}</option>
-            @foreach($this->salesmen as $sm)
-                <option value="{{ $sm->id }}">{{ $sm->name }}</option>
-            @endforeach
-        </select>
+        {{-- 🔽 드롭박스콤보공용 (jin 2026-11-22 «지금 할 때 하는 게 낫지 않나») — 담당자도 치면서 찾는다. 비우면(×) 전체. --}}
+        <x-erp.combobox wire:key="inv-sm-filter-{{ $salesmanFilter }}" model="salesmanFilter" :options="$this->salesmen"
+            :selected="$salesmanFilter" placeholder="{{ __('inventory.all_salesmen') }}" class="w-40" deferred />
         {{-- 바이어/컨사이니 검색 드롭다운 (jin 2026-07-24) — 출고일 지정 시점엔 당사자 확정. combobox 타이핑 검색. --}}
         <x-erp.combobox wire:key="inv-buyer-{{ $buyerFilter }}" model="buyerFilter" :options="$this->buyers"
             :selected="$buyerFilter" placeholder="{{ __('inventory.buyer_ph') }}" class="w-44" deferred />

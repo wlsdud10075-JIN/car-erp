@@ -1460,10 +1460,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         <input type="date" wire:model="dateFrom" class="input-filter" />
         <span class="text-xs text-gray-400">~</span>
         <input type="date" wire:model="dateTo" class="input-filter" />
-        <select wire:model="salesmanFilter" class="input-filter">
-            <option value="">{{ __('receivable.all_salesman') }}</option>
-            @foreach ($this->salesmen as $s)<option value="{{ $s->id }}">{{ $s->name }}</option>@endforeach
-        </select>
+        {{-- 🔽 드롭박스콤보공용 (jin 2026-11-22 «지금 할 때 하는 게 낫지 않나») — 담당자도 치면서 찾는다. 비우면(×) 전체. --}}
+        <x-erp.combobox wire:key="rcv-sm-filter-{{ $salesmanFilter }}" model="salesmanFilter" :options="$this->salesmen"
+            :selected="$salesmanFilter" placeholder="{{ __('receivable.all_salesman') }}" class="w-40" deferred />
         {{-- 🔽 드롭박스콤보공용 (2026-11-22) — 바이어가 수백 명이라 치면서 찾는다. --}}
         <x-erp.combobox wire:key="rcv-buyer-filter-{{ $salesmanFilter }}-{{ $buyerFilter }}" model="buyerFilter" :options="$this->buyers"
             :selected="$buyerFilter" placeholder="{{ __('receivable.all_buyer') }}" class="w-44" deferred />

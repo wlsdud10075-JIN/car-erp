@@ -94,7 +94,8 @@ class ListCommonsGuardTest extends TestCase
 
     /**
      * 🔽 드롭박스콤보공용 — **바이어를 고르는 칸**은 `<select>` 가 아니라 `<x-erp.combobox>`(치면서 찾기)로 그린다 (2026-11-22).
-     * 바이어는 수백 명이라 select 로는 찾기 어렵다. 담당자(수십 명·「미지정」 같은 특수 선택지)는 select 로 둔다 — 다음 묶음에서 다시 본다.
+     * 바이어는 수백 명이라 select 로는 찾기 어렵다. **담당자 고르는 칸도 콤보**다(jin 2026-11-22 «지금 할 때 하는 게 낫지 않나») —
+     * 「미지정」 같은 특수 선택지는 콤보의 `extra`, 「전체」는 비운 상태(placeholder). 차량관리는 기준 화면이라 건드리지 않는다.
      */
     public function test_buyer_pickers_use_the_combobox(): void
     {
@@ -103,9 +104,13 @@ class ListCommonsGuardTest extends TestCase
             if (preg_match_all('/<select\b[^>]*wire:model(?:\.[a-z.0-9]+)?="(buyer_id[a-z_]*|buyerFilter|buyerId)"/s', $src, $m)) {
                 $offenders[] = $rel.' ('.implode(', ', $m[1]).')';
             }
+            if ($rel !== 'erp/vehicles/index.blade.php'
+                && preg_match_all('/<select\b[^>]*wire:model(?:\.[a-z.0-9]+)?="(salesmanFilter|salesman_id|salesman_id_str)"/s', $src, $m)) {
+                $offenders[] = $rel.' ('.implode(', ', $m[1]).')';
+            }
         }
 
-        $this->assertSame([], $offenders, '바이어 고르기 칸을 <select> 로 그린 화면 — <x-erp.combobox> 를 쓴다');
+        $this->assertSame([], $offenders, '바이어·담당자 고르기 칸을 <select> 로 그린 화면 — <x-erp.combobox> 를 쓴다');
     }
 
     /**
