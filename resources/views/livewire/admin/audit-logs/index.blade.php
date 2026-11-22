@@ -297,30 +297,16 @@ new #[Layout('components.layouts.app')] class extends Component
         <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('log.audit_search') }}"
                class="input-filter w-full sm:w-64" />
         <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
-        <select wire:model.live="userFilter" class="input-filter">
-            <option value="">{{ __('log.all_users') }}</option>
-            @foreach($this->users as $u)
-                <option value="{{ $u->id }}">{{ $u->name }}</option>
-            @endforeach
-        </select>
-        <select wire:model.live="actionFilter" class="input-filter">
-            <option value="">{{ __('log.all_actions') }}</option>
-            @foreach($this->distinctActions as $value => $label)
-                <option value="{{ $value }}" title="{{ $value }}">{{ $label }}</option>
-            @endforeach
-        </select>
-        <select wire:model.live="typeFilter" class="input-filter">
-            <option value="">{{ __('log.all_types') }}</option>
-            @foreach($this->distinctTypes as $value => $label)
-                <option value="{{ $value }}" title="{{ $value }}">{{ $label }}</option>
-            @endforeach
-        </select>
-        <select wire:model.live="columnFilter" class="input-filter">
-            <option value="">{{ __('log.all_columns') }}</option>
-            @foreach($this->distinctColumns as $value => $label)
-                <option value="{{ $value }}" title="{{ $value }}">{{ $label }}</option>
-            @endforeach
-        </select>
+        {{-- 🔽 드롭박스콤보공용 (jin 2026-11-22 «로그 기록 쪽 드롭박스에 콤보 적용») — 사용자·액션·대상·컬럼은 수십~수백 개라 치면서 찾는다.
+             [검색] 버튼이 있는 줄이라 고른 값은 [검색]·Enter 때 걸린다(deferred). 값이 글자인 목록은 콤보의 `extra`(값 => 이름)로 넘긴다. --}}
+        <x-erp.combobox wire:key="al-user-{{ $userFilter }}" model="userFilter" :options="$this->users"
+            :selected="$userFilter" placeholder="{{ __('log.all_users') }}" class="w-36" deferred />
+        <x-erp.combobox wire:key="al-action-{{ $actionFilter }}" model="actionFilter" :options="[]" :extra="$this->distinctActions"
+            :selected="$actionFilter" placeholder="{{ __('log.all_actions') }}" class="w-44" deferred />
+        <x-erp.combobox wire:key="al-type-{{ md5($typeFilter) }}" model="typeFilter" :options="[]" :extra="$this->distinctTypes"
+            :selected="$typeFilter" placeholder="{{ __('log.all_types') }}" class="w-36" deferred />
+        <x-erp.combobox wire:key="al-col-{{ md5($columnFilter) }}" model="columnFilter" :options="[]" :extra="$this->distinctColumns"
+            :selected="$columnFilter" placeholder="{{ __('log.all_columns') }}" class="w-44" deferred />
         <input wire:model.live.debounce.400ms="dateFrom" type="date" class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>
         <input wire:model.live.debounce.400ms="dateTo" type="date" class="input-filter" />

@@ -96,7 +96,7 @@ return [
         'failed' => '실패',
     ],
     'md_channel' => [
-        'gmail' => 'Gmail',
-        'ses' => 'AWS SES',
+        'gmail' => '지메일',
+        'ses' => '아마존 메일(SES)',
     ],
 ];

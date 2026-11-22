@@ -94,7 +94,7 @@ return [
         'buyer_id' => '바이어',
         'consignee_id' => '컨사이니',
         'sale_price' => '판매가',
-        'tax_dc' => 'TAX D/C',
+        'tax_dc' => 'TAX D/C(세금 할인)',
         'commission' => '커미션',
         'auto_loading' => '하역비 외',
         'transport_fee' => '운임비',
@@ -477,9 +477,33 @@ return [
         'revoked_at' => '무름 시각',
     ],
 
+    // ─── 여러 표에 걸친 이름 — 감사로그 드롭박스에 영문 그대로 뜨던 것(2026-11-22 운영 3사 실측) ───
+    'misc' => [
+        'tax_dc' => 'TAX D/C(세금 할인)',
+        'office_address' => '사무실 주소',
+        'city' => '도시',
+        'website' => '웹사이트',
+        'is_b2b_partner' => 'B2B 파트너 여부',
+        'is_dp' => 'DP 거래 여부',
+        'is_fd' => 'FD 거래 여부',
+        'map_name_public' => '지도 표시 이름',
+        'b2b_contract' => 'B2B 계약서',
+        'finalized_at' => '최종 확정 시각',
+        'kakao_collector_tokens' => '카톡 수집 프로그램',
+        'sides' => '방 구분',
+        'confirmed_amount' => '확정 금액',
+        'note' => '비고',
+        'amount' => '금액',
+        'buyer_id' => '바이어',
+        'dummy' => '테스트 값',
+    ],
+
     // ─── 모델 클래스명 → 한글 ─────────────────────────────────────────────
     // audit_logs.auditable_type 표시에 사용
     'models' => [
+        'KakaoCollectorToken' => '카톡 수집 프로그램',
+        'KakaoRoom' => '카톡 방',
+        'VehicleClaim' => '클레임',
         'Vehicle' => '차량',
         'FinalPayment' => '판매 입금',
         'PurchaseBalancePayment' => '매입 지급',
@@ -518,6 +542,7 @@ return [
 
     // ─── audit_logs.action 한글 ─────────────────────────────────────────
     'actions' => [
+        'kakao_room_fixed' => '카톡 방 고정',
         'nice_mismatch_cleared' => '다른 차 NICE 원본 정리',
         'payout_held' => '지급보류',   // 2026-11-06 월정산
         'payout_hold_cancelled' => '지급보류 취소',
