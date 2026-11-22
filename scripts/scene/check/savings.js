@@ -89,7 +89,11 @@ module.exports.run = async function run({ browser }) {
       await p.waitForTimeout(2000);
       await p.locator('button', { hasText: /^적립금$/ }).first().click();
       await p.waitForTimeout(800);
-      for (const t of ['선입선출', '거래 추가', EARN, USE]) await L.expectText(p, t, `적립금 탭 「${t}」`);
+      for (const t of ['거래 추가', EARN, USE]) await L.expectText(p, t, `적립금 탭 「${t}」`);
+      // 「선입선출」은 사용 줄을 눌러야 열리는 상세 안에 있다(11-17 — 한 건 한 줄 + 누르면 상세).
+      await p.locator('[data-savings-row]', { hasText: USE }).first().click();
+      await p.waitForTimeout(600);
+      await L.expectText(p, '선입선출', '적립금 사용 줄 상세 「선입선출」');
       await L.assertNoViolations(p);
     });
   } finally {

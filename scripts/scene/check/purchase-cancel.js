@@ -85,7 +85,7 @@ module.exports.run = async function run({ browser }) {
       await fp.locator('tr', { hasText: P1 }).first().locator('td').nth(1).click();
       await fp.waitForTimeout(2200);
       await fp.locator('input[wire\\:model="hAmount"]').fill('500');
-      await fp.locator('input[wire\\:model="hExchangeRate"]').fill('1400');
+      if (!L.rateAutoOn()) await fp.locator('input[wire\\:model="hExchangeRate"]').fill('1400');   // 💱 자동 기록이면 칸이 없다
       await fp.locator('textarea[wire\\:model="hNote"]').fill(PEN_NOTE);
       await L.expectAfter(fp, () => fp.getByRole('button', { name: '추가', exact: true }).click(), '회수 이력이 추가됐습니다.', '위약금 입금 [추가]');
       await fp.goto(`${L.BASE}/erp/transfers?tabType=sale_payment&search=${encodeURIComponent(P1)}`, { waitUntil: 'networkidle', timeout: 120000 });

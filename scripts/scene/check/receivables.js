@@ -67,7 +67,7 @@ module.exports.run = async function run({ browser }) {
     await r.step('3단계 「입금」 2,000 → 판매 잔금 생성 · 미수 그대로 · 「재무 확정 대기」', async () => {
       await L.expectText(p, '입금 (판매 잔금 자동 생성)', '회수 방법 「입금 (판매 잔금 자동 생성)」');
       await p.locator('input[wire\\:model="hAmount"]').fill('2000');
-      await p.locator('input[wire\\:model="hExchangeRate"]').fill('1450');
+      if (!L.rateAutoOn()) await p.locator('input[wire\\:model="hExchangeRate"]').fill('1450');   // 💱 자동 기록이면 칸이 없다
       await p.locator('textarea[wire\\:model="hNote"]').fill(DEP_NOTE);
       await L.expectAfter(p, () => p.getByRole('button', { name: '추가', exact: true }).click(), '회수 이력이 추가됐습니다.', '[추가] 토스트');
       await L.assertNoViolations(p);
@@ -90,7 +90,7 @@ module.exports.run = async function run({ browser }) {
       await p.locator('select[wire\\:model="hMethod"]').first().selectOption('cash');
       await p.waitForTimeout(800);
       await p.locator('input[wire\\:model="hAmount"]').fill('500');
-      await p.locator('input[wire\\:model="hExchangeRate"]').fill('1450').catch(() => {});
+      if (!L.rateAutoOn()) await p.locator('input[wire\\:model="hExchangeRate"]').fill('1450').catch(() => {});
       await p.locator('textarea[wire\\:model="hNote"]').fill(CASH_NOTE);
       await L.expectAfter(p, () => p.getByRole('button', { name: '추가', exact: true }).click(), '회수 이력이 추가됐습니다.', '[추가] 토스트(현금)');
       await L.assertNoViolations(p);

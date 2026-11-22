@@ -44,6 +44,17 @@ const FORBIDDEN_LABELS = [
   '테스트 발송', 'NICE 조회', '원부조회', '새 요청 다시 보내기',
 ];
 
+/**
+ * 💱 판매잔금 환율 자동 기록이 켜져 있나(기능설정 `payment_rate_auto_from_{회사}` ≤ 오늘 — Setting::paymentRateAutoActive 와 같은 판정, 읽기만).
+ * 켜져 있으면 판매탭·채권관리의 입금 환율 **입력칸이 없다**(서버가 입금일 전날 마감을 적는다) → 그 칸을 채우는 단계는 건너뛴다.
+ */
+function rateAutoOn() {
+  const set = (dbOne("select value from settings where `key` = 'company_template_set'") || {}).value || 'system';
+  const row = dbOne('select value from settings where `key` = ?', [`payment_rate_auto_from_${set}`]);
+  const from = row && /^\d{4}-\d{2}-\d{2}$/.test(String(row.value || '').trim()) ? String(row.value).trim() : null;
+  return !!from && today().iso >= from;
+}
+
 function today() {
   const d = new Date();
   const p = (n) => String(n).padStart(2, '0');
@@ -239,7 +250,7 @@ function assertEq(actual, expected, what) {
 }
 const num = (v) => (v === null || v === undefined ? null : Number(v));
 
-module.exports = {
+module.exports = { rateAutoOn,
   BASE, ROOT, today, addDays, launch, newContext, newPage, login, assertNoViolations,
   expectText, expectNoText, expectAfter, dbQuery, dbOne, unlockVehicles, openVehicle, closePanel,
   recorder, assertEq, num, FORBIDDEN_METHODS, FORBIDDEN_LABELS,

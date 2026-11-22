@@ -83,7 +83,7 @@ module.exports.run = async function run({ browser }) {
       await p.locator('tr', { hasText: PLATE }).first().locator('td').nth(1).click();
       await p.waitForTimeout(2000);
       await p.locator('input[wire\\:model="hAmount"]').fill('2000');
-      await p.locator('input[wire\\:model="hExchangeRate"]').fill('1460');
+      if (!L.rateAutoOn()) await p.locator('input[wire\\:model="hExchangeRate"]').fill('1460');   // 💱 자동 기록이면 칸이 없다
       await p.locator('textarea[wire\\:model="hNote"]').fill(HIST_NOTE);
       await p.getByRole('button', { name: '추가', exact: true }).click();
       await p.waitForTimeout(2500);

@@ -12,7 +12,7 @@ function norm(s) {
   return unescapeHtml(String(s))
     .replace(/\{\{[^}]*\}\}/g, '#').replace(/:[a-z_]+/g, '#').replace(/\$\w+/g, '#')
     .replace(/○+|\(이름\)|\(name\)/g, '#')
-    .replace(/(^|[^A-Za-z])N(?![A-Za-z])/g, '$1#').replace(/[0-9][0-9,.]*/g, '#')
+    .replace(/(^|[^A-Za-z])[NM](?![A-Za-z])/g, '$1#').replace(/[0-9][0-9,.]*/g, '#')
     // 아이콘·기호·공백은 무시한다(✓ ⚠ 🔎 📩 · › 등) — 글자(한글·영문)와 자리표시(#)만 비교
     .replace(/[^\p{L}#]+/gu, '');
 }

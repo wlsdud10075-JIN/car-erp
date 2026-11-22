@@ -65,8 +65,8 @@ module.exports.run = async function run({ browser }) {
       await X.typeDate(p, 'input[wire\\:model\\.live="finalPayments.0.payment_date"]', iso);
       // 날짜를 넣으면 그날 환율이 자동으로 들어온다(외부 환율 조회 — 실패해도 회귀 아님). 정산은 실제 환율 1,400 으로 고쳐 넣는다.
       await p.waitForTimeout(2000);
-      const rate = p.locator('input[wire\\:model="finalPayments.0.exchange_rate"]');
-      await rate.fill('1400');
+      // 💱 환율 자동 기록이 켜진 회사는 입력칸이 없다(서버가 전날 마감을 적는다) — 채우지 않는다.
+      if (!L.rateAutoOn()) await p.locator('input[wire\\:model="finalPayments.0.exchange_rate"]').fill('1400');
       await X.typeMoney(p, 'input[wire\\:model="finalPayments.0.amount"]', 10000);
       await p.keyboard.press('Tab');
       await p.waitForTimeout(600);
@@ -77,7 +77,8 @@ module.exports.run = async function run({ browser }) {
       const fp = L.dbQuery('select amount, exchange_rate, payment_date, confirmed_at is not null c from final_payments where vehicle_id = ?', [v.id]);
       L.assertEq(fp.length, 1, 'DB 잔금 줄 수');
       L.assertEq(Number(fp[0].amount), 10000, 'DB 잔금 금액');
-      L.assertEq(Number(fp[0].exchange_rate), 1400, 'DB 잔금 환율');
+      if (L.rateAutoOn()) L.assertEq(Number(fp[0].exchange_rate) > 0, true, `DB 잔금 환율(자동 기록, ${fp[0].exchange_rate})`);
+      else L.assertEq(Number(fp[0].exchange_rate), 1400, 'DB 잔금 환율');
       L.assertEq(Number(fp[0].c), 1, 'DB 잔금 확정');
       if (cashOn) {
         const rc = receipt();
