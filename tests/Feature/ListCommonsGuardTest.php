@@ -108,6 +108,36 @@ class ListCommonsGuardTest extends TestCase
         $this->assertSame([], $offenders, '바이어 고르기 칸을 <select> 로 그린 화면 — <x-erp.combobox> 를 쓴다');
     }
 
+    /**
+     * 🔘 **[조회] 버튼이 있는 줄의 고르는 칸은 [조회]·Enter 때 걸린다** (jin 2026-11-22 «조회 버튼이 있는 건 조회 버튼 누르면 작동되게 —
+     *    그래야 라이브와이어가 계속 작동 안 하니까 화면이 가볍다»). 필터줄의 select·날짜에 `.live` 를 쓰지 않고, 콤보는 `deferred` 를 붙인다.
+     *    칩·탭은 버튼이라 누르는 즉시 걸린다(대상 아님). 차량관리는 기준 화면이라 건드리지 않는다.
+     */
+    public function test_filter_row_pickers_apply_on_the_search_button_not_live(): void
+    {
+        $filterProp = '/^(?:[A-Za-z0-9]*Filter|dateFrom|dateTo|dateType|unpaidRatioMin)$/';
+        $offenders = [];
+        foreach ($this->erpScreens() as $rel => $src) {
+            if ($rel === 'erp/vehicles/index.blade.php' || ! str_contains($src, 'wire:click="searchNow"') && ! str_contains($src, '<x-erp.search-bar')) {
+                continue;
+            }
+            preg_match_all('/<(?:select|input)\b[^>]*?wire:model\.live="([A-Za-z0-9]+)"/s', $src, $m);
+            foreach ($m[1] as $prop) {
+                if (preg_match($filterProp, $prop)) {
+                    $offenders[] = "{$rel}: {$prop} (.live)";
+                }
+            }
+            preg_match_all('/<x-erp\.combobox\b((?:(?!\/>).)*?)\/>/s', $src, $c);
+            foreach ($c[1] as $attrs) {
+                if (preg_match('/\bmodel="([A-Za-z0-9]+)"/', $attrs, $mm) && preg_match($filterProp, $mm[1]) && ! preg_match('/\bdeferred\b/', $attrs)) {
+                    $offenders[] = "{$rel}: {$mm[1]} (콤보에 deferred 없음)";
+                }
+            }
+        }
+
+        $this->assertSame([], $offenders, '필터줄의 고르는 칸이 고르는 즉시 조회한다 — wire:model(.live 없이) / 콤보는 deferred');
+    }
+
     /** 사이드 창(드로어) 폭은 차량 편집 패널과 같다 — 820px(작은 화면 700px). jin 2026-11-22 «전부 820px 통일». */
     public function test_side_panels_share_one_width(): void
     {

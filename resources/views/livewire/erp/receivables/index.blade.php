@@ -1457,23 +1457,23 @@ new #[Layout('components.layouts.app')] class extends Component {
              타이핑마다 서버 왕복이면 `LIKE '%…%'` 가 글자 수만큼 돌고, 이 화면은
              `wire:poll` 까지 겹친다. 다른 검색칸(차량·재고·바이어·정산)과 같은 형태다. --}}
         <x-erp.search-bar :placeholder="__('receivable.search_ph')" width="w-52" />
-        <input type="date" wire:model.live="dateFrom" class="input-filter" />
+        <input type="date" wire:model="dateFrom" class="input-filter" />
         <span class="text-xs text-gray-400">~</span>
-        <input type="date" wire:model.live="dateTo" class="input-filter" />
-        <select wire:model.live="salesmanFilter" class="input-filter">
+        <input type="date" wire:model="dateTo" class="input-filter" />
+        <select wire:model="salesmanFilter" class="input-filter">
             <option value="">{{ __('receivable.all_salesman') }}</option>
             @foreach ($this->salesmen as $s)<option value="{{ $s->id }}">{{ $s->name }}</option>@endforeach
         </select>
         {{-- 🔽 드롭박스콤보공용 (2026-11-22) — 바이어가 수백 명이라 치면서 찾는다. --}}
         <x-erp.combobox wire:key="rcv-buyer-filter-{{ $salesmanFilter }}-{{ $buyerFilter }}" model="buyerFilter" :options="$this->buyers"
-            :selected="$buyerFilter" placeholder="{{ __('receivable.all_buyer') }}" class="w-44" />
-        <select wire:model.live="progressFilter" class="input-filter">
+            :selected="$buyerFilter" placeholder="{{ __('receivable.all_buyer') }}" class="w-44" deferred />
+        <select wire:model="progressFilter" class="input-filter">
             <option value="">{{ __('receivable.all_progress') }}</option>
             @foreach (['판매중','판매완료','선적중','선적완료','통관중','통관완료','거래완료'] as $s)
             <option value="{{ $s }}">{{ __('domain.progress.'.$s) }}</option>
             @endforeach
         </select>
-        <select wire:model.live="riskFilter" class="input-filter">
+        <select wire:model="riskFilter" class="input-filter">
             <option value="">{{ __('receivable.all_risk') }}</option>
             <option value="grace">{{ __('receivable.risk.grace') }}</option>
             <option value="safe">{{ __('receivable.risk.safe') }}</option>
@@ -1481,7 +1481,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="danger">{{ __('receivable.risk.danger') }}</option>
             <option value="critical">{{ __('receivable.risk.critical') }}</option>
         </select>
-        <select wire:model.live="cancelFilter" class="input-filter">
+        <select wire:model="cancelFilter" class="input-filter">
             <option value="">{{ __('receivable.cancel.all') }}</option>
             <option value="cancelled">{{ __('receivable.cancel.only') }}</option>
             <option value="normal">{{ __('receivable.cancel.normal') }}</option>
@@ -1492,7 +1492,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="import_cleared">{{ __('receivable.cancel.import_cleared') }}</option>
             @endif
         </select>
-        <select wire:model.live="unpaidRatioMin" class="input-filter">
+        <select wire:model="unpaidRatioMin" class="input-filter">
             <option value="">{{ __('receivable.ratio_all') }}</option>
             <option value="30">{{ __('receivable.ratio_min', ['percent' => 30]) }}</option>
             <option value="50">{{ __('receivable.ratio_min', ['percent' => 50]) }}</option>

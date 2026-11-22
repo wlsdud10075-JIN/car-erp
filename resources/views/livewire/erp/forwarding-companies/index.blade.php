@@ -552,7 +552,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- 필터바: 기간 + 검색 --}}
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-    <select wire:model.live="dateType" class="input-filter">
+    <select wire:model="dateType" class="input-filter">
         <option value="shipping">{{ __('forwarding.date_shipping') }}</option>
         <option value="bl">{{ __('forwarding.date_bl') }}</option>
     </select>

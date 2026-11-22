@@ -630,7 +630,7 @@ new #[Layout('components.layouts.app')] class extends Component
     {{-- 필터 --}}
     <div class="card flex flex-wrap items-center gap-2">
         <x-erp.search-bar :placeholder="__('inventory.search_ph')" width="w-64">
-        <select wire:model.live="salesmanFilter" class="input-filter">
+        <select wire:model="salesmanFilter" class="input-filter">
             <option value="">{{ __('inventory.all_salesmen') }}</option>
             @foreach($this->salesmen as $sm)
                 <option value="{{ $sm->id }}">{{ $sm->name }}</option>
@@ -638,10 +638,10 @@ new #[Layout('components.layouts.app')] class extends Component
         </select>
         {{-- 바이어/컨사이니 검색 드롭다운 (jin 2026-07-24) — 출고일 지정 시점엔 당사자 확정. combobox 타이핑 검색. --}}
         <x-erp.combobox wire:key="inv-buyer-{{ $buyerFilter }}" model="buyerFilter" :options="$this->buyers"
-            :selected="$buyerFilter" placeholder="{{ __('inventory.buyer_ph') }}" class="w-44" />
+            :selected="$buyerFilter" placeholder="{{ __('inventory.buyer_ph') }}" class="w-44" deferred />
         <x-erp.combobox wire:key="inv-consignee-{{ $buyerFilter }}-{{ $consigneeFilter }}" model="consigneeFilter"
-            :options="$this->consignees" :selected="$consigneeFilter" placeholder="{{ __('inventory.consignee_ph') }}" class="w-44" />
-        <select wire:model.live="statusFilter" class="input-filter">
+            :options="$this->consignees" :selected="$consigneeFilter" placeholder="{{ __('inventory.consignee_ph') }}" class="w-44" deferred />
+        <select wire:model="statusFilter" class="input-filter">
             <option value="">{{ __('inventory.all_status') }}</option>
             @foreach(['매입중','매입완료','말소완료','판매중','판매완료','선적중','선적완료','통관중','통관완료','거래완료'] as $st)
             <option value="{{ $st }}">{{ __('domain.progress.'.$st) }}</option>

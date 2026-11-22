@@ -2207,7 +2207,7 @@ new #[Layout('components.layouts.app')] class extends Component
         @endforeach
     </select>
     {{-- 정산 귀속월(attributed_month=완납월, 1일~말일) 솔팅 + 익월 10일 지급 라벨 (A-3 2026-07-08). --}}
-    <select wire:model.live="monthFilter" class="input-filter" title="{{ __('settlement.filter_month_title') }}">
+    <select wire:model="monthFilter" class="input-filter" title="{{ __('settlement.filter_month_title') }}">
         <option value="">{{ __('settlement.filter_all_month') }}</option>
         @foreach($this->availableMonths as $ym)
         @php $payDate = \Carbon\Carbon::parse($ym.'-01')->addMonthNoOverflow()->format('Y-m').'-10'; @endphp
