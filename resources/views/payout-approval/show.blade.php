@@ -87,6 +87,7 @@
             $heldSum = $ledgerOn ? $batch->heldAmountsBySalesman() : [];
             $extraSum = $ledgerOn ? $batch->extraAmountsBySalesman() : [];
             $extraPaidOutside = $ledgerOn ? $batch->extraPaidOutsideTotal() : 0;
+            $leaverNet = $batch->leaverCompanyNet();   // 같은 달 퇴사 정산(따로 결재)의 회사 몫 — 카드와 같은 숫자
         @endphp
         @if($batch->isFinalized())
         <div class="row" data-finalized style="color:#1d4ed8;font-weight:700;"><span class="k">✅ 월정산 최종 확정</span><span class="v">{{ $batch->finalized_at?->format('Y-m-d H:i') }} {{ $batch->finalizedBy?->name }}</span></div>
@@ -97,6 +98,9 @@
         <div class="row" data-hold-net style="background:#fffbeb;border:2px solid #fcd34d;border-radius:6px;padding:6px 8px;font-weight:700;color:#92400e;"><span class="k">⚠ 실제 송금액 (보류 {{ count($heldSum) }}명 · 추가 {{ count($extraSum) }}명)</span><span class="v" style="font-size:1.1em;">{{ number_format((int) $v3['totals']['transfer_total'] - array_sum($heldSum) + array_sum($extraSum)) }}원</span></div>
         @endif
         <div class="row"><span class="k">회사 순이익 (급여 차감 후)</span><span class="v {{ $v3['totals']['company_net'] < 0 ? 'loss' : '' }}" @if($extraPaidOutside !== 0) style="text-decoration:line-through;color:#6b7280;" @endif>{{ number_format($v3['totals']['company_net']) }}원</span></div>
+        @if($leaverNet !== 0)
+        <div class="row" data-leaver-net style="font-weight:700;"><span class="k">회사 순이익 (같은 달 퇴사 정산 {{ number_format($leaverNet) }}원 포함)</span><span class="v {{ $v3['totals']['company_net'] - $extraPaidOutside + $leaverNet < 0 ? 'loss' : '' }}">{{ number_format($v3['totals']['company_net'] - $extraPaidOutside + $leaverNet) }}원</span></div>
+        @endif
         @if($extraPaidOutside !== 0)
         <div class="row" data-company-net-final style="font-weight:700;"><span class="k">회사 순이익 (월정산 밖 추가 지급 {{ number_format($extraPaidOutside) }}원 반영)</span><span class="v {{ $v3['totals']['company_net'] - $extraPaidOutside < 0 ? 'loss' : '' }}">{{ number_format($v3['totals']['company_net'] - $extraPaidOutside) }}원</span></div>
         @endif

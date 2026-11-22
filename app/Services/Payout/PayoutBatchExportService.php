@@ -69,7 +69,7 @@ class PayoutBatchExportService
         $stamp = $batch->isFinalized()
             ? ' — 최종 확정 '.$batch->finalized_at?->format('Y-m-d').' '.($batch->finalizedBy?->name ?? '')
             : ($ledgerOn ? ' (확정 전 — 보류·추가가 바뀔 수 있음)' : '');
-        $this->peopleSheet($ss->createSheet(0), $people, $bd['totals'] ?? [], (bool) ($bd['domestic_split'] ?? false), $holds, $extras,
+        $this->peopleSheet($ss->createSheet(0), $people, ($bd['totals'] ?? []) + ['leaver_net' => $batch->leaverCompanyNet()], (bool) ($bd['domestic_split'] ?? false), $holds, $extras,
             $this->titleFor($batch, '사람별 지급 내역').$stamp, (string) $batch->month, $ledgerOn, $extraPaidOutside);
         $this->payrollItemsSheet($ss->createSheet(1), $people, $this->titleFor($batch, '급여 항목'), (string) $batch->month);
         $ss->setActiveSheetIndex(0);
@@ -299,11 +299,19 @@ class PayoutBatchExportService
         // 💱 환차손익(회사) — 환차를 정산에서 뺀 정산의 실현 환차(BatchPayoutBreakdown totals.company_fx). 사람별 기여 열엔 없으므로
         //    여기서 안 더하면 화면 카드의 회사 순이익과 갈린다(jin 2026-11-20). 0 이면 줄을 안 만든다(환차 포함 방식의 종전 출력 그대로).
         $companyFx = (int) ($totals['company_fx'] ?? 0);
+        $leaverNet = (int) ($totals['leaver_net'] ?? 0);
         $fxRow = $companyFx !== 0 ? $put('환차손익(회사)', $companyFx) : null;
-        $netRow = $put('회사 순이익', "=G{$contribRow}-G{$laborRow}".($domRow ? "+G{$domRow}" : '').($fxRow ? "+G{$fxRow}" : ''), $extraPaidOutside === 0);
-        if ($extraPaidOutside !== 0) {   // (가) 월정산 밖으로 준 추가금은 그 달 회사이익에서 뺀다
-            $extraPaidRow = $put('추가 지급(월정산 밖, 회사이익 차감)', $extraPaidOutside);
-            $put('회사 순이익(월정산 밖 추가 지급 반영)', "=G{$netRow}-G{$extraPaidRow}", true);
+        $netRow = $put('회사 순이익', "=G{$contribRow}-G{$laborRow}".($domRow ? "+G{$domRow}" : '').($fxRow ? "+G{$fxRow}" : ''), $extraPaidOutside === 0 && $leaverNet === 0);
+        // 🚪 같은 달 퇴사 정산(따로 결재)의 회사 몫 — 화면 카드와 같은 숫자가 되게 더한다(jin 2026-11-22).
+        if ($extraPaidOutside !== 0 || $leaverNet !== 0) {
+            $final = "=G{$netRow}";
+            if ($extraPaidOutside !== 0) {   // (가) 월정산 밖으로 준 추가금은 그 달 회사이익에서 뺀다
+                $final .= '-G'.$put('추가 지급(월정산 밖, 회사이익 차감)', $extraPaidOutside);
+            }
+            if ($leaverNet !== 0) {
+                $final .= '+G'.$put('퇴사 정산 회사 몫(같은 달, 따로 결재)', $leaverNet);
+            }
+            $put($leaverNet !== 0 ? '회사 순이익(추가 지급·퇴사 정산 반영)' : '회사 순이익(월정산 밖 추가 지급 반영)', $final, true);
         }
         $this->grid($sheet, "C{$summaryStart}:G".($r - 1));
         $this->numberFormat($sheet, "G{$summaryStart}:G".($r - 1), self::MONEY_FMT);

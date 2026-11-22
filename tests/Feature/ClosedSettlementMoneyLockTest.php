@@ -360,4 +360,57 @@ class ClosedSettlementMoneyLockTest extends TestCase
         $this->assertSame('2026-11-01', $excepted->fresh()->attributed_month->format('Y-m-d'));
         $this->assertSame('2026-10-01', $held->fresh()->attributed_month->format('Y-m-d'), '보류 중인 정산은 그 달에 그대로');
     }
+
+    // ── 🪟 자기 저장을 「남이 먼저 저장」으로 읽지 않는다 (jin 2026-11-22) ───────────────
+
+    /**
+     * 패널(섬) 저장과 30초 tick(루트)은 동시에 나갈 수 있다 — tick 은 저장 전 스냅샷(입력 중·옛 지문)을 들고 온다.
+     * 이 화면이 방금 저장해 만든 지문이면 배너를 띄우지 않고 저장이 끝낸 모양(닫힘)으로 맞춘다.
+     */
+    public function test_a_poll_that_overlaps_my_own_save_does_not_show_the_remote_banner(): void
+    {
+        [$v, $admin] = $this->closedVehicle('pending');
+        $this->actingAs($admin);
+
+        // 저장 전 스냅샷을 든 화면(입력 중)
+        $c = $this->panel($v)->set('purchase_remittance_memo', '입력 중');
+        $this->assertTrue($c->get('formDirty'));
+
+        // 그 사이 **같은 화면의 저장 요청**이 끝났다 — 지문이 바뀌고 자기 저장 표식이 남는다
+        $v->forceFill(['purchase_remittance_memo' => '저장됨'])->save();
+        \DB::table('vehicles')->where('id', $v->id)->update(['updated_at' => now()->addMinute()]);
+        Cache::put('vehicle_self_save:'.$c->instance()->getId(), ['vehicle' => $v->id, 'fp' => $v->fresh()->editFingerprint(), 'keep' => false], 120);
+
+        $c->call('tick');
+
+        $this->assertFalse($c->get('remoteChanged'), '자기 저장을 남의 저장으로 읽었다');
+        $this->assertNull($c->get('editingId'), '저장이 닫은 패널을 겹친 점검이 다시 열어 둔다');
+    }
+
+    /** 표식이 없으면(= 정말 남이 저장) 종전대로 배너가 뜬다 — 가드를 없앤 게 아니다. */
+    public function test_someone_elses_save_still_shows_the_remote_banner(): void
+    {
+        [$v, $admin] = $this->closedVehicle('pending');
+        $this->actingAs($admin);
+        $c = $this->panel($v)->set('purchase_remittance_memo', '입력 중');
+
+        \DB::table('vehicles')->where('id', $v->id)->update(['updated_at' => now()->addMinute()]);
+        $c->call('tick');
+
+        $this->assertTrue($c->get('remoteChanged'));
+    }
+
+    /** 실제 저장이 그 표식을 남긴다(차량·새 지문). */
+    public function test_a_real_save_leaves_the_self_save_mark(): void
+    {
+        [$v, $admin] = $this->closedVehicle('pending');
+        $this->actingAs($admin);
+
+        $c = $this->panel($v)->set('purchase_remittance_memo', '메모');
+        $c->call('save')->assertHasNoErrors();
+
+        $mark = Cache::get('vehicle_self_save:'.$c->instance()->getId());
+        $this->assertSame($v->id, $mark['vehicle'] ?? null);
+        $this->assertSame($v->fresh()->editFingerprint(), $mark['fp'] ?? null);
+    }
 }

@@ -781,6 +781,28 @@ class SettlementPayoutBatch extends Model
      * ➕ 이 배치에서 「지급(월정산 밖)」으로 나간 추가금 합 — (가) jin 2026-11-06: 그 달 회사이익에서 뺀다
      * (카드 합계 띠·엑셀 요약·관리자 대시보드·월결산 알림톡 네 곳이 같이 본다). 다음 월정산 줄로 간 추가금은 그 달 extra_release 가 맡는다.
      */
+    /**
+     * 🚪 **그 달에 승인된 퇴사 정산의 회사 몫 합** (jin 2026-11-22 «카드에도 퇴사 정산 합쳐줘»).
+     * 퇴사 정산은 따로 결재되는 배치라 월정산 카드의 회사 순이익에 안 들어 있었다 — 월결산 알림톡은 그 달에 넣으므로
+     * 같은 달 두 숫자가 그만큼 갈렸다(실측 ssancarerp 2026-10: 319,152원). 카드·승인 링크·엑셀이 **표시할 때** 더한다(박제는 안 건드린다).
+     *   값 = 퇴사 배치 카드의 회사 기여 합 + 회사 몫 환차. 🚫 그 카드의 company_net 을 쓰지 않는다 — 그 달 급여가 공통 인건비로
+     *   한 번 더 빠질 수 있다(급여는 월정산 카드가 이미 뺐다).
+     */
+    public function leaverCompanyNet(): int
+    {
+        if ($this->kind !== self::KIND_MONTH) {
+            return 0;
+        }
+
+        return (int) self::query()->where('kind', self::KIND_LEAVER)->where('month', $this->month)
+            ->where('status', self::STATUS_APPROVED)->get()
+            ->sum(function (self $b) {
+                $tt = $b->breakdownForDisplay()['totals'] ?? [];
+
+                return (int) ($tt['contribution_sum'] ?? 0) + (int) ($tt['company_fx'] ?? 0);
+            });
+    }
+
     public function extraPaidOutsideTotal(): int
     {
         return (int) PayoutHold::query()->where('payout_batch_id', $this->id)->ofKind(PayoutHold::KIND_EXTRA)

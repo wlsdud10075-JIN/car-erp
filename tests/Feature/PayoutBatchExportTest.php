@@ -162,6 +162,39 @@ class PayoutBatchExportTest extends TestCase
         $this->assertSame((int) $bd['totals']['company_net'], (int) $byLabel['회사 순이익'][6], '엑셀 회사 순이익 = 화면 카드');
     }
 
+    /**
+     * 🚪 같은 달에 승인된 퇴사 정산(따로 결재)의 회사 몫을 월정산 카드·엑셀의 회사 순이익에 합친다 (jin 2026-11-22).
+     *   월결산 알림톡은 퇴사 정산을 그 달에 넣는다 — 카드만 빠져 있어 같은 달 두 숫자가 갈렸다(ssancarerp 10월 319,152원).
+     *   박제는 안 건드리고 표시할 때 더한다. 급여가 두 번 빠지지 않게 퇴사 카드의 「회사 기여 합」을 쓴다(company_net 아님).
+     */
+    public function test_the_month_card_and_excel_include_the_same_months_leaver_payout(): void
+    {
+        [$batch, $manager] = $this->monthBatch();
+        $this->assertSame(0, $batch->leaverCompanyNet(), '퇴사 정산이 없으면 0 — 종전 출력 그대로');
+
+        $mk = fn (string $status, string $month) => SettlementPayoutBatch::create([
+            'kind' => SettlementPayoutBatch::KIND_LEAVER, 'month' => $month, 'submitter_id' => $manager->id, 'submitter_rank' => 1, 'current_level' => 3,
+            'status' => $status, 'total_payout' => 19_153, 'settlement_count' => 3, 'submitted_at' => now(), 'decided_at' => now(),
+            'breakdown_snapshot' => ['people' => [], 'totals' => ['contribution_sum' => 319_152, 'common_labor' => 2_740_000, 'company_net' => -2_420_848]],
+        ]);
+        $mk(SettlementPayoutBatch::STATUS_APPROVED, '2026-10');
+        $mk(SettlementPayoutBatch::STATUS_REJECTED, '2026-10');   // 반려된 퇴사 정산은 안 센다
+        $mk(SettlementPayoutBatch::STATUS_APPROVED, '2026-09');   // 다른 달도 안 센다
+
+        $this->assertSame(319_152, $batch->leaverCompanyNet(), '그 달 승인분의 회사 기여 합만 — 급여가 다시 빠진 company_net 이 아니다');
+
+        $bd = $batch->breakdownForDisplay();
+        $html = (string) $this->blade('<x-payout.totals :totals="$t" :leaver-net="$n" />', ['t' => $bd['totals'], 'n' => $batch->leaverCompanyNet()]);
+        $this->assertStringContainsString('data-leaver-net', $html);
+        $this->assertStringContainsString('data-company-net-final>'.((int) $bd['totals']['company_net'] + 319_152 < 0 ? '−' : '').'₩'.number_format(abs((int) $bd['totals']['company_net'] + 319_152)), $html);
+
+        $people = $this->open($this->actingAs($manager)->get(route('erp.payout-batches.export', $batch)))
+            ->getSheetByName('사람별 지급')->toArray(null, true, false, false);
+        $byLabel = collect($people)->keyBy(2);
+        $this->assertSame(319_152, (int) $byLabel['퇴사 정산 회사 몫(같은 달, 따로 결재)'][6]);
+        $this->assertSame((int) $bd['totals']['company_net'] + 319_152, (int) $byLabel['회사 순이익(추가 지급·퇴사 정산 반영)'][6], '엑셀 = 화면 카드');
+    }
+
     public function test_domestic_batch_excel_follows_the_fee_sheet_and_is_gated(): void
     {
         $viewer = $this->user('manager');
