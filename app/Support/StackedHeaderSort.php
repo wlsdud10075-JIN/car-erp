@@ -2,6 +2,8 @@
 
 namespace App\Support;
 
+use Illuminate\Support\HtmlString;
+
 /**
  * 🔢 헤더 겹침 정렬 — 차량관리(jin 2026-10-19)와 같은 동작을 재고관리·채권관리가 공유한다
  *   (jin 2026-10-26 «차량관리에 적용된 내용을 보면 좋을 것 같아 · 채권관리탭에도»).
@@ -128,6 +130,28 @@ trait StackedHeaderSort
     }
 
     /** 헤더 칸에 붙일 표식 — '▲' / '▼' / 겹침이면 '2▲' 처럼 순번. 정렬 안 된 칸은 ''. */
+    /**
+     * 🔼🔽 **정렬 헤더 한 칸** — th 안에 `{{ $this->sortTh('name', __('buyer.col_name')) }}` 한 줄 (헤더정렬공용 겉모양, 2026-11-22).
+     * 화면마다 `$sortBtn` 클로저로 버튼 HTML 을 다시 쓰던 것을 `<x-erp.sort-th>` 한 곳으로 모았다.
+     * 허용 키가 아니면 글자만 찍는다(눌러도 안 되는 버튼을 그리지 않는다 — 08-09 차량관리 정렬 버튼 4개 사고).
+     */
+    public function sortTh(string $col, string $label, string $align = 'left', string $extra = ''): HtmlString
+    {
+        if (! $this->sortable($col)) {
+            return new HtmlString(e($label));
+        }
+
+        return new HtmlString(view('components.erp.sort-th', [
+            'col' => $col, 'label' => $label, 'align' => $align, 'extra' => $extra, 'indicator' => $this->headerIndicator($col),
+        ])->render());
+    }
+
+    /** 헤더에 찍을 표시 — 기본 정렬일 때 종전 기준 칸에 ▼ 를 보여 주는 화면(채권관리)은 오버라이드한다. */
+    protected function headerIndicator(string $col): string
+    {
+        return $this->sortIndicator($col);
+    }
+
     public function sortIndicator(string $col): string
     {
         $keys = $this->sortKeysForHeader();
