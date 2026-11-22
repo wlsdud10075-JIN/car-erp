@@ -90,6 +90,30 @@ class SettlementExportTest extends TestCase
         $this->assertStringNotContainsString('SE4', implode('|', $sheets), '다른 귀속월이 섞임');
     }
 
+    /**
+     * 🏷️ 엑셀은 화면의 켜기/끄기 필터도 따른다 (jin 2026-11-22) — 「내수」·「귀속월 이동」 칩, 「게이트 예외」 토글.
+     * 안 받으면 칩을 켜고 받은 엑셀에 전체가 나온다(«화면에서 본 것과 다른 게 나오면 대조가 무의미»).
+     */
+    public function test_export_follows_the_chip_and_toggle_filters(): void
+    {
+        $this->settlement('무사백', '2026-07');                                                              // SE1 — 아무것도 아님
+        $this->settlement('무사백', '2026-07', ['settlement' => ['is_domestic' => true]]);                   // SE2 — 내수
+        $this->settlement('무사백', '2026-07', ['settlement' => ['reanchored_from' => '2026-06-01']]);       // SE3 — 귀속월 이동
+        $this->settlement('무사백', '2026-07', ['settlement' => ['gate_override_at' => now(), 'gate_override_reason' => '운임비 후입력 예외']]); // SE4
+
+        $plates = function (array $params) {
+            $res = $this->actingAs($this->financeUser())->get(route('erp.settlements.export', ['month' => '2026-07'] + $params))->assertOk();
+            $flat = implode('|', $this->loadWorkbook($res->streamedContent())['sheets']);
+
+            return array_values(array_filter(['SE1', 'SE2', 'SE3', 'SE4'], fn ($p) => str_contains($flat, $p)));
+        };
+
+        $this->assertSame(['SE1', 'SE2', 'SE3', 'SE4'], $plates([]));
+        $this->assertSame(['SE2'], $plates(['domestic' => '1']));
+        $this->assertSame(['SE3'], $plates(['reanchored' => '1']));
+        $this->assertSame(['SE4'], $plates(['ovr' => '1']));
+    }
+
     /** 🔑 jin: "차량번호/차대번호는 필히 들어가야 해" */
     public function test_each_sheet_carries_vehicle_number_and_vin(): void
     {

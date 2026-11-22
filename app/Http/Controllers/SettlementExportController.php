@@ -35,6 +35,11 @@ class SettlementExportController extends Controller
         $month = (string) $request->query('month', '');
         $dateFrom = (string) $request->query('dateFrom', '');
         $dateTo = (string) $request->query('dateTo', '');
+        // 🏷️ 화면의 켜기/끄기 필터도 같이 받는다 (jin 2026-11-22) — 안 받으면 「내수」 칩을 켜고 받은 엑셀에 전체가 나온다
+        //    («화면에서 본 것과 다른 게 나오면 대조가 무의미»). 게이트 예외 토글은 원래부터 빠져 있었다.
+        $domestic = $request->query('domestic') === '1';
+        $reanchored = $request->query('reanchored') === '1';
+        $override = $request->query('ovr') === '1';
 
         $settlements = Settlement::query()
             ->with(['vehicle', 'salesman'])
@@ -42,6 +47,9 @@ class SettlementExportController extends Controller
             ->when($status !== '', fn ($q) => $q->where('settlement_status', $status))
             ->when($secondary !== '', fn ($q) => $q->secondaryFilter($secondary))
             ->when($held, fn ($q) => $q->payoutHeldByUnpaid())
+            ->when($domestic, fn ($q) => $q->where('is_domestic', true))
+            ->when($reanchored, fn ($q) => $q->whereNotNull('reanchored_from'))
+            ->when($override, fn ($q) => $q->whereNotNull('gate_override_at'))
             ->when($salesmanId > 0, fn ($q) => $q->where('salesman_id', $salesmanId))
             ->when($month !== '', fn ($q) => $q->attributedMonth($month))
             ->when($dateFrom !== '', fn ($q) => $q->whereHas('vehicle',
@@ -65,6 +73,7 @@ class SettlementExportController extends Controller
                 'month' => $month, 'status' => $status, 'held' => $held ? '1' : '',
                 'salesmanId' => $salesmanId ?: '', 'q' => $search,
                 'dateFrom' => $dateFrom, 'dateTo' => $dateTo,
+                'domestic' => $domestic ? '1' : '', 'reanchored' => $reanchored ? '1' : '', 'ovr' => $override ? '1' : '',
             ]),
         ]);
 
