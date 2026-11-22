@@ -18,12 +18,6 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $buyerFilter = '';
 
-    /** 콤보에서 바이어를 고르면 바로 걸린다 — 1페이지로. */
-    public function updatedBuyerFilter(): void
-    {
-        $this->resetPage();
-    }
-
     /** 검색 대상 — 표에 보이는 칸만. */
     protected function searchColumns(): array
     {
@@ -281,9 +275,10 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
     <x-erp.search-bar :placeholder="__('consignee.search_ph')" width="w-52">
-        {{-- 🔽 드롭박스콤보공용 (2026-11-22) — 바이어가 수백 명이라 치면서 찾는다. 고르면 바로 걸린다. --}}
+        {{-- 🔽 드롭박스콤보공용 (2026-11-22) — 바이어가 수백 명이라 치면서 찾는다.
+             🚫 고르는 즉시 조회하지 않는다(jin 11-22 «조회 눌러야 찾게 해야지») — `deferred` 라 [조회]·Enter 때 같이 걸린다(종전 select 와 같은 동작). --}}
         <x-erp.combobox wire:key="con-buyer-filter-{{ $buyerFilter }}" model="buyerFilter" :options="$this->buyers"
-            :selected="$buyerFilter" placeholder="{{ __('consignee.all_buyers') }}" class="w-52" />
+            :selected="$buyerFilter" placeholder="{{ __('consignee.all_buyers') }}" class="w-52" deferred />
     </x-erp.search-bar>
     <x-erp.filter-chips :axes="$this->chipAxes()" />
 </div>

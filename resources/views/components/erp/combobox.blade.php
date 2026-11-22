@@ -5,6 +5,7 @@
     'placeholder' => '',
     'disabled' => false,
     'required' => false,
+    'deferred' => false,     // true = 고르기만 하고 서버로는 [조회]·저장 때 같이 보낸다(목록 필터 — 조회 버튼이 있는 줄)
 ])
 @php
     // item 8(b) — 바이어/컨사이니 자동완성 콤보박스 (드롭다운 + 텍스트 검색 겸용).
@@ -29,11 +30,11 @@
         },
         choose(o) {
             this.selectedName = o.name; this.query = o.name; this.open = false;
-            $wire.set('{{ $model }}', o.id);
+            $wire.set('{{ $model }}', o.id, {{ $deferred ? 'false' : 'true' }});
         },
         clear() {
             this.selectedName = ''; this.query = ''; this.open = false;
-            $wire.set('{{ $model }}', '');
+            $wire.set('{{ $model }}', '', {{ $deferred ? 'false' : 'true' }});
         },
         syncBack() { this.query = this.selectedName; },
      }"
