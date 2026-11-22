@@ -1061,7 +1061,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </button>
                 @endforeach
                 {{-- 진행상태로 거르기 (jin 2026-10-20) — 차량관리 진행상태 버튼과 같은 판정(매입중·말소완료는 넓은 뜻). --}}
-                <select wire:model.live="stageFilter" class="input-filter text-xs" title="{{ __('transfer.stage.filter_hint') }}">
+                <select wire:model="stageFilter" class="input-filter text-xs" title="{{ __('transfer.stage.filter_hint') }}">
                     <option value="">{{ __('transfer.stage.all') }}</option>
                     @foreach(['매입중', '매입완료', '말소완료', '판매중', '판매완료', '선적중', '선적완료', '통관중', '통관완료', '거래완료'] as $st)
                     <option value="{{ $st }}">{{ __('domain.progress.'.$st) }}</option>

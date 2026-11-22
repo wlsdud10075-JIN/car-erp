@@ -1745,7 +1745,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
     <x-erp.search-bar :placeholder="__('buyer.search_ph')" width="w-64">
     {{-- 회의확장씬 #2 Phase 3-1 (a) (2026-05-23) — 영업담당자 select 필터 --}}
-    <select wire:model.live="salesmanFilter" class="input-filter">
+    <select wire:model="salesmanFilter" class="input-filter">
         <option value="">{{ __('buyer.all_salesmen') }}</option>
         <option value="{{ self::SALESMAN_NONE }}">{{ __('buyer.no_salesman_filter') }}</option>
         @foreach($this->salesmen as $sm)
@@ -1754,7 +1754,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     </select>
     @if(Setting::b2bPartnersEnabled())
     {{-- 🤝 B2B 파트너스 필터 (jin 2026-11-01) — 사이드바 「B2B 파트너스」 = ?b2b=1 --}}
-    <select wire:model.live="b2bFilter" class="input-filter">
+    <select wire:model="b2bFilter" class="input-filter">
         <option value="">{{ __('buyer.b2b_filter_all') }}</option>
         <option value="1">{{ __('buyer.b2b_filter_only') }}</option>
     </select>
