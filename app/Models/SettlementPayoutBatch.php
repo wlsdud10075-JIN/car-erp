@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Console\Commands\AlimtalkMonthlyClosing;
 use App\Services\BizmAlimtalkService;
 use App\Services\Payout\BatchPayoutBreakdown;
 use App\Support\AlimtalkRecipients;
@@ -803,6 +804,23 @@ class SettlementPayoutBatch extends Model
             });
     }
 
+    /**
+     * 🏷️ **그 달 귀속인 「지급 대상 아님」 계정(자매 회사 등)의 정산 회사 몫 합** (jin 2026-11-22 «판 건 판 것 — 회사이익으로 보는 게 맞아»).
+     * 그 정산은 월정산 배치에 실리지 않아(돈이 안 나간다) 카드의 회사 순이익에 없었다 — 월결산 알림톡은 넣으므로 두 숫자가 갈렸다.
+     * 카드·승인 링크·엑셀이 **표시할 때** 더한다(박제·결재 금액은 안 건드린다). 모집단은 월결산 알림톡과 같은 함수
+     * (귀속월의 확정·지급 정산, 미수 보류 제외). ⚠️ 박제가 아니라 지금 값이다 — 그 차의 금액을 고치면 따라 움직인다.
+     */
+    public function excludedCompanyNet(): int
+    {
+        if ($this->kind !== self::KIND_MONTH) {
+            return 0;
+        }
+
+        return (int) AlimtalkMonthlyClosing::settlementsFor((string) $this->month)
+            ->filter(fn (Settlement $s) => $s->isPayoutExcludedBySalesman() && ! $s->isPayoutHeldByUnpaid())
+            ->sum(fn (Settlement $s) => (int) $s->company_net);
+    }
+
     public function extraPaidOutsideTotal(): int
     {
         return (int) PayoutHold::query()->where('payout_batch_id', $this->id)->ofKind(PayoutHold::KIND_EXTRA)
@@ -1213,7 +1231,8 @@ class SettlementPayoutBatch extends Model
             ]);
 
             if ($this->isStepsMode()) {
-                // steps 모드 — 이 칸에 서명하고 다음 pending 칸으로. 다음이 없으면 최종(대표 또는 super override).
+                // steps 모드 — 이 칸에 서명하고 다음 pending 칸으로. 다음이 없으면 최종.
+                // 🔀 2026-11-22 (jin) — 시스템관리자 대행도 **그 단계만** 넘긴다(구: 그 순간 최종 승인).
                 $step = $this->currentStep();
                 if ($step && ! $u->isSuperAdmin()) {
                     $step->update(['status' => 'approved', 'acted_at' => now(), 'note' => $note ?: null]);
@@ -1221,11 +1240,11 @@ class SettlementPayoutBatch extends Model
                     $step->update(['status' => 'approved', 'acted_at' => now(), 'note' => ($note ?: '').' (시스템관리자 대행)']);
                 }
                 $this->unsetRelation('steps');
-                $next = $u->isSuperAdmin() ? null : $this->steps()->where('status', 'pending')->orderBy('seq')->first();
+                $next = $this->steps()->where('status', 'pending')->orderBy('seq')->first();
                 $final = $next === null;
             } else {
-                // 대표(TOP) 서명 또는 super override → 완료 + 일괄 paid. 아니면 다음 계단으로.
-                $final = $u->isSuperAdmin() || $this->current_level >= self::TOP_RANK;
+                // 대표(TOP) 서명 → 완료 + 일괄 paid. 아니면 다음 계단으로(시스템관리자 대행도 한 계단만 — jin 2026-11-22).
+                $final = $this->current_level >= self::TOP_RANK;
                 $next = null;
             }
 

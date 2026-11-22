@@ -1968,7 +1968,8 @@ new #[Layout('components.layouts.app')] class extends Component
     {
         $user = auth()->user();
 
-        return (bool) ($user?->isAdmin() || in_array($user?->role, ['재무', '관리'], true));
+        // 🔑 업무관리자도 2차 마감을 한다 (jin 2026-11-22 «업무관리자도 포함») — 명세서 기입 권한(canCorrectSecondaryCosts)과 같은 범위.
+        return (bool) $user?->canCorrectSecondaryCosts();
     }
 
     /**
@@ -3050,7 +3051,7 @@ new #[Layout('components.layouts.app')] class extends Component
                     default   => null,
                 };
                 $canCloseSecondary = $s->secondary_status === 'pending'
-                    && (auth()->user()?->isAdmin() || in_array(auth()->user()?->role, ['재무', '관리'], true));
+                    && (bool) auth()->user()?->canCorrectSecondaryCosts();
                 // 안건 1 v4 (2026-05-21) — 색 매핑: 선적=amber, 통관=green. v3 호환 키 동시 보유
                 $progressBadge = match(true) {
                     in_array($s->vehicle?->progress_status, ['매입중','매입완료','말소완료']) => 'badge-blue',
@@ -3271,7 +3272,7 @@ new #[Layout('components.layouts.app')] class extends Component
         };
         $mSecondaryLabel = $mSecondaryKey ? __('settlement.secondary.'.$mSecondaryKey) : null;
         $mSecondaryBadge = ['ready' => 'badge-green', 'waiting' => 'badge-amber', 'closed' => 'badge-gray'][$mSecondaryKey] ?? '';
-        $mCanCloseSecondary = $s->secondary_status === 'pending' && (auth()->user()?->isAdmin() || in_array(auth()->user()?->role, ['재무', '관리'], true));
+        $mCanCloseSecondary = $s->secondary_status === 'pending' && (bool) auth()->user()?->canCorrectSecondaryCosts();
         $mPa = $s->latestPayApproval;
         $mCanFinance = auth()->user()->canConfirmFinance();
     @endphp
@@ -3724,8 +3725,7 @@ new #[Layout('components.layouts.app')] class extends Component
                 {{-- pending — 실입금 − baseline 라이브 미리보기 (2026-07-06 재피벗, 마감 시 확정값과 동일) --}}
                 <hr class="border-gray-200">
                 @php
-                    $canEditRate = auth()->user()?->isAdmin()
-                        || in_array(auth()->user()?->role, ['재무', '관리'], true);
+                    $canEditRate = (bool) auth()->user()?->canCorrectSecondaryCosts();
                 @endphp
                 {{-- 🔀 2026-10-01 B안 — 미완납이면 기준액 = 받은 외화 × 판매환율. 미수 외화를 따로 보여 「받은 몫만 센 환차」임을 밝힌다. --}}
                 <div class="flex justify-between text-xs">

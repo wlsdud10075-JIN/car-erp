@@ -86,7 +86,7 @@ class PayoutGapsTest extends TestCase
 
         // 월정산 탭에만 보이고, 대표 알림톡 승인 링크엔 안 보인다(jin 2026-10-21)
         $admin = $this->user('super');
-        $html = $this->get(\Illuminate\Support\Facades\URL::temporarySignedRoute('payout.approve.show', now()->addHour(), ['batch' => $batch->id, 'u' => $admin->id]))->getContent();
+        $html = $this->get(URL::temporarySignedRoute('payout.approve.show', now()->addHour(), ['batch' => $batch->id, 'u' => $admin->id]))->getContent();
         $this->assertStringNotContainsString('data-payout-changes', $html);
         $this->assertStringNotContainsString('data-submitted-changed', $html);
         $this->actingAs($admin);
@@ -104,7 +104,10 @@ class PayoutGapsTest extends TestCase
         $this->assertSame(200_000, (int) $batch->total_payout);
 
         $v->update(['sale_price' => 10_000_000]);
-        $batch->fresh()->approveBy($this->user('super'));
+        // 관리 제출 → 업무관리자 → 대표 두 계단. 시스템관리자 대행은 한 계단씩만 넘긴다(jin 2026-11-22).
+        $super = $this->user('super');
+        $batch->fresh()->approveBy($super);
+        $batch->fresh()->approveBy($super);
 
         $batch = $batch->fresh();
         $this->assertSame('approved', $batch->status);

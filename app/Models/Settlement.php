@@ -216,6 +216,16 @@ class Settlement extends Model
                 ]);
             }
 
+            // ⏸ 직접 지급 전환에도 미수 보류를 건다 (jin 2026-11-22 «그럴 일은 없겠지만 넣자»). 월정산·개별 승인은 미수가 남은 정산을
+            //    빼는데, 대표가 드로어에서 직접 paid 로 바꾸는 길만 검사가 없었다. 게이트 예외(「예외 대상」) 건은 통과.
+            //    로그인한 저장에만 — 배치 execute()·콘솔·시드는 그대로. 이미 있는 행의 전환만 본다(처음부터 paid 로 만드는 적재·이관은 대상 아님).
+            if ($becamePaid && $s->exists && ! self::$allowBatchPayout && auth()->check() && $s->payout_batch_id === null
+                && ! $s->hasGateOverride() && (int) ($s->vehicle?->sale_unpaid_amount ?? 0) > 0) {
+                throw ValidationException::withMessages([
+                    'settlement_status' => __('settlement.guard.paid_blocked_unpaid'),
+                ]);
+            }
+
             // 🔒 지급된 정산은 상태를 내릴 수 없다 (jin 2026-11-20 «막아»). 드로어에서 paid → 확정/대기로 내리면 지급된 돈이
             //    대시보드에서 사라지고, 대기로 내린 뒤에는 삭제까지 됐다(삭제 가드는 confirmed·paid·마감만 막는다).
             //    로그인한 저장에만(콘솔·시드·적재는 통과 — 기존 가드들과 같은 선).

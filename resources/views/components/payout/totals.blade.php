@@ -1,15 +1,17 @@
 {{-- 🧾 월정산 합계 띠 (월정산 v3) — 회사 순이익(급여 차감 후) · 총 판매 · 환산 합계 · 송금 총액. 숫자는 BatchPayoutBreakdown totals. --}}
-@props(['totals', 'settlementTotal' => null, 'heldTotal' => 0, 'extraTotal' => 0, 'extraPaidOutside' => 0, 'leaverNet' => 0])
-@php $t = $totals; $net = (int) $t['company_net']; $netFinal = $net - (int) $extraPaidOutside + (int) $leaverNet; @endphp
+@props(['totals', 'settlementTotal' => null, 'heldTotal' => 0, 'extraTotal' => 0, 'extraPaidOutside' => 0, 'leaverNet' => 0, 'excludedNet' => 0])
+@php $t = $totals; $net = (int) $t['company_net']; $netFinal = $net - (int) $extraPaidOutside + (int) $leaverNet + (int) $excludedNet; @endphp
 <div class="rounded-md bg-gray-50 px-2.5 py-2" data-payout-totals>
     <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        @if((int) $extraPaidOutside !== 0 || (int) $leaverNet !== 0)
+        @if((int) $extraPaidOutside !== 0 || (int) $leaverNet !== 0 || (int) $excludedNet !== 0)
         {{-- 🚪 같은 달 퇴사 정산(따로 결재)의 회사 몫도 여기서 합친다(jin 2026-11-22) — 월결산 알림톡과 같은 숫자가 되게. --}}
         {{-- ➕ 월정산 밖으로 준 추가금(jin 2026-11-06 (가)) — 그 달 회사이익에서 뺀다. 박제 숫자는 줄 긋고 반영값을 크게. --}}
         <div class="rounded border {{ $netFinal < 0 ? 'border-red-200 bg-red-50' : 'border-violet-200 bg-violet-50' }} px-2 py-1.5" data-company-net-cell>
             <div class="text-[10px] text-gray-500">{{ __('payout_card.totals.company_net') }} <span class="font-mono line-through" data-company-net>{{ $net < 0 ? '−' : '' }}₩{{ number_format(abs($net)) }}</span></div>
             @if((int) $extraPaidOutside !== 0)<div class="text-[10px] font-bold text-violet-700">{{ __('payout_card.totals.company_net_after_extra', ['extra' => number_format((int) $extraPaidOutside)]) }}</div>@endif
             @if((int) $leaverNet !== 0)<div class="text-[10px] font-bold text-violet-700" data-leaver-net>{{ __('payout_card.totals.company_net_with_leaver', ['leaver' => ((int) $leaverNet < 0 ? '−' : '+').number_format(abs((int) $leaverNet))]) }}</div>@endif
+            {{-- 🏷️ 지급 대상 아님 계정(자매 회사 등)의 정산 마진 — 판 건 판 것이라 회사이익에 넣는다(jin 2026-11-22). --}}
+            @if((int) $excludedNet !== 0)<div class="text-[10px] font-bold text-violet-700" data-excluded-net>{{ __('payout_card.totals.company_net_with_excluded', ['amount' => ((int) $excludedNet < 0 ? '−' : '+').number_format(abs((int) $excludedNet))]) }}</div>@endif
             <div class="font-mono text-sm font-bold {{ $netFinal < 0 ? 'text-red-700' : 'text-primary-text' }}" data-company-net-final>{{ $netFinal < 0 ? '−' : '' }}₩{{ number_format(abs($netFinal)) }}</div>
         </div>
         @else
