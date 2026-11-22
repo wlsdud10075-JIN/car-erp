@@ -50,7 +50,7 @@ class ListHeaderSortScreensTest extends TestCase
                 $c = Volt::test("erp.{$screen}.index")->call('clickSort', $key);
                 $c->assertOk()->assertSet('sortColumn', $key);   // 허용 키가 아니면 조용히 무시된다 — 헤더와 선언이 어긋난 것
                 // 금액·계산 칸은 큰 것부터(▼ → ▲), 나머지는 ▲ → ▼
-                $big = in_array($key, ['savings', 'paid_ratio', 'total_margin', 'margin_rate', 'settlement_amount', 'actual_payout'], true);
+                $big = in_array($key, ['savings', 'paid_ratio', 'total_margin', 'margin_rate', 'settlement_amount', 'actual_payout', 'purchase_price', 'exchange_diff'], true);
                 $c->assertSet('sortDirection', $big ? 'desc' : 'asc');
                 $c->call('clickSort', $key)->assertOk()->assertSet('sortDirection', $big ? 'asc' : 'desc');
             }

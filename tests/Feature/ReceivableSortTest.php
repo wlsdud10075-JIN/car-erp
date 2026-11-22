@@ -76,8 +76,9 @@ class ReceivableSortTest extends TestCase
         $a1 = $this->sold(['buyer_id' => $ann->id, 'sale_price' => 200]);
 
         $c = Volt::test('erp.receivables.index')->call('clickSort', 'buyer')->call('clickSort', 'unpaid');
-        $this->assertSame([$a1->id, $z2->id, $z1->id], $this->ids($c), '바이어 이름순, 같은 바이어 안에서 미수 오름차순');
-        $this->assertStringContainsString('2▲', $c->html());
+        // 🔽 2026-11-22 (jin) — 금액 칸은 첫 클릭에 큰 것부터(▼ → ▲ → 빠짐)
+        $this->assertSame([$a1->id, $z1->id, $z2->id], $this->ids($c), '바이어 이름순, 같은 바이어 안에서 미수 큰 것부터');
+        $this->assertStringContainsString('2▼', $c->html());
     }
 
     public function test_legacy_sort_age_link_still_means_oldest_first_and_unknown_key_is_ignored(): void

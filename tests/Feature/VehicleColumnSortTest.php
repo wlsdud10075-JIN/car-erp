@@ -50,7 +50,10 @@ class VehicleColumnSortTest extends TestCase
         Volt::test('erp.vehicles.index')
             ->call('setSort', 'sale_price')
             ->assertSet('sortColumn', 'sale_price')
-            ->assertSet('sortDirection', 'asc');
+            ->assertSet('sortDirection', 'desc')   // 🔽 2026-11-22 (jin) — 금액 칸은 첫 클릭에 큰 것부터(▼ → ▲ → 빠짐)
+            ->call('setSort', 'sale_date')
+            ->assertSet('sortColumn', 'sale_date')
+            ->assertSet('sortDirection', 'asc');   // 금액이 아닌 칸은 종전대로 ▲ 먼저
     }
 
     public function test_set_sort_same_column_toggles_direction(): void
@@ -60,10 +63,10 @@ class VehicleColumnSortTest extends TestCase
 
         Volt::test('erp.vehicles.index')
             ->call('setSort', 'sale_price')
-            ->call('setSort', 'sale_price')   // 같은 col → toggle
-            ->assertSet('sortDirection', 'desc')
+            ->call('setSort', 'sale_price')   // 같은 col → toggle (금액 칸: ▼ → ▲ → ▼)
+            ->assertSet('sortDirection', 'asc')
             ->call('setSort', 'sale_price')
-            ->assertSet('sortDirection', 'asc');
+            ->assertSet('sortDirection', 'desc');
     }
 
     public function test_set_sort_blocks_invalid_column(): void
@@ -100,15 +103,15 @@ class VehicleColumnSortTest extends TestCase
         $asc = Volt::test('erp.vehicles.index')
             ->set('dateFrom', now()->subYear()->format('Y-m-d'))
             ->set('dateTo', now()->addDay()->format('Y-m-d'))
-            ->call('setSort', 'sale_price')   // asc
+            ->call('setSort', 'sale_price')
+            ->call('setSort', 'sale_price')   // 금액 칸은 ▼ 먼저 → 두 번째가 asc
             ->instance()->vehicles;
         $this->assertSame(1000, (int) $asc->first()->sale_price);
 
         $desc = Volt::test('erp.vehicles.index')
             ->set('dateFrom', now()->subYear()->format('Y-m-d'))
             ->set('dateTo', now()->addDay()->format('Y-m-d'))
-            ->call('setSort', 'sale_price')
-            ->call('setSort', 'sale_price')   // desc
+            ->call('setSort', 'sale_price')   // 첫 클릭 = desc(큰 것부터)
             ->instance()->vehicles;
         $this->assertSame(5000, (int) $desc->first()->sale_price);
     }

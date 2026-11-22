@@ -1257,6 +1257,21 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public array $sortExtra = [];
 
+    /**
+     * 🔽 첫 클릭에 **큰 것부터(▼)** 서는 칸 — 금액 칸 (jin 2026-11-22 «금액적인 부분들 … 차량관리탭에도»). ▼ → ▲ → 빠짐.
+     *    다른 화면은 `StackedHeaderSort::descFirstKeys()` 가 같은 일을 한다. 환율·날짜·글자 칸은 종전대로 ▲ 먼저.
+     */
+    private const DESC_FIRST = ['purchase_price', 'purchase_total', 'sale_price', 'sale_total', 'transport_fee', 'transport_fee_usd',
+        'sale_unpaid_amount_krw_cache', 'unpaid_ratio', 'shipping_fee_total_cache', 'ems_fee_total_cache', 'dhl_fee_total_cache'];
+
+    /** 🧭 진행상태 = 업무 순서(매입중 → … → 거래완료). 글자순이면 ▲ 에서 거래완료가 맨 위로 온다 (jin 2026-11-22). 단계가 늘면 여기에도. */
+    private const PROGRESS_ORDER = ['매입중', '매입완료', '말소완료', '판매중', '판매완료', '선적중', '선적완료', '통관중', '통관완료', '거래완료'];
+
+    private function firstDir(string $col): string
+    {
+        return in_array($col, self::DESC_FIRST, true) ? 'desc' : 'asc';
+    }
+
     private function sortable(string $col): bool
     {
         return in_array($col, self::SORTABLE_COLUMNS, true) || array_key_exists($col, self::SORT_EXPRESSIONS);
@@ -1283,8 +1298,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             return;
         }
         if ($this->sortColumn === $col) {
-            if ($this->sortDirection === 'asc') {
-                $this->sortDirection = 'desc';
+            if ($this->sortDirection === $this->firstDir($col)) {
+                $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
 
                 return;
             }
@@ -1314,8 +1329,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
         foreach ($this->sortExtra as $i => $k) {
             if (($k['col'] ?? null) === $col) {
-                if (($k['dir'] ?? 'asc') === 'asc') {
-                    $this->sortExtra[$i]['dir'] = 'desc';
+                if (($k['dir'] ?? 'asc') === $this->firstDir($col)) {
+                    $this->sortExtra[$i]['dir'] = $this->firstDir($col) === 'asc' ? 'desc' : 'asc';
                 } else {
                     unset($this->sortExtra[$i]);
                     $this->sortExtra = array_values($this->sortExtra);
@@ -1327,7 +1342,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (count($this->sortExtra) >= 4) {
             return;   // 첫 정렬 포함 5단계면 충분 — 무한히 쌓이는 걸 막는다
         }
-        $this->sortExtra[] = ['col' => $col, 'dir' => 'asc'];
+        $this->sortExtra[] = ['col' => $col, 'dir' => $this->firstDir($col)];
     }
 
     /** 정렬 키 하나를 쿼리에 적용 — 첫 정렬·겹친 정렬이 같은 규칙(컨사이니 폴백·계산식)을 쓴다. */
@@ -1336,6 +1351,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         $dir = $dir === 'asc' ? 'asc' : 'desc';
 
         return match (true) {
+            // 🧭 진행상태 = 업무 순서 · 담당자·바이어 = **이름순**(종전엔 등록 번호순이라 묶이기만 하고 순서에 뜻이 없었다) — jin 2026-11-22
+            $col === 'progress_status_cache' => $q->orderByRaw(
+                '(CASE vehicles.progress_status_cache '.implode(' ', array_map(fn ($i) => "WHEN ? THEN {$i}", array_keys(self::PROGRESS_ORDER))).' ELSE NULL END) '.$dir,
+                self::PROGRESS_ORDER
+            ),
+            $col === 'salesman_id' => $q->orderByRaw('(SELECT name FROM salesmen WHERE salesmen.id = vehicles.salesman_id LIMIT 1) '.$dir),
+            $col === 'buyer_id' => $q->orderByRaw('(SELECT name FROM buyers WHERE buyers.id = vehicles.buyer_id LIMIT 1) '.$dir),
             $col === 'consignee_id' => $q->orderByRaw(Vehicle::effectiveConsigneeSortExpression().' '.$dir),
             array_key_exists($col, self::SORT_EXPRESSIONS) => $q->orderByRaw(self::SORT_EXPRESSIONS[$col].' '.$dir),
             default => $q->orderBy('vehicles.'.$col, $dir),
@@ -1352,7 +1374,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
         } else {
             $this->sortColumn = $col;
-            $this->sortDirection = 'asc';
+            $this->sortDirection = $this->firstDir($col);
         }
     }
 
@@ -8656,12 +8678,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         <input wire:model="dateFrom" type="text" data-date class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>
         <input wire:model="dateTo" type="text" data-date class="input-filter" />
-        <select wire:model.live="salesmanId" class="input-filter">
-            <option value="">{{ __('vehicle.all_salesmen') }}</option>
-            @foreach($this->salesmen as $s)
-                <option value="{{ $s->id }}">{{ $s->name }}</option>
-            @endforeach
-        </select>
+        {{-- 🔽 담당자도 콤보(치면서 찾기, jin 2026-11-22). 바로 아래 바이어 콤보와 같이 고르는 즉시 걸린다(이 화면의 종전 동작). 비우기(×) = 담당자 전체. --}}
+        <x-erp.combobox wire:key="veh-salesman-{{ $salesmanId }}" model="salesmanId" :options="$this->salesmen"
+            :selected="$salesmanId" placeholder="{{ __('vehicle.all_salesmen') }}" class="w-36" />
         {{-- 회의확장씬 #3 Phase 2-4 (2026-05-23) — 바이어 필터.
              2026-08-26 (jin) select → combobox: 바이어가 많아 스크롤로는 못 찾는다. 재고관리와 같은 컴포넌트.
              ⚠️ wire:key 를 현재 값에 묶어야 «초기화»·URL 진입 등 서버발 변경 때 Alpine 이 재init 된다

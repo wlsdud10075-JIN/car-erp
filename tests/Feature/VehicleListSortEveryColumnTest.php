@@ -2,9 +2,11 @@
 
 namespace Tests\Feature;
 
+use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -56,8 +58,9 @@ class VehicleListSortEveryColumnTest extends TestCase
 
         $c = Volt::test('erp.vehicles.index')->call('syncViewport', false);
         foreach ($keys as $key) {
-            $c->call('setSort', $key)->assertSet('sortColumn', $key)->assertSet('sortDirection', 'asc')->assertSee('11가1111');
-            $c->call('setSort', $key)->assertSet('sortDirection', 'desc')->assertSee('22가2222');
+            // 두 방향을 다 건다 — 금액 칸은 ▼ 먼저(2026-11-22), 나머지는 ▲ 먼저. 어느 쪽이든 두 번 누르면 asc·desc 를 다 지난다.
+            $first = $c->call('setSort', $key)->assertSet('sortColumn', $key)->assertSee('11가1111')->get('sortDirection');
+            $c->call('setSort', $key)->assertSet('sortDirection', $first === 'asc' ? 'desc' : 'asc')->assertSee('22가2222');
         }
     }
 
@@ -69,10 +72,40 @@ class VehicleListSortEveryColumnTest extends TestCase
         $this->actingAs($this->admin());
 
         $c = Volt::test('erp.vehicles.index')->call('syncViewport', false)->call('setSort', 'purchase_total');
+        // 🔽 2026-11-22 (jin) — 금액 칸은 첫 클릭에 큰 것부터(▼ → ▲ → 빠짐)
         $html = $c->html();
-        $this->assertLessThan(strpos($html, '44가4444'), strpos($html, '33가3333'), 'asc: 1,000 이 1,400 보다 앞');
+        $this->assertLessThan(strpos($html, '33가3333'), strpos($html, '44가4444'), '첫 클릭 = desc: 1,400 이 1,000 보다 앞');
 
         $html = $c->call('setSort', 'purchase_total')->html();
-        $this->assertLessThan(strpos($html, '33가3333'), strpos($html, '44가4444'), 'desc: 1,400 이 1,000 보다 앞');
+        $this->assertLessThan(strpos($html, '44가4444'), strpos($html, '33가3333'), '다시 = asc: 1,000 이 1,400 보다 앞');
+    }
+
+    /**
+     * 🧭 진행상태 = 업무 순서(글자순이면 ▲ 에서 거래완료가 맨 위) · 담당자 = 이름순(종전엔 등록 번호순) — jin 2026-11-22.
+     * 담당자 필터는 콤보(치면서 찾기).
+     */
+    public function test_progress_sorts_in_workflow_order_and_salesman_by_name(): void
+    {
+        $late = Salesman::create(['name' => '가나다', 'is_active' => true, 'type' => 'employee']);   // 나중에 등록됐지만 이름은 앞
+        $early = Salesman::create(['name' => '하하하', 'is_active' => true, 'type' => 'employee']);
+        DB::table('salesmen')->where('id', $late->id)->update(['id' => 900]);
+        $rows = ['55가5555' => ['거래완료', $early->id], '66가6666' => ['매입중', 900], '77가7777' => ['선적중', $early->id]];
+        foreach ($rows as $no => [$stage, $smId]) {
+            $v = Vehicle::create(['vehicle_number' => $no, 'sales_channel' => 'export', 'purchase_date' => '2026-10-01', 'salesman_id' => $smId]);
+            DB::table('vehicles')->where('id', $v->id)->update(['progress_status_cache' => $stage]);
+        }
+        $this->actingAs($this->admin());
+        $order = fn ($c) => collect(array_keys($rows))->sortBy(fn ($no) => strpos($c->html(), $no))->values()->all();
+
+        $c = Volt::test('erp.vehicles.index')->call('syncViewport', false)->call('setSort', 'progress_status_cache');
+        $this->assertSame(['66가6666', '77가7777', '55가5555'], $order($c), '▲ = 매입중 → 선적중 → 거래완료');
+        $this->assertSame(['55가5555', '77가7777', '66가6666'], $order($c->call('setSort', 'progress_status_cache')));
+
+        $c = Volt::test('erp.vehicles.index')->call('syncViewport', false)->call('setSort', 'salesman_id');
+        $this->assertSame('66가6666', $order($c)[0], '담당자 ▲ = 이름 가나다순(번호 900 인 「가나다」가 먼저)');
+
+        $src = file_get_contents(base_path(self::VIEW));
+        $this->assertStringContainsString('<x-erp.combobox wire:key="veh-salesman-', $src);
+        $this->assertStringNotContainsString('<select wire:model.live="salesmanId"', $src);
     }
 }

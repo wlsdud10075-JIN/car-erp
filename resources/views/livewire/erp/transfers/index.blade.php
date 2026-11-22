@@ -70,6 +70,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         return $this->applySortSpec($q, array_map(fn ($v) => is_string($v) ? str_replace('{T}', $table, $v) : $v, $spec), $dir);
     }
 
+    protected function descFirstKeys(): array
+    {
+        return ['amount'];   // 금액 칸 — 첫 클릭에 큰 것부터
+    }
+
     protected function afterSortChanged(): void
     {
         unset($this->transfers, $this->salePayments, $this->purchasePayments);
