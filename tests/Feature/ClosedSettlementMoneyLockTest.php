@@ -332,4 +332,32 @@ class ClosedSettlementMoneyLockTest extends TestCase
 
         $this->assertSame(number_format($free->fresh()->total_margin).'원', $vars['총마진'], '보류 중 정산의 마진이 결산에 들어갔다');
     }
+
+    /**
+     * 🚪 정산 예외(게이트 예외)가 걸린 정산은 미수가 남아도 **보류가 아니다** — 월정산에 들어가고 월결산도 센다.
+     *    보류 판정(isPayoutHeldByUnpaid) 하나를 월정산 대상·월결산·귀속월 이동이 같이 본다.
+     */
+    public function test_a_gate_override_settlement_is_still_counted_and_paid(): void
+    {
+        $this->travelTo(Carbon::parse('2026-11-25 10:00:00'));
+        [, $held] = $this->heldSettlement();
+        [, $excepted] = $this->heldSettlement();
+        $excepted->forceFill(['gate_override_at' => now(), 'gate_override_reason' => '운임비 200 후입력 — 정산 예외', 'gate_override_by' => User::factory()->create()->id])->saveQuietly();
+        $excepted = $excepted->fresh();
+        $this->assertTrue($excepted->hasGateOverride());
+        $this->assertFalse($excepted->isPayoutHeldByUnpaid(), '예외 정산은 보류가 아니다');
+
+        $eligible = SettlementPayoutBatch::eligibleSettlementIds('2026-10');
+        $this->assertContains($excepted->id, $eligible, '예외 정산은 월정산 대상이다');
+        $this->assertNotContains($held->id, $eligible);
+
+        $vars = AlimtalkMonthlyClosing::buildVars('2026-10');
+        $this->assertSame(number_format($excepted->total_margin).'원', $vars['총마진'], '월결산 = 월정산 대상과 같은 모집단(예외는 세고 보류는 안 센다)');
+
+        // 그 달이 마감된 뒤에도 남아 있으면(제출 뒤에 예외를 건 경우) 열린 달로 옮겨진다 — 미수가 있어도.
+        $this->closeMonth('2026-10');
+        $this->artisan('settlements:reanchor-closed-month --apply')->assertSuccessful();
+        $this->assertSame('2026-11-01', $excepted->fresh()->attributed_month->format('Y-m-d'));
+        $this->assertSame('2026-10-01', $held->fresh()->attributed_month->format('Y-m-d'), '보류 중인 정산은 그 달에 그대로');
+    }
 }
