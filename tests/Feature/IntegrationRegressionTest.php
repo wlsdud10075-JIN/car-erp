@@ -181,6 +181,8 @@ class IntegrationRegressionTest extends TestCase
             'purchase_date' => '2026-04-01',
             'sale_price' => 1_000_000, 'sale_date' => '2026-05-01',
         ]);
+        // 완납 상태로 — 미수가 남은 정산은 직접 지급 전환이 막힌다(jin 2026-11-22).
+        $v->finalPayments()->create(['type' => 'balance', 'amount' => 1_000_000, 'payment_date' => '2026-05-02', 'confirmed_at' => now()]);
         $s = Settlement::create([
             'vehicle_id' => $v->id,
             'settlement_type' => 'ratio', 'settlement_ratio' => 50,
@@ -716,6 +718,8 @@ class IntegrationRegressionTest extends TestCase
             'sale_price' => 1_000_000, 'sale_date' => '2026-05-01',
             'purchase_date' => '2026-04-01',
         ]);
+        // 완납 상태로 — 미수가 남은 정산은 직접 지급 전환이 막힌다(jin 2026-11-22).
+        $v->finalPayments()->create(['type' => 'balance', 'amount' => 1_000_000, 'payment_date' => '2026-05-02', 'confirmed_at' => now()]);
         $s = Settlement::create([
             'vehicle_id' => $v->id,
             'settlement_type' => 'ratio', 'settlement_ratio' => 50,

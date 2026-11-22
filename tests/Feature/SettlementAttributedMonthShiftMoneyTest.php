@@ -124,7 +124,9 @@ class SettlementAttributedMonthShiftMoneyTest extends TestCase
         $batch = SettlementPayoutBatch::submitForMonth($gwanri, '2026-09');
         $this->assertSame(1, $batch->settlement_count);
         $this->assertSame($before['actual_payout'], (int) $batch->total_payout, '배치 총액 = 이동 전 실지급액');
-        $batch->approveBy($this->user('super'));   // super override = 최종 승인 + 일괄 paid
+        $super = $this->user('super');   // 대행은 한 계단씩(jin 2026-11-22) — 업무관리자 칸 → 대표 칸
+        $batch->approveBy($super);
+        $batch->fresh()->approveBy($super);   // 대표 칸까지 넘기면 최종 승인 + 일괄 paid
         $batch->refresh();
         $s->refresh();
         $this->assertSame(SettlementPayoutBatch::STATUS_APPROVED, $batch->status);

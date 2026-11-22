@@ -102,6 +102,7 @@ return [
         'transfer_total' => '송금 총액 (급여 포함)',
         'net_after_hold' => '⚠ 실제 송금액 (보류·추가 반영)',
         'company_net_with_leaver' => '퇴사 정산 회사 몫 :leaver원 포함',
+        'company_net_with_excluded' => '지급 제외 계정 마진 :amount원 포함',
         'company_net_after_extra' => '월정산 밖 추가 지급 :extra원 반영',
         'settlement_total' => '정산·조정 총액 (승인 금액)',
         'external_total' => '송금 중 헤이맨 정산금(회사이익 밖)',

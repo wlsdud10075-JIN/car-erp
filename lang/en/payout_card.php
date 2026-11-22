@@ -93,6 +93,7 @@ return [
         'equiv_sum' => 'Freelance-equivalent total',
         'net_after_hold' => 'Actual transfer (held/extra applied)',
         'company_net_with_leaver' => 'Incl. leaver payout company share :leaver',
+        'company_net_with_excluded' => 'Incl. payout-excluded account margin :amount',
         'company_net_after_extra' => 'After extra paid outside batch :extra',
         'transfer_total' => 'Transfer total (incl. payroll)',
         'settlement_total' => 'Settlement + adjustments (approved amount)',

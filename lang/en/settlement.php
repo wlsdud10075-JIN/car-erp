@@ -106,6 +106,7 @@ return [
     ],
     'guard' => [
         'paid_no_revert' => 'A paid settlement cannot be moved back to an earlier status.',
+        'paid_blocked_unpaid' => 'A settlement with an outstanding receivable cannot be marked paid. Collect the balance or mark it as a gate exception first.',
         'closed_readonly' => 'This settlement is closed (2nd settlement). Only the note can be edited.',
         'closed_notice' => '2nd settlement closed — amounts, status and salesman are locked (only the note is saved).',
     ],
