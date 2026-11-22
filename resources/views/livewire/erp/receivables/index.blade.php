@@ -1464,10 +1464,9 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="">{{ __('receivable.all_salesman') }}</option>
             @foreach ($this->salesmen as $s)<option value="{{ $s->id }}">{{ $s->name }}</option>@endforeach
         </select>
-        <select wire:model.live="buyerFilter" class="input-filter">
-            <option value="">{{ __('receivable.all_buyer') }}</option>
-            @foreach ($this->buyers as $b)<option value="{{ $b->id }}">{{ $b->name }}</option>@endforeach
-        </select>
+        {{-- 🔽 드롭박스콤보공용 (2026-11-22) — 바이어가 수백 명이라 치면서 찾는다. --}}
+        <x-erp.combobox wire:key="rcv-buyer-filter-{{ $salesmanFilter }}-{{ $buyerFilter }}" model="buyerFilter" :options="$this->buyers"
+            :selected="$buyerFilter" placeholder="{{ __('receivable.all_buyer') }}" class="w-44" />
         <select wire:model.live="progressFilter" class="input-filter">
             <option value="">{{ __('receivable.all_progress') }}</option>
             @foreach (['판매중','판매완료','선적중','선적완료','통관중','통관완료','거래완료'] as $s)

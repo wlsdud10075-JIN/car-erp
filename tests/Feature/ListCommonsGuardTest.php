@@ -92,6 +92,22 @@ class ListCommonsGuardTest extends TestCase
         }
     }
 
+    /**
+     * 🔽 드롭박스콤보공용 — **바이어를 고르는 칸**은 `<select>` 가 아니라 `<x-erp.combobox>`(치면서 찾기)로 그린다 (2026-11-22).
+     * 바이어는 수백 명이라 select 로는 찾기 어렵다. 담당자(수십 명·「미지정」 같은 특수 선택지)는 select 로 둔다 — 다음 묶음에서 다시 본다.
+     */
+    public function test_buyer_pickers_use_the_combobox(): void
+    {
+        $offenders = [];
+        foreach ($this->erpScreens() as $rel => $src) {
+            if (preg_match_all('/<select\b[^>]*wire:model(?:\.[a-z.0-9]+)?="(buyer_id[a-z_]*|buyerFilter|buyerId)"/s', $src, $m)) {
+                $offenders[] = $rel.' ('.implode(', ', $m[1]).')';
+            }
+        }
+
+        $this->assertSame([], $offenders, '바이어 고르기 칸을 <select> 로 그린 화면 — <x-erp.combobox> 를 쓴다');
+    }
+
     /** 사이드 창(드로어) 폭은 차량 편집 패널과 같다 — 820px(작은 화면 700px). jin 2026-11-22 «전부 820px 통일». */
     public function test_side_panels_share_one_width(): void
     {

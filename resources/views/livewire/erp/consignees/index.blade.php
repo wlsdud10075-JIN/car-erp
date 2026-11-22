@@ -18,6 +18,12 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public string $buyerFilter = '';
 
+    /** 콤보에서 바이어를 고르면 바로 걸린다 — 1페이지로. */
+    public function updatedBuyerFilter(): void
+    {
+        $this->resetPage();
+    }
+
     /** 검색 대상 — 표에 보이는 칸만. */
     protected function searchColumns(): array
     {
@@ -275,12 +281,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
     <x-erp.search-bar :placeholder="__('consignee.search_ph')" width="w-52">
-        <select wire:model="buyerFilter" class="input-filter">
-            <option value="">{{ __('consignee.all_buyers') }}</option>
-            @foreach($this->buyers as $b)
-            <option value="{{ $b->id }}">{{ $b->name }}</option>
-            @endforeach
-        </select>
+        {{-- 🔽 드롭박스콤보공용 (2026-11-22) — 바이어가 수백 명이라 치면서 찾는다. 고르면 바로 걸린다. --}}
+        <x-erp.combobox wire:key="con-buyer-filter-{{ $buyerFilter }}" model="buyerFilter" :options="$this->buyers"
+            :selected="$buyerFilter" placeholder="{{ __('consignee.all_buyers') }}" class="w-52" />
     </x-erp.search-bar>
     <x-erp.filter-chips :axes="$this->chipAxes()" />
 </div>
@@ -370,12 +373,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         <div>
             <label class="label-base">{{ __('consignee.field.buyer') }} <span class="text-red-500">*</span></label>
-            <select wire:model="buyer_id_str" class="input-base">
-                <option value="">{{ __('common.select') }}</option>
-                @foreach($this->buyers as $b)
-                <option value="{{ $b->id }}">{{ $b->name }}</option>
-                @endforeach
-            </select>
+            <x-erp.combobox wire:key="con-form-buyer-{{ $editingId }}-{{ $buyer_id_str }}" model="buyer_id_str" :options="$this->buyers"
+                :selected="$buyer_id_str" placeholder="{{ __('common.select') }}" required />
             @error('buyer_id_str')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
         <div>
