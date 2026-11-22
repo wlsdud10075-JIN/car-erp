@@ -164,6 +164,7 @@ return [
         ],
     ],
     'filter_all_salesman' => 'All salesmen',
+    'computed_sort_too_many' => ':count settlements match — too many to sort by this column (up to :max). Pick a month or a salesman first.',
     'filter_all_month' => 'All months',
     'export_btn' => 'Download Excel',
     'export_hint' => 'Exports exactly what the current filters show. One sheet per salesperson, with a summary sheet first. Payout is a preview until confirmed, and batch-level adjustments are not reflected per row.',

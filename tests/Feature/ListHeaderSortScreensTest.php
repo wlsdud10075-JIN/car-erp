@@ -4,7 +4,9 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\Salesman;
+use App\Models\Settlement;
 use App\Models\User;
+use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
@@ -40,7 +42,7 @@ class ListHeaderSortScreensTest extends TestCase
 
     public function test_every_sort_header_runs_on_the_four_single_table_screens(): void
     {
-        foreach (['buyers' => 7, 'consignees' => 5, 'salesmen' => 7, 'settlements' => 8] as $screen => $expected) {
+        foreach (['buyers' => 7, 'consignees' => 5, 'salesmen' => 7, 'settlements' => 13] as $screen => $expected) {
             $keys = $this->headerKeys($screen);
             $this->assertCount($expected, $keys, "{$screen}: 정렬 헤더 수가 다르다");
             foreach ($keys as $key) {
@@ -84,5 +86,54 @@ class ListHeaderSortScreensTest extends TestCase
         $c->call('clickSort', 'name')->assertSet('sortColumn', '');           // ▲ → ▼ → 빠짐
         // 담당자 이름순 — 미지정은 방향과 무관하게 뒤
         $c->call('clickSort', 'salesman')->assertSeeInOrder(['ZZZ-CO', 'AAA-CO']);
+    }
+
+    /**
+     * 🧮 정산의 계산 칸(입금률·총마진·마진율·정산액·실지급액) — 저장하지 않는 값이라 걸린 정산을 전부 계산해 줄 세운다
+     *    (jin 2026-11-22 «이건 정말 정렬하고 싶지»). 순서는 화면이 찍는 값 그대로여야 하고, 페이지를 넘겨도 이어져야 한다.
+     */
+    public function test_settlements_sort_by_a_computed_column_across_pages(): void
+    {
+        $sm = Salesman::create(['name' => '계산정렬', 'is_active' => true, 'type' => 'freelance']);
+        $payout = [];
+        foreach ([400, 900, 100, 700, 250, 150, 300, 550, 650, 800, 950, 50] as $price) {
+            $v = Vehicle::create([
+                'vehicle_number' => 'CS-'.$price, 'sales_channel' => 'export', 'currency' => 'USD', 'exchange_rate' => 1350,
+                'dhl_request' => false, 'sale_price' => $price * 10, 'sale_date' => '2026-04-01', 'purchase_date' => '2026-01-01',
+                'purchase_price' => 1000000, 'salesman_id' => $sm->id,
+            ]);
+            $s = Settlement::create([
+                'vehicle_id' => $v->id, 'salesman_id' => $sm->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50, 'settlement_status' => 'pending',
+            ]);
+            $payout['CS-'.$price] = $s->fresh()->actual_payout;
+        }
+        $this->assertCount(12, array_unique($payout), '픽스처의 실지급액이 서로 달라야 순서를 볼 수 있다');
+        asort($payout);
+        $asc = array_keys($payout);
+
+        $c = Volt::test('erp.settlements.index')->set('monthFilter', '')->set('perPage', 10)->call('clickSort', 'actual_payout');
+        $c->assertSet('sortColumn', 'actual_payout')->assertSeeInOrder(array_slice($asc, 0, 10));
+        $c->call('clickSort', 'actual_payout')->assertSet('sortDirection', 'desc')->assertSeeInOrder(array_slice(array_reverse($asc), 0, 10));
+        $c->call('clickSort', 'actual_payout')->assertSet('sortColumn', '');            // ▲ → ▼ → 기본
+
+        // 계산 칸은 한 칸만 — DB 칸 정렬 중에 누르면 그 정렬은 풀리고, 계산 칸 정렬 중에 DB 칸을 누르면 그 칸 하나로 바뀐다
+        $c->call('clickSort', 'status')->call('clickSort', 'total_margin')->assertSet('sortColumn', 'total_margin')->assertSet('sortExtra', []);
+        $c->call('clickSort', 'status')->assertSet('sortColumn', 'status')->assertSet('sortExtra', []);
+
+        // 페이지를 넘겨도 줄이 이어진다 — 10건씩이면 2쪽은 11·12번째
+        $rows = Volt::test('erp.settlements.index')->set('monthFilter', '')->set('perPage', 10)
+            ->call('clickSort', 'actual_payout')->call('gotoPage', 2)->instance()->settlements;
+        $this->assertSame(12, $rows->total());
+        $this->assertSame([$asc[10], $asc[11]], $rows->map(fn ($s) => $s->vehicle->vehicle_number)->all());
+    }
+
+    /** 상한을 넘으면 계산하지 않는다 — 30초마다 다시 그리는 화면이라 수천 건을 매번 계산하게 두지 않는다. */
+    public function test_settlements_computed_sort_refuses_above_the_cap(): void
+    {
+        $this->assertSame(1000, (new \ReflectionClassConstant(Volt::test('erp.settlements.index')->instance(), 'COMPUTED_SORT_MAX'))->getValue());
+        $src = file_get_contents(resource_path('views/livewire/erp/settlements/index.blade.php'));
+        $this->assertStringContainsString('> self::COMPUTED_SORT_MAX) {', $src);
+        $this->assertStringContainsString("__('settlement.computed_sort_too_many'", $src);
+        $this->assertNotSame('settlement.computed_sort_too_many', __('settlement.computed_sort_too_many'));
     }
 }
