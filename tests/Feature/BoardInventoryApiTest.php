@@ -219,15 +219,17 @@ class BoardInventoryApiTest extends TestCase
         $screen = file_get_contents(resource_path('views/livewire/erp/inventory/index.blade.php'));
         $api = file_get_contents(app_path('Http/Controllers/Api/Internal/InternalPortalController.php'));
 
-        // 첫 칸은 `where(`, 나머지는 `orWhere(` 라 접두사는 안 본다 — "그 칸을 훑는가" 만 확인.
+        // 🔀 2026-11-22 — 화면은 검색공용(ListSearch)이라 사슬 대신 `searchColumns()` 선언을 읽는다(「관계.컬럼」 = orWhereHas).
+        $this->assertSame(1, preg_match('/function searchColumns\(\): array\s*\{\s*return \[(.*?)\];/s', $screen, $decl), '재고 화면의 searchColumns() 선언을 못 찾았다');
+        // API 는 첫 칸 `where(`, 나머지 `orWhere(` 라 접두사는 안 본다 — "그 칸을 훑는가" 만 확인.
         foreach (['vehicle_number', 'brand', 'model_type', 'nice_reg_vin',
             'export_declaration_number', 'vessel_name', 'container_number'] as $col) {
-            $this->assertStringContainsString("'{$col}', 'like'", $screen, "재고 화면 검색에서 {$col} 가 빠졌다");
+            $this->assertStringContainsString("'{$col}'", $decl[1], "재고 화면 검색에서 {$col} 가 빠졌다");
             $this->assertStringContainsString("'{$col}', 'like'", $api, "재고 API 검색에서 {$col} 가 빠졌다 — 화면과 갈린다");
         }
 
         // 바이어는 릴레이션이라 형태가 다르다 — 양쪽 다 있는지만 본다.
-        $this->assertStringContainsString("orWhereHas('buyer'", $screen, '재고 화면 검색에 바이어가 없다');
+        $this->assertStringContainsString("'buyer.name'", $decl[1], '재고 화면 검색에 바이어가 없다');
         $this->assertStringContainsString("orWhereHas('buyer'", $api, '재고 API 검색에 바이어가 없다 — 화면과 갈린다');
     }
 

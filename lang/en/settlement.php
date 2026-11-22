@@ -100,6 +100,7 @@ return [
         'tooltip' => 'Salesman ":name" is excluded from payouts, so this settlement never joins a monthly batch. Change it in the salesman settings.',
     ],
     'reanchored' => [
+        'chip' => 'Moved month',
         'badge' => 'Moved from :from',
         'tooltip' => 'When the unpaid hold cleared, the :from payout batch was already approved, so this settlement was moved to the open month :to. It joins the next monthly batch.',
     ],

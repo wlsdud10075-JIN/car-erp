@@ -883,9 +883,7 @@ new #[Layout('components.layouts.app')] class extends Component
         {{-- 🔎 검색은 **버튼(또는 Enter)으로만** 돈다 (jin 2026-09-08).
              타이핑마다 서버 왕복이면 `LIKE '%…%'` 가 글자 수만큼 돌고, 이 화면은
              `wire:poll` 까지 겹친다. 다른 검색칸(차량·재고·바이어·정산)과 같은 형태다. --}}
-        <input wire:model="search" wire:keydown.enter="searchNow" type="text"
-               placeholder="{{ __('shipping.search_ph') }}" class="input-filter ml-auto w-56" />
-        <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+        <x-erp.search-bar :placeholder="__('shipping.search_ph')" width="ml-auto w-56" />
         {{-- 페이지당 묶음 수 — 완료·전체가 누적돼 아래로 길어지는 걸 끊는다 (jin 2026-07-31). --}}
         <select wire:model.live="perPage" class="input-filter">
             @foreach ($perPageOptions as $n)

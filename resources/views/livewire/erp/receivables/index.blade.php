@@ -1456,9 +1456,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         {{-- 🔎 검색은 **버튼(또는 Enter)으로만** 돈다 (jin 2026-09-08).
              타이핑마다 서버 왕복이면 `LIKE '%…%'` 가 글자 수만큼 돌고, 이 화면은
              `wire:poll` 까지 겹친다. 다른 검색칸(차량·재고·바이어·정산)과 같은 형태다. --}}
-        <input type="text" wire:model="search" wire:keydown.enter="searchNow" placeholder="{{ __('receivable.search_ph') }}"
-               class="input-filter w-52" />
-        <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+        <x-erp.search-bar :placeholder="__('receivable.search_ph')" width="w-52" />
         <input type="date" wire:model.live="dateFrom" class="input-filter" />
         <span class="text-xs text-gray-400">~</span>
         <input type="date" wire:model.live="dateTo" class="input-filter" />
@@ -1706,7 +1704,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="absolute inset-0 bg-black/40" wire:click="closePanel"></div>
 
     {{-- panel --}}
-    <div class="relative ml-auto flex h-full w-full max-w-[640px] flex-col overflow-y-auto bg-white shadow-xl">
+    <div class="relative ml-auto flex h-full w-full sm:w-[700px] lg:w-[820px] flex-col overflow-y-auto bg-white shadow-xl">
         {{-- 헤더 --}}
         <div class="sticky top-0 z-10 border-b border-gray-200 bg-white px-5 py-4">
             <div class="flex items-start justify-between">

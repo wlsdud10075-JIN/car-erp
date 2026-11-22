@@ -5,6 +5,8 @@ use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
 use App\Services\SettlementGateOverrideService;
+use App\Support\ListFilters;
+use App\Support\ListSearch;
 use App\Support\SearchTerm;
 use Illuminate\Validation\ValidationException;
 use Livewire\Attributes\Computed;
@@ -18,7 +20,29 @@ new #[Layout('components.layouts.app')] class extends Component
     use WithPagination;
 
     // ── 목록 필터 ──────────────────────────────────────────────────
-    public string $search = '';
+    use ListSearch;    // 🔎 검색공용 — 이 화면의 검색 규칙은 Settlement::scopeSearchTerm(차량번호·비고)이라 applySearch 를 덮어쓴다
+    use ListFilters;   // 🏷️ 필터칩공용 — 행 뱃지 「내수」·「○월에서 이동」
+
+    protected function searchColumns(): array
+    {
+        return [];   // 선언 대신 스코프를 부른다(applySearch)
+    }
+
+    protected function applySearch(\Illuminate\Database\Eloquent\Builder $q): \Illuminate\Database\Eloquent\Builder
+    {
+        return SearchTerm::of($this->search) === '' ? $q : $q->searchTerm($this->search);
+    }
+
+    /** 🏷️ 행 뱃지와 같은 모양의 칩(jin 2026-11-22) — 내수 정산 · 보류가 풀려 마감된 달에서 옮겨진 정산. */
+    protected function filterChips(): array
+    {
+        return [
+            'domestic' => ['type' => 'bool', 'label' => __('vehicle.domestic.badge'), 'title' => __('settlement.domestic_hint'),
+                'class' => 'whitespace-nowrap rounded-full bg-teal-100 px-1.5 py-0.5 text-[10px] font-bold text-teal-700', 'column' => 'is_domestic'],
+            'reanchored' => ['type' => 'bool', 'label' => __('settlement.reanchored.chip'), 'class' => 'badge badge-blue',
+                'apply' => fn ($q) => $q->whereNotNull('reanchored_from')],
+        ];
+    }
 
     /**
      * 🔗 **딥링크로도 걸 수 있다** (jin 2026-09-14) — 업무 대시보드 「정산 대기」 카드용.
@@ -110,10 +134,6 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public ?int $readjustVehicleId = null;
 
-    public function searchNow(): void
-    {
-        $this->resetPage();
-    }
 
     public function updatedPerPage(): void
     {
@@ -225,7 +245,8 @@ new #[Layout('components.layouts.app')] class extends Component
             ->notReservedForLeaverBatch()
             // 🚪 퇴사 정산으로 이미 나간 건도 빼다(jin 2026-11-05) — 담당자를 고르면 다시 보인다(2차 마감용).
             ->when(! $this->salesmanFilter, fn ($q) => $q->notInLeaverBatch())
-            ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
+            ->tap(fn ($q) => $this->applySearch($q))
+            ->tap(fn ($q) => $this->applyChipFilters($q))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->secondaryFilter, fn ($q) => $q->secondaryFilter($this->secondaryFilter))
@@ -1936,7 +1957,8 @@ new #[Layout('components.layouts.app')] class extends Component
             ->secondaryFilter($which === 'waiting' ? 'waiting' : 'ready')
             // ⚠️ salesman 컬럼 제한 금지 (tier) — actual_payout 이 통째로 틀어진다.
             ->with(['vehicle.finalPayments', 'vehicle.receivableHistories', 'salesman'])
-            ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
+            ->tap(fn ($q) => $this->applySearch($q))
+            ->tap(fn ($q) => $this->applyChipFilters($q))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->secondaryFilter, fn ($q) => $q->secondaryFilter($this->secondaryFilter))
@@ -1971,7 +1993,8 @@ new #[Layout('components.layouts.app')] class extends Component
         //   창은 「마감할 정산 0건」 — 숫자만 보면 비용 대기까지 마감될 것처럼 보였다. 실제 대상(secondaryCloseTargets)과 같은 축.
         return Settlement::query()
             ->secondaryFilter('ready')
-            ->when(SearchTerm::of($this->search), fn ($q) => $q->searchTerm($this->search))
+            ->tap(fn ($q) => $this->applySearch($q))
+            ->tap(fn ($q) => $this->applyChipFilters($q))
             ->when($this->statusFilter, fn ($q) => $q->where('settlement_status', $this->statusFilter))
             ->when($this->heldOnly, fn ($q) => $q->payoutHeldByUnpaid())
             ->when($this->secondaryFilter, fn ($q) => $q->secondaryFilter($this->secondaryFilter))
@@ -2151,8 +2174,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
 {{-- 필터 바 --}}
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-    <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('settlement.search_ph') }}"
-           class="input-filter w-36" />
+    <x-erp.search-bar :placeholder="__('settlement.search_ph')" width="w-36">
     <select wire:model="statusFilter" class="input-filter">
         <option value="">{{ __('settlement.filter_all_status') }}</option>
         <option value="pending">{{ __('settlement.status.pending') }}</option>
@@ -2203,7 +2225,8 @@ new #[Layout('components.layouts.app')] class extends Component
     <input wire:model="dateFrom" type="date" class="input-filter" />
     <span class="text-gray-400 text-sm">~</span>
     <input wire:model="dateTo" type="date" class="input-filter" />
-    <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+    </x-erp.search-bar>
+    <x-erp.filter-chips :axes="$this->chipAxes()" />
     {{-- 엑셀 내려받기 (jin 2026-08-03) — 화면 필터 그대로. 영업담당자별 시트로 나뉘고 첫 시트가 요약.
          "전체(필터 무시)" 범위는 일부러 안 만든다 — 화면에서 본 것과 다른 게 나오면 대조가 무의미(SKILLS §14). --}}
     <button type="button" title="{{ __('settlement.export_hint') }}"
@@ -3319,7 +3342,7 @@ new #[Layout('components.layouts.app')] class extends Component
 {{-- ══ 슬라이드 패널 ══ --}}
 @if($showPanel)
 <div class="fixed inset-0 z-40 bg-black/40" wire:click="close"></div>
-<div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[520px]">
+<div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[700px] lg:w-[820px]">
 
     {{-- 헤더 --}}
     <div class="flex items-center justify-between border-b px-5 py-4">
