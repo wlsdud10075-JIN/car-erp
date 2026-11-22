@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Buyer;
 use App\Models\Salesman;
+use App\Models\SavingsStatus;
 use App\Models\Settlement;
 use App\Models\User;
 use App\Models\Vehicle;
@@ -42,7 +43,7 @@ class ListHeaderSortScreensTest extends TestCase
 
     public function test_every_sort_header_runs_on_the_four_single_table_screens(): void
     {
-        foreach (['buyers' => 7, 'consignees' => 5, 'salesmen' => 7, 'settlements' => 13] as $screen => $expected) {
+        foreach (['buyers' => 8, 'consignees' => 5, 'salesmen' => 7, 'settlements' => 13] as $screen => $expected) {
             $keys = $this->headerKeys($screen);
             $this->assertCount($expected, $keys, "{$screen}: 정렬 헤더 수가 다르다");
             foreach ($keys as $key) {
@@ -135,5 +136,32 @@ class ListHeaderSortScreensTest extends TestCase
         $this->assertStringContainsString('> self::COMPUTED_SORT_MAX) {', $src);
         $this->assertStringContainsString("__('settlement.computed_sort_too_many'", $src);
         $this->assertNotSame('settlement.computed_sort_too_many', __('settlement.computed_sort_too_many'));
+    }
+
+    /**
+     * 💳 바이어 적립금 칸 — 통화별로 묶고(가진 바이어가 많은 통화부터) 그 안에서 금액순. 환율로 합치지 않는다
+     *    (jin 2026-11-22). 적립금 없는 바이어는 방향과 무관하게 뒤, 두 통화를 가진 바이어는 금액이 큰 쪽 묶음에.
+     */
+    public function test_buyers_sort_by_savings_groups_by_currency_then_amount(): void
+    {
+        $mk = function (string $name, array $balances) {
+            $b = Buyer::create(['name' => $name, 'is_active' => true]);
+            foreach ($balances as $cur => $amt) {
+                SavingsStatus::create(['buyer_id' => $b->id, 'currency' => $cur, 'transaction_type' => 'EARNED', 'savings' => $amt, 'balance' => $amt, 'exchange_rate' => 1400]);
+            }
+        };
+        $mk('EUR-SMALL', ['EUR' => 100]);
+        $mk('USD-BIG', ['USD' => 9000]);
+        $mk('NO-SAVINGS', []);
+        $mk('EUR-BIG', ['EUR' => 5000]);
+        $mk('EUR-MIXED', ['EUR' => 800, 'USD' => 50]);   // 큰 쪽(EUR) 묶음
+
+        $c = Volt::test('erp.buyers.index')->call('clickSort', 'savings')->assertSet('sortColumn', 'savings');
+        $c->assertSeeInOrder(['EUR-SMALL', 'EUR-MIXED', 'EUR-BIG', 'USD-BIG', 'NO-SAVINGS']);
+        // ▼ — 통화 묶음 순서는 그대로, 묶음 안의 금액만 뒤집힌다. USD 9,000 이 EUR 5,000 앞으로 오지 않는다.
+        $c->call('clickSort', 'savings')->assertSeeInOrder(['EUR-BIG', 'EUR-MIXED', 'EUR-SMALL', 'USD-BIG', 'NO-SAVINGS']);
+        $c->call('clickSort', 'savings')->assertSet('sortColumn', '');
+        // 한 칸만 — 다른 정렬 중에 누르면 그 정렬은 풀린다
+        $c->call('clickSort', 'name')->call('clickSort', 'savings')->assertSet('sortColumn', 'savings')->assertSet('sortExtra', []);
     }
 }

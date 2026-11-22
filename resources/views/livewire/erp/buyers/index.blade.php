@@ -29,9 +29,11 @@ new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination, WithFileUploads;
     use ListSearch;    // 🔎 검색공용
     use ListFilters;   // 🏷️ 필터칩공용
-    use StackedHeaderSort;   // 🔼🔽 헤더정렬공용 (jin 2026-11-22 «헤더가 있는 곳은 전체 적용»)
+    use StackedHeaderSort {   // 🔼🔽 헤더정렬공용 (jin 2026-11-22 «헤더가 있는 곳은 전체 적용»)
+        clickSort as stackedClickSort;
+    }
 
-    /** 헤더 키 → 정렬 선언(`applySortSpec`). 적립금 칸은 통화별 잔액을 따로 계산한 값이라 뺐다. */
+    /** 헤더 키 → 정렬 선언(`applySortSpec`). 적립금 칸은 계산값이라 따로(`paginateBySavings`). */
     private const SORTABLE = [
         'name' => ['text', 'name'], 'salesman' => ['rel', 'salesmen', 'buyers.salesman_id'],
         'country' => ['rel', 'countries', 'buyers.country_id'], 'email' => ['text', 'contact_email'],
@@ -40,7 +42,69 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     protected function sortableKeys(): array
     {
-        return array_keys(self::SORTABLE);
+        return array_merge(array_keys(self::SORTABLE), ['savings']);
+    }
+
+    /**
+     * 💳 적립금 칸 정렬 (jin 2026-11-22 «지금 말해준 방식이 나은 것 같아») — **통화별로 묶고 그 안에서 금액순**.
+     *    잔액은 저장된 칸이 아니라 원장에서 계산하는 값이고 통화가 섞여 있다(실측 11-22: ssancarerp EUR 105·USD 26, 두 통화를
+     *    같이 가진 바이어 1명 / heymanerp EUR 8·USD 2·KRW 1). 환율로 합치지 않는다 — 화면에 보이는 숫자 그대로 줄이 서야 눈으로 확인된다.
+     *    겹쳐 누르기 없음(한 칸만) · ▲ → ▼ → 기본. 적립금 없는 바이어는 방향과 무관하게 뒤.
+     */
+    public function clickSort(string $col): void
+    {
+        if ($col !== 'savings' && $this->sortColumn !== 'savings') {
+            $this->stackedClickSort($col);
+
+            return;
+        }
+        if (! $this->sortable($col)) {
+            return;
+        }
+        if ($this->sortColumn === $col && $this->sortDirection === 'desc') {
+            $this->resetSort();
+
+            return;
+        }
+        $this->setSort($col);
+    }
+
+    /** 걸린 바이어 전부의 잔액을 한 번에 읽어 줄 세운 뒤, 이 페이지의 바이어만 다시 읽는다. */
+    private function paginateBySavings($q): \Illuminate\Pagination\LengthAwarePaginator
+    {
+        $ids = (clone $q)->pluck('buyers.id')->all();
+        $balances = app(\App\Services\SavingsLedger::class)->balancesFor($ids);
+        $main = [];      // 바이어 id => [통화, 금액] — 두 통화를 가진 바이어는 금액이 큰 쪽 통화 묶음에
+        $holders = [];   // 통화 => 그 통화가 주 통화인 바이어 수
+        foreach ($ids as $id) {
+            $shown = array_filter($balances[$id] ?? [], fn ($v) => abs((float) $v) >= 0.005);
+            if ($shown === []) {
+                continue;
+            }
+            uasort($shown, fn ($a, $b) => abs((float) $b) <=> abs((float) $a));
+            $cur = array_key_first($shown);
+            $main[$id] = [$cur, (float) $shown[$cur]];
+            $holders[$cur] = ($holders[$cur] ?? 0) + 1;
+        }
+        // 통화 묶음 순서 = 가진 바이어가 많은 통화부터(동수면 통화 코드순) — 방향을 바꿔도 묶음 순서는 그대로, 묶음 안의 금액만 뒤집힌다
+        uksort($holders, fn ($a, $b) => $holders[$b] <=> $holders[$a] ?: strcmp($a, $b));
+        $rank = array_flip(array_keys($holders));
+        $desc = $this->sortDirection === 'desc';
+        usort($ids, function ($a, $b) use ($main, $rank, $desc) {
+            [$ma, $mb] = [$main[$a] ?? null, $main[$b] ?? null];
+            if ($ma === null || $mb === null) {
+                return ($ma === null) <=> ($mb === null) ?: $a <=> $b;
+            }
+
+            return $rank[$ma[0]] <=> $rank[$mb[0]] ?: ($desc ? $mb[1] <=> $ma[1] : $ma[1] <=> $mb[1]) ?: $a <=> $b;
+        });
+        $total = count($ids);
+        $perPage = max(1, $this->perPage);
+        $page = max(1, min((int) $this->getPage(), (int) ceil(max(1, $total) / $perPage)));
+        $pageIds = array_slice($ids, ($page - 1) * $perPage, $perPage);
+        $rows = (clone $q)->whereIn('buyers.id', $pageIds)->get()->sortBy(fn ($b) => array_search($b->id, $pageIds, true))->values();
+
+        return new \Illuminate\Pagination\LengthAwarePaginator($rows, $total, $perPage, $page, ['path' => request()->url()]);
     }
 
     protected function applySortKey($q, string $col, string $dir)
@@ -486,7 +550,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function buyers()
     {
-        return $this->buyerQuery()
+        $q = $this->buyerQuery()
             ->when($this->newOnly, fn ($q) => $q->newBuyers())
             ->when($this->openClaimOnly, fn ($q) => $q->whereHas('claims', fn ($c) => $c->open()))
             ->with(['country', 'salesman'])
@@ -495,7 +559,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'vehicles as dp_count' => fn ($q) => $q->where('deal_type', 'DP'),
                 'vehicles as fd_count' => fn ($q) => $q->where('deal_type', 'FD'),
                 'claims as open_claim_count' => fn ($q) => $q->open(),   // 🧾 「클레임 N건」 뱃지 (jin 2026-11-20)
-            ])
+            ]);
+        if ($this->sortColumn === 'savings') {
+            return $this->paginateBySavings($q);
+        }
+
+        return $q
             // 회의확장씬 #2 (2026-05-23) — 영업담당자별 그룹 정렬 (담당자별 묶음 + 이름순).
             // 🔼🔽 헤더를 눌렀으면 그 순서, 아니면 종전 기본(담당자별 묶음 + 이름순).
             ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q
@@ -1827,7 +1896,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('country', __('common.country')) }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('email', __('common.email')) }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('phone', __('common.phone')) }}</th>
-                <th class="pb-2 pr-4 font-medium" data-savings-col>{{ __('buyer.col_savings') }}</th>
+                <th class="pb-2 pr-4 font-medium" data-savings-col>{{ $this->sortTh('savings', __('buyer.col_savings')) }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('status', __('common.status')) }}</th>
                 @if(Setting::b2bPartnersEnabled())<th class="pb-2 pr-4 font-medium">{{ $this->sortTh('b2b', __('buyer.col_b2b')) }}</th>@endif
                 <th class="pb-2 font-medium"></th>
