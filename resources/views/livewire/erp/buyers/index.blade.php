@@ -1761,11 +1761,12 @@ new #[Layout('components.layouts.app')] class extends Component {
     @endif
     </x-erp.search-bar>
     <x-erp.filter-chips :axes="$this->chipAxes()" />
+    {{-- 🏷️ 칩 = 행 뱃지와 같은 모양(jin 2026-11-20·11-22 통일) — 꺼짐 흐리게 · 켜짐 테두리. 주소(?…)는 그대로다. --}}
     {{-- 🆕 신규 버튼축(jin 11-12 — 차량관리 「운항중」 버튼과 같은 모양) — 누르면 배지 붙은 바이어만, 다시 누르면 해제 --}}
     <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3" data-new-only-filter>
         <button type="button" wire:click="toggleNewOnly" aria-pressed="{{ $newOnly ? 'true' : 'false' }}" title="{{ __('buyer.new_filter_hint') }}"
-                class="h-9 rounded-full px-2.5 text-xs transition sm:h-7 {{ $newOnly ? 'bg-rose-600 text-white shadow-sm font-semibold' : 'bg-rose-100 text-rose-700 hover:bg-rose-200 font-medium' }}">
-            {{ $newOnly ? '✓ ' : '' }}{{ __('buyer.new_badge') }} ({{ number_format($this->newBuyerCount) }})
+                class="cursor-pointer whitespace-nowrap rounded bg-rose-100 px-1.5 py-0.5 text-[10px] font-semibold text-rose-700 {{ $newOnly ? 'ring-2' : 'opacity-60 hover:opacity-100' }}">
+            {{ __('buyer.new_badge') }} ({{ number_format($this->newBuyerCount) }})
         </button>
     </div>
     {{-- 🧾 「클레임 N건」 칩 (jin 2026-11-20) — 행 뱃지와 같은 모양. 해당 바이어가 없으면(그리고 꺼져 있으면) 안 그린다. --}}
@@ -1783,8 +1784,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         @foreach(['DP' => ['bg-purple-600 text-white shadow-sm', 'bg-purple-100 text-purple-700 hover:bg-purple-200'], 'FD' => ['bg-blue-600 text-white shadow-sm', 'bg-blue-100 text-blue-700 hover:bg-blue-200']] as $dk => [$on, $off])
             <button type="button" wire:click="toggleDealFilter('{{ $dk }}')" aria-pressed="{{ $dealFilter === $dk ? 'true' : 'false' }}"
                     title="{{ \App\Models\Vehicle::DEAL_TYPES[$dk]['title'] }} — {{ __('buyer.deal.filter_hint') }}"
-                    class="h-9 rounded-full px-2.5 text-xs font-semibold transition sm:h-7 {{ $dealFilter === $dk ? $on : $off }}">
-                {{ $dealFilter === $dk ? '✓ ' : '' }}{{ $dk }} ({{ number_format($this->dealBuyerCounts[$dk]) }})
+                    class="cursor-pointer whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ \App\Models\Vehicle::DEAL_TYPES[$dk]['class'] }} {{ $dealFilter === $dk ? 'ring-2' : 'opacity-60 hover:opacity-100' }}">
+                {{ $dk }} ({{ number_format($this->dealBuyerCounts[$dk]) }})
             </button>
         @endforeach
     </div>
