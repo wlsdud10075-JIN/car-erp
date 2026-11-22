@@ -95,6 +95,8 @@ return [
         'sent' => '성공',
         'failed' => '실패',
     ],
+    'area_all' => '전체',
+    'vehicle_history_link' => '이 차 변경 기록',
     'md_channel' => [
         'gmail' => '지메일',
         'ses' => '아마존 메일(SES)',

@@ -59,6 +59,7 @@ return [
         'buyer-claim' => ['Buyer claims — records and claim use', 'See claims approved in Board and clear the next vehicle\'s unpaid balance with them'],
         'kakao-todo' => ['KakaoTalk automation — my to-dos', 'Read chat rooms and turn messages into to-dos'],
         'list-search-sort' => ['List screens — find, search and sort', 'Pick people by typing, apply with Search, and sort by clicking a column header'],
+        'audit-log' => ['Audit log — finding change history', 'Narrow by area chips, pick by typing, and jump from a vehicle to its history'],
     ],
 
     // [slug => [묶음, 제목, 한 줄 요약, 누가 쓰나[], 찾는 말]]
@@ -94,5 +95,6 @@ return [
         'buyer-claim' => ['manage', '클레임 기록 보기 · 클레임 사용', 'board 에서 결재가 끝난 클레임을 보고, 다음 차 미수를 클레임으로 텁니다', ['관리', '재무'], '클레임 인정 기각 클레임 사용 클레임 누적금 상계 미수 털기 덜 입금'],
         'kakao-todo' => ['manage', '카톡 자동화 — 내 카톡 할 일', '카톡방을 읽어 할 일로 정리합니다', ['관리'], '카카오톡 할 일'],
         'list-search-sort' => ['manage', '목록 화면 — 찾기·조회·정렬', '담당자·바이어를 치면서 고르고, [조회]로 찾고, 머리글을 눌러 줄을 세웁니다', ['관리', '재무', '수출통관'], '검색 조회 정렬 오름차순 내림차순 머리글 헤더 담당자 콤보 필터 칩 금액순'],
+        'audit-log' => ['manage', '감사 로그 — 변경 기록 찾기', '구역 칩으로 큰 틀을 고르고, 치면서 좁혀 누가 무엇을 바꿨는지 찾습니다', ['관리', '업무관리자'], '감사로그 로그 변경 기록 이력 누가 바꿨나 수정 내역 구역 매입 판매 정산 컬럼 액션'],
     ],
 ];

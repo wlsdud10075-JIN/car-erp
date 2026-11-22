@@ -2,6 +2,7 @@
 
 use App\Models\AuditLog;
 use App\Models\User;
+use App\Support\AuditArea;
 use App\Support\ColumnLabel;
 use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
@@ -37,6 +38,43 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Url] public string $columnFilter = '';
 
     /**
+     * 🗂️ 구역 — 「매입 / 판매·입금 / 정산 …」 큰 틀로 먼저 좁힌다 (jin 2026-11-22). 분류표 = App\Support\AuditArea 한 곳.
+     * 칩은 버튼이라 누르는 즉시 걸린다(다른 목록 화면의 칩과 같다). 구역을 바꾸면 컬럼 고르기는 비운다(그 구역 칸만 남으므로).
+     */
+    #[Url(as: 'area')] public string $areaFilter = '';
+
+    public function pickArea(string $area): void
+    {
+        $this->areaFilter = in_array($area, AuditArea::keys(), true) && $this->areaFilter !== $area ? $area : '';
+        $this->columnFilter = '';
+        unset($this->distinctColumns, $this->logs);
+        $this->resetPage();
+    }
+
+    /**
+     * 구역별 건수 — 칩 옆 숫자. 전체 기간 기준이고 10분 동안 기억한다(이 화면은 30초마다 다시 그린다 — 매번 세면 무겁다).
+     * 한 번의 GROUP BY 로 받아 PHP 에서 가른다(구역마다 COUNT 를 따로 돌리지 않는다).
+     *
+     * @return array<string, int>
+     */
+    #[Computed]
+    public function areaCounts(): array
+    {
+        return \Illuminate\Support\Facades\Cache::remember('audit_log_area_counts_v1', 600, function () {
+            $out = array_fill_keys(AuditArea::keys(), 0);
+            $out['_all'] = 0;
+            $rows = AuditLog::query()->selectRaw('auditable_type, action, column_name, COUNT(*) as c')
+                ->groupBy('auditable_type', 'action', 'column_name')->toBase()->get();
+            foreach ($rows as $r) {
+                $out[AuditArea::of($r->auditable_type, $r->action, $r->column_name)] += (int) $r->c;
+                $out['_all'] += (int) $r->c;
+            }
+
+            return $out;
+        });
+    }
+
+    /**
      * `column_name` 에 **컬럼명이 아닌 값**을 넣는 액션 — 「컬럼 전체」 목록에서 뺀다.
      *   assistant_query          질문 유형('guide'·'capital_status(denied)')
      *   vehicle_deleted_with_reason  ★차량번호★ — 삭제된 차는 대상 열에 번호가 안 떠서 여기 적었다
@@ -70,6 +108,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->userFilter !== '', fn ($q) => $q->where('user_id', $this->userFilter))
             ->when($this->actionFilter !== '', fn ($q) => $q->where('action', $this->actionFilter))
             ->when($this->typeFilter !== '', fn ($q) => $q->where('auditable_type', $this->typeFilter))
+            ->when($this->areaFilter !== '', fn ($q) => AuditArea::scope($q, $this->areaFilter))
             // 'buyer:*' = 바이어 변경 전체(값이 바이어명이라 개별 나열하면 드롭다운이 바이어 수만큼 늘어난다).
             ->when($this->columnFilter === self::BUYER_ANY, fn ($q) => $q->where('column_name', 'like', 'buyer:%'))
             // 단일 컬럼(`shipping_date`)과 일괄 기록(`shipping_date,eta_date`)을 함께 건진다.
@@ -236,13 +275,17 @@ new #[Layout('components.layouts.app')] class extends Component
             //    안 빼면 값 종류만큼 항목이 늘어난다 — 차를 지울 때마다, 질문할 때마다 하나씩(jin 2026-08-26).
             ->whereNotIn('action', self::NON_COLUMN_ACTIONS)
             ->distinct()
-            ->get(['auditable_type', 'column_name']);
+            ->get(['auditable_type', 'action', 'column_name']);
 
         $out = [];
         $hasBuyer = false;
         foreach ($rows as $r) {
             $name = (string) $r->column_name;
             if ($name === '') {
+                continue;
+            }
+            // 🗂️ 구역을 골랐으면 그 구역의 칸만 남긴다(164개 → 십여 개).
+            if ($this->areaFilter !== '' && AuditArea::of($r->auditable_type, $r->action, $name) !== $this->areaFilter) {
                 continue;
             }
             if (str_starts_with($name, 'buyer:')) {
@@ -275,7 +318,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function resetFilters(): void
     {
-        $this->reset(['search', 'userFilter', 'actionFilter', 'typeFilter', 'columnFilter', 'dateFrom', 'dateTo']);
+        $this->reset(['search', 'userFilter', 'actionFilter', 'typeFilter', 'columnFilter', 'areaFilter', 'dateFrom', 'dateTo']);
         $this->resetPage();
     }
 }; ?>
@@ -287,6 +330,17 @@ new #[Layout('components.layouts.app')] class extends Component
             <p class="mt-0.5 text-xs text-gray-500">{{ __('log.audit_subtitle') }}</p>
         </div>
         <span class="text-xs text-gray-400">{{ __('log.total', ['count' => number_format($this->logs->total())]) }}</span>
+    </div>
+
+    {{-- 🗂️ 구역 칩 (jin 2026-11-22) — 무엇이 바뀌었나를 큰 틀로 먼저 고른다. 숫자 = 전체 기간 건수. --}}
+    <div class="flex flex-wrap items-center gap-1.5" data-audit-areas>
+        @php $ac = $this->areaCounts; @endphp
+        <button type="button" wire:click="pickArea('')" data-audit-area="all" aria-pressed="{{ $areaFilter === '' ? 'true' : 'false' }}"
+                class="tab-pill whitespace-nowrap {{ $areaFilter === '' ? 'is-active' : '' }}">{{ __('log.area_all') }} <span class="pill-count">{{ number_format($ac['_all'] ?? 0) }}</span></button>
+        @foreach(\App\Support\AuditArea::LABELS as $areaKey => $areaLabel)
+        <button type="button" wire:click="pickArea('{{ $areaKey }}')" data-audit-area="{{ $areaKey }}" aria-pressed="{{ $areaFilter === $areaKey ? 'true' : 'false' }}"
+                class="tab-pill whitespace-nowrap {{ $areaFilter === $areaKey ? 'is-active' : '' }}">{{ $areaLabel }} <span class="pill-count">{{ number_format($ac[$areaKey] ?? 0) }}</span></button>
+        @endforeach
     </div>
 
     {{-- 필터 --}}
@@ -305,7 +359,7 @@ new #[Layout('components.layouts.app')] class extends Component
             :selected="$actionFilter" placeholder="{{ __('log.all_actions') }}" class="w-44" deferred />
         <x-erp.combobox wire:key="al-type-{{ md5($typeFilter) }}" model="typeFilter" :options="[]" :extra="$this->distinctTypes"
             :selected="$typeFilter" placeholder="{{ __('log.all_types') }}" class="w-36" deferred />
-        <x-erp.combobox wire:key="al-col-{{ md5($columnFilter) }}" model="columnFilter" :options="[]" :extra="$this->distinctColumns"
+        <x-erp.combobox wire:key="al-col-{{ $areaFilter }}-{{ md5($columnFilter) }}" model="columnFilter" :options="[]" :extra="$this->distinctColumns"
             :selected="$columnFilter" placeholder="{{ __('log.all_columns') }}" class="w-44" deferred />
         <input wire:model.live.debounce.400ms="dateFrom" type="date" class="input-filter" />
         <span class="text-gray-400 text-sm">~</span>

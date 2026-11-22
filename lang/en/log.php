@@ -95,6 +95,8 @@ return [
         'sent' => 'Sent',
         'failed' => 'Failed',
     ],
+    'area_all' => 'All',
+    'vehicle_history_link' => 'Change history',
     'md_channel' => [
         'gmail' => 'Gmail',
         'ses' => 'AWS SES',

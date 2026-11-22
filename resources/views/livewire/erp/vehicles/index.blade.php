@@ -9802,6 +9802,11 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     @else
                         {{ $editingId ? __('vehicle.panel.edit_title') : __('vehicle.panel.create_title') }}
                     @endif
+                    {{-- 🗂️ 이 차의 변경 기록으로 바로 (jin 2026-11-22) — 감사로그를 차번호로 걸러 새 창에. 볼 수 있는 사람(관리 이상)에게만. --}}
+                    @if($editingId !== null && $vehicle_number && auth()->user()?->canViewOperationLogs())
+                    <a href="{{ route('admin.audit-logs.index', ['search' => $vehicle_number]) }}" target="_blank" rel="noopener" data-vehicle-history-link
+                       class="ml-2 align-middle text-[11px] font-medium text-violet-600 hover:underline">{{ __('log.vehicle_history_link') }} ↗</a>
+                    @endif
                 </h2>
                 @if($vehicle_number)
                 {{-- 차량번호 · 차대번호 나란히 (jin 2026-10-29 — 연한 회색이라 안 보여서 굵고 진하게). 차대번호 없으면 「차대번호 없음」 --}}
