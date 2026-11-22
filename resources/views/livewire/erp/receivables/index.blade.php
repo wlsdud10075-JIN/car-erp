@@ -1498,19 +1498,20 @@ new #[Layout('components.layouts.app')] class extends Component {
             <option value="50">{{ __('receivable.ratio_min', ['percent' => 50]) }}</option>
             <option value="70">{{ __('receivable.ratio_min', ['percent' => 70]) }}</option>
         </select>
+        {{-- 🏷️ 칩 = 행 뱃지와 같은 모양(jin 2026-11-20·11-22 통일) — 꺼짐 흐리게 · 켜짐 테두리. 주소(?…)는 그대로다. --}}
         {{-- 🚢 운항 토글 (jin 2026-10-26) — 차량관리와 같은 버튼. 숫자 = 그 단계의 미수 차 대수 · 미수 합계. --}}
         <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3">
             @foreach([
                 ['phase' => 'in_transit', 'icon' => '🚢', 'label' => __('domain.sailing.'.\App\Models\Vehicle::SAILING_IN_TRANSIT),
-                 'on' => 'bg-blue-600 text-white shadow-sm', 'off' => 'bg-blue-100 text-blue-700 hover:bg-blue-200'],
+                 'badge' => 'bg-blue-100 text-blue-700'],
                 ['phase' => 'arrived',    'icon' => '⚓', 'label' => __('domain.sailing.'.\App\Models\Vehicle::SAILING_ARRIVED),
-                 'on' => 'bg-emerald-600 text-white shadow-sm', 'off' => 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'],
+                 'badge' => 'bg-emerald-100 text-emerald-700'],
             ] as $s)
             @php $isOn = $sailingFilter === $s['phase']; $sc = $this->sailingCounts[$s['phase']]; @endphp
             <button type="button" wire:click="toggleSailing('{{ $s['phase'] }}')"
                     title="{{ __('receivable.sailing_hint') }}{{ $isOn ? __('domain.sailing_hint_on') : '' }}"
-                    class="rounded-full px-2.5 py-0.5 text-xs transition {{ $isOn ? $s['on'].' font-semibold' : $s['off'].' font-medium' }}">
-                {{ $isOn ? '✓ ' : '' }}{{ $s['icon'] }} {{ $s['label'] }} ({{ number_format($sc['count']) }}{{ $sc['unpaid_krw'] > 0 ? ' · '.\App\Support\Money::krwShort($sc['unpaid_krw']) : '' }})
+                    class="cursor-pointer whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ $s['badge'] }} {{ $isOn ? 'ring-2' : 'opacity-60 hover:opacity-100' }}">
+                {{ $s['icon'] }} {{ $s['label'] }} ({{ number_format($sc['count']) }}{{ $sc['unpaid_krw'] > 0 ? ' · '.\App\Support\Money::krwShort($sc['unpaid_krw']) : '' }})
             </button>
             @endforeach
         </div>
@@ -1524,8 +1525,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ] as $d)
             @php $isOn = $dealFilter === $d['val']; @endphp
             <button type="button" wire:click="toggleDeal('{{ $d['val'] }}')" title="{{ $d['title'] }}{{ $isOn ? __('domain.sailing_hint_on') : '' }}"
-                    class="rounded-full px-2.5 py-0.5 text-xs transition {{ $isOn ? $d['on'].' font-semibold' : $d['off'].' font-medium' }}">
-                {{ $isOn ? '✓ ' : '' }}{{ $d['label'] }} ({{ number_format($this->dealCounts[$d['val']]['count'] ?? 0) }}{{ ($this->dealCounts[$d['val']]['unpaid_krw'] ?? 0) > 0 ? ' · '.\App\Support\Money::krwShort($this->dealCounts[$d['val']]['unpaid_krw']) : '' }})
+                    class="cursor-pointer whitespace-nowrap rounded-full px-1.5 py-0.5 text-[10px] font-bold {{ \App\Models\Vehicle::DEAL_TYPES[$d['val']]['class'] }} {{ $isOn ? 'ring-2' : 'opacity-60 hover:opacity-100' }}">
+                {{ $d['label'] }} ({{ number_format($this->dealCounts[$d['val']]['count'] ?? 0) }}{{ ($this->dealCounts[$d['val']]['unpaid_krw'] ?? 0) > 0 ? ' · '.\App\Support\Money::krwShort($this->dealCounts[$d['val']]['unpaid_krw']) : '' }})
             </button>
             @endforeach
         </div>
