@@ -67,7 +67,8 @@ class BuyerSavingsHeaderTest extends TestCase
         $html = Volt::test('erp.buyers.index')->html();
 
         $this->assertStringContainsString('data-savings-col', $html, '표 헤더에 적립금 열이 없다');
-        $this->assertStringContainsString('>적립금<', $html);
+        // 🔼🔽 2026-11-22 — 머리글이 정렬 버튼이 됐다(글자 앞뒤에 공백·표식이 붙는다). 헤더 칸 안에 그 글자가 있는지로 본다.
+        $this->assertMatchesRegularExpression('/data-savings-col>(?:(?!<\/th>).)*적립금/su', $html);
 
         $cell = $this->savingsCellFor($html, 'SAVRICH');
         $this->assertStringContainsString('EUR', $cell);
