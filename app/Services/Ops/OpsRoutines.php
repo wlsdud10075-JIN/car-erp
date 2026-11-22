@@ -52,7 +52,7 @@ class OpsRoutines
      */
     public const EXTERNAL = [
         'nightly-investigate' => ['label' => '야간 조사 (회사 GPU PC)', 'when' => '매일 03:30 · 끝나면 텔레그램', 'source' => 'mark', 'max_age_hours' => 30],
-        'nightly-notion' => ['label' => 'Notion 가이드 대조·발행 (회사 GPU PC) — 발행 뒤 불일치 0 이면 성공', 'when' => '매일 04:30', 'source' => 'mark', 'max_age_hours' => 30],
+        'nightly-notion' => ['label' => 'Notion 가이드 대조·발행 + 개발 현황판 3곳(ERP·board·ssancar.com) (회사 GPU PC) — 발행 뒤 불일치 0 · 현황판 오류 0 이면 성공', 'when' => '매일 04:30', 'source' => 'mark', 'max_age_hours' => 30],
         'brain-sync' => ['label' => '세컨드 브레인 목록 올리기 (jin PC)', 'when' => '매일 10:10', 'source' => 'brain', 'max_age_hours' => 30],
         'apt' => ['label' => '자동 보안 업데이트 (서버 apt)', 'when' => '매일 02:30~02:45', 'source' => 'apt', 'max_age_hours' => 30],
     ];
