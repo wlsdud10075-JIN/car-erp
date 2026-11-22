@@ -69,7 +69,12 @@ class AuditAreaTest extends TestCase
     public function test_everything_in_the_table_has_a_korean_name(): void
     {
         $bad = [];
+        // `dev_user_switch`(개발용 사용자 전환)는 dev 전용 기능이라 master 에는 코드도 이름표도 없다 — 코드에 있을 때만 본다.
+        $inCode = $this->actionsWrittenInCode();
         foreach (array_keys(AuditArea::ACTION_AREA) as $action) {
+            if ($action === 'dev_user_switch' && ! isset($inCode[$action])) {
+                continue;
+            }
             if (! $this->hasKorean(ColumnLabel::action($action))) {
                 $bad[] = "액션 {$action}";
             }
