@@ -31,11 +31,12 @@ new #[Layout('components.layouts.app')] class extends Component
     private const SORTABLE = [
         'vehicle_no' => ['rel', 'vehicles', 'settlements.vehicle_id', 'vehicle_number'],
         'salesman' => ['rel', 'salesmen', 'settlements.salesman_id'],
-        'progress' => ['rel', 'vehicles', 'settlements.vehicle_id', 'progress_status_cache'],
+        'progress' => ['order', '(SELECT progress_status_cache FROM vehicles WHERE vehicles.id = settlements.vehicle_id LIMIT 1)', self::PROGRESS_ORDER],   // 업무 순서(글자순 아님)
         'type' => ['text', 'settlement_type'],
         'purchase_price' => ['rel', 'vehicles', 'settlements.vehicle_id', 'purchase_price'],
         'exchange_diff' => ['col', 'exchange_difference_krw'],
-        'status' => ['text', 'settlement_status'], 'secondary' => ['text', 'secondary_status'],
+        'status' => ['order', 'settlement_status', ['pending', 'calculating', 'confirmed', 'paid']],   // 대기 → 계산중 → 확정 → 지급
+        'secondary' => ['order', 'secondary_status', ['pending', 'closed']],                           // 2차 대기 → 마감(2차 없는 줄은 뒤)
     ];
 
     /**

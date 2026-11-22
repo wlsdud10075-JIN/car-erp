@@ -78,6 +78,9 @@ new #[Layout('components.layouts.app')] class extends Component
     protected function applySortKey($q, string $col, string $dir)
     {
         $col = self::SORTABLE[$col];
+        if ($col === 'progress_status_cache') {   // 🧭 업무 순서(매입중 → … → 거래완료) — 글자순 아님(jin 2026-11-22)
+            return $this->orderByListed($q, 'progress_status_cache', self::PROGRESS_ORDER, $dir);
+        }
         if (in_array($col, ['salesman', 'buyer', 'consignee'], true)) {
             $fk = match ($col) {
                 'salesman' => 'vehicles.salesman_id',

@@ -167,4 +167,37 @@ class ListHeaderSortScreensTest extends TestCase
         // 한 칸만 — 다른 정렬 중에 누르면 그 정렬은 풀린다
         $c->call('clickSort', 'name')->call('clickSort', 'savings')->assertSet('sortColumn', 'savings')->assertSet('sortExtra', []);
     }
+
+    /**
+     * 🧭 상태·단계 칸은 **업무 순서**로 선다 — 글자순이면 정산 「대기」(pending)가 맨 뒤로 가고 진행은 「거래완료」가 맨 앞에 온다
+     *    (jin 2026-11-22 «바꿔»).
+     */
+    public function test_status_and_progress_columns_sort_in_workflow_order(): void
+    {
+        $sm = Salesman::create(['name' => '업무순서', 'is_active' => true, 'type' => 'freelance']);
+        foreach (['paid' => '거래완료', 'pending' => '매입중', 'confirmed' => '판매중', 'calculating' => '선적중'] as $status => $progress) {
+            $v = Vehicle::create([
+                'vehicle_number' => 'WF-'.$status, 'sales_channel' => 'export', 'currency' => 'USD', 'exchange_rate' => 1350,
+                'dhl_request' => false, 'sale_price' => 5000, 'sale_date' => '2026-04-01', 'purchase_date' => '2026-01-01', 'salesman_id' => $sm->id,
+            ]);
+            DB::table('vehicles')->where('id', $v->id)->update(['progress_status_cache' => $progress]);
+            $s = Settlement::create([
+                'vehicle_id' => $v->id, 'salesman_id' => $sm->id, 'settlement_type' => 'ratio', 'settlement_ratio' => 50, 'settlement_status' => 'pending',
+            ]);
+            DB::table('settlements')->where('id', $s->id)->update(['settlement_status' => $status]);
+        }
+
+        $c = Volt::test('erp.settlements.index')->set('monthFilter', '')->call('clickSort', 'status');
+        $c->assertSeeInOrder(['WF-pending', 'WF-calculating', 'WF-confirmed', 'WF-paid']);
+        $c->call('clickSort', 'status')->assertSeeInOrder(['WF-paid', 'WF-confirmed', 'WF-calculating', 'WF-pending']);
+
+        // 진행 = 매입중 → 판매중 → 선적중 → 거래완료 (가나다면 거래완료가 맨 앞)
+        Volt::test('erp.settlements.index')->set('monthFilter', '')->call('clickSort', 'progress')
+            ->assertSeeInOrder(['WF-pending', 'WF-confirmed', 'WF-calculating', 'WF-paid']);
+
+        $this->assertSame(
+            ['매입중', '매입완료', '말소완료', '판매중', '판매완료', '선적중', '선적완료', '통관중', '통관완료', '거래완료'],
+            (new \ReflectionClassConstant(Volt::test('erp.settlements.index')->instance(), 'PROGRESS_ORDER'))->getValue(),
+        );
+    }
 }

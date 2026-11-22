@@ -21,6 +21,13 @@ use Illuminate\Support\HtmlString;
  */
 trait StackedHeaderSort
 {
+    /**
+     * 🧭 **업무 순서** — 상태·단계 칸은 글자순이 아니라 일이 흘러가는 순서로 선다 (jin 2026-11-22 «바꿔»).
+     *    글자순이면 정산 「대기」(pending)가 맨 뒤, 진행은 「거래완료」가 맨 앞(가나다)이 된다.
+     *    진행 10단계 = v4 cascade 순서(CLAUDE.md 「차량 진행상태」). 단계가 늘면 여기에 넣는다 — 없는 값은 뒤로 간다.
+     */
+    public const PROGRESS_ORDER = ['매입중', '매입완료', '말소완료', '판매중', '판매완료', '선적중', '선적완료', '통관중', '통관완료', '거래완료'];
+
     public string $sortColumn = '';
 
     public string $sortDirection = 'asc';
@@ -191,6 +198,7 @@ trait StackedHeaderSort
      *   ['col', 칼럼]            숫자·날짜·불리언 칸
      *   ['text', 칼럼]           글자 칸(빈 문자열도 뒤로)
      *   ['rel', 표, 외래키, 칸?]  다른 표의 값(기본 name) — 예: ['rel', 'buyers', 'consignees.buyer_id']
+     *   ['order', 식, 값 목록]    업무 순서 — 목록에 적힌 차례대로(없는 값·빈 값은 뒤). 식은 칼럼 또는 서브쿼리
      *   ['expr', 식]             두 값으로 가르는 식 — 예: ['expr', '(confirmed_at IS NOT NULL)'] = ▲ 대기 먼저 · ▼ 확정 먼저
      *   ['rev', 칼럼]            헤더 뜻과 칼럼 방향이 반대인 칸 — 예: 「경과」(▲ 짧은 것 = 최근 시각부터)
      * 빈 값은 방향과 무관하게 뒤로 보낸다. 🚫 선언은 코드 상수만 — 화면에서 온 값을 넣지 말 것(raw SQL 이다).
@@ -198,6 +206,9 @@ trait StackedHeaderSort
     protected function applySortSpec($q, array $spec, string $dir)
     {
         $dir = $dir === 'desc' ? 'desc' : 'asc';
+        if ($spec[0] === 'order') {
+            return $this->orderByListed($q, $spec[1], $spec[2], $dir);
+        }
         if ($spec[0] === 'expr') {
             return $q->orderByRaw("{$spec[1]} {$dir}");
         }
@@ -211,6 +222,16 @@ trait StackedHeaderSort
         }
 
         return $q->orderByRaw($this->emptyLastExpression($spec[1], $spec[0] === 'text'))->orderBy($spec[1], $dir);
+    }
+
+    /** 목록에 적힌 차례대로 줄 세우기 — 목록에 없는 값·빈 값은 방향과 무관하게 뒤. 값은 바인딩으로 넣는다. */
+    protected function orderByListed($q, string $expr, array $values, string $dir)
+    {
+        $dir = $dir === 'desc' ? 'desc' : 'asc';
+        $whens = implode(' ', array_map(fn ($i) => "WHEN ? THEN {$i}", array_keys(array_values($values))));
+        $case = "(CASE {$expr} {$whens} ELSE NULL END)";
+
+        return $q->orderByRaw("{$case} IS NULL ASC", array_values($values))->orderByRaw("{$case} {$dir}", array_values($values));
     }
 
     /** 빈 값(NULL·'')을 방향과 무관하게 뒤로 보내는 ORDER BY 조각 — 날짜 칸은 `= ''` 비교를 넣지 말 것(MySQL 이 거부). */

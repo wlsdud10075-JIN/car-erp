@@ -99,7 +99,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'sale_total' => $q->orderByRaw(Vehicle::SALE_TOTAL_SQL." {$dir}"),
             'unpaid' => $q->orderBy('vehicles.sale_unpaid_amount_krw_cache', $dir),
             'unpaid_ratio' => $q->orderByRaw('(vehicles.sale_unpaid_amount_krw_cache * 1.0 / NULLIF('.Vehicle::SALE_TOTAL_SQL." * COALESCE(vehicles.exchange_rate, 0), 0)) {$dir}"),
-            'progress' => $q->orderBy('vehicles.progress_status_cache', $dir),
+            'progress' => $this->orderByListed($q, 'vehicles.progress_status_cache', self::PROGRESS_ORDER, $dir),   // 🧭 업무 순서(2026-11-22)
             'bl' => $q->orderByRaw("(vehicles.bl_document IS NOT NULL) {$dir}"),
             // 경과일 = 판매일부터 — ▲(오름차순) = 경과일 적은 순 = 판매일 최신순. 빈 판매일은 뒤로.
             'age' => $q->orderByRaw('vehicles.sale_date IS NULL ASC')->orderBy('vehicles.sale_date', $dir === 'asc' ? 'desc' : 'asc'),
