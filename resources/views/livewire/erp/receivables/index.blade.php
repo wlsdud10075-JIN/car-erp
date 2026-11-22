@@ -76,6 +76,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->resetPage();
     }
 
+    /** 기본 정렬(아무 칸도 안 누름)일 땐 종전 기준(미수순/오래된순)을 그 칸에 ▼ 로 보여 준다. */
+    protected function headerIndicator(string $col): string
+    {
+        $ind = $this->sortIndicator($col);
+
+        return ($ind === '' && $this->isDefaultSort() && $col === ($this->sortKey === 'age' ? 'age' : 'unpaid')) ? '▼' : $ind;
+    }
+
     protected function applySortKey($q, string $col, string $dir)
     {
         $name = fn (string $table, string $fk) => "(SELECT name FROM {$table} WHERE {$table}.id = {$fk} LIMIT 1)";
@@ -1531,35 +1539,22 @@ new #[Layout('components.layouts.app')] class extends Component {
     <div class="card overflow-x-auto hidden sm:block">
         <table class="w-full text-sm">
             <thead class="border-b border-gray-200 text-xs uppercase text-gray-500">
-                @php
-                    // 🔼🔽 헤더 정렬 버튼 — 차량관리와 같은 모양(▲/▼, 겹치면 순번). 규칙 = StackedHeaderSort.
-                    //   기본 정렬(아무 칸도 안 누름)일 땐 종전 기준(미수순/오래된순)을 그 칸에 ▼ 로 보여 준다.
-                    $sortBtn = function (string $key, string $label, string $align = 'left'): string {
-                        $ind = $this->sortIndicator($key);
-                        if ($ind === '' && $this->isDefaultSort() && $key === ($this->sortKey === 'age' ? 'age' : 'unpaid')) {
-                            $ind = '▼';
-                        }
-                        $cls = $align === 'right' ? 'justify-end ml-auto' : '';
-
-                        return '<button type="button" wire:click="clickSort(\''.$key.'\')" title="'.e(__('vehicle.sort.shift_hint')).'" class="inline-flex items-center gap-1 uppercase hover:text-gray-700 '.$cls.'">'
-                            .e($label).'<span class="text-[10px]">'.$ind.'</span></button>';
-                    };
-                @endphp
+                {{-- 🔼🔽 정렬 헤더 = 헤더정렬공용(`sortTh` → <x-erp.sort-th>). 기본 정렬일 때 종전 기준 칸의 ▼ 는 headerIndicator() 가 그린다. --}}
                 <tr>
-                    <th class="py-2 pr-3 text-left">{!! $sortBtn('no', __('receivable.col.no')) !!}</th>
-                    <th class="py-2 pr-3 text-left">{!! $sortBtn('vehicle_no', __('receivable.col.vehicle_no')) !!}</th>
-                    <th class="py-2 pr-3 text-left">{!! $sortBtn('brand_type', __('receivable.col.brand_type')) !!}</th>
-                    <th class="py-2 pr-3 text-left">{!! $sortBtn('vin', __('receivable.col.vin')) !!}</th>
-                    <th class="py-2 pr-3 text-left">{!! $sortBtn('salesman', __('receivable.col.salesman')) !!}</th>
-                    <th class="py-2 pr-3 text-left">{!! $sortBtn('buyer', __('receivable.col.buyer')) !!}</th>
-                    <th class="py-2 pr-3 text-right">{!! $sortBtn('sale_total', __('receivable.col.sale_total'), 'right') !!}</th>
-                    <th class="py-2 pr-3 text-right">{!! $sortBtn('unpaid', __('receivable.col.unpaid'), 'right') !!}</th>
-                    <th class="py-2 pr-3 text-right">{!! $sortBtn('unpaid_ratio', __('receivable.col.unpaid_ratio'), 'right') !!}</th>
-                    <th class="py-2 pr-3 text-left">{!! $sortBtn('progress', __('receivable.col.progress')) !!}</th>
-                    <th class="py-2 pr-3 text-left">{!! $sortBtn('bl', __('receivable.col.bl')) !!}</th>
-                    <th class="py-2 pr-3 text-right">{!! $sortBtn('age', __('receivable.col.age'), 'right') !!}</th>
-                    <th class="py-2 pr-3 text-left">{!! $sortBtn('risk', __('receivable.col.risk')) !!}</th>
-                    <th class="py-2 pr-3 text-left">{!! $sortBtn('manager', __('receivable.col.manager')) !!}</th>
+                    <th class="py-2 pr-3 text-left">{{ $this->sortTh('no', __('receivable.col.no'), 'left', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-left">{{ $this->sortTh('vehicle_no', __('receivable.col.vehicle_no'), 'left', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-left">{{ $this->sortTh('brand_type', __('receivable.col.brand_type'), 'left', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-left">{{ $this->sortTh('vin', __('receivable.col.vin'), 'left', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-left">{{ $this->sortTh('salesman', __('receivable.col.salesman'), 'left', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-left">{{ $this->sortTh('buyer', __('receivable.col.buyer'), 'left', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-right">{{ $this->sortTh('sale_total', __('receivable.col.sale_total'), 'right', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-right">{{ $this->sortTh('unpaid', __('receivable.col.unpaid'), 'right', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-right">{{ $this->sortTh('unpaid_ratio', __('receivable.col.unpaid_ratio'), 'right', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-left">{{ $this->sortTh('progress', __('receivable.col.progress'), 'left', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-left">{{ $this->sortTh('bl', __('receivable.col.bl'), 'left', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-right">{{ $this->sortTh('age', __('receivable.col.age'), 'right', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-left">{{ $this->sortTh('risk', __('receivable.col.risk'), 'left', 'uppercase') }}</th>
+                    <th class="py-2 pr-3 text-left">{{ $this->sortTh('manager', __('receivable.col.manager'), 'left', 'uppercase') }}</th>
                     {{-- 큐 16 — 계산서1/2 컬럼 제거 (헤이맨/카풀 폐기). --}}
                 </tr>
             </thead>

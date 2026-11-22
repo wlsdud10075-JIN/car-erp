@@ -14,6 +14,7 @@ return [
     'edit' => '수정',
     'create' => '등록',
     'search' => '조회',
+    'clear' => '지우기',
     'all' => '전체',
     'select' => '-- 선택 --',
     'active' => '활성',

@@ -692,40 +692,32 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="overflow-x-auto">
         <table class="w-full text-sm">
             <thead>
-                @php
-                    // 🔼🔽 헤더 정렬 버튼 — 차량관리와 같은 모양(▲/▼, 겹치면 순번). 규칙 = StackedHeaderSort.
-                    $sortBtn = function (string $key, string $label, string $align = 'left'): string {
-                        $cls = $align === 'right' ? 'justify-end ml-auto' : '';
-
-                        return '<button type="button" wire:click="clickSort(\''.$key.'\')" title="'.e(__('vehicle.sort.shift_hint')).'" class="flex items-center gap-1 hover:text-gray-700 '.$cls.'">'
-                            .e($label).' <span class="whitespace-nowrap text-[10px]">'.$this->sortIndicator($key).'</span></button>';
-                    };
-                @endphp
+                {{-- 🔼🔽 정렬 헤더 = 헤더정렬공용(`sortTh` → <x-erp.sort-th>). 규칙 = StackedHeaderSort. --}}
                 <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
-                    <th class="pb-2 pr-4 font-medium">{!! $sortBtn('vehicle_number', __('vehicle.col.number'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium">{!! $sortBtn('salesman', __('vehicle.col.salesman'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium">{!! $sortBtn('status', __('vehicle.col.status'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{!! $sortBtn('brand_model', __('vehicle.col.brand_model'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['vin']">{!! $sortBtn('vin', __('vehicle.col.vin'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('vehicle_number', __('vehicle.col.number'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('salesman', __('vehicle.col.salesman'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('status', __('vehicle.col.status'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['brand_model']">{{ $this->sortTh('brand_model', __('vehicle.col.brand_model'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['vin']">{{ $this->sortTh('vin', __('vehicle.col.vin'), 'left') }}</th>
                     <th class="pb-2 pr-4 font-medium" x-show="visible['warehouse_in']">{{ __('inventory.col_warehouse_in') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_date']">{!! $sortBtn('purchase_date', __('vehicle.col.purchase_date'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['deregistration_date']">{!! $sortBtn('deregistration_date', __('vehicle.col.deregistration_date'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{!! $sortBtn('sale_date', __('vehicle.col.sale_date'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_date']">{!! $sortBtn('shipping_date', __('inventory.col_shipping'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['eta_date']">{!! $sortBtn('eta_date', __('vehicle.col.eta_date'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium">{!! $sortBtn('warehouse_out_date', __('inventory.col_warehouse_out'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium">{!! $sortBtn('stock_location', __('inventory.col_location'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['vessel_name']">{!! $sortBtn('vessel_name', __('inventory.col_vessel'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{!! $sortBtn('container_number', __('vehicle.col.container_number'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{!! $sortBtn('export_declaration_number', __('vehicle.col.export_declaration_number'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{!! $sortBtn('bl_number', __('vehicle.col.bl_number'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_from']">{!! $sortBtn('purchase_from', __('vehicle.col.purchase_from'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{!! $sortBtn('purchase_price', __('vehicle.col.purchase_price'), 'right') !!}</th>
-                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{!! $sortBtn('sale_price', __('vehicle.col.sale_price'), 'right') !!}</th>
-                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{!! $sortBtn('currency_rate', __('vehicle.col.currency_rate'), 'right') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_date']">{{ $this->sortTh('purchase_date', __('vehicle.col.purchase_date'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['deregistration_date']">{{ $this->sortTh('deregistration_date', __('vehicle.col.deregistration_date'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['sale_date']">{{ $this->sortTh('sale_date', __('vehicle.col.sale_date'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['shipping_date']">{{ $this->sortTh('shipping_date', __('inventory.col_shipping'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['eta_date']">{{ $this->sortTh('eta_date', __('vehicle.col.eta_date'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('warehouse_out_date', __('inventory.col_warehouse_out'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('stock_location', __('inventory.col_location'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['vessel_name']">{{ $this->sortTh('vessel_name', __('inventory.col_vessel'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['container_number']">{{ $this->sortTh('container_number', __('vehicle.col.container_number'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['export_declaration_number']">{{ $this->sortTh('export_declaration_number', __('vehicle.col.export_declaration_number'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['bl_number']">{{ $this->sortTh('bl_number', __('vehicle.col.bl_number'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['purchase_from']">{{ $this->sortTh('purchase_from', __('vehicle.col.purchase_from'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['purchase_price']">{{ $this->sortTh('purchase_price', __('vehicle.col.purchase_price'), 'right') }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['sale_price']">{{ $this->sortTh('sale_price', __('vehicle.col.sale_price'), 'right') }}</th>
+                    <th class="pb-2 pr-4 font-medium text-right" x-show="visible['currency_rate']">{{ $this->sortTh('currency_rate', __('vehicle.col.currency_rate'), 'right') }}</th>
                     <th class="pb-2 pr-4 font-medium" x-show="visible['sales_channel']">{{ __('vehicle.col.channel') }}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{!! $sortBtn('buyer', __('inventory.col_buyer'), 'left') !!}</th>
-                    <th class="pb-2 pr-4 font-medium" x-show="visible['consignee']">{!! $sortBtn('consignee', __('inventory.col_consignee'), 'left') !!}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['buyer']">{{ $this->sortTh('buyer', __('inventory.col_buyer'), 'left') }}</th>
+                    <th class="pb-2 pr-4 font-medium" x-show="visible['consignee']">{{ $this->sortTh('consignee', __('inventory.col_consignee'), 'left') }}</th>
                     <th class="pb-2 font-medium"></th>
                 </tr>
             </thead>

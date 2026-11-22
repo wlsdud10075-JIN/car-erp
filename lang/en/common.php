@@ -14,6 +14,7 @@ return [
     'edit' => 'Edit',
     'create' => 'Create',
     'search' => 'Search',
+    'clear' => 'Clear',
     'all' => 'All',
     'select' => '-- Select --',
     'active' => 'Active',

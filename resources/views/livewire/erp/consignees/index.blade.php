@@ -3,7 +3,8 @@
 use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Country;
-use App\Support\SearchTerm;
+use App\Support\ListFilters;
+use App\Support\ListSearch;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
 use Livewire\Attributes\Url;
@@ -12,9 +13,26 @@ use Livewire\WithPagination;
 
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination;
+    use ListSearch;    // 🔎 검색공용 — $search(#[Url]) · searchNow() · applySearch()
+    use ListFilters;   // 🏷️ 필터칩공용 — 행 뱃지와 같은 모양의 칩
 
-    public string $search    = '';
     public string $buyerFilter = '';
+
+    /** 검색 대상 — 표에 보이는 칸만. */
+    protected function searchColumns(): array
+    {
+        return ['name', 'contact_email'];
+    }
+
+    protected function filterChips(): array
+    {
+        return [
+            'active' => ['type' => 'single', 'column' => 'is_active', 'options' => [
+                '1' => ['label' => __('common.active'), 'class' => 'badge badge-green'],
+                '0' => ['label' => __('common.inactive'), 'class' => 'badge badge-gray'],
+            ]],
+        ];
+    }
     #[Url] public int $perPage = 10;
 
     public function updatedPerPage(): void
@@ -52,10 +70,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         return Consignee::query()
             ->with(['buyer', 'country'])
             ->when($scope !== null, fn($q) => $q->whereHas('buyer', $scope))
-            ->when(SearchTerm::of($this->search), fn($q) => $q->where(fn($q2) =>
-                $q2->where('name', 'like', SearchTerm::like($this->search))
-                   ->orWhere('contact_email', 'like', SearchTerm::like($this->search))
-            ))
+            ->tap(fn ($q) => $this->applySearch($q))
+            ->tap(fn ($q) => $this->applyChipFilters($q))
             ->when($this->buyerFilter, fn($q) => $q->where('buyer_id', $this->buyerFilter))
             ->orderBy('name')
             // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
@@ -133,11 +149,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         return $q->exists();
-    }
-
-    public function searchNow(): void
-    {
-        $this->resetPage();
     }
 
     public function openCreate(): void
@@ -263,15 +274,15 @@ new #[Layout('components.layouts.app')] class extends Component {
 </div>
 
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-    <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('consignee.search_ph') }}"
-           class="input-filter w-52" />
-    <select wire:model="buyerFilter" class="input-filter">
-        <option value="">{{ __('consignee.all_buyers') }}</option>
-        @foreach($this->buyers as $b)
-        <option value="{{ $b->id }}">{{ $b->name }}</option>
-        @endforeach
-    </select>
-    <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+    <x-erp.search-bar :placeholder="__('consignee.search_ph')" width="w-52">
+        <select wire:model="buyerFilter" class="input-filter">
+            <option value="">{{ __('consignee.all_buyers') }}</option>
+            @foreach($this->buyers as $b)
+            <option value="{{ $b->id }}">{{ $b->name }}</option>
+            @endforeach
+        </select>
+    </x-erp.search-bar>
+    <x-erp.filter-chips :axes="$this->chipAxes()" />
 </div>
 
 <div class="hidden sm:block overflow-x-auto">
@@ -341,7 +352,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     confirmDiscard() { this.confirmOpen = false; $wire.close(); },
 }" @keyup.escape.window="attemptClose()">
 <div class="fixed inset-0 z-40 bg-black/40" @click="attemptClose()"></div>
-<div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[500px]"
+<div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[700px] lg:w-[820px]"
      @input="dirty = true" @change="dirty = true">
 
     <div class="flex items-center justify-between border-b px-5 py-4">

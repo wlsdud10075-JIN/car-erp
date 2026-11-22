@@ -23,7 +23,9 @@ class HeaderSortButtonsWhitelistedTest extends TestCase
     public function test_every_sort_button_key_is_in_sortable(string $view, string $listPattern, string $keyPattern): void
     {
         $src = file_get_contents(base_path($view));
-        preg_match_all("/\\\$sortBtn\('([a-z_]+)'/", $src, $buttons);
+        // 🔀 2026-11-22 — 헤더정렬공용: 화면마다 쓰던 `$sortBtn` 클로저 대신 `$this->sortTh('키', …)` 한 줄(→ <x-erp.sort-th>).
+        $this->assertStringNotContainsString('$sortBtn', $src, '화면에서 정렬 버튼 HTML 을 다시 쓰지 않는다 — sortTh() 를 쓴다');
+        preg_match_all("/sortTh\('([a-z_]+)'/", $src, $buttons);
         $this->assertNotEmpty($buttons[1], '정렬 버튼을 하나도 못 찾았다');
         preg_match($listPattern, $src, $list);
         $this->assertNotEmpty($list, 'SORTABLE 을 찾지 못했다');
