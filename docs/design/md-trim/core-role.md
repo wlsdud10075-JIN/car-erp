@@ -38,7 +38,7 @@
 - 재무처리 mount(`canConfirmFinanceTransfer`)는 `settlement` 미들웨어와 같은 집합이라 좁히지 않는다.
 - 로그인 없이 열리는 것 = 월정산 승인 링크(`a/payout/{batch}`, 서명 URL + 결재자 id) — 승인·반려·인센티브 추가·엑셀. 판정은 `canDecide`·`canEditAdjustments`.
 - 개발용 사용자 전환(`config('app.dev_user_switch')`, 기본 = 로컬만) — 원래 계정이 super 일 때만, 검차·내수는 대상에서 뺀다.
-- 담당자 현금흐름 화면은 `sales` 를 지나도 mount 가 `isAdmin()` 또는 **본인 Salesman** 만 통과시킨다 → 업무관리자·관리는 남의 화면을 못 연다.
+- 담당자 현금흐름 화면은 `sales` 를 지난 뒤 mount 가 **본인 Salesman · 업무관리자 이상 · 담당 영업이 맞는 관리**만 통과시킨다(jin 11-22 «넓혀줘» — 구: 최고·시스템관리자만). 이월 [청산] 버튼은 `canApprove`.
 
 ### 3. `User` 권한 메서드 — 본문이 같은 것끼리
 | 통과하는 사람 | 메서드 (괄호 = 대표 사용처) |
@@ -63,7 +63,7 @@
 
 **이름과 범위가 어긋나는 것**
 - `isAdmin()` = super·admin 뿐. 업무관리자까지는 `canAccessAdmin()`. `isUser()` 는 호출처 0.
-- `canAccessSales` 는 관리·업무관리자를 통과시키지만 그 뒤 화면이 본인만 받는다(§2).
+- `canSubmitPayoutBatch` 에 최고관리자가 없는 것 · 선적요청 B/L 번호 기입이 관리 이상(수출통관 제외)인 것은 **jin 확인(11-22) — 그대로**. B/L 기입은 나중에 넓힐 수 있게 `canApprove` 한 곳에서만 본다.
 - `canApprove` · `canApproveUnpaidExport` · `canManageUsers` · `canManagePorts` · `canManageForwarding` 은 본문이 같다. 묶어 고칠 때 하나만 고치지 않는다.
 
 ### 4. 담당 범위
@@ -74,7 +74,7 @@
 | 관리 | 담당 영업의 차 | `whereIn(salesman_id, getSubordinateSalesmanIds())` |
 
 - **관리의 담당 영업** = `manager_salesman` 피벗 ∪ 옛 `users.manager_user_id` 로 묶인 영업 계정의 Salesman.id. 여기에 **휴가 위임**(`UserDelegation`, 효력 있는 것만 — 사용자 관리 화면에서 걸고 끈다, 복귀일 필수)을 준 사람의 팀이 1단만 합쳐진다. 위임은 범위만 넘기고 권한 등급·결재 차례는 안 넘긴다. 담당 영업이 0명인 관리는 목록이 빈다.
-- 🚨 **Salesman 이 연결 안 된 영업 계정** — 목록(차량·바이어·컨사이니·재고·엑셀)의 제한 조건에 `&& $user->salesman` 이 붙어 있어 **제한이 꺼지고 전체가 보인다.** 반면 편집 진입과 `canScopeVehicle` 은 `null === null` 비교라 담당자 없는 차만 통과한다(그 차의 스코프형 알림톡도 받는다). 업무 대시보드는 빈 화면 + 안내. 사용자 관리 저장은 영업 계정의 Salesman 을 만들어 준다(`Salesman::mirrorTypeFor`). 그 밖의 경로로 생긴 계정이 실제로 있는지는 코드로 알 수 없다.
+- 🚪 **Salesman 이 연결 안 된 영업 계정은 아무것도 못 본다**(jin 11-22 «없다면 막는 게 맞음») — 목록·엑셀은 `User::ownSalesmanScopeId()`(연결 없으면 0)로 걸고, `canScopeVehicle`·편집 진입도 연결이 없으면 false 다. 구: 조건에 `&& $user->salesman` 이 붙어 목록이 전체로 열렸다. 사용자 관리 저장은 영업 계정의 Salesman 을 만들어 준다(`Salesman::mirrorTypeFor`).
 - 단건 재인가는 `canScopeVehicle` 로 한다(편집·삭제·서류·일괄 도구·알림톡 스코프). 목록 조건을 새로 적지 않는다.
 - **사용자 관리**: super 가 아니면 super 계정이 목록에 없고 열 수도 없다. 업무관리자 = super·admin 계정 불가, 그 밖은 전부(다른 업무관리자 포함). 관리 = 본인 팀 영업 계정만(`canManageUserAccount`, 위임받은 팀 포함) — 관리가 저장하면 `permission=user`·`role=영업` 으로 강제된다. 계정 **삭제**는 업무관리자 이상만. ⚠️ 담당 [관리] 선택지와 위임자·대타 후보 목록에는 super 은닉이 없다.
 
@@ -135,11 +135,11 @@
 | `erp_deposit_cash_due` | 차량 스코프 | 관리 + 업무관리자 + 영업 |
 | `erp_pickup_reminder` | 차량 스코프 | 영업 |
 | `erp_deregistration_reminder` | 단계별 확대 | 영업. 시작 일수 = `ESCALATION_DEFAULTS` · 경매 차 `AUCTION_ESCALATION_DEFAULTS` |
-| `erp_purchase_paid_v2`·`_v3` | 딜러 번호(버튼) + 차량 스코프 | 딜러 + 그 차 담당 영업(안내 화면에서 다른 역할을 켜면 각자 범위로). 버튼 = 재무 이상. 딜러 번호가 비면 사내 수신자에게만 나간다(v1 은 막힌다) |
+| `erp_purchase_paid_v2`·`_v3` | 딜러 번호(버튼) + 차량 스코프 | 딜러 + 그 차 담당 영업(안내 화면에서 다른 역할을 켜면 각자 범위로). 버튼 = 그 차를 볼 수 있는 사람(확정된 지급 줄에만 뜬다). 딜러 번호가 비면 사내 수신자에게만 나간다(v1 은 막힌다) |
 | `erp_board_request` | 시각 규칙 | 평일 09:00~17:30 관리·업무관리자 / 그 밖·주말·공휴일 최고관리자 |
 | `erp_payout_request` | 자동 | 지금 결재할 사람(`currentApprovers`) |
 | `erp_payout_done` · `erp_payout_rejected` | 자동 + 선택(결재선 전원·재무·관리만) | 제출자(항상) + 결재선 전원 |
-| `erp_deregistration_notice` · `erp_purchase_paid` · `erp_tax_invoice_request` | 자동(수동 발송) | 차량 패널의 딜러 번호 칸(**저장 전 화면 값 그대로**). 버튼 권한이 서로 다르다 — 말소등록증 = 그 차를 볼 수 있으면 / 세금계산서 = 수출통관·재무 계열 / 입금완료 = 재무 이상 |
+| `erp_deregistration_notice` · `erp_purchase_paid` · `erp_tax_invoice_request` | 자동(수동 발송) | 차량 패널의 딜러 번호 칸(**저장 전 화면 값 그대로**). 버튼 권한은 **나누지 않는다** — 세 종류 모두 그 차를 볼 수 있으면(`canScopeVehicle`) 보낸다(jin 11-22 «누구나로 변경») |
 
 ### 8. 회사별 차이
 - 권한 코드(`User` · 미들웨어 · 사이드바 · `AlimtalkRecipients`)에 `Setting::isKaraba()` 분기는 없다. 화면 한 곳 — 바이어 「정산 방식」 칸이 karaba 에는 없다.
@@ -147,5 +147,5 @@
 
 ### 9. 🚫 하지 말 것
 - 「관리 이상」을 `isAdmin()` 으로 적지 않는다. 반대로 `isAdmin()` 자리(지급 직접 전환·자금 손익·관리자 대시보드)를 `canApprove()` 로 넓히지 않는다.
-- 화면에 `role === '…'` 비교·목록 범위 조건을 새로 적지 않는다 — 업무관리자는 role 칸이 무엇이든 될 수 있다. 지금 남은 인라인 판정 = 남의 현금흐름 열람(`isAdmin` 또는 본인) · 차량 신규 등록(`isAdmin` 또는 role ∈ 영업·관리) · 개별 지급 승인 실행(`isAdmin`).
+- 화면에 `role === '…'` 비교·목록 범위 조건을 새로 적지 않는다 — 업무관리자는 role 칸이 무엇이든 될 수 있다. 지금 남은 인라인 판정 = 차량 신규 등록(`isAdmin` 또는 role ∈ 영업·관리) · 개별 지급 승인 실행(`isAdmin`).
 - 알림톡에서 역할 이름을 직접 비교하거나(`in_array('영업', selectedRoles())` — 개별 지정이면 false) `salesmen.phone` 을 직접 읽어 보내지 않는다. super 를 `DEFAULT_ROLES` 에 넣지 않는다.
