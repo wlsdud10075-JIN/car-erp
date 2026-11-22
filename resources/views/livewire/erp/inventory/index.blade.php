@@ -4,7 +4,8 @@ use App\Models\Buyer;
 use App\Models\Consignee;
 use App\Models\Salesman;
 use App\Models\Vehicle;
-use App\Support\SearchTerm;
+use App\Support\ListFilters;
+use App\Support\ListSearch;
 use App\Support\StackedHeaderSort;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -40,6 +41,8 @@ new #[Layout('components.layouts.app')] class extends Component
     use WithPagination;
 
     use StackedHeaderSort;
+    use ListSearch;    // 🔎 검색공용
+    use ListFilters;   // 🏷️ 필터칩공용
 
     /**
      * 🔼🔽 헤더 정렬 (jin 2026-10-26 «각 컬럼 헤더에 오름차순/내림차순 · 차량관리에 적용된 내용대로») — 규칙은 `StackedHeaderSort`.
@@ -104,7 +107,36 @@ new #[Layout('components.layouts.app')] class extends Component
     /** 재고 카테고리 필터 (jin 2026-07-18): '' 전체 / general 일반재고(미판매) / pre_ship 선적전 재고(판매됨·출고전). */
     #[Url] public string $category = '';
 
-    public string $search = '';
+    /**
+     * 🔎 검색 대상(검색공용). 바이어명은 **화면에 표시되는 그 바이어**(`buyer_id`)만 — 통관·선적 바이어까지 넣으면
+     *    A 로 표시된 행이 B 로 검색된다(board 인계 2026-08-12). 일반재고는 바이어가 없어 0건이 정상.
+     */
+    protected function searchColumns(): array
+    {
+        return ['vehicle_number', 'brand', 'model_type', 'nice_reg_vin', 'export_declaration_number', 'vessel_name', 'container_number', 'buyer.name'];
+    }
+
+    /** 🏷️ 필터칩(필터칩공용) — 행 뱃지 「2억 초과」와 같은 기준·같은 모양(jin 2026-11-22). 일반재고에만 해당하므로 전체·일반재고 탭에서만. */
+    protected function filterChips(): array
+    {
+        return [
+            'over_cap' => ['type' => 'bool', 'label' => __('inventory.badge_over_cap'), 'class' => 'badge badge-red text-[10px]',
+                'show' => in_array($this->category, ['', 'general'], true),
+                'apply' => fn ($q) => $q->generalStock()->where('purchase_price', '>', Vehicle::GENERAL_STOCK_PRICE_CAP)],
+        ];
+    }
+
+    protected function afterSearch(): void
+    {
+        unset($this->inventoryVehicles);
+        $this->resetPage();
+    }
+
+    protected function afterChipChanged(): void
+    {
+        unset($this->inventoryVehicles);
+        $this->resetPage();
+    }
 
     #[Url] public int $perPage = 20;
 
@@ -173,19 +205,8 @@ new #[Layout('components.layouts.app')] class extends Component
                     }
                 });
             })
-            ->when(SearchTerm::of($this->search), fn ($q) => $q->where(fn ($q2) => $q2
-                ->where('vehicle_number', 'like', SearchTerm::like($this->search))
-                ->orWhere('brand', 'like', SearchTerm::like($this->search))
-                ->orWhere('model_type', 'like', SearchTerm::like($this->search))
-                ->orWhere('nice_reg_vin', 'like', SearchTerm::like($this->search))           // 차대번호 — 끝 6자리 등 부분 검색
-                ->orWhere('export_declaration_number', 'like', SearchTerm::like($this->search)) // 수출신고번호
-                ->orWhere('vessel_name', 'like', SearchTerm::like($this->search))            // 선박명(VSL)
-                ->orWhere('container_number', 'like', SearchTerm::like($this->search))        // 컨테이너번호
-                // 바이어명 (board 인계 2026-08-12) — "이 바이어한테 나갈 차 뭐뭐 있지" 를 재고에서 바로.
-                //   ⚠️ **화면에 표시되는 그 바이어**(`buyer_id`)만 훑는다. 통관·선적 바이어까지 넣으면
-                //      A 로 표시된 행이 B 로 검색되는 어긋남이 생긴다. 일반재고는 바이어가 없어 0건이 정상.
-                ->orWhereHas('buyer', fn ($q3) => $q3->where('name', 'like', SearchTerm::like($this->search)))
-            ))
+            ->tap(fn ($q) => $this->applySearch($q))
+            ->tap(fn ($q) => $this->applyChipFilters($q))
             // 출고완료는 "언제 나갔나"가 관심사 → 최근 출고순. 재고는 기존 담당자·매입일 순 유지.
             // 🔼🔽 헤더 정렬(겹침)이 있으면 그걸로, 기본이면 종전 순서.
             ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q->when($isShippedOut,
@@ -367,10 +388,6 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->resetPage();
     }
 
-    public function searchNow(): void
-    {
-        $this->resetPage();
-    }
 
     /**
      * 보관 위치 선택 (jin 2026-07-28) — 버튼 클릭으로 draft 에 찍는다. 같은 값을 다시 누르면 해제.
@@ -453,7 +470,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function resetFilters(): void
     {
-        $this->reset(['salesmanFilter', 'statusFilter', 'search', 'buyerFilter', 'consigneeFilter', 'locationFilters', 'overAgeOnly']);
+        $this->reset(['salesmanFilter', 'statusFilter', 'search', 'buyerFilter', 'consigneeFilter', 'locationFilters', 'overAgeOnly', 'chipFilters']);
         $this->resetPage();
     }
 
@@ -612,9 +629,7 @@ new #[Layout('components.layouts.app')] class extends Component
 
     {{-- 필터 --}}
     <div class="card flex flex-wrap items-center gap-2">
-        <input wire:model="search" wire:keydown.enter="searchNow" type="text"
-               placeholder="{{ __('inventory.search_ph') }}"
-               class="input-filter w-64" />
+        <x-erp.search-bar :placeholder="__('inventory.search_ph')" width="w-64">
         <select wire:model.live="salesmanFilter" class="input-filter">
             <option value="">{{ __('inventory.all_salesmen') }}</option>
             @foreach($this->salesmen as $sm)
@@ -652,7 +667,8 @@ new #[Layout('components.layouts.app')] class extends Component
                 {{ __('inventory.badge_over_age') }}
             </button>
         @endif
-        <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+        <x-erp.filter-chips :axes="$this->chipAxes()" />
+        </x-erp.search-bar>
         <button wire:click="resetFilters" class="text-xs text-violet-600 hover:underline">{{ __('common.reset_filters') }}</button>
         <select wire:model.live="perPage" class="input-filter ml-auto">
             <option value="10">{{ __('common.per_page', ['count' => 10]) }}</option>

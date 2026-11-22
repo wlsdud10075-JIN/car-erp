@@ -4,6 +4,8 @@ use App\Models\AuditLog;
 use App\Models\ForwardingCompany;
 use App\Models\ForwardingInvoice;
 use App\Models\Vehicle;
+use App\Support\ListFilters;
+use App\Support\ListSearch;
 use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -15,7 +17,37 @@ new #[Layout('components.layouts.app')] class extends Component {
     // item 7 (jin 2026-07-07) — 마스터 CRUD → "포워딩사별 선적 현황" 개편.
     //   기간(선적일/BL발행일) 필터 + 운임비 통화별 합산 + 선박명/컨테이너/수출신고번호 검색.
     //   CRUD(추가/편집/삭제)는 슬라이드 패널로 보존.
-    public string $search = '';
+    use ListSearch;    // 🔎 검색공용 — 검색 대상은 선적 차량(shipments)
+    use ListFilters;   // 🏷️ 필터칩공용 — 회사 카드의 활성/비활성
+
+    /** 🔎 검색 대상 — 표에 보이는 칸만(검색공용 ListSearch). */
+    protected function searchColumns(): array
+    {
+        return ['vehicle_number', 'vessel_name', 'container_number', 'export_declaration_number'];
+    }
+
+    /** 🏷️ 필터칩 — 행 뱃지와 같은 모양(필터칩공용 ListFilters). */
+    protected function filterChips(): array
+    {
+        return [
+            'active' => ['type' => 'single', 'column' => 'is_active', 'options' => [
+                '1' => ['label' => __('common.active'), 'class' => 'badge badge-green'],
+                '0' => ['label' => __('common.inactive'), 'class' => 'badge badge-gray'],
+            ]],
+        ];
+    }
+
+    /** 검색·칩이 바뀌면 computed 를 버린다(이 화면은 페이지네이션이 없다). 기간칸 Enter 도 searchNow 로 온다. */
+    protected function afterSearch(): void
+    {
+        unset($this->shipments, $this->companies);
+    }
+
+    protected function afterChipChanged(): void
+    {
+        unset($this->shipments, $this->companies);
+    }
+
     #[Url] public string $dateType = 'shipping';   // shipping = shipping_date / bl = bl_issue_date
     /**
      * 🚫 **기간에 기본값을 두지 말 것** (2026-09-21 — 넣었다가 뺐다).
@@ -99,28 +131,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->searchNow();
     }
 
-    public function searchNow(): void
-    {
-        unset($this->shipments, $this->companies);
-    }
-
     /** 필터된 선적 차량 → forwarding_company_id 별 그룹. 통화별 합산·목록의 단일 출처. */
     #[Computed]
     public function shipments()
     {
         $col = $this->dateType === 'bl' ? 'bl_issue_date' : 'shipping_date';
-        $term = SearchTerm::of($this->search);
 
         return Vehicle::query()
             ->whereNotNull('forwarding_company_id')
             ->whereNull('deleted_at')
             ->when($this->dateFrom !== '', fn ($q) => $q->where($col, '>=', $this->dateFrom))
             ->when($this->dateTo !== '', fn ($q) => $q->where($col, '<=', $this->dateTo))
-            ->when($term !== '', fn ($q) => $q->where(fn ($q2) => $q2
-                ->where('vehicle_number', 'like', "%{$term}%")
-                ->orWhere('vessel_name', 'like', "%{$term}%")
-                ->orWhere('container_number', 'like', "%{$term}%")
-                ->orWhere('export_declaration_number', 'like', "%{$term}%")))
+            ->tap(fn ($q) => $this->applySearch($q))
             ->orderByDesc($col)
             ->get(['id', 'forwarding_company_id', 'vehicle_number', 'nice_reg_vin', 'shipping_date', 'bl_issue_date', 'eta_date',
                 'vessel_name', 'shipping_method', 'container_number', 'export_declaration_number', 'transport_fee', 'currency'])
@@ -131,7 +153,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function companies()
     {
-        $companies = ForwardingCompany::query()->orderBy('name')->get();
+        $companies = $this->applyChipFilters(ForwardingCompany::query())->orderBy('name')->get();
         $hasVehicleFilter = SearchTerm::of($this->search) !== '' || $this->dateFrom !== '' || $this->dateTo !== '';
 
         if ($hasVehicleFilter) {
@@ -539,9 +561,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     <input wire:model="dateFrom" wire:keydown.enter="searchNow" type="text" data-date class="input-filter w-32" placeholder="{{ __('forwarding.date_from') }}" />
     <span class="text-gray-400 text-sm">~</span>
     <input wire:model="dateTo" wire:keydown.enter="searchNow" type="text" data-date class="input-filter w-32" placeholder="{{ __('forwarding.date_to') }}" />
-    <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('forwarding.search_ph') }}"
-           class="input-filter w-64" />
-    <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+    <x-erp.search-bar :placeholder="__('forwarding.search_ph')" width="w-64" />
+    <x-erp.filter-chips :axes="$this->chipAxes()" />
     <label class="ml-2 flex items-center gap-1 text-xs text-gray-500">
         <input type="checkbox" wire:model.live="hideSettled" class="rounded border-gray-300" />
         {{ __('forwarding.hide_settled') }}
@@ -869,7 +890,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     confirmDiscard() { this.confirmOpen = false; $wire.close(); },
 }" @keyup.escape.window="attemptClose()">
 <div class="fixed inset-0 z-40 bg-black/40" @click="attemptClose()"></div>
-<div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[480px]"
+<div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[700px] lg:w-[820px]"
      @input="dirty = true" @change="dirty = true">
 
     <div class="flex items-center justify-between border-b px-5 py-4">

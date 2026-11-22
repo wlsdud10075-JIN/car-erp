@@ -12,6 +12,8 @@ use App\Models\SavingsStatus;
 use App\Models\Setting;
 use App\Models\Vehicle;
 use App\Services\BuyerRebindService;
+use App\Support\ListFilters;
+use App\Support\ListSearch;
 use App\Support\SearchTerm;
 use Livewire\Attributes\Computed;
 use Livewire\Attributes\Layout;
@@ -24,8 +26,26 @@ use Illuminate\Support\Facades\Storage;
 
 new #[Layout('components.layouts.app')] class extends Component {
     use WithPagination, WithFileUploads;
+    use ListSearch;    // 🔎 검색공용
+    use ListFilters;   // 🏷️ 필터칩공용
 
-    public string $search = '';
+    /** 🔎 검색 대상 — 표에 보이는 칸만(검색공용 ListSearch). */
+    protected function searchColumns(): array
+    {
+        return ['name', 'contact_email', 'contact_name'];
+    }
+
+    /** 🏷️ 필터칩 — 행 뱃지와 같은 모양(필터칩공용 ListFilters). */
+    protected function filterChips(): array
+    {
+        return [
+            'active' => ['type' => 'single', 'column' => 'is_active', 'options' => [
+                '1' => ['label' => __('common.active'), 'class' => 'badge badge-green'],
+                '0' => ['label' => __('common.inactive'), 'class' => 'badge badge-gray'],
+            ]],
+        ];
+    }
+
     #[Url] public int $perPage = 10;
     // 회의확장씬 #2 Phase 3-1 (a) (2026-05-23) — 영업담당자 필터 + 영업담당자별 정렬.
     /** 담당자 미지정 필터 토큰 — 숫자 id 와 안 섞이게 문자열로. */
@@ -365,10 +385,6 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
-    public function searchNow(): void
-    {
-        $this->resetPage();
-    }
 
     public function toggleNewOnly(): void
     {
@@ -499,10 +515,8 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->when($this->salesmanFilter === self::SALESMAN_NONE, fn ($q) => $q->whereNull('salesman_id'))
             ->when($this->salesmanFilter !== '' && $this->salesmanFilter !== self::SALESMAN_NONE,
                 fn ($q) => $q->where('salesman_id', $this->salesmanFilter))
-            ->when(SearchTerm::of($this->search), fn ($q) => $q->where(fn ($q2) => $q2->where('name', 'like', SearchTerm::like($this->search))
-                ->orWhere('contact_email', 'like', SearchTerm::like($this->search))
-                ->orWhere('contact_name', 'like', SearchTerm::like($this->search))
-            ));
+            ->tap(fn ($q) => $this->applySearch($q))
+            ->tap(fn ($q) => $this->applyChipFilters($q));
     }
 
     // 회의확장씬 #5-1 (2026-05-22) — 바이어 폼 영업담당자 select 옵션.
@@ -1729,8 +1743,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
 {{-- 검색 --}}
 <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
-    <input wire:model="search" wire:keydown.enter="searchNow" type="text" placeholder="{{ __('buyer.search_ph') }}"
-           class="input-filter w-64" />
+    <x-erp.search-bar :placeholder="__('buyer.search_ph')" width="w-64">
     {{-- 회의확장씬 #2 Phase 3-1 (a) (2026-05-23) — 영업담당자 select 필터 --}}
     <select wire:model.live="salesmanFilter" class="input-filter">
         <option value="">{{ __('buyer.all_salesmen') }}</option>
@@ -1746,7 +1759,8 @@ new #[Layout('components.layouts.app')] class extends Component {
         <option value="1">{{ __('buyer.b2b_filter_only') }}</option>
     </select>
     @endif
-    <button wire:click="searchNow" class="btn-search">{{ __('common.search') }}</button>
+    </x-erp.search-bar>
+    <x-erp.filter-chips :axes="$this->chipAxes()" />
     {{-- 🆕 신규 버튼축(jin 11-12 — 차량관리 「운항중」 버튼과 같은 모양) — 누르면 배지 붙은 바이어만, 다시 누르면 해제 --}}
     <div class="flex flex-wrap items-center gap-1 border-l border-gray-200 pl-3" data-new-only-filter>
         <button type="button" wire:click="toggleNewOnly" aria-pressed="{{ $newOnly ? 'true' : 'false' }}" title="{{ __('buyer.new_filter_hint') }}"
@@ -1898,7 +1912,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     confirmDiscard() { this.confirmOpen = false; $wire.close(); },
 }" @keyup.escape.window="attemptClose()">
 <div class="fixed inset-0 z-40 bg-black/40" @click="attemptClose()"></div>
-<div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[580px]"
+<div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[700px] lg:w-[820px]"
      @input="dirty = true" @change="dirty = true">
 
     {{-- 헤더 --}}

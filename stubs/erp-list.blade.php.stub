@@ -1,0 +1,104 @@
+<?php
+// 🧩 새 목록 화면 틀 (공용 부품 ④, jin 2026-11-09 «새 화면에 헤더가 들어갈 때 기본으로» · 11-22).
+//    resources/views/livewire/erp/{화면}/index.blade.php 로 복사해 시작한다. 정본 = docs/design/list-screen-commons.md.
+//    이 틀에서 화면이 정하는 것은 「선언」뿐이다 — 검색 대상 · 필터축 · 정렬 키. 동작과 겉모양은 부품이 한다.
+//    가드 = tests/Feature/ListCommonsGuardTest(검색칸·정렬 헤더·칩·사이드 창 폭) · SearchRequiresButtonTest · HeaderSortButtonsWhitelistedTest 부류.
+
+use App\Models\Example;                     // ← 바꾼다
+use App\Support\ListFilters;
+use App\Support\ListSearch;
+use App\Support\StackedHeaderSort;
+use Livewire\Attributes\Computed;
+use Livewire\Attributes\Layout;
+use Livewire\Attributes\Url;
+use Livewire\Volt\Component;
+use Livewire\WithPagination;
+
+new #[Layout('components.layouts.app')] class extends Component {
+    use WithPagination;
+    use ListSearch;          // 🔎 $search(#[Url]) · searchNow() · clearSearch() · applySearch()
+    use ListFilters;         // 🏷️ $chipFilters(#[Url] f) · chipClick() · applyChipFilters() · chipAxes()
+    use StackedHeaderSort;   // 🔼🔽 clickSort() · sortTh() · applyStackedSort()
+
+    #[Url] public int $perPage = 10;
+
+    /** 🔎 검색 대상 — 표에 보이는 칸만. 「관계.컬럼」은 그 관계에서 찾는다. */
+    protected function searchColumns(): array
+    {
+        return ['name' /* , 'buyer.name' */];
+    }
+
+    /** 🏷️ 필터축 — 행에 뜨는 뱃지는 같은 모양의 칩으로도 고를 수 있게 한다(class 에 그 뱃지의 클래스를 그대로). */
+    protected function filterChips(): array
+    {
+        return [
+            'active' => ['type' => 'single', 'column' => 'is_active', 'options' => [
+                '1' => ['label' => __('common.active'), 'class' => 'badge badge-green'],
+                '0' => ['label' => __('common.inactive'), 'class' => 'badge badge-gray'],
+            ]],
+        ];
+    }
+
+    /** 🔼🔽 정렬 허용 키 — 헤더의 sortTh('키') 는 전부 여기 있어야 한다(없으면 버튼 대신 글자만 찍힌다). */
+    protected function sortableKeys(): array
+    {
+        return ['name', 'created_at'];
+    }
+
+    /** 키 → ORDER BY. 관계 칸은 이름 서브쿼리, 계산 칸은 SQL 식. */
+    protected function applySortKey($q, string $col, string $dir)
+    {
+        return $q->orderBy($col, $dir);
+    }
+
+    protected function afterSortChanged(): void
+    {
+        unset($this->rows);
+        $this->resetPage();
+    }
+
+    #[Computed]
+    public function rows()
+    {
+        return Example::query()
+            // 🔒 권한 범위(본인·담당 팀)는 여기서 먼저 건다 — 검색·칩은 그 안에서만 돈다.
+            ->tap(fn ($q) => $this->applySearch($q))
+            ->tap(fn ($q) => $this->applyChipFilters($q))
+            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q->orderBy('name'))
+            ->orderBy('id')   // 동점 tie-break — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다(SKILLS §8 #92)
+            ->paginate($this->perPage);
+    }
+}; ?>
+
+<div class="p-3 md:p-6 space-y-4">
+    <div class="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2">
+        <x-erp.search-bar :placeholder="__('common.search')" width="w-64" clear="clearSearch" :value="$search" />
+        <x-erp.filter-chips :axes="$this->chipAxes()" />
+    </div>
+
+    <div class="hidden sm:block overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="border-b border-gray-200 text-left text-xs text-gray-500">
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('name', '이름') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ __('common.status') }}</th>
+                    <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('created_at', '등록일') }}</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100">
+                @foreach($this->rows as $row)
+                <tr>
+                    <td class="py-3 pr-4 font-medium text-gray-800">{{ $row->name }}</td>
+                    <td class="py-3 pr-4"><span class="badge {{ $row->is_active ? 'badge-green' : 'badge-gray' }}">{{ $row->is_active ? __('common.active') : __('common.inactive') }}</span></td>
+                    <td class="py-3 pr-4 text-gray-500">{{ $row->created_at?->format('Y-m-d') }}</td>
+                </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+    {{-- 폰 카드(sm:hidden)는 화면마다 핵심 칸이 달라 손으로 쓴다 — SKILLS §11 페어 렌더. --}}
+    {{ $this->rows->links() }}
+
+    {{-- 사이드 창(편집·상세)은 차량 편집 패널과 같은 폭:
+         <div class="fixed inset-y-0 right-0 z-50 flex w-full flex-col bg-white shadow-2xl sm:w-[700px] lg:w-[820px]"> --}}
+</div>
