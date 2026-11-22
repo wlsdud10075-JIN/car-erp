@@ -49,7 +49,7 @@ new #[Layout('components.layouts.app')] class extends Component {
      * 💳 적립금 칸 정렬 (jin 2026-11-22 «지금 말해준 방식이 나은 것 같아») — **통화별로 묶고 그 안에서 금액순**.
      *    잔액은 저장된 칸이 아니라 원장에서 계산하는 값이고 통화가 섞여 있다(실측 11-22: ssancarerp EUR 105·USD 26, 두 통화를
      *    같이 가진 바이어 1명 / heymanerp EUR 8·USD 2·KRW 1). 환율로 합치지 않는다 — 화면에 보이는 숫자 그대로 줄이 서야 눈으로 확인된다.
-     *    겹쳐 누르기 없음(한 칸만) · ▲ → ▼ → 기본. 적립금 없는 바이어는 방향과 무관하게 뒤.
+     *    겹쳐 누르기 없음(한 칸만) · ▼(큰 것부터) → ▲ → 기본. 적립금 없는 바이어는 방향과 무관하게 뒤.
      */
     public function clickSort(string $col): void
     {
@@ -61,12 +61,21 @@ new #[Layout('components.layouts.app')] class extends Component {
         if (! $this->sortable($col)) {
             return;
         }
-        if ($this->sortColumn === $col && $this->sortDirection === 'desc') {
-            $this->resetSort();
+        // 🔽 금액 칸은 **큰 것부터**(▼ → ▲ → 기본) — jin 2026-11-22 «두 번 눌러야 최고 금액이 맨 위로 온다». 글자 칸은 종전대로 ▲ 먼저.
+        $toSavings = $col === 'savings';
+        if ($this->sortColumn === $col) {
+            if ($this->sortDirection === ($toSavings ? 'asc' : 'desc')) {
+                $this->resetSort();
+            } else {
+                $this->setSort($col);   // 방향 뒤집기
+            }
 
             return;
         }
         $this->setSort($col);
+        if ($toSavings) {
+            $this->sortDirection = 'desc';
+        }
     }
 
     /** 걸린 바이어 전부의 잔액을 한 번에 읽어 줄 세운 뒤, 이 페이지의 바이어만 다시 읽는다. */
