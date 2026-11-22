@@ -57,8 +57,14 @@ function ResolveCodex {
 }
 
 # 1) pull ------------------------------------------------------------------
+$pullFail = @()
 if (-not $SkipPull) {
-    foreach ($r in @($repo, $board, $ssancar)) { if (Test-Path $r) { [void](RunCapture 'git' @('-C', $r, 'pull', '-q', '--ff-only') $null 120) } }
+    foreach ($r in @($repo, $board, $ssancar)) {
+        if (-not (Test-Path $r)) { continue }
+        $pl = RunCapture 'git' @('-C', $r, 'pull', '-q', '--ff-only') $null 120
+        # pull 이 실패하면 낡은 사본으로 대조한다 — 스크립트는 「정합」으로 끝나도 새 기록이 안 올라간다. 관제 기록에 남긴다(2026-11-22).
+        if ($pl.code -ne 0) { $pullFail += (Split-Path $r -Leaf); Log "pull 실패: $r (exit $($pl.code))" }
+    }
 }
 $headErp   = (RunCapture 'git' @('-C', $repo,  'rev-parse', '--short', 'HEAD')).out.Trim()
 $headBoard = (RunCapture 'git' @('-C', $board, 'rev-parse', '--short', 'HEAD')).out.Trim()
@@ -113,6 +119,7 @@ if ($v1.blocked.Count) { [void]$rep.AppendLine(($v1.blocked | ForEach-Object { '
 # 2b) 개발 현황판 ← 배포 기록 (PHP 가 직접, Codex 안 거침) ----------------------------
 #     2026-11-22 (jin «각각 세션에 얘기해서 새벽에 자동으로 우리처럼») — board(원본 = git origin/master) · ssancar.com(원본 = _ops/log 월별 기록)도 같은 현황판에.
 #     스크립트는 각자 레포에 있다. 레포·스크립트가 없으면 건너뛴다(ssancar 는 회사 PC 에 클론이 있어야 돈다). exit 1 = 빠진 카드 있음(그때만 --apply), 2 = 오류.
+$devFail = @()   # 현황판 동기화가 오류로 끝난 곳 — 관제센터 판정에 넣는다
 $devTargets = @(
     @{ name = 'car-erp';     cwd = $repo;    script = "$repo\scripts\notion-dev-status-sync.php" }
     @{ name = 'board';       cwd = $board;   script = "$board\scripts\notion-dev-status-sync.php" }
@@ -126,11 +133,13 @@ foreach ($dt in $devTargets) {
     try {
         $d1 = RunCapture $php @($dt.script, '--verify') $null 300
         Log "dev-status $($dt.name) verify: exit $($d1.code)"
+        if ($d1.code -notin 0, 1) { $devFail += $dt.name }
         $dLines = ($d1.out -split "`r?`n")
         [void]$rep.AppendLine((($(if ($dLines.Count -gt 60) { @('… (앞부분 생략)') + $dLines[-60..-1] } else { $dLines })) -join "`n").Trim())
         if ($Apply -and $d1.code -eq 1) {
             $d2 = RunCapture $php @($dt.script, '--apply') $null 600
             Log "dev-status $($dt.name) apply: exit $($d2.code)"
+            if ($d2.code -ne 0) { $devFail += $dt.name }
             [void]$rep.AppendLine('')
             [void]$rep.AppendLine("#### --apply (exit $($d2.code))")
             [void]$rep.AppendLine((($d2.out -split "`r?`n") | Select-Object -Last 40) -join "`n")
@@ -198,8 +207,10 @@ if ($SendTelegram) {
 # 5) 관제센터 기록 (2026-11-16) — 「오늘 돌았다」 + 불일치 수를 heymanerp 에. 텔레그램 스위치와 무관하게 항상.
 #    판정 = 발행 「뒤」 남은 불일치(2차, 발행이 없었으면 1차) + 자동 발행 불가 신호. 둘 다 0 이면 ok, 아니면 failed (jin 11-16 — 사람 주간 확인 대신 자동 판정).
 $final = if ($v2) { $v2 } else { $v1 }
-$markStatus = if ($final.mismatch -eq 0 -and $final.blocked.Count -eq 0) { 'ok' } else { 'failed' }
-$markNote = "after $($final.mismatch)/4 · before $($v1.mismatch)/4 · blocked $($final.blocked.Count)"
+#    2026-11-22 — 개발 현황판 3곳(car-erp·board·ssancar.com) 동기화 오류와 pull 실패도 판정에 넣는다(안 넣으면 현황판이 멈춰도 「성공」으로 뜬다).
+$devFail = @($devFail | Select-Object -Unique)
+$markStatus = if ($final.mismatch -eq 0 -and $final.blocked.Count -eq 0 -and $devFail.Count -eq 0 -and $pullFail.Count -eq 0) { 'ok' } else { 'failed' }
+$markNote = "after $($final.mismatch)/4 · before $($v1.mismatch)/4 · blocked $($final.blocked.Count) · devboard fail $($devFail.Count)$(if ($devFail.Count) { ' (' + ($devFail -join ',') + ')' }) · pull fail $($pullFail.Count)$(if ($pullFail.Count) { ' (' + ($pullFail -join ',') + ')' })"
 [void](RunCapture 'ssh' @('-n', '-i', $key, '-o', 'BatchMode=yes', 'ubuntu@52.79.200.151', "cd /var/www/car-erp && php artisan ops:mark nightly-notion --status=$markStatus --note='$markNote'") $null 120)
 Log 'ops:mark nightly-notion'
 Log 'done'
