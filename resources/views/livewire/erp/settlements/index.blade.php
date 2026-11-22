@@ -23,7 +23,9 @@ new #[Layout('components.layouts.app')] class extends Component
     // ── 목록 필터 ──────────────────────────────────────────────────
     use ListSearch;    // 🔎 검색공용 — 이 화면의 검색 규칙은 Settlement::scopeSearchTerm(차량번호·비고)이라 applySearch 를 덮어쓴다
     use ListFilters;   // 🏷️ 필터칩공용 — 행 뱃지 「내수」·「○월에서 이동」
-    use StackedHeaderSort;   // 🔼🔽 헤더정렬공용 (jin 2026-11-22 «헤더가 있는 곳은 전체 적용»)
+    use StackedHeaderSort {   // 🔼🔽 헤더정렬공용 (jin 2026-11-22 «헤더가 있는 곳은 전체 적용»)
+        clickSort as stackedClickSort;
+    }
 
     /** 헤더 키 → 정렬 선언(`applySortSpec`). 입금률·총마진·마진율·정산액·실지급액은 **저장하지 않고 매번 계산하는 값**이라 뺐다(SQL 로 정렬할 수 없다 — 공식을 SQL 에 옮기면 두 벌이 된다). */
     private const SORTABLE = [
@@ -36,9 +38,56 @@ new #[Layout('components.layouts.app')] class extends Component
         'status' => ['text', 'settlement_status'], 'secondary' => ['text', 'secondary_status'],
     ];
 
+    /**
+     * 🧮 **계산 칸 정렬** (jin 2026-11-22 «이건 정말 정렬하고 싶지» → (가)) — 입금률·총마진·마진율·정산액·실지급액은 저장하지 않고
+     *    매번 계산하는 값이라 SQL 로 줄을 못 세운다. 그래서 **지금 조건에 걸린 정산을 전부 계산해 줄 세운 뒤 그 페이지만** 그린다.
+     *    - 공식을 SQL 에 옮기지 않는다(두 벌이 되면 화면 숫자와 순서가 어긋난다) — 값은 화면이 찍는 그 accessor 다.
+     *    - 상한 `COMPUTED_SORT_MAX` — ssancarerp 실측(11-22) 한 달 430~603건 · 1,000건 계산 0.98초. 넘으면 정렬하지 않고 안내한다
+     *      (이 화면은 30초마다 다시 그려서 그 계산이 반복된다).
+     *    - 계산 칸은 **한 칸만**(겹쳐 누르기 없음) — 누르면 다른 정렬은 풀린다. ▲ → ▼ → 기본.
+     */
+    private const COMPUTED_SORT = ['paid_ratio', 'total_margin', 'margin_rate', 'settlement_amount', 'actual_payout'];
+
+    public const COMPUTED_SORT_MAX = 1000;
+
+    private function computedSortValue(Settlement $s, string $key): int|float|null
+    {
+        return match ($key) {
+            'paid_ratio' => ($r = $s->vehicle?->unpaid_ratio) === null ? null : 1 - $r,
+            'total_margin' => $s->display_margin,
+            'margin_rate' => $s->margin_rate,
+            'settlement_amount' => $s->settlement_amount,
+            'actual_payout' => $s->actual_payout,
+        };
+    }
+
     protected function sortableKeys(): array
     {
-        return array_keys(self::SORTABLE);
+        return array_merge(array_keys(self::SORTABLE), self::COMPUTED_SORT);
+    }
+
+    public function clickSort(string $col): void
+    {
+        $toComputed = in_array($col, self::COMPUTED_SORT, true);
+        if (! $toComputed && ! in_array($this->sortColumn, self::COMPUTED_SORT, true)) {
+            $this->stackedClickSort($col);
+
+            return;
+        }
+        if (! $this->sortable($col)) {
+            return;
+        }
+        if ($this->sortColumn === $col && $this->sortDirection === 'desc') {
+            $this->resetSort();
+
+            return;
+        }
+        if ($toComputed && $this->sortColumn !== $col && ($n = $this->settlementsBaseQuery()->count()) > self::COMPUTED_SORT_MAX) {
+            $this->dispatch('notify', message: __('settlement.computed_sort_too_many', ['count' => number_format($n), 'max' => number_format(self::COMPUTED_SORT_MAX)]), type: 'warning');
+
+            return;
+        }
+        $this->setSort($col);   // 같은 칸이면 ▲ → ▼, 다른 칸이면 그 칸 ▲ 하나만
     }
 
     protected function applySortKey($q, string $col, string $dir)
@@ -267,10 +316,64 @@ new #[Layout('components.layouts.app')] class extends Component
     #[Computed]
     public function settlements()
     {
-        return Settlement::query()
+        $q = $this->settlementsBaseQuery()
             // 💡 `receivableHistories` 가 빠져 있었다 — 미수(→ 정산환율 → 마진·마진율)가 그것을 읽는다.
             //    이 화면은 `wire:poll.30s` 라 30초마다 행 수만큼 쿼리가 더 나갔다.
-            ->with(['vehicle.finalPayments', 'vehicle.purchaseBalancePayments', 'vehicle.receivableHistories', 'salesman', 'latestPayApproval.approver'])
+            ->with(['vehicle.finalPayments', 'vehicle.purchaseBalancePayments', 'vehicle.receivableHistories', 'salesman', 'latestPayApproval.approver']);
+
+        if (in_array($this->sortColumn, self::COMPUTED_SORT, true)) {
+            if (($page = $this->paginateByComputedSort($q)) !== null) {
+                return $page;
+            }
+            [$this->sortColumn, $this->sortDirection, $this->sortExtra] = ['', 'asc', []];   // 조건이 넓어져 상한을 넘었다 — 기본 정렬로
+        }
+
+        return $q
+            // 🔼🔽 헤더를 눌렀으면 그 순서, 아니면 종전 기본(최근 생성순).
+            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q
+                ->latest()
+                // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
+                //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
+                ->orderByDesc('id'))
+            ->paginate($this->perPage);
+    }
+
+    /** 계산 칸 정렬 — 걸린 정산을 200건씩 계산해 (id → 값)만 남기고, 줄 세운 뒤 이 페이지의 id 만 다시 읽는다. 상한을 넘으면 null. */
+    private function paginateByComputedSort($q): ?\Illuminate\Pagination\LengthAwarePaginator
+    {
+        $total = (clone $q)->count();
+        if ($total > self::COMPUTED_SORT_MAX) {
+            return null;
+        }
+        $key = $this->sortColumn;
+        $values = [];
+        (clone $q)->chunkById(200, function ($rows) use (&$values, $key) {
+            foreach ($rows as $s) {
+                $values[$s->id] = $this->computedSortValue($s, $key);
+            }
+        });
+        $desc = $this->sortDirection === 'desc';
+        $ids = array_keys($values);
+        usort($ids, function ($a, $b) use ($values, $desc) {
+            [$va, $vb] = [$values[$a], $values[$b]];
+            if ($va === null || $vb === null) {   // 값 없는 줄(환율 미입력·내수 마진율)은 방향과 무관하게 뒤
+                return ($va === null) <=> ($vb === null) ?: $a <=> $b;
+            }
+
+            return ($desc ? $vb <=> $va : $va <=> $vb) ?: $a <=> $b;
+        });
+        $perPage = max(1, $this->perPage);
+        $page = max(1, min((int) $this->getPage(), (int) ceil(max(1, $total) / $perPage)));
+        $pageIds = array_slice($ids, ($page - 1) * $perPage, $perPage);
+        $rows = (clone $q)->whereIn('settlements.id', $pageIds)->get()->sortBy(fn ($s) => array_search($s->id, $pageIds, true))->values();
+
+        return new \Illuminate\Pagination\LengthAwarePaginator($rows, $total, $perPage, $page, ['path' => request()->url()]);
+    }
+
+    /** 목록 조건(검색·칩·상태·담당자·월·기간) — 목록·계산 칸 정렬·건수 확인이 같이 쓴다. */
+    private function settlementsBaseQuery()
+    {
+        return Settlement::query()
             // 🚪 프리랜서 퇴사자의 미배치 정산은 「퇴사자 정산」 표 안에서만 확정·예외 처리한다(jin 2026-10-15) — 여기 섞이지 않는다.
             ->notReservedForLeaverBatch()
             // 🚪 퇴사 정산으로 이미 나간 건도 빼다(jin 2026-11-05) — 담당자를 고르면 다시 보인다(2차 마감용).
@@ -286,14 +389,7 @@ new #[Layout('components.layouts.app')] class extends Component
             ->when($this->dateFrom, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '>=', $this->dateFrom)
             ))
             ->when($this->dateTo, fn ($q) => $q->whereHas('vehicle', fn ($q2) => $q2->where('purchase_date', '<=', $this->dateTo)
-            ))
-            // 🔼🔽 헤더를 눌렀으면 그 순서, 아니면 종전 기본(최근 생성순).
-            ->when(! $this->isDefaultSort(), fn ($q) => $this->applyStackedSort($q), fn ($q) => $q
-                ->latest()
-                // 동점 tie-break (jin 2026-09-11) — 정렬키가 같은 행의 순서는 DB 가 안 정해 준다.
-                //   페이지네이션에서 같은 행이 두 페이지에 나오거나 통째로 빠질 수 있다(SKILLS §8 #92).
-                ->orderByDesc('id'))
-            ->paginate($this->perPage);
+            ));
     }
 
     #[Computed]
@@ -2896,15 +2992,15 @@ new #[Layout('components.layouts.app')] class extends Component
                 <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('salesman', __('settlement.col.salesman')) }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('progress', __('settlement.col.progress')) }}</th>
                 {{-- 2026-05-20 #2 피드백 — 입금률 게이지 (거래완료 미완납 시 정산 진행 차단 정보) --}}
-                <th class="pb-2 pr-4 font-medium" style="min-width: 110px;">{{ __('settlement.col.paid_ratio') }}</th>
+                <th class="pb-2 pr-4 font-medium" style="min-width: 110px;">{{ $this->sortTh('paid_ratio', __('settlement.col.paid_ratio')) }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('type', __('settlement.col.type')) }}</th>
                 {{-- 매입가 — 사내직원 차등 tier 트리거(≥1억→총마진×25%). 방식↔총마진 사이 기준값. --}}
                 <th class="pb-2 pr-4 font-medium text-right">{{ $this->sortTh('purchase_price', __('settlement.col.purchase_price'), 'right') }}</th>
-                <th class="pb-2 pr-4 font-medium text-right">{{ \App\Models\Setting::isKaraba() ? __('settlement.label_operating_profit') : __('settlement.col.total_margin') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ $this->sortTh('total_margin', \App\Models\Setting::isKaraba() ? __('settlement.label_operating_profit') : __('settlement.col.total_margin'), 'right') }}</th>
                 {{-- 📊 마진율 (jin 2026-09-18) — 총마진 ÷ 판매금원화. 내수는 「—」. --}}
-                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.margin_rate') }}</th>
-                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.settlement_amount') }}</th>
-                <th class="pb-2 pr-4 font-medium text-right">{{ __('settlement.col.actual_payout') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ $this->sortTh('margin_rate', __('settlement.col.margin_rate'), 'right') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ $this->sortTh('settlement_amount', __('settlement.col.settlement_amount'), 'right') }}</th>
+                <th class="pb-2 pr-4 font-medium text-right">{{ $this->sortTh('actual_payout', __('settlement.col.actual_payout'), 'right') }}</th>
                 {{-- 회의확장씬 #6+7 보강 (2026-05-23) — 환차익 컬럼 (closed 정산만 stored value 표시). --}}
                 <th class="pb-2 pr-4 font-medium text-right">{{ $this->sortTh('exchange_diff', __('settlement.col.exchange_diff'), 'right') }}</th>
                 {{-- 2026-10-06 jin 「상태 하나로 전부 나열되어 있으니 보기 어렵다」 — 상태(1차) / 2차 정산(뱃지+이월) / 작업(버튼) 세 칸. --}}
