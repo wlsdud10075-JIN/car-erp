@@ -14,6 +14,7 @@ const L = require('./lib');
 //   buyer-undecided → inventory-location · purchase-cancel·secondary → monthly-payout 뒤 · secondary → ledger-readjust · buyer-account 맨 끝(돈이 움직인다).
 const SCENES = [
   'quoted-texts',
+  'audit-log',   // 읽기만 — 순서 무관. 영어로 남은 이름 찾기(2026-11-22)
   'leaver-domestic-payout', 'deregistration-notice', 'sales-contract-esign', 'unpaid-gate-override',
   'vehicle-register', 'purchase-payment', 'sale-register', 'sale-payment', 'export-tab', 'monthly-payout', 'bl-issue',
   // savings·receivables 는 bulk-shipping-dates 앞 — 그 씬이 00가1131 에 수출 칸을 넣으면 입금률 60% 게이트로 판매 탭 저장이 막힌다(11-16 전체 실행).
