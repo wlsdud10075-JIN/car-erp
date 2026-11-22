@@ -58,7 +58,7 @@ class GuidesPageTest extends TestCase
         $this->assertCount(31, $all);
         $this->assertSame('new', $all['purchase-payment']['status']);
         $this->assertSame('wait', $all['vehicle-register']['status']);
-        $this->assertSame(range(1, 30), $all->pluck('no')->values()->all());
+        $this->assertSame(range(1, 31), $all->pluck('no')->values()->all());
 
         $this->actingAs($this->staff())->get('/guides')->assertOk()
             ->assertSee('업무 가이드')
