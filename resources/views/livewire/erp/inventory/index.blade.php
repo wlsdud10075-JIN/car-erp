@@ -69,6 +69,11 @@ new #[Layout('components.layouts.app')] class extends Component
         return array_keys(self::SORTABLE);
     }
 
+    protected function descFirstKeys(): array
+    {
+        return ['purchase_price', 'sale_price'];   // 금액 칸 — 첫 클릭에 큰 것부터
+    }
+
     protected function afterSortChanged(): void
     {
         unset($this->inventoryVehicles);

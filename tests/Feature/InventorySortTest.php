@@ -73,15 +73,16 @@ class InventorySortTest extends TestCase
 
         $c = Volt::test('erp.inventory.index')->call('clickSort', 'salesman')->call('clickSort', 'purchase_price');
         $this->assertSame('salesman', $c->get('sortColumn'));
-        $this->assertSame([['col' => 'purchase_price', 'dir' => 'asc']], $c->get('sortExtra'));
-        $this->assertSame([$b->id, $a->id, $c0->id], $this->ids($c), '담당자 같은 묶음 안에서 매입가 오름차순');
+        // 🔽 2026-11-22 (jin) — 금액 칸은 첫 클릭에 큰 것부터(▼ → ▲ → 빠짐)
+        $this->assertSame([['col' => 'purchase_price', 'dir' => 'desc']], $c->get('sortExtra'));
+        $this->assertSame([$a->id, $b->id, $c0->id], $this->ids($c), '담당자 같은 묶음 안에서 매입가 큰 것부터');
 
         $html = $c->html();
         $this->assertStringContainsString('1▲', $html);
-        $this->assertStringContainsString('2▲', $html);
+        $this->assertStringContainsString('2▼', $html);
 
-        $c->call('clickSort', 'purchase_price');   // 겹친 칸 ▲ → ▼
-        $this->assertSame([$a->id, $b->id, $c0->id], $this->ids($c));
+        $c->call('clickSort', 'purchase_price');   // 겹친 금액 칸 ▼ → ▲
+        $this->assertSame([$b->id, $a->id, $c0->id], $this->ids($c));
     }
 
     public function test_relation_columns_sort_by_name(): void

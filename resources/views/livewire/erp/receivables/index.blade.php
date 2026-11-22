@@ -70,6 +70,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         return self::SORTABLE;
     }
 
+    protected function descFirstKeys(): array
+    {
+        return ['sale_total', 'unpaid', 'unpaid_ratio'];   // 금액 칸 — 첫 클릭에 큰 것부터
+    }
+
     protected function afterSortChanged(): void
     {
         unset($this->vehicles);

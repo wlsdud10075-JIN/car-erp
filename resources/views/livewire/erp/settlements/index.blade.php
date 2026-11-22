@@ -104,6 +104,11 @@ new #[Layout('components.layouts.app')] class extends Component
         return $this->applySortSpec($q, self::SORTABLE[$col], $dir);
     }
 
+    protected function descFirstKeys(): array
+    {
+        return ['purchase_price', 'exchange_diff'];   // 금액 칸 — 첫 클릭에 큰 것부터
+    }
+
     protected function afterSortChanged(): void
     {
         unset($this->settlements);

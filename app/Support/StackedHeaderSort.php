@@ -42,6 +42,23 @@ trait StackedHeaderSort
 
     protected function afterSortChanged(): void {}
 
+    /**
+     * 🔽 **첫 클릭에 큰 것부터(▼)** 서는 칸 — 금액 칸 (jin 2026-11-22 «두 번 눌러야 최고 금액이 맨 위로 온다»).
+     *    글자·날짜 칸은 ▲ → ▼ → 빠짐, 여기 적힌 칸은 ▼ → ▲ → 빠짐. 겹쳐 붙을 때도 ▼ 로 붙는다(담당자 1▲ → 미수금 2▼).
+     *    차량관리(자체 구현)는 `DESC_FIRST` 상수가 같은 일을 한다.
+     *
+     * @return string[]
+     */
+    protected function descFirstKeys(): array
+    {
+        return [];
+    }
+
+    private function firstDir(string $col): string
+    {
+        return in_array($col, $this->descFirstKeys(), true) ? 'desc' : 'asc';
+    }
+
     public function sortable(string $col): bool
     {
         return $col !== '' && in_array($col, $this->sortableKeys(), true);
@@ -64,8 +81,8 @@ trait StackedHeaderSort
             return;
         }
         if ($this->sortColumn === $col) {
-            if ($this->sortDirection === 'asc') {
-                $this->sortDirection = 'desc';
+            if ($this->sortDirection === $this->firstDir($col)) {
+                $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
             } else {
                 $next = array_shift($this->sortExtra);
                 [$this->sortColumn, $this->sortDirection] = $next
@@ -93,8 +110,8 @@ trait StackedHeaderSort
         }
         foreach ($this->sortExtra as $i => $k) {
             if (($k['col'] ?? null) === $col) {
-                if (($k['dir'] ?? 'asc') === 'asc') {
-                    $this->sortExtra[$i]['dir'] = 'desc';
+                if (($k['dir'] ?? 'asc') === $this->firstDir($col)) {
+                    $this->sortExtra[$i]['dir'] = $this->firstDir($col) === 'asc' ? 'desc' : 'asc';
                 } else {
                     unset($this->sortExtra[$i]);
                     $this->sortExtra = array_values($this->sortExtra);
@@ -107,7 +124,7 @@ trait StackedHeaderSort
         if (count($this->sortExtra) >= 4) {
             return;
         }
-        $this->sortExtra[] = ['col' => $col, 'dir' => 'asc'];
+        $this->sortExtra[] = ['col' => $col, 'dir' => $this->firstDir($col)];
         $this->afterSortChanged();
     }
 
@@ -121,7 +138,7 @@ trait StackedHeaderSort
         if ($this->sortColumn === $col) {
             $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
         } else {
-            [$this->sortColumn, $this->sortDirection] = [$col, 'asc'];
+            [$this->sortColumn, $this->sortDirection] = [$col, $this->firstDir($col)];
         }
         $this->afterSortChanged();
     }
