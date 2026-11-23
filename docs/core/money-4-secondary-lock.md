@@ -7,7 +7,7 @@
 | 전환 | 누가 | 막는 것(`Settlement::saving`) |
 |---|---|---|
 | → confirmed (행 버튼·월 일괄 확정) | `canConfirmFinance` = 재무·관리·업무관리자·최고/시스템관리자 | 비율 정산인데 비율 0 · karaba 인데 매입세액 미입력(null) |
-| → paid | 최고/시스템관리자 직접, 또는 월정산 최종 승인(`execute`)·개별 지급 승인(대표만 실행) | 그 밖의 로그인 사용자가 직접 paid 로 바꾸면 예외. 미수가 남은 정산은 직접 전환·개별 승인 모두 막힌다(게이트 예외 건은 통과) |
+| → paid | 최고/시스템관리자 직접, 또는 월정산 최종 승인(`execute`)·개별 지급 승인(실행은 최고·시스템관리자만) | 그 밖의 로그인 사용자가 직접 paid 로 바꾸면 예외. 미수가 남은 정산은 직접 전환·개별 승인 모두 막힌다(게이트 예외 건은 통과) |
 | 삭제 | pending · calculating 만 | confirmed · paid · 2차 마감 행은 예외(로그인 없는 콘솔·시드는 통과) |
 
 **paid 로 넘어가는 저장 한 번에 자동으로 일어나는 일**
@@ -65,6 +65,7 @@ carryover_out_krw = 마감 시점 실지급액 − confirmed_snapshot.actual_pay
 - 🚨 「이번 저장이 만든 변화인가」로 가른다 — 아무것도 안 바꾼 저장(메모·서류)은 막지 않는다. 새 줄 추가·미확정 줄·비고·전시문은 그대로 된다.
 - 열리는 길 = 회계 재조정 토큰(그 저장 한 번).
 - ⚠️ 줄 단위 잠금 해제(`unlockForFinalPayment`·`unlockForPurchasePayment`·`unlockForCostBulk`)는 정의만 있고 호출처가 없다 — 쓰지 않는다.
+- `FinalPayment::$allowConfirmedMutation`(매입 지급 줄에도 같은 플래그)은 **시스템 경로 전용** 우회다 — 켤 땐 try/finally 로 반드시 되돌린다. 새 화면에서 잠금을 피하려고 켜지 않는다.
 
 **회계 재조정 토큰** — 정산 화면 마감 행의 [🔓 회계 재조정]에서만 발급된다.
 - 발급 조건 = `canUnlockLedger`(관리자급 전체 · 관리는 본인 팀 차) + 사유 10자 + 그 차가 마감 상태. 감사로그 `ledger_field_unlocked`, 유효 5분.

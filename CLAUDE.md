@@ -1,490 +1,218 @@
 # 중고차 수출 ERP (car-erp)
 
-> ⚠️ **세션 시작 시 필수 로드 순서** (반드시 이 순서로 모두 읽은 후 작업 시작):
-> 1. **이 파일** (`CLAUDE.md`) — 프로젝트 도메인/권한/환경
-> 2. **`CLAUDE_1.md`** — LLM 코딩 가이드라인 (실수 방지 규칙)
-> 3. **`SKILLS.md`** — 구현 패턴 / 재발 버그 / UI 디자인 시스템
->
-> 아래 import도 함께 자동 로드됨:
+> ⚠️ **세션 시작 시 함께 읽히는 것**: ①이 파일(도메인·권한·환경·배포) ②`CLAUDE_1.md`(코딩 가이드라인) ③`SKILLS.md`(구현 패턴·교훈 색인·UI) ④**핵심 편 7개**(`docs/core/` — 돈 5편 · 락 · 역할. 코드와 대조해 쓴 「지금 규칙」이다)
 > @CLAUDE_1.md
 > @SKILLS.md
+> @docs/core/money-1-settlement.md
+> @docs/core/money-2-fx.md
+> @docs/core/money-3-receivable.md
+> @docs/core/money-4-secondary-lock.md
+> @docs/core/money-5-payout-batch.md
+> @docs/core/lock.md
+> @docs/core/role.md
+>
+> 🧭 **돈·락·역할에 관한 답은 핵심 편이 정본이다.** 이 파일·SKILLS·메모리의 문장이 핵심 편과 다르면 핵심 편을 따르고, 핵심 편이 코드와 다르면 코드를 확인한 뒤 핵심 편을 고친다(그 규칙을 묻는 질문 한 줄을 `docs/design/md-trim/trim-quiz.md` 에 추가한다 — 주 1회 읽기 시험이 다시 묻는다). 적립금·바이어 현금 원장 편은 아직 없다 — `SKILLS.md §6`·`docs/design/buyer-cash-ledger.md` 를 본다.
 
-> 📋 **라운드테이블 회의** (의사결정 무게가 큰 안건 발생 시):
-> - 프로토콜: `docs/archive/md-2026-05-29/decision_protocol.md` 참조 (자동 로드 안 함)
-> - 부서별 프롬프트: `docs/meetings/departments/{po,engineer,qa,security,ops,specialist}.md`
-> - 과거 결정 검색: `docs/meetings/INDEX.md`
-> - 트리거 키워드: "회의 돌려줘" / "라운드테이블" / "/회의" / "부서별로 검토해줘". 마이그레이션·VAT 공식·RRN·`config/auth.php` 변경 등 무거운 안건은 자동 풀회의 제안.
+> 📚 **이 파일은 「지금 규칙」만 적는다.** 그렇게 된 경위(언제·왜 바뀌었나, 구 규칙, 실측 수치)는 `docs/archive/md-2026-11-23/CLAUDE.md.full`(줄이기 전 원본 통째)에 절 이름 그대로 있다 — 규칙을 바꾸거나 되돌리자는 제안을 하기 전에 그 절을 먼저 읽는다. 더 옛것 = `docs/archive/md-2026-05-29/`.
+> 📋 **라운드테이블 회의**(무거운 안건 — 마이그레이션·VAT 공식·RRN·`config/auth.php` 등): 트리거 「회의 돌려줘」·「/회의」. 프로토콜 `docs/archive/md-2026-05-29/decision_protocol.md` · 부서 프롬프트 `docs/meetings/departments/` · 과거 결정 `docs/meetings/INDEX.md`. (전역 에이전트는 2026-11-20 `~/.claude/agents-parked/` 로 옮겨 둠 — 회의를 돌리려면 `car-erp-*.md` 6개를 되돌린다.)
 
-> 📦 **2026-09-22 트림** — `SKILLS.md §8` 버그·교훈 **#1~#95 전문**을 `docs/archive/skills-8-2026-09-22/SKILLS-8-lessons-1-95.md` 로 이동(295KB → 123KB). 본문엔 색인표 + #96 이후만. 「§8 #N」 참조는 번호로 그 파일을 `grep -n "^### N\."`.
-> 📦 **2026-05-29 트림** — 완료된 큐 표·grandfather 코드·폐기된 dompdf 버그·구 기획안(role기획보안_수정.md)·1차 배포 day-by-day 플랜은 `docs/archive/md-2026-05-29/` 로 이동. `CLAUDE.md.full` / `SKILLS.md.full` 원본 백업 보존. 옛 결정 맥락 필요 시 grep.
+## 🏷️ 명칭 규칙 (항상 이대로)
+회사 3사 = **ssancar · heyman · karaba**, 앱 2종 = **erp**(이 레포) · **board**(형제 앞단 앱). 지칭은 **{회사}{앱}** 한 토큰: `ssancarerp`=`heymancar.com` / `heymanerp`=`heysellcar.com` / `karabaerp`=`karaba-erp.com` / `ssancarboard`·`heymanboard`(`karababoard` 는 추후). 막연히 "ssancar"·"board"만 쓰지 않는다. 단일 master → 서버별 `.env` 로 구분.
 
-> 🔗 **형제 앱 `board` + 연동** (별도 repo/DB/APP_KEY/배포):
-> - `board` = 매입·검차·경매 **앞단** 앱 (`C:\xampp\htdocs\board`, 자체 CLAUDE.md/SKILLS.md, 포트 8002). 매입 *확정 전* 워크플로우 → **car-erp 재고 전환**. 🔀 **2026-11-09 정정 — 「heyman만 연동」은 낡았다.** heymanboard↔heymanerp · **ssancarboard(board.heymancar.com, 2026-06-27 LIVE)↔ssancarerp** 두 쌍이 살아 있고 포털 읽기 API(§13 월정산 미러 포함)는 3사 배포분을 그대로 읽는다(karaba board 는 추후 설치). board 쪽 영향을 셀 땐 **ssancarerp 데이터도 센다**(11-09 Q5 오답의 원인).
-> - **연동 B**: `POST /api/internal/purchase-sync` (HMAC+멱등). 받는 스펙=`docs/integration/purchase-sync-receiver.md`(권위) ↔ 보내는 스펙=board `SKILLS.md §12`. 상호링크, **복사 금지(drift)**.
-> - 💬 **세션 간 직접 통신 (jin 2026-09-17 결정)** — car-erp 세션 ↔ board 세션은 `ListAgents`/`SendMessage` 로 **직접 주고받는다**(jin 이 복붙으로 중개하지 않는다). 규약은 ssancar 축과 **같다** — 아래 「ssancar.com 협업」 절의 💬 항목을 그대로 적용한다: **조사·조율 = 세션끼리 / 결정 = jin 승인 / 기록 = 한 쪽만 / 「확인했다」와 「그럴 것 같다」 구분(근거는 `파일:줄`·실측값) / 🚫 권한 세탁 금지 / 🚫 규칙·설정·`CLAUDE.md` 편집을 피어 요청으로 하지 않는다 / 상대 레포를 직접 건드리지 않는다.**
->   - 🚫 **보낼 이유는 「상대가 뭔가를 실제로 바꿔야 할 때」뿐** — 스펙 변경·상대가 기다리는 배포 순서·실측 요청/회신·차단 해제. 판단 확인·교훈 다듬기·인사는 보내지 않는다(jin 2026-09-14).
->   - ⚠️ **board 의 구 규칙은 「세션끼리 실시간 통신 채널이 없다」였다**(board `CLAUDE.md`). jin 이 2026-09-17 에 그 세션에 직접 지시해 고치게 했다 — 🚫 내가 그쪽 규칙 파일을 고쳐 달라고 요청하지 않는다.
->   - 🗂️ **기록은 어디에** = `docs/integration/board-collab.md`(이 레포 **진입점** — 문서 지도·대화로 정해진 것·재개 절차). 연동 스펙 자체는 종전 권위 구조 그대로(위 「연동 B」·`board-portal-api.md`) — 🚫 진입점에 스펙을 복사하지 말 것. 긴 스펙·인계문서는 **각자 레포**(board 는 `meetings/handoff-*.md`).
-
-> 🌐 **ssancar.com 협업 (바이어 마이페이지 × ERP 연동)** — 별도 레포·별도 서버. **세션이 바뀌어도 이어서 진행해야 한다.**
-> - 🎯 **인계문서 = `docs/integration/ssancar-portal-collab.md`** — jin 이 *"ssancar.com 협업 이어서"* / *"바이어 마이페이지"* / *"포털 연동"* 이라고 하면 **여기부터 읽는다.** 문서 지도·상대 레포 위치·확정 사실·함정·재개 절차가 전부 그 안에 있다.
-> - 🎯 **정본 = `C:\Users\User\Desktop\연구소\ERP_SSANCAR_WEB\ERP_연동_통합정리_v1.N.md` — 폴더에서 가장 높은 번호가 최신.** 양측이 **번갈아 버전을 올리며** 이어 쓴다(직전 버전 복사 → 번호 올림 → 그 위에 씀, **기존 파일·남의 판단 삭제 금지**, 근거는 `파일:줄`). 규칙 전문 = 그 문서 §0. ⚠️ **버전 번호를 여기 적지 않는다** — 매 라운드 낡는다. 폴더를 보고 최신을 집을 것.
->   🚨 **최신을 집을 땐 반드시 이 명령으로** — 글자순(`ls`)으로 세면 `v1.9` 가 `v1.15` 보다 뒤로 가서 **몇 달 전 문서를 최신이라고 답한다**(2026-09-14 ssancar 세션 실제 발생). 버전순 정렬을 명시할 것:
->   ```bash
->   ls -v "/c/Users/User/Desktop/연구소/ERP_SSANCAR_WEB/"ERP_연동_통합정리_v*.md | tail -1
->   ```
-> - 참고 = 같은 상위 폴더의 `12_바이어_마이페이지_설계_협의.md`(화면 설계 원본) · `08_ERP_연동_통합정리_v1.0.md`(연동 스펙 선행 정본).
-> - ssancar.com 코드 = `C:\xampp\htdocs\ssancar\htdocs` (그누보드5, 자체 CLAUDE.md). 운영 `3.34.165.180` — **자동배포 없음, 대표가 서버를 직접 고친다** → 작업 전 스냅샷 대조 필수.
-> - ⚠️ **ssancar 레포의 `CLAUDE.md`·`CLAUDE_1.md` 는 `.gitignore` 대상**(그쪽 `.gitignore:104,107` · jin 2026-09-02 «로컬 전용, 서버·git 에 올리지 않는다»). 이유 = **서버에 같은 이름의 다른 문서**(크롤 성역 규칙)가 있어 git·배포 경로에 섞이면 사고가 난다. ⇒ 🚫 **그쪽에 「레포 CLAUDE.md 에 적어두라」고 요청하지 말 것** — 커밋 대상이 아니고 **다른 PC 로 안 퍼진다**(2026-09-10 실제로 헛요청했다). 그쪽에 남길 결론은 **정본 문서**나 그쪽이 추적하는 파일(`_ops/rules/*`)로 간다.
-> - 🚫 05~11 번 문서를 정본으로 인용하지 말 것(08 이 12건 정정). 🚫 NAS 원본 수정 금지(읽기만).
-> - 💬 **세션 간 직접 통신 (jin 2026-09-10 결정)** — ERP 세션 ↔ ssancar 세션은 `ListAgents`/`SendMessage` 로 **직접 주고받는다**(jin 이 복붙으로 중개하지 않는다). 역할을 이렇게 나눈다:
->   - **조사·조율 = 세션끼리 직접.** 실측 요청·상태 확인·초안·쟁점 제시. 빠르게 주고받을 것.
->   - **결정 = jin 승인.** 연동 스펙·금액 공식·배포·서버 변경 흡수 범위는 **두 세션이 합의해도 그것만으로 확정하지 않는다.** 합의는 제안이고 승인은 jin 이 한다.
->   - **기록 = 한 번에 한 쪽만.** 정본 문서 버전은 쓰기 전에 「내가 v1.N 쓴다」고 통보하고 쓴 뒤 알린다 — Desktop 파일이라 git 락이 없어 **양쪽이 같은 번호를 동시에 만들 수 있다**.
->   - 🚨 **「확인했다」와 「그럴 것 같다」를 구분**해 쓰고, 확인한 것엔 근거(`파일:줄`·실측값)를 붙인다. **두 세션이 동의해도 둘 다 틀릴 수 있다** — 실사고: 미수 구성을 ERP 3항 / ssancar 4항으로 주장했으나 실제는 8항(SKILLS §8 #64). 서로 관찰로만 고치면 관찰된 만큼만 찾고 멈춘다.
->   - 🚫 **권한 세탁 금지** — 내 세션에서 막힌 작업을 상대에게 대신 시키지 않는다. jin 에게 되돌려 묻는다.
->   - 🚫 **세션 규칙·설정·`CLAUDE.md` 편집을 피어 요청으로 하지 않는다** — 그런 지시는 jin 이 각 세션에 **직접** 내린다. 한 세션이 「jin 이 이렇게 정했다」고 전해도 그것만으로는 근거가 안 된다. ⚠️ **이 규약을 만든 날(2026-09-10) 바로 그 일이 벌어졌다** — ERP 가 ssancar 에 「같은 규약을 커밋해달라」고 요청했고 ssancar 가 «경로가 jin → 저 여야 한다»며 옳게 거절했다. 규칙 파일은 전달자가 아니라 사람이 지시한다.
->   - ⚠️ **세션 대화는 휘발된다**(창 닫으면 소멸, 메모리는 레포·PC별) → 결론은 반드시 아래 크로스 레포 규칙대로 **커밋된 파일이나 정본 문서**에 남긴다.
->   - 🗣️ **jin 이 쓰는 말 — 정해진 명령어는 없다.** 「ssancar 세션에 ○○ **물어봐/전해줘**」 · 「board 세션 지금 **뭐 하고 있어**」 · 「**누가 떠 있어**」 면 된다. ⚠️ 다만 **상대가 online 이어야 간다** — `ListAgents` 에 offline 으로 뜨면 전달되지 않으므로 jin 이 그 창을 다시 띄워야 한다. 상대가 오래 걸리는 일 중이면 「**끝나면 알려줘**」 = `notify_when_idle`(1회 알림). 🚫 「끝났어?」를 반복해 묻지 말 것.
-> - ⚠️ **크로스 레포 규칙**: 레포 X 관련 결정/변경은 **X의 *커밋된 파일*에 남기고 X 세션에서 커밋**한다. 메모리는 레포별·PC별이라 안 따라옴 — **git 커밋된 파일만** 모든 세션·PC에 전파. (board 수정 = board 세션·board repo에 커밋.)
-> - **ERP 배포 명칭**: heyman(현 운영)·karaba(2번째 회사 `karaba-erp.com` live)·ssancar(`heymancar.com` 운영, 2026-06-27 배포). 단일 master → 서버별 .env 구분. 상세 = 메모리 `project_deployment_naming`.
-> - **🏷️ 명칭 규칙 (혼동 방지 — 항상 이대로, jin 2026-06-27 박제)**: 회사 3사 = **ssancar · heyman · karaba**(karaba board는 추후 설치), 앱 2종 = **erp**(이 car-erp) · **board**(형제 앞단 앱). 지칭은 반드시 **{회사}{앱}** 한 토큰으로: `ssancarerp` · `ssancarboard` · `heymanerp` · `heymanboard` · `karabaerp` · `karababoard`. 막연히 "ssancar"·"car-erp"·"board"만 쓰지 말 것. 매핑: `ssancarerp`=`heymancar.com` / `heymanerp`=`heysellcar.com` / `karabaerp`=`karaba-erp.com`. (car-erp·board 양 레포·전 세션 공통 — board 세션에도 동일 규칙.)
+## 🔗 형제 앱 board · ssancar.com 협업
+- **board** = 매입·검차·경매 앞단 앱(`C:\xampp\htdocs\board`, 포트 8002, 별도 repo/DB/APP_KEY/배포). heymanboard↔heymanerp · ssancarboard↔ssancarerp 두 쌍이 살아 있다 — board 영향을 셀 땐 **ssancarerp 데이터도 센다**. 포털 읽기 API 는 3사 배포분을 그대로 읽는다.
+- **연동 스펙 권위**: 받는 쪽 = `docs/integration/purchase-sync-receiver.md` · 읽기 API = `docs/integration/board-portal-api.md` ↔ 보내는 쪽 = board `SKILLS.md §12`. 상호 링크, **복사 금지**. 대화로 정해진 것·재개 절차 = `docs/integration/board-collab.md`(진입점, 스펙 복사 금지).
+- **ssancar.com**(바이어 마이페이지 × ERP, 별도 레포·서버, 자동배포 없음 — 대표가 서버를 직접 고친다): jin 이 「ssancar.com 협업 이어서」·「바이어 마이페이지」·「포털 연동」이라 하면 **`docs/integration/ssancar-portal-collab.md` 부터** 읽는다. 정본 = `C:\Users\User\Desktop\연구소\ERP_SSANCAR_WEB\ERP_연동_통합정리_v1.N.md` 중 **가장 높은 번호** — 반드시 버전순으로 집는다:
+  ```bash
+  ls -v "/c/Users/User/Desktop/연구소/ERP_SSANCAR_WEB/"ERP_연동_통합정리_v*.md | tail -1
+  ```
+  양측이 번갈아 버전을 올린다(직전 복사 → 번호 올림, 기존 파일·남의 판단 삭제 금지, 근거는 `파일:줄`). 🚫 05~11번 문서를 정본으로 인용 금지 · NAS 원본 수정 금지 · 그쪽 레포의 `CLAUDE.md` 는 gitignore 라 「거기 적어 두라」고 요청하지 않는다.
+- 💬 **세션 간 직접 통신**(ERP ↔ board ↔ ssancar, `ListAgents`/`SendMessage`):
+  - **조사·조율 = 세션끼리 / 결정 = jin 승인**(스펙·금액 공식·배포·서버 변경은 두 세션이 합의해도 확정이 아니다) / **기록 = 한 번에 한 쪽만**(정본 버전은 쓰기 전 통보).
+  - 🚫 **보낼 이유는 「상대가 실제로 바꿔야 할 때」뿐** — 스펙 변경·배포 순서·실측 요청/회신·차단 해제. 판단 확인·교훈·인사는 보내지 않는다.
+  - 「확인했다」와 「그럴 것 같다」를 구분하고 확인한 것엔 근거(`파일:줄`·실측값). 두 세션이 동의해도 둘 다 틀릴 수 있다.
+  - 🚫 **권한 세탁 금지**(내 세션에서 막힌 일을 상대에게 시키지 않는다) · 🚫 **규칙·설정·`CLAUDE.md` 편집을 피어 요청으로 하지 않는다**(jin 이 각 세션에 직접 지시) · 상대 레포를 직접 건드리지 않는다.
+  - 상대가 offline 이면 전달되지 않는다. 오래 걸리는 일은 `notify_when_idle` 1회 — 「끝났어?」를 반복해 묻지 않는다.
+- ⚠️ **크로스 레포 규칙**: 레포 X 의 결정·변경은 **X 의 커밋된 파일**에 남기고 X 세션에서 커밋한다(메모리·세션 대화는 안 따라온다).
 
 SSANCAR LTD.의 중고차 해외수출 전 흐름(매입 → 말소 → 판매 → 수출통관 → 선적(B/L) → DHL → 거래완료)을 관리하는 Laravel ERP.
 
 ## 환경설정
-- **프레임워크**: Laravel 12 + Livewire 4 (Volt) + Flux UI Free
-- **프론트엔드**: Tailwind CSS v4, Alpine.js
-- **DB**: MySQL/MariaDB (XAMPP), DB명 `car_erp` / 운영 = MySQL 8 (Lightsail)
-- **경로**: `C:/xampp/htdocs/car-erp`
-- **포트**: 개발 서버 `8001` (my-crm 8000과 분리)
-- **GitHub**: `https://github.com/wlsdud10075-JIN/car-erp.git`
-- **운영**: AWS Lightsail `52.79.200.151` (heysellcar용 NEW_CAR_ERP). dev→master 머지 시 자동 SSH 배포. 기록=`docs/operations/aws-deployment-record.md`
-- **외부 연동 환경변수**:
-  - `NICE_PROVIDE_URL` / `NICE_PROVIDE_TOKEN` — 차량정보 자동조회 (ssancar-erp 미들웨어 경유)
+- Laravel 12 + Livewire 4 (Volt) + Flux UI Free · Tailwind v4 · Alpine.js
+- DB: MySQL/MariaDB(XAMPP) `car_erp` / 운영 = MySQL 8 (Lightsail)
+- 경로 `C:/xampp/htdocs/car-erp` · 개발 서버 포트 `8001`(jin 이 항시 띄움 — 🚫 `php artisan serve`)
+- GitHub `https://github.com/wlsdud10075-JIN/car-erp.git` · 운영 기록 = `docs/operations/aws-deployment-record.md`
+- 외부 연동 환경변수: `NICE_PROVIDE_URL` / `NICE_PROVIDE_TOKEN`(게이트웨이가 토큰을 검사한다 — 3사 `.env` 값이 같아야 조회된다)
+- 운영 3사 보안(2026-11-22): fail2ban(sshd) · 보안 헤더 · 쿠키 HTTPS 전용. 운영 SSH 를 연달아 붙을 땐 간격을 둔다(차단된다).
 
-## 권한 시스템 (permission 3단계 + role)
-
-**permission**:
-- `super` 시스템관리자 — 개발사(진) 전용. 모든 메뉴 + 기능설정 on/off. 고객사 사용자 관리 목록에서 **은닉**
-- `admin` 최고관리자 — 고객사 측. ERP 전체 + 기타관리 (기능설정 제외)
-- `user` 일반사용자 — role에 따라 접근
-
-**role**: `영업 / 수출통관 / 재무 / 관리` (2026-05-19 풀회의 안건 I — 정산→재무 / 통관→수출통관 명칭 확정). 기본값 `관리`. super/admin은 role 무관 전체 접근.
-
-**미들웨어 매핑** (2026-07-30 코드 실검증 — 아래가 현재 정의):
-> 전부 **super/admin/업무관리자는 무조건 통과**하고, 그 아래에서 role 로 갈린다.
-
-| alias | 메서드 | 통과 조건 (admin·manager 제외분) | 보호 대상 |
-|---|---|---|---|
-| `admin` | `canAccessAdmin()` | — (super+admin+업무관리자만) | /admin/* |
-| `super-admin` | `isSuperAdmin()` | — (super만) | 기능설정 · **알림톡 로그 · 알림톡 안내** |
-| `operation-logs` | `canViewOperationLogs()` | role`관리` (= "[관리] 이상") | **문서접근로그 · 감사로그 · 메일발송로그** |
-| `erp` | `canAccessErp()` | `permission='user'` **AND** role ∈ `ROLES` | /erp/* |
-| `sales` | `canAccessSales()` | role ∈ {영업, **관리**} | /erp/salesmen/{id}/cashflow (본인) |
-| `clearance` | `canAccessClearance()` | role ∈ {수출통관, 관리} | /erp/forwardings, /erp/vehicles 통관 탭 |
-| `settlement` | `canAccessSettlement()` | role ∈ {재무, 관리} | /erp/settlements |
-
-> ⚠️ **레거시 role `'전체'` 는 코드에서 이미 제거됨**(큐 14-1). `User::ROLES = ['영업','수출통관','재무','관리']`.
-> 그런데 **`users.role` DB 기본값은 아직 `'전체'`** 다 — ROLES 밖 값이라 `canAccessErp()` 가 false 가 되어
-> "권한 없는 계정" 으로 떨어진다. 이게 우연한 안전망 역할을 하므로 **기본값을 유효 role 로 "정리" 하지 말 것**
-> (가드 = `PublicRegistrationDisabledTest`). 공개 회원가입 라우트는 2026-07-30 제거됨.
->
-> 🚨 **`verified` 미들웨어는 접근 방어가 아니다** — `App\Models\User` 가 `MustVerifyEmail` 을 구현하지 않아
-> `EnsureEmailIsVerified` 가 그냥 통과시킨다(실측: `email_verified_at=NULL` 인 admin 이 `/admin/dashboard` 200).
-> 실제 게이트는 위 표의 permission+role 뿐. 상세 = `SKILLS.md §8 #6`.
-
-**리다이렉션**: `/dashboard` 진입 시 super/admin → `/admin/dashboard`, role=영업 → `/erp/salesmen/{id}/cashflow`(본인 ID), 그 외 → `/erp/dashboard`.
-
-**비밀번호**: `password` 해시만 사용.
+## 권한 시스템 (permission + role)
+- **permission**: `super` 시스템관리자(개발사, 고객사 사용자 목록에서 은닉) / `admin` 최고관리자 / `manager` 업무관리자 / `user` 일반사용자(role 로 갈림)
+- **role**: `영업 / 수출통관 / 재무 / 관리`(`User::ROLES`). 「관리 이상」 = 관리·업무관리자·최고관리자·시스템관리자.
+- **누가 어느 화면·버튼·승인을 쓰나 = `docs/core/role.md` 가 정본**(미들웨어 alias 표·승인 권한·담당 범위·알림톡 수신자). 이 파일에 표를 다시 적지 않는다.
+- ⚠️ `users.role` DB 기본값은 `'전체'`(ROLES 밖)라 `canAccessErp()` 가 false — 우연한 안전망이다. **기본값을 유효 role 로 「정리」하지 말 것**(가드 `PublicRegistrationDisabledTest`). 공개 회원가입 라우트는 없다.
+- 🚨 **`verified` 미들웨어는 접근 방어가 아니다**(`User` 가 `MustVerifyEmail` 미구현). 실제 게이트는 permission + role 뿐(SKILLS §8 #6).
+- 로그인 뒤 `/dashboard` 는 전원을 `/erp/dashboard` 로 보낸다. 비밀번호는 `password` 해시만.
 
 ## 도메인 고정 용어
 
-### 차량 진행상태 10단계 (computed property — DB 컬럼 X)
-> `progress_status_rule_version` 분기. **v4=현재 default** (2026-05-21 회의확장씬 안건 1). v1·v2·v3=grandfather (운영 데이터 거의 없음, 상세 SKILLS §2).
+### 차량 진행상태 10단계 (computed — DB 컬럼 아님, 필터용 캐시 `progress_status_cache`)
+`progress_status_rule_version` **v4 = 기본**(v1~v3 는 grandfather 안전망). 실무 순서: 매입 → 판매 → 반입지·신고서 → 선적일 → ETA → 통관 체크 → B/L → 거래완료.
 
-**v4 워크플로우 순서**: 매입 → 판매 → **반입지·신고서 → 선적일 → ETA → 통관 체크** → B/L → 거래완료 (🔀 2026-10-20 jin — 실무 입력 순서, 감사로그 실측 반입지→신고서 406:2 · 신고서→선적일 471:16).
-'선적'의 도메인 의미 = 반입(`bl_loading_location` 입력). 단계명: 수출통관중/완료 → 통관중/완료.
+**v4 cascade — 위에서부터 첫 매칭**:
+1. `bl_document` → **거래완료**
+1-B. `incoterms='FOB'` AND 포워딩사 `buyer_handles_bl`(FOB포워더) AND 판매 완납 → **거래완료** (판정은 이름이 아니라 플래그. 가드 `ProgressRuleFobForwarderTest`)
+1-C. 매입취소 차(`cancel_status=cancelled`) AND `sale_price>0` AND 미수 0 → **거래완료**
+2. `is_export_cleared` → **통관완료**
+3. (반입지 OR 신고서) AND `shipping_date` AND `eta_date` → **통관중**
+4. (반입지 OR 신고서) AND `shipping_date` → **선적완료**
+5. `bl_loading_location` OR `export_declaration_document` → **선적중**
+6. `sale_price > 0` AND 판매미입금 ≤ 0 → **판매완료**
+7. `sale_price > 0` → **판매중**
+8. `is_deregistered` AND `deregistration_document` → **말소완료**
+9. `purchase_price > 0` AND 매입미지급 ≤ 0 → **매입완료**
+10. 기본 → **매입중**
 
-**v4 cascade — 우선순위 높음 → 낮음으로 평가, 첫 번째 매칭 반환**:
-1. `bl_document` → **`거래완료`** (단독, B/L 발급 = 거래완료)
-1-B. 🚢 `incoterms='FOB'` AND 포워딩사 `buyer_handles_bl`(「FOB포워더」 — 바이어가 직접 고른 포워딩사, B/L 을 바이어가 발급) AND 판매 완납 → **`거래완료`** (jin 2026-10-14. B/L 파일이 ERP 에 올 일이 없는 거래. 반입지·통관 규칙보다 앞. 판정은 이름이 아니라 플래그 — 포워딩사 관리 체크박스. 가드 = `ProgressRuleFobForwarderTest`)
-2. `is_export_cleared` → **`통관완료`** (통관 체크 단독. 2026-10-16 부터 같음)
-3. (반입지 OR 신고서) AND `shipping_date` AND `eta_date` → **`통관중`** (🔀 2026-10-20 — 구 10-16: 수출신고서)
-4. (반입지 OR 신고서) AND `shipping_date` → **`선적완료`** (🔀 2026-10-20 — 구 10-16: 반입지 + 선적일)
-5. `bl_loading_location` OR `export_declaration_document` → **`선적중`** (🔀 2026-10-20 — 구: 반입지만)
-> ⚠️ **선적일·ETA 는 반입지나 신고서가 있을 때만 단계로 친다** — 엑셀 적재로 선적일·ETA 만 들어간 판매 단계 차(ssancarerp 128대)가 통관중으로 튀지 않게(jin «추천 좋네»). 흐름 = 통관중+🚢운항중 → (서류 끝내고 체크) 통관완료+운항중 → 통관완료+도착예정. 단계 뜻은 `domain.progress_hint`(pill·뱃지 호버) — **규칙을 바꾸면 같이 고칠 것.** 가드 = `ProgressRuleV4StagesTest`. 편집 패널은 「수출」 탭 하나에 이 순서대로(`ExportTabMergeTest`).
-> 🚢 **출항 이후는 진행상태가 아니다** — 운항중·도착예정은 `sailing_status`(선적일+ETA, ETA 당일부터 도착예정) 별도 축. 통관완료 차는 네 칸을 다 갖고 「통관완료 + 🚢」로 보인다. 해외 통관은 모른다(jin 2026-10-16 «국내에서 선적기획→통관진행→운항→도착»).
-6. `sale_price > 0` AND 판매미입금 ≤ 0 → **`판매완료`**
-7. `sale_price > 0` → **`판매중`**
-8. `is_deregistered = true` AND `deregistration_document` 존재 → **`말소완료`**
-9. `purchase_price > 0` AND 매입미지급 ≤ 0 → **`매입완료`**
-10. 기본값 → **`매입중`**
+- ⚠️ 선적일·ETA 는 **반입지나 신고서가 있을 때만** 단계로 친다(엑셀 적재 차가 판매 단계에서 튀지 않게). 단계 뜻은 `domain.progress_hint` — 규칙을 바꾸면 같이 고친다. 가드 `ProgressRuleV4StagesTest`.
+- 🚢 **출항 이후는 진행상태가 아니다** — 운항중·도착예정은 `sailing_status`(선적일+ETA, ETA 당일부터 도착예정) 별도 축.
+- 🎯 **「매입중」 필터만 넓다** — 차량관리 목록에서 「매입중」을 고르면 매입 잔금이 남은 차 전부(판매중·선적완료여도). 단일 출처 `Vehicle::scopeProgressStage()`/`scopeNotProgressStages()`. 순수 확대(캐시값이 매입중인 차는 미지급 0 이어도 남는다). 🚫 **대시보드 진행단계 스트립은 넓히지 않는다**(분포표라 합이 총 대수를 넘는다) — 스트립 숫자를 눌러 가면 목록이 더 많이 나오는 것은 의도된 차이.
 
-> 🎯 **「매입중」만 필터에서 넓다** (jin 2026-09-10) — 화면·대시보드에서 「매입중」을 고르면
-> **매입 잔금이 남은 차가 전부** 나온다(판매중·선적완료여도). cascade 로 계산되는
-> `progress_status_cache` 값 자체는 그대로이고, **필터·카운트만** 넓다.
-> - 단일 출처 = `Vehicle::scopeProgressStage()` / 제외는 `scopeNotProgressStages()`.
->   **차량관리 목록 필터만** 이걸 쓴다 — 🚫 조건을 옮겨 적지 말 것.
-> - ⚠️ **순수 확대다** — `매입중` 캐시값인 차(매입가 미입력 등)는 미지급이 0 이어도 그대로 남는다.
->   「미지급>0」 하나로 바꾸면 기존에 보이던 차가 조용히 사라진다.
-> - 🚫 **대시보드 진행단계 스트립은 안 넓힌다**(jin 2026-09-10 결정) — 그건 **분포표**라
->   넓히면 한 차가 「선적완료」이면서 「매입중」이 되어 **단계 합이 총 대수를 넘는다**.
->   ⇒ 스트립 숫자를 눌러 차량관리로 가면 **목록이 더 많이 나온다. 의도된 차이다.**
->   대시보드에서 매입 미지급을 보려면 「매입 미지급」 할일 카드를 쓴다(처음부터 미지급 기준).
->   가드 = `VehiclePurchaseUnpaidTotalTest::test_dashboard_stays_narrow_while_the_list_is_wide`.
->   실측 heymanerp: 미지급 30대 중 26대(87%)가 판매중·선적완료·거래완료였다.
+### 판매채널 — `export` 단일값
+`vehicles.sales_channel` 은 `ENUM('export')` 하나다. 🚫 **채널 분기를 새로 만들지 말 것** — enum 밖 값은 SQLite 테스트를 통과하고 운영 MySQL 에서만 죽는다(SKILLS §8 #36). 「국내 거래냐」는 통화(`currency='KRW'`)·진행 단계·내수 바이어(`buyers.is_domestic`)로 본다.
 
-### 판매채널 — **`export` 단일값** (`vehicles.sales_channel`)
+### 입금 상태 · 통화
+- 완납(총입금 ≥ 총판매) / 부분입금(XX%) / 미입금 — computed.
+- `vehicles.currency`: `USD / JPY / EUR / GBP / CNY / KRW`(`savings_statuses.currency` 동일).
 
-> 🚨 **2026-08-24 정정 — 이 절이 「3종」이라고 적혀 있었으나 틀렸다.** 운영 enum 은 `ENUM('export')` **단일값**이고
-> `heyman`·`carpul` 은 **2026-05-14 마이그레이션이 폐기**했다(heyman/carpul 전용 5컬럼도 함께 drop).
-> **채널 분기를 새로 만들지 말 것** — enum 밖 값을 쓰면 **SQLite 테스트는 100% 통과하고 운영 MySQL 에서만
-> `1265 Data truncated` 로 죽는다**(SKILLS §8 #36). 「국내 거래냐」를 갈라야 하면 채널이 아니라
-> **통화(`currency='KRW'`)나 진행 단계**로 본다. 실측 heymanerp `export` 260/260.
+### 돈 — 정산 · 환차 · 미수 · 2차 정산 · 월정산
+**정본은 핵심 편이다. 이 파일에는 공식을 다시 적지 않는다**(두 곳에 적으면 한쪽이 낡는다).
 
-- `export` 수출 — 다중통화, B/L·면장·DHL 풀 흐름. KRW·국내 거래도 전부 이 채널로 넣고 통관·선적 단계만 생략한다.
+| 무엇 | 핵심 편 |
+|---|---|
+| 정산 공식 · 사내직원 건당 등급 · 서류비 · 발송비 · 회사이익 · karaba | `docs/core/money-1-settlement.md` |
+| 환차 포함/제외 · 정산환율 · 2026-12-01 전환(판매잔금 환율 자동) | `docs/core/money-2-fx.md` |
+| 세 합계(총판매가·정산 기준액·면장 기준액) · 미수 · 미지급 · 「떠난 차」 · 채권 위험 등급 | `docs/core/money-3-receivable.md` |
+| 지급 → 2차 정산 · 이월 · 마감 뒤 잠금 · 회계 재조정 | `docs/core/money-4-secondary-lock.md` |
+| 월정산(결재선 · 지급보류 · 조정 · 내수 · 퇴사 · 회사 순이익 표시) | `docs/core/money-5-payout-batch.md` |
+| 매입 등록 락 · 수출 진입 · B/L 게이트 · 우회 승인 · 일반재고 상한 | `docs/core/lock.md` |
+| 권한 · 역할이 하는 일 · 담당 범위 · 승인 권한 · 알림톡 수신자 | `docs/core/role.md` |
 
-### 입금 상태 (computed)
-- `완납`: 총 입금액 ≥ 총 판매액
-- `부분입금 (XX%)`: 일부 입금
-- `미입금`: 입금 없음
-
-### 다중통화
-`vehicles.currency` enum: `USD / JPY / EUR / GBP / CNY / KRW`. `savings_statuses.currency` 동일.
-
-### 정산 마진 공식 (엑셀 v2 — 수출차량현황표.xlsm 실측 / 2026-05-21 확정)
-
-> 🔀 **2026-08-06 (jin) — 1차 정산 환율이 「판매환율」에서 「실제 입금환율」로 바뀌었다.**
-> 구: 1차는 판매환율로 계산 → 실입금과의 차이는 2차 마감에서 환차로 실지급액에 **1:1 가산**.
-> 신: **판매금원화의 환율 자체가 실효 입금환율** → 환차가 마진공식(×0.9×비율)을 그대로 통과한다.
-> 2차 정산이 다음달로 이월하는 것은 이제 **명세서 기입(탁송비·면허비 등 비용 10개) 변동분**뿐이다.
-> - 단일 출처 = `Vehicle::settlement_exchange_rate` = `실입금KRW ÷ 총판매가(외화)`.
->   **KRW·판매환율 0 이면 판매환율** · 🔀 **10-01 (jin B안) 미완납은 섞은 환율 = (실입금KRW + 미수외화×판매환율) ÷ 총판매가**(받은 몫만 실효, 미수분은 판매환율 평가 — 원금 미수가 환율로 둔갑하지 않는다. 구: 미완납이면 통째 폴백).
-> - `Settlement::actual_payout` 의 환차 1:1 가산은 **제거**됐다. `exchange_difference_krw` 는 실현 환차 총액의 **감사·참고 기록**으로만 남는다(지급액 미관여).
-> - ⚠️ 두 숫자는 크기가 다르다 — 기록된 환차는 **총판매가(운임비 포함)** 기준 총액이고, 1차에 실제 반영되는 몫은 **정산 base(운임비 제외) × 0.9 × 비율**이다. ⇒ **운임비의 환차는 회사 몫**(jin 확인).
-> - 사내직원(per_unit)은 정산액이 총마진과 무관해 자동으로 영향 없음(별도 분기 없음). karaba 는 tier 공식(`karaba_settlement_amount`)이라 `sales_amount_krw` 를 안 써서 **무관**.
-> - 🧹 **곁다리로 반드시 같이 고칠 것 — 회사이익 대시보드**(`admin/dashboard` `companyProfit`). 회사몫 공식에 있던 `+ exchange_difference_krw` 는 **구 모델에서 payout 에 더해지던 환차를 상쇄**하려던 항이라, 안 지우면 회사이익이 환차만큼 **부풀려진다**. 지금은 `총마진 − 실지급액` 하나다. (SKILLS §8 #38 의 그 패턴 — 없앤 값에 매달린 소비자.)
-> - 💡 **환차의 행방** — 실현 환차 중 `× 0.9`(부가세 차감) 만 총마진에 들어오고, 그중 비율만큼만 담당자에게 간다. 나머지(부가세 차감분 + 운임비분)는 **총마진 밖 회사 현금**이라 `company_net` 에도 안 잡힌다. 가드 = `AdminDashboardCompanyProfitTest::test_fx_split_between_salesman_and_company`.
-> - 기준값 = 운영 실차 18누0304(`SettlementReceiptRateTest`). 가드 = 그 테스트 + `SettlementExchangeDiffPayoutTest`(재가산 금지).
-
-```
-판매금원화        = (sale_price + commission + auto_loading - tax_dc) × 정산환율
-                                                              ← 정산환율 = 실효 입금환율(완납 외화) / 판매환율(그 외)
-                                                              ← 면장(export_declaration_amount)은 매출 검증용 (정산 공식엔 미포함)
-                                                              ← 운임비(transport_fee)는 sale_total_amount(미수율 분모) 에만 들어감
-정산판매금원화    = 판매금원화 - cost_total
-판매마진          = 정산판매금원화 - (purchase_price + selling_fee)   ← 매입합계 = 구입금액 + 매도비
-부가세마진        = purchase_price × 0.09                              ← 매도비 제외, 엑셀 CG와 동일
-총마진            = (판매마진 + 부가세마진) × 0.9                      ← × 0.9 = 부가세 10% 차감 (사용자 확정)
-
-정산액 (Salesman.type 별 자동 분기):
-  - 프리랜서 (settlement_type='ratio')    = 총마진 × (settlement_ratio / 100)
-                                            기본값: settlement_ratio = 50  (Settlement::FREELANCE_RATIO_DEFAULT)
-  - 사내직원 (settlement_type='per_unit') = per_unit_amount
-                                            기본값: per_unit_amount = 100,000  (Settlement::EMPLOYEE_PER_UNIT_DEFAULT)
-
-실지급액          = 정산액 - 서류비 - 발송비 직원 몫 50%(비율만) - other_deduction
-서류비:
-  - 프리랜서 = 50,000  (Settlement::FREELANCE_DOCUMENT_FEE — 엑셀 CJ = CH/2 - 50000 의 -50000)
-  - 사내직원 = 0
-발송비 (2026-08-31 신설) = 그 차량의 서류 발송 실비 합 (우체국 EMS + DHL)
-  - 단일 출처 = Vehicle::shipping_fee_total (= vehicle_shipments 행 합계, 캐시 컬럼)
-  - 🔀 2026-11-03 (jin) — **회사:직원 5:5.** 아래 「전액」은 이제 **직원 몫(50%, `Settlement::shippingFeeEmployeeShare`)** 으로 읽는다 — 비율은 실지급에서 직원 몫만, 건당은 판정 마진 = 총마진 − 직원 몫. 회사 몫 50%는 `company_net`(발송비 전액 차감)이 저절로 진다. 적용 = 미지급 정산 + 지급 뒤 2차 대기분(마감 때 직원 몫만 이월 차감). 일괄 업로드는 그 전에 n/1 로 나뉜다.
-  - 🔀 2026-11-01 (jin) — **비율(프리랜서·바이어 비율)만 실지급에서 전액 차감.** 사내직원(건당)은 건당액을 안 건드리고
-    **건당 판정 마진 = 총마진 − 발송비** 로 본다(음수 → 건당 0, 양수 → 그 금액으로 차등). 발송비는 회사가 진다.
-    단일 출처 = Settlement::shippingFeeDeducted() · autoPerUnitAmountAt(). 구(08-31) 「두 유형 전액 차감」은 손해차량에
-    발송비만 빠져 마이너스 지급(heymanerp 실측 4건)이 났다. 이미 지급된 정산은 박제 그대로(11-10 1차 정산분부터).
-  - 회사 부담분은 금액 0 으로 기록 → 자동으로 무영향 (번호는 남아 바이어가 조회 가능)
-```
-
-> 🧾 **2026-11-03 (jin) — 내수직원 월정산(별도 결재, kind=domestic)이 켜진 회사(기본 ssancarerp만)의 회사 순이익 = … + 내수직원 「총 회사수익」.**
-> 총 회사수익(평가수수료정산 엑셀) = 컨설팅비 + 매도비 − 총 평가사수수료 — **평가사 지급 뒤 값이라 내수 지급합계는 다시 빼지 않는다.** 내수 급여는 공통 인건비·지급총액에서 빠진다(내수직원 월정산으로 나간다). 검차직원 급여는 종전대로 공통 인건비.
-> 3곳(월정산 카드 · 관리자 대시보드 · 월결산 알림톡) 단일 출처 = `BatchPayoutBreakdown::domesticProfitForMonth`. 꺼진 회사는 종전 공식. 상세 = 메모리 `project_domestic_payout_batch` · SKILLS §8 #134.
-
-> 📮 **2026-08-31 (jin) — 서류 발송비(우체국 EMS · DHL)가 정산에 들어왔다.**
-> 실무 관리표(`## NEW_2026 DHL & 우체국EMS 발송 내역.xlsx`)가 「담당자 × 월 → 우체국+DHL 월 계 → N/10 정산 반영」
-> 으로 집계하고, 회사가 무는 몫은 **「회사 부담(싼카)」 행으로 따로** 뺀다 ⇒ 담당자에 붙은 건 **그 사람이 전액** 진다.
-> 🔀 **2026-11-01 (jin) — 사내직원은 바뀌었다.** 건당은 안 깎고, 발송비는 「건당 판정 마진(총마진 − 발송비)」에서만 본다
->   (음수면 0 · 양수면 차등). 프리랜서(비율)는 종전대로 실지급에서 전액. 위 줄의 「그 사람이 전액」은 이제 **비율 정산에만** 맞다.
-> - 🚫 **`total_margin` 자체에서 빼지 말 것** — 회사이익·월정산 카드·대시보드가 그 값을 쓰고 발송비는 거기서 따로 뺀다.
->   (08-31 에 적었던 「총마진 차감 금지」 이유 — 사내직원 1,662건 무영향·tier 경계 갈림 — 은 이제 **jin 이 받아들인 동작**이다:
->   건당 판정만 발송비 뒤 마진으로 하라는 결정. 다만 판정은 `autoPerUnitAmountAt` 한 곳에서만.)
-> - 🚨 **회사이익은 발송비를 다시 빼야 한다** — 지급에서 뺀 만큼 부풀기 때문. 회사가 우체국·DHL 에 **먼저 치른** 돈이라
->   나갔다 들어온 것이라 순증이 0 이어야 한다. 단일 출처 = `Settlement::company_net`(= 총마진 − 실지급액 − 발송비).
->   ⚠️ 이 공식은 **3곳**(관리자 대시보드 · 월결산 알림톡 · 월배치 승인화면)에 복제돼 있다 — 하나만 고치면 대표 화면만 틀린다.
-> - 📦 **저장은 행이다**(`vehicle_shipments`) — 한 발송이 최대 42대를 덮고(N/1 분배), 같은 차가 2~3번 발송되는 일이 있다
->   (DHL 실측 73대 = 2.3% · 연 1,322,624원). 칸 1개씩이면 나중 발송이 앞 발송을 **조용히 덮는다**.
-> - 가드 = `VehicleShipmentSettlementTest` · `VehicleShipmentPanelTest`.
-
-`cost_total` = `cost_deregistration + cost_license + cost_towing + cost_carry + cost_shoring + cost_insurance + cost_transfer + cost_extra1 + cost_extra2` (9개 항목 합, computed).
-
-**자동 default 동작**: 거래완료 진입 시 `Vehicle::saved` 훅이 `Salesman.type` 보고 `settlement_ratio=50` 또는 `per_unit_amount=100000` 자동 채움. 재무가 override 필요 시 명시 입력 → H3 가드(confirmed/paid 전환 시 값>0) 통과.
+- 🚨 돈·락·권한 코드를 고칠 땐 해당 편을 먼저 읽고, 고친 뒤 **그 편도 같은 작업에서** 고친다(가이드와 같은 규칙).
+- 🔎 설정으로 갈리는 값(환차 시작 귀속월 · 락 임계 · 정산 파라미터)이 **지금 얼마인지는 문서가 아니라 실측**으로 답한다.
+- 🚫 미수·미지급·마진을 SQL 이나 손으로 다시 계산하지 않는다 — accessor·스코프·캐시 컬럼을 쓴다.
 
 ## 뷰 경로 규칙
-- **Volt 컴포넌트**: `resources/views/livewire/erp/...` 하위 (자동 인식)
-- **컨트롤러 뷰**: `resources/views/admin/...` 하위 (관리자 대시보드 등)
-- 예: 차량 목록 → `resources/views/livewire/erp/vehicles/index.blade.php`
+- Volt 컴포넌트 `resources/views/livewire/erp/...`(관리자 화면은 `resources/views/livewire/admin/...`) · 업무 대시보드 조각 `resources/views/erp/dashboard/` · 공용 부품 `resources/views/components/erp/`
 
-## 핵심 주의사항 (재구현 시 반드시)
+## 핵심 주의사항
+1. **Volt 컴포넌트는 `#[Layout('components.layouts.app')]` 필수**(auth 페이지는 `components.layouts.auth`) — 누락 시 500.
+2. 사이드바: 데스크탑 `sticky top-0 h-screen` / 모바일(<768px) fixed drawer + backdrop(SKILLS §7).
+3. `<x-layouts.app>` 슬롯 내 `@php` 블록에서 `use` 금지 — FQN 직접 호출.
+4. **`.md` 는 dev 전용** — master 에는 cherry-pick 으로 코드만.
+5. **커밋 전 `vendor/bin/pint --dirty` — `.php` 만. `.blade.php` 엔 절대 금지**(SKILLS §8 #22).
+6. 뷰 캐시 문제 시 `php artisan view:clear && php artisan cache:clear`(🚫 병렬 테스트 도는 중엔 금지).
+7. Tailwind v4 — 새 유틸 클래스는 빌드된 CSS 에 있어야 먹는다(`npm run build`). 서버는 배포 때 빌드한다.
+8. 차량 진행상태는 computed — 목록 필터는 `progress_status_cache`.
+9. 비용 입력칸은 10개(`Vehicle::DISPLAY_COST_FIELDS`), 합계 `cost_total` 은 옛 칸 4개를 더한 14칸이다. karaba 는 라벨이 다르다(`Vehicle::costLabel()`).
+10~13. (정산 공식 요점 — 지금은 `docs/core/money-1-settlement.md` 에 있다. 번호는 다른 문서가 「핵심 주의사항 14·15번」으로 가리켜서 남겨 둔다.)
+14. 🚨 **Volt public 프로퍼티와 메서드에 같은 이름 금지** — `wire:click` 이 요청조차 안 보내고 조용히 죽는다. 메서드는 `searchNow()`/`applyFilters()`. 가드 `VoltPropertyMethodCollisionTest`(SKILLS §8 #32).
+15. 🧭 **「느리다」 제보 = 성능으로 단정 금지** — ①어떤 조작 → 몇 초 뒤 무엇이 바뀌나 ②Network 탭에 요청이 뜨나 ③뜬다면 Time. JS/CSS 만 바뀐 배포는 `Ctrl+Shift+R` 전엔 체감 검증 불가.
+16. 🧩 **목록 화면은 공용 부품으로** — 검색 `<x-erp.search-bar>`(치는 동안 조회하지 않고 **[조회]·Enter** 로만, 가드 `SearchRequiresButtonTest`) · 고르는 칸 `<x-erp.combobox>`(값이 글자인 목록은 `:options="[]" :extra="[값=>이름]"`) · 필터 칩 `<x-erp.filter-chips>` · 머리글 정렬 `<x-erp.sort-th>`. 새 목록·필터를 만들 때 `<select>`·자체 검색칸을 새로 짜지 않는다. 정본 `docs/design/list-screen-commons.md`.
+17. 🇰🇷 **감사로그에 새 액션·대상·칸을 남기면 한글 이름과 구역을 같이 넣는다** — `config/column_labels.php`(actions·models·칸) + `App\Support\AuditArea`(`ACTION_AREA`·`TYPE_AREA`). 가드 `AuditAreaTest`·`LogScreensKoreanCombosTest` · 씬 점검 `audit-log`.
 
-1. **Volt 컴포넌트는 `#[Layout('components.layouts.app')]` 필수** — 누락 시 `No hint path defined for [layouts]` 500. auth 페이지는 `components.layouts.auth`
-2. **사이드바: 데스크탑(md+)은 `sticky top-0 h-screen`, 모바일(<768px)은 fixed drawer + backdrop** — Alpine `isMobile` 분기 (`SKILLS.md §7` 참조)
-3. **`<x-layouts.app>` 슬롯 내 `@php` 블록에서 `use` 문 금지** — Blade가 슬롯을 if/elseif 컨텍스트로 wrap해서 파싱 에러. FQN 직접 호출 (`\App\Models\Vehicle::query()`)
-4. **`.md` 파일은 dev 전용** — dev → master/demo 머지 시 `.md` 제외 (cherry-pick으로 코드만)
-5. **커밋 전 `vendor/bin/pint --dirty` 필수** — ⚠️ **`.php`만. `.blade.php`엔 pint 돌리지 말 것** (Volt 단일파일 클래스를 대량 reformat + 깨짐: 실측 1356줄 변경·테스트 깨짐). blade 변경은 pint 제외하고 커밋 (상세 SKILLS §8 #22)
-6. **뷰 캐시 문제 시** `php artisan view:clear && php artisan cache:clear`
-7. **Tailwind v4 + Vite** — 새 유틸 클래스 미반영 시 `npm run build` 또는 `npm run dev`
-8. **차량 진행상태는 computed property** — DB 저장 X. `Vehicle::progress_status` 접근 시마다 우선순위 평가
-9. **vehicles 비용 컬럼은 10개 분리** — 말소/면허/탁송/캐리/쇼링/보험/이전비/**주차료**/기타1/기타2. Python의 `other_costs(JSON)` 폐기. 합계는 computed (`cost_total`). 목록 단일 출처 = `Vehicle::DISPLAY_COST_FIELDS`. 🏷️ **karaba 는 기타1/2 를 「점검비」/「기타비」로 부른다** — 라벨은 `Vehicle::costLabel()` 이 회사별로 고른다(2026-08-26)
-10. **부가세마진 = `purchase_price × 0.09`** — 매도비(selling_fee) 제외한 순 구입가 기준. 엑셀 CG = T × 0.09 와 일치
-11. **판매금원화 산정은 `sale_price + commission + auto_loading - tax_dc` 기반** (2026-05-21 재구조). 면장(`export_declaration_amount`)은 매출 검증용 별도 항목. 운임비(`transport_fee`)는 정산엔 미포함, 미수율 분모(`sale_total_amount`) 에만 들어감. **면장금액은 `Vehicle::saving` 훅이 「면장 기준액」을 자동 추종 — 비었을 때만 채우고, 명시값(CIF/FOB)은 보존. 면장은 정산 공식 미포함이라 재무 무영향. 기존 차량 보정 = `vehicles:sync-declaration-amount`(같은 기준 사용).**
-    🔀 **2026-08-27 (jin) — 추종 기준이 총판매가 → 「면장 기준액」으로 바뀌었다.** 단일 출처 = `Vehicle::declaration_base_amount` = **총판매가 − 기타 판매비용**.
-    B/L 재발급 수수료처럼 **완납 뒤에 생기는 비용**을 `sale_other_costs` 에 넣으면 「받을 돈」(미수)만 늘고 **이미 신고한 면장 금액은 그대로여야** 하기 때문.
-    🚢 **운임비는 CIF 신고에 들어가므로 면장에 남는다** — 기타 판매비용만 뺀다. 가드 = `DeclarationExcludesOtherCostsTest`.
-12. **총마진은 마지막에 × 0.9** — 부가세 10% 차감. 사용자 확정 (2026-05-21)
-13. **정산 default 자동 채움** — `Vehicle::saved` 거래완료 진입 시 `Salesman.type` 보고 `settlement_ratio=50` (프리랜서) 또는 `per_unit_amount=100000` (사내직원) 자동. 코드 상수는 `Settlement::FREELANCE_RATIO_DEFAULT / EMPLOYEE_PER_UNIT_DEFAULT / FREELANCE_DOCUMENT_FEE`
-14. 🚨 **Volt public 프로퍼티와 메서드에 같은 이름 금지** — `public string $search` + `public function search()` 면 `wire:click="search"` 가 **요청조차 안 보내고 조용히 죽는다**(에러 없음). 화면은 `wire:poll.30s` 때만 갱신돼 **"검색이 느리다"로 위장**된다. 메서드는 `searchNow()`/`applyFilters()`, `wire:model.live` 바인딩이면 `updatedSearch()`. 가드 = `VoltPropertyMethodCollisionTest`(정적 스캔, 단위 테스트로는 못 잡음). 2026-05 발생 → 2026-07-28 7개 화면 재발. 상세 = `SKILLS.md §8 #32`
-15. 🧭 **"느리다" 제보 = 성능 문제로 단정 금지** — 서버 실측(쿼리·렌더)이 멀쩡한데 체감이 느리면 **배선(동작 안 함)을 먼저 의심**. 확인 순서 = ①어떤 조작 → 몇 초 뒤 무엇이 바뀌나 ②Network 탭에 **요청이 뜨긴 하나** ③뜬다면 Time. 요청이 없으면 성능 논의는 무의미. (2026-07-28 실제로 성능만 파다 배포 1회 헛돌았음.) ⚠️ **JS/CSS 만 바뀐 배포는 `Ctrl+Shift+R` 전엔 체감 검증 불가** — Livewire 업데이트는 자산을 다시 안 받아서 열린 탭이 옛 JS 로 계속 돈다.
+## 📖 가이드 동기화 (개발할 때마다)
+> 🚨 **사용자에게 보이는 동작을 추가·변경·삭제했으면 같은 작업에서 가이드도 고친다.** 가이드는 둘이다.
 
-## 📖 사내 업무가이드·챗봇 동기화 (개발할 때마다)
+1. **ERP 안 「업무 가이드」**(jin 이 「업무가이드」라 하면 이것) — `resources/guides/{slug}/index.html` + 그림, 목록 `config/guides.php`. **글과 스크린샷 둘 다** 고친다. 이건 **코드다** — 코드 커밋으로 master 에 cherry-pick 한다. 해당 씬이 없으면 새 씬이 필요한지 jin 에게 묻는다. 촬영 = `scripts/scene/README.md`.
+2. **Notion 사내 가이드·챗봇 카드** — 원본은 repo, Notion 은 발행물. **Claude = repo / Codex = Notion 발행 / 회사 GPU PC = 색인.** 🚫 Notion 을 손으로 고치지 않는다.
 
-> 🚨 **사용자에게 보이는 동작을 추가·변경·삭제했으면 같은 커밋에 가이드 소스도 고친다.**
-> 안 고치면 챗봇이 **없는 기능의 사용법을 안내**한다. 2026-07-30 실제 발생 — 07-29 에 삭제한
-> 「보증금 매입 선지급」이 재무·관리 가이드와 카드 3장에 그대로 살아 있었다.
-
-**원본은 repo, Notion 은 발행물.** 세 주체가 각자 한 곳에만 쓴다 —
-**Claude=repo** / **Codex=Notion**(repo 를 읽음) / **회사 GPU PC=색인**(Notion 을 읽음).
-🚫 Notion 을 손으로 고치지 말 것(다음 발행 때 되돌아가 조용히 사라진다).
-
-| 무엇 | 소스 | 비고 |
-|---|---|---|
-| 챗봇 기능 카드 43장 | `scripts/notion-cards/cards.json` | 카드마다 `audience` **필수** |
-| 부서 가이드 4페이지(공통·수출통관·재무·관리) | `scripts/notion-guide-publish.php` `blocks_*()` | `$PAGE_AUDIENCE` |
-| 워크플로우·에러 2페이지 | `scripts/notion-workflow-lock-guide.php` | `$PAGE_AUDIENCE` |
-| 개발 현황판(배포 기록 카드, jin 기록용) | `docs/operations/aws-deployment-record.md` 날짜 머리 항목 | `scripts/notion-dev-status-sync.php` — 야간 04:30 PHP 가 직접 `--apply`(Codex 안 거침, 2026-10-27). 한 번 올린 카드는 안 고침 |
+| 무엇 | 소스 |
+|---|---|
+| 챗봇 기능 카드 | `scripts/notion-cards/cards.json`(카드마다 `audience` 필수) |
+| 부서 가이드 4페이지 | `scripts/notion-guide-publish.php` `blocks_*()` |
+| 워크플로우·에러 2페이지 | `scripts/notion-workflow-lock-guide.php` |
+| 개발 현황판 | `docs/operations/aws-deployment-record.md` 날짜 머리 항목 |
 
 ```bash
-# 대조 — 읽기 전용이라 언제든 안전. 무엇이 어긋났는지 그 줄이 그대로 나온다.
 php scripts/notion-cards/publish.php --verify
 php scripts/notion-guide-publish.php --verify
 php scripts/notion-workflow-lock-guide.php --verify
-php scripts/notion-dev-status-sync.php --verify      # 개발 현황판 ← 배포 기록 (빠진 카드 목록)
+php scripts/notion-dev-status-sync.php --verify
 ```
-
-- **발행(`--apply`)은 Codex 몫**이다. jin 이 "Notion 반영해줘" 하면 Codex 가 위 `--verify` 로 대상을 찾아 반영한다(전달문서 불필요). Claude 는 repo 만 고치고 푸시한다.
-- 🚨 **`audience` 없이 발행하면 다음 03:00 색인이 fail-closed 로 통째 멈춘다.** 전량 미표기면 하위호환으로 전 청크가 `staff` 취급되어 **영업이 대표·시스템 자료를 검색**하게 된다.
-- 🗑️ **기능을 없앴으면 `NotionGuideAudienceTest::RETIRED_TERMS` 에 그 화면 용어를 한 줄 추가**한다. 그러면 가이드·카드에 남은 설명을 테스트가 잡는다(2026-07-30 실사고 재발 방지).
-- 가드 = `tests/Feature/NotionGuideAudienceTest`(audience 무결성 · 발행 함수의 마커 생성 · `--verify` 존재 · 폐기 용어 잔존을 정적 검사). `scripts/notion-*` 이 없는 브랜치(master)에서는 자동 skip — 배포 게이트를 막지 않는다. 상세 = 메모리 `project_chatbot_cards_single_source`.
+- 화면 동작이 바뀌면 **①②를 둘 다** 본다(①에 해당 씬이 없고 ②에만 설명이 있을 수 있고 그 반대도 있다 — `grep` 으로 그 화면 용어를 양쪽에서 찾는다). ②의 `scripts/notion-*` 는 dev 전용이라 **docs 커밋으로 따로**(master 에 안 간다).
+- 발행(`--apply`)은 Claude 가 하지 않는다 — **회사 PC 야간 배치(매일 04:30)** 가 `--verify` 로 어긋난 것을 찾아 Codex 로 발행하고, 개발 현황판은 ERP·board·ssancar.com 3곳을 직접 올린다(`scripts/nightly/nightly-notion.ps1`, 결과 = 관제센터 「Notion」 줄 · 회사 PC `%USERPROFILE%\nightly\reports\notion-YYYYMMDD.md`). 급하면 jin 이 Codex 에 「Notion 반영해줘」.
+- 🚨 `audience` 없이 발행하면 다음 03:00 색인이 통째 멈춘다.
+- 🗑️ 기능을 없앴으면 `NotionGuideAudienceTest::RETIRED_TERMS` 에 그 화면 용어를 추가한다. 가드 = `NotionGuideAudienceTest`(master 에선 자동 skip).
 
 ## Git 브랜치 전략
 
-> 🚨🚨 **master push 1회 = 3개 라이브 회사 동시배포 (heymanerp·ssancarerp·karabaerp). 깨지면 세 회사가 동시에 다운/오작동 → 사업 마비. jin 2026-07-12 "엎어지는 순간 우리 망해".**
-> **master 배포 전 매번**: ①jin 명시승인 ②전체 테스트 통과 ③동작 보존 증명(정산·권한·마이그레이션 특히) ④cherry-pick은 의도한 커밋 SHA만(미배포 대기 esign 등 쓸어담기 금지) ⑤마이그는 3-DB 검증 ⑥APP_KEY 재생성 절대 금지(RRN 전량 손실) ⑦push 후 **deploy 런의 잡 5개**(`tests / ci` · `tests / mysql-check` · `deploy` · `deploy-ssancar` · `deploy-karaba`) **전부 green** 확인 ⑧위험 배포는 업무시간 외 ⑨**사용자 가시 동작이 바뀌었으면 가이드 소스도 같이 갔나** — `--verify` 3줄(위 「📖 사내 업무가이드·챗봇 동기화」). 깨지면 즉시 revert 커밋 push(3사 동시 원복), 운영 SSH 직접수정 금지. 상세 = 메모리 `feedback_three_company_deploy_safety`.
->
-> 🔒 **CI 배포 게이트 (2026-07-30 도입, master `0ba2f09`)** — `deploy.yml` 이 `tests.yml` 을 `workflow_call` 로 호출하고 3개 배포 잡이 `needs: tests` 라, **테스트가 통과해야만 3사 배포가 시작**된다(이전엔 병렬이라 깨져도 나갔다).
-> - ⚠️ **master 엔 독립 `tests` 워크플로 런이 없다**(중복 방지로 push 트리거 제거). 목록에 안 보인다고 "테스트가 안 돌았다"고 오판 말 것. 확인 = `gh run view <deploy run> --json jobs`. dev push 는 종전대로 독립 `tests` 런이 뜬다.
-> - 테스트 실패 시 배포 잡은 **skipped** — master 에 코드는 있고 서버엔 안 나간 상태이므로 **고쳐서 다시 push**(revert 불필요).
-> - `linter` 는 게이트 아님(스타일 실패로 배포를 막지 않음).
+> 🚨🚨 **master push 1회 = 3개 라이브 회사 동시배포(heymanerp·ssancarerp·karabaerp). 깨지면 세 회사가 동시에 다운 → 사업 마비.**
+> **배포 전 매번**: ①jin 명시승인 ②전체 테스트 통과 ③동작 보존 증명(정산·권한·마이그레이션 특히) ④cherry-pick 은 의도한 커밋 SHA 만 ⑤마이그는 3-DB 검증 ⑥APP_KEY 재생성 절대 금지 ⑦push 후 **deploy 런의 잡 5개**(`tests / ci` · `tests / mysql-check` · `deploy` · `deploy-ssancar` · `deploy-karaba`) 전부 green + 서버 SHA 확인 ⑧위험 배포는 업무시간 외 ⑨가이드도 같이 갔나(위 절). **배포가 나간 뒤** 화면이 깨지면 즉시 revert 커밋 push(3사 동시 원복), 운영 SSH 직접수정 금지 — 테스트 게이트에서 막힌 것은 서버에 안 나갔으니 revert 가 아니라 고쳐서 다시 push. 상세 = 메모리 `feedback_three_company_deploy_safety`.
 
-- `dev` — 작업 브랜치 (기본)
-- `master` — 프로덕션 (push 시 자동 SSH 배포 — `artisan down` 1~3분, 업무시간 외 권장). **⚠️ 3사 동시배포 — 위 경고 필독.**
-- `demo` — 데모용 (필요 시)
-- 머지 규칙: dev → 다른 브랜치 push 시 `.md` 파일 **제외** (modify/delete 충돌 → 삭제 유지로 해소)
+- **CI 배포 게이트**: `deploy.yml` 이 테스트를 먼저 돌리고 통과해야 3사 배포가 시작된다. master 엔 독립 `tests` 런이 없다 — 확인은 `gh run view <deploy run> --json jobs`. 테스트 실패 시 배포 잡은 skipped(코드는 master 에 있고 서버엔 안 나감 → 고쳐서 다시 push). `linter` 는 게이트 아님.
+- `dev` 작업 브랜치(기본, 직접 커밋·푸시 — feature 브랜치·PR 없음) / `master` 프로덕션(push = 자동 배포, `artisan down` 1~3분) / `demo`.
+- 한 커밋 = 한 논리적 변경. **설계 문서·`.md`·`scripts/notion-*` 는 코드 커밋에 섞지 않는다**(docs 커밋 따로).
 
-**Claude 작업 규칙 (1인 개발 컨텍스트)**:
-- **별도 feature 브랜치 만들지 않음** — 모든 변경은 `dev`에 직접 커밋·푸시
-- PR 만들지 않음 (사용자가 명시적으로 "PR 만들어줘"라고 한 경우만 예외)
-- 커밋 단위로 변경을 정리해서 추적성 확보 (한 커밋 = 한 논리적 변경)
-
-### dev → master 배포 정확 절차 (cherry-pick 방식 — 권장)
-
-> ⚠️ **이번 세션 혼란 4건 방지 (2026-06-10). 매번 이 순서를 따를 것.**
-
-**① "dev가 master보다 N커밋 앞섬"은 거의 항상 정상 — 겁먹지 말 것.**
-`.md` 제외 머지는 dev 원본 SHA를 master에 안 남기므로, 과거 배포된 커밋들이 영원히 "앞선 것"으로 카운트됨. **커밋 수가 아니라 실제 코드 diff로 판단**:
-```bash
-git fetch origin
-git diff --stat origin/master..dev -- . ':(exclude)*.md'   # ← 이게 master에 갈 진짜 변경
-git log --oneline origin/master..dev                       # 신규 코드 커밋만 골라냄
-```
-
-**② `--no-ff` 풀머지 대신 코드 커밋만 cherry-pick** (master 히스토리 깔끔, .md 자동 배제):
-```bash
-git checkout master
-git merge --ff-only origin/master          # 로컬 master 최신화 (behind일 때 필수)
-git cherry-pick <이번 코드 커밋 SHA…>       # dev에서 만든 코드 커밋만
-git push origin master                      # ← 운영 자동배포 트리거 (artisan down 1~3분)
-git checkout dev
-```
-(코드 커밋에 `.md`가 섞였으면 그 커밋만 `.md` 빼고 재정리 후 cherry-pick. 다건 .md 충돌 머지는 board CLAUDE.md의 `git rm '*.md'` 절차 참고.)
-
-**③ 브랜치 전환 전 미커밋 변경 확인 — 막히면 stash.**
-`.claude/*`·`docs/meetings/INDEX.md` 등 **세션 무관 기존 미커밋 파일**이 자주 떠 있어 checkout을 막음. `git stash push -m "..."` → 작업 → `git checkout dev && git stash pop`. (pop 시 내 작업 아닌 파일이라고 당황 말 것 — 원래 있던 것.)
-
-**④ 커밋 메시지 — Bash 툴에선 PowerShell here-string(`@'…'@`) 금지.** Bash에선 `@`가 리터럴로 박혀 메시지가 깨짐(실측). heredoc 사용:
-```bash
-git commit -F - <<'EOF'
-feat(...): 제목
-본문
-EOF
-```
-(PowerShell 툴에서 커밋할 때만 `@'…'@`. 둘을 섞지 말 것.)
+### dev → master 배포 절차 (cherry-pick)
+1. **「dev 가 N 커밋 앞섬」은 정상** — 커밋 수가 아니라 코드 diff 로 본다:
+   ```bash
+   git fetch origin
+   git diff --stat origin/master..dev -- . ':(exclude)*.md'
+   git log --oneline origin/master..dev
+   ```
+2. 올릴 커밋이 `.md`·`notion-` 을 건드리는지 먼저 확인: `git show --stat --format= <sha> | grep -E "\.md|notion-"`. 섞였으면 그 커밋만 `git cherry-pick -n` 으로 받아 해당 파일을 `git rm --cached` + 삭제한 뒤 `git commit -C <sha>`.
+3. 미커밋 파일(`.claude/*` 등)이 checkout 을 막으면 `git stash push -m "..."` → 끝나고 `git stash pop`.
+4. ```bash
+   git checkout master && git merge --ff-only origin/master
+   git cherry-pick <코드 커밋 SHA…>
+   git status --short        # 충돌 0 · 커밋 수 확인 — 🚫 cherry-pick 과 push 를 한 명령에 묶지 않는다(SKILLS §8 #132)
+   git push origin master    # 단독·플래그 없이
+   git checkout dev
+   ```
+5. 커밋 메시지는 Bash 에선 heredoc(`git commit -F - <<'EOF'`), PowerShell 에서만 `@'…'@`. 섞지 않는다.
 
 ## ⚠️ APP_KEY 영구 손실 경고
+**`php artisan key:generate` 금지** — `nice_reg_owner_rrn`(주민등록번호)이 `APP_KEY` 로 암호화돼 있어 키가 바뀌면 **전량 복호화 불가**, DB 백업으로도 복구 안 된다. 다른 PC 는 기존 키를 `.env` 에 직접 입력. DB 백업 시 APP_KEY 도 분리 보관. 상세 = `docs/operations/key-rotation.md`.
 
-**`php artisan key:generate` 사용 시 RRN(주민등록번호) 전체 영구 손실 위험**
-
-- `nice_reg_owner_rrn` 컬럼은 `APP_KEY`로 암호화 저장. 키가 바뀌면 **모든 RRN 데이터 복호화 불가**, DB 백업으로도 복구 안 됨.
-- **집/회사 양쪽 PC**: 한 PC에서 발급한 APP_KEY 값을 1Password 등에 백업 → 다른 PC `.env`에 동일 값 직접 입력. `key:generate` 절대 실행 금지.
-- **운영 배포 시**: 최초 1회만 `key:generate` → 즉시 백업 → 재배포 시 동일 키 유지.
-- **DB 백업 시**: APP_KEY도 별도 위치에 함께 백업 (분리 보관, 한쪽 유실해도 다른 쪽 보존).
-- 상세 가이드 + 사고 복구 절차: `docs/operations/key-rotation.md`
-
-## 새 PC 세팅
-```bash
-# 1. PHP 확장 활성화 — XAMPP php.ini (C:\xampp\php\php.ini)에서 주석 제거 필수
-#    extension=gd        # PhpSpreadsheet 의존성
-#    extension=zip       # PhpSpreadsheet 의존성
-#    (Apache 사용 시 Apache 재시작)
-
-git clone https://github.com/wlsdud10075-JIN/car-erp.git
-cd car-erp
-composer install && npm install
-cp .env.example .env && php artisan key:generate    # ⚠️ 다른 PC면 기존 키 복사 (위 경고 참조)
-# .env DB_DATABASE=car_erp 확인
-# MySQL: CREATE DATABASE car_erp CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-php artisan migrate && php artisan db:seed
-npm run build
-php artisan serve --port=8001
-# 다른 PC 접속: --host=0.0.0.0
-# 테스트 계정: admin@car-erp.test / password (시스템관리자, permission=super)
-```
-
-### 다른 PC에서 작업 재개 절차
-
-```powershell
-# 1. dev 브랜치 최신화
-git checkout dev && git pull origin dev
-
-# 2. 마이그 누락 확인 (필수)
-php artisan migrate:status
-php artisan migrate     # Pending 있으면 실행
-
-# 3. 의존성 + 자산 (composer.lock / package-lock.json 변경 있으면)
-composer install
-npm install
-npm run build
-
-# 4. 캐시 클리어
-php artisan view:clear && php artisan cache:clear
-
-# 5. 자동 테스트 회귀
-php artisan test
-
-# 6. 개발 서버
-php artisan serve --port=8001
-```
+## 새 PC · 다른 PC 에서 재개
+`docs/operations/new-pc-setup.md` 를 따른다(php.ini `extension=gd`·`zip` · clone · `composer install && npm install` · `.env`(기존 APP_KEY 복사) · `php artisan migrate` · `npm run build`). 재개 시 최소: `git pull origin dev` → `php artisan migrate:status` → 의존성·빌드 → 테스트. 테스트 계정 `admin@car-erp.test / password`(super).
 
 ## 자주 쓰는 명령어
 ```bash
-php artisan serve --port=8001       # 개발 서버 (my-crm 8000과 분리)
 npm run build                       # 프론트 빌드
-npm run dev                         # Vite 개발 모드 (HMR)
-php artisan migrate                 # 마이그레이션
-php artisan db:seed                 # 초기 데이터
-php artisan view:clear              # 뷰 캐시 클리어
-vendor/bin/pint --dirty             # 커밋 전 포매팅
+php artisan migrate                 # 마이그레이션 (🚫 migrate:fresh · db:wipe 는 로컬이라도 금지)
+php artisan test --parallel         # 전체 3~4분 (기대 실패 0)
+vendor/bin/pint --dirty             # 커밋 전 (.php 만)
 ```
 
-## AI 크로스 체크 (/cross-verify 스킬)
-
-Codex + Gemini + Claude 3-model 비교 시 각 CLI 호출 방법.
-
+## AI 크로스 체크 (/cross-verify)
 ```powershell
-# 가용성
-Get-Command codex -ErrorAction SilentlyContinue   # C:\Users\User\AppData\Roaming\npm\codex.ps1
-Get-Command gemini -ErrorAction SilentlyContinue  # C:\Users\User\AppData\Roaming\npm\gemini.ps1
-
-# Codex (auth.json에 ChatGPT 계정. config model=gpt-5.5)
-cmd /c 'echo. | codex exec "프롬프트" 2>&1'
-
-# Gemini (GEMINI_API_KEY + GEMINI_CLI_TRUST_WORKSPACE=true 자동 주입)
-gemini -p "프롬프트" --approval-mode yolo 2>&1
+cmd /c 'echo. | codex exec "프롬프트" 2>&1'          # Codex — 기본 모델(gpt-5.5)만
+gemini -p "프롬프트" --approval-mode yolo 2>&1       # Gemini
 ```
-⚠️ Codex: ChatGPT 계정으론 `gpt-4o-mini` 등 일반 OpenAI 모델 미지원 → 반드시 기본 `gpt-5.5` 사용.
-
-## 기능 토글 (Setting 모델 — 구현 예정)
-- `heyman_channel_enabled` — 헤이맨 채널 on/off
-- `carpul_channel_enabled` — 카풀 채널 on/off
-- 변경 권한: `super`만 (`canToggleFeatures()`)
 
 ## 외부 연동 상태
-
 | 연동 | 상태 | 위치 |
 |---|---|---|
-| **NICE API** | ✅ 완료 (`698f0c9`, 2026-05-25) — ssancar-erp 미들웨어 경유. ~~미구현 2건(기통수·검사종료)은 nice_raw 에서 서류 생성 시 파싱~~ → **2026-10-02 전용 컬럼 우선·raw 폴백**(기본정보 탭에서 수정 가능, 배포 뒤 `vehicles:sync-nice-spec-columns --apply`) | `app/Services/NiceApiService.php`, `docs/nice-followup-items.md` |
-| **포워딩사 메일** | ❌ 영구 제거 (사용자 결정) | - |
-| DHL API | ⏸️ 1단계 스코프 외 (수동 입력만) | - |
-| **S3** | ✅ 완료 — 버킷 `heysellcar-erp-docs`, IAM, `league/flysystem-aws-s3-v3`, 서명URL | `config/filesystems.php` |
+| NICE API | ✅ ssancar-erp 미들웨어 경유. 제원은 전용 컬럼 우선·`nice_raw` 폴백 | `app/Services/NiceApiService.php` |
+| 포워딩사 메일 | ❌ 영구 제거 | - |
+| DHL API | ⏸️ 수동 입력만 | - |
+| S3 | ✅ 버킷 `heysellcar-erp-docs`, 서명 URL | `config/filesystems.php` |
 
-## 개발 진행 상황
+## 지금 상태 · 남은 일
+**여기 적지 않는다(금방 낡는다).** 최신 배포·잔여 안건 = 메모리 `MEMORY.md`(색인 → 필요한 `project_*.md`만). 메모리 파일명은 언더스코어. 전체 배포 기록 = `docs/operations/aws-deployment-record.md`. 날짜를 몰라도 주제어로: `grep -rn "키워드" ~/.claude/projects/C--xampp-htdocs-car-erp/memory --include=*.md`.
+- 3사 운영 라이브. 로컬 전체 테스트 기대 실패 0(건너뜀 1 = `MysqlCheckConstraintTest`).
+- 🚀 배포 직후 수동 캐시 정리는 하지 않는다(deploy.yml 이 www-data 로 `view:cache`).
 
-대부분의 큐(0~13)는 완료 상태. 운영 배포(`52.79.200.151`)·자동 SSH 배포 검증·NICE 연동·S3·DB백업 cron 전부 dev/master 반영. 완료된 큐 표 상세는 `docs/archive/md-2026-05-29/CLAUDE.md.full` 참조.
-
-> 📦 옛 마일스톤(큐 0~13 · 별건 3 · 도메인/HTTPS 2026-06-11 · 통관 SET 다중차량 보류)은 전부 종결.
-> 상세는 `docs/archive/md-2026-05-29/CLAUDE.md.full` 과 메모리 `_ARCHIVE.md` 참조.
-
-## ⏭️ 다음 세션 작업 순서
-
-> **세션 시작 시 읽을 것**: 메모리 `MEMORY.md`(인덱스 — 여기서 필요한 `project_*.md` 만 열람).
-> ⚠️ 메모리 파일명은 **언더스코어**다(`project_deployment.md` 등). 하이픈으로 찾으면 안 나온다.
-> 📚 **메모리는 3층이다** — `MEMORY.md`(색인, 매 세션 로드·**200줄 넘으면 뒤가 조용히 잘린다**) /
-> `project_*.md`·`feedback_*.md`(주제별 상세) / `_ARCHIVE.md`(끝난 것의 맥락, 안 읽힘).
-> **큰 내용은 아카이브·개별 파일에 쓰고 색인엔 한 줄+경로만 둔다**(jin 2026-08-25).
-> 🔎 **날짜를 몰라도 주제어로 찾는다** — 아카이브 맨 위 「찾는 법」의 주제↔키워드 표를 쓸 것:
-> `grep -rn "키워드" ~/.claude/projects/C--xampp-htdocs-car-erp/memory --include=*.md`
-> 전체 배포 기록 = `docs/operations/aws-deployment-record.md`.
-
-**현재 상태 (2026-11-02)**: 3사 운영 라이브(heymanerp `heysellcar.com` · ssancarerp `heymancar.com` · karabaerp `karaba-erp.com`).
-앱코드 master(`ad7bf01b` — 11-02 심야: 결재 직급 전무→상무(데이터 마이그 1) / 11-02 밤 `23673273`: 보험료 명세서 기입 더하기 + 재업로드 차단 / 11-02 저녁 `aaee8fdf`: 자금 보고 「자산 = 자본 + 부채」 페이지 + 알림톡 자금보고 카드 제자리 교체(🚨 3사 BizM 수정 승인 대기, 11-09 월 발송 전 확인) + 환율 오타 필터 + 테스트 발송 버튼, 마이그 1 / 11-02 낮 `6a4e4884`: B2B 파트너스 회사별 토글(기본 OFF, 기능설정) + 바이어 포털 칸 일괄 채움 명령(미실행) / 11-01 저녁 `cb3d8ba4`: B2B 파트너스 1차 + ssancar 포털 2단계, 마이그 1 / 11-01 점심 `ece49295`: 발송비 규칙 · 드로어 건당 미리보기 / 10-30 저녁 `a2442c83`: ssancar 포털 바이어 연락처·컨사이니 배열 1단계 / 10-30 오후 `f25492a4`: 일괄 기입 「체크한 차량만」 · 입금완료 알림톡 문자 대체(K101) · 양도증명서 잔금 한도·서명줄 / 10-29 저녁 `16a308c9`: purchase-sync `amounts_overwrite` / 10-29 오후 `8347b1e5`: 주말 개발 4갈래 + 재고 (가), 마이그 1), **미배포 기능코드 0**. 테스트 **3,612 pass(로컬 병렬) · 로컬 기대 실패 0**(2026-10-12 — 옛 「로컬 7 fail = GD 差」는 `.env COMPANY_TEMPLATE_SET=heyman` 오진, `phpunit.xml` 에 system 고정. 메모리 `reference_local_test_failures_gd`).
-⚠️ **이 줄은 금방 낡는다** — 최신 배포·잔여 안건은 메모리 `MEMORY.md` 를 볼 것(여기 숫자를 근거로 판단하지 말 것).
-🚀 **배포 직후 수동 캐시 정리는 하지 않는다**(2026-10-23 — deploy.yml 이 `sudo -u www-data php artisan view:cache` 로 만든다, 첫 배포 권한 오류 0건. SKILLS §8 #122).
-dev-only = `scripts/notion-*`·`docs/*.html`·`.md`·Notion 테스트 2.
-
-> 🤝 **08-11 배포 3회** — board 인계 「입금요청 분리」 반영. ①**계약금/매입잔금 2종 + 금액**(표시 전용,
-> 회계 미반영). ⚠️계약금은 미지급 0 으로 **자동소멸 안 함**(수동 확인만) — 꺼지면 거짓 신호가 인수까지 남는다.
-> 구 `purchase_payment` 는 **계속 수신**(board 운영이 구버전이라 튕기면 유일한 경로가 죽는다).
-> ②**금액 정정 재전송**(다른 금액이면 제자리 갱신 + 알림톡 재발송「금액 수정」. 무르기 UI 는 안 만듦 = jin 결정.
-> 갱신분을 `created` 에 담아 **board 무변경으로 동작**). ③**요청 알림톡**(`erp_board_request`) — 수신자가
-> **시각 규칙**으로 갈린다(근무시간 담당자 / 야간·주말·공휴일 대표). ④**공휴일 자동 수집**(한국천문연구원 특일 API,
-> ssancarerp·heymanerp 키 주입 완료·karaba 미설정). ⑤**차량 탭별 메모 5칸**(매입·판매·통관·선적·B/L).
-> 🚨 **알림톡은 BizM 승인 대기라 실발송 0건** — 승인 전까지 게이트에서 skipped. 등록 파일·문안 = jin 몫.
-> ⚠️ **board 는 아직 master 미머지**(ERP 선배포 완료 상태) — board 세션에서 올려야 새 버튼이 산다.
-
-**남은 작업**: ✅ 주말 개발 4갈래는 10-29 에 앞당겨 배포됨(`8347b1e5`, board `be8de72`). 코드 착수 대기 **0건** — 운영 첫 사례 확인(컨테이너 묶음 운임비 환산·정산 블로커 해제, 송금인 전송, 적립금 탭)은 jin·board 몫. 그 외는 `MEMORY.md` 「jin 운영 몫」·「외부·타 세션 병목」.
-
-## 대시보드 명칭 및 설계 원칙 (확정)
-
-대시보드는 3종으로 구분. **대화·코드 주석 모두 아래 명칭으로 통일** (혼동 방지).
-
+## 대시보드 명칭 (대화·주석 모두 이 이름)
 | 명칭 | URL | 대상 | 성격 |
 |---|---|---|---|
-| **업무 대시보드** | `/erp/dashboard` | admin/super | 담당자 드롭다운으로 인원별 업무 현황 조회 |
-| **관리자 대시보드** | `/admin/dashboard` | admin/super | 결과 중심 — KPI·차트·통계 |
-| **일반사용자 대시보드** | `/erp/dashboard` | 일반사용자 | role별 오늘의 할일 중심 |
+| **업무 대시보드** | `/erp/dashboard` | 로그인하는 전 직원(역할 뷰) | 지금 할 일 — 기간 선택 없음 |
+| **관리자 대시보드** | `/admin/dashboard` | admin/super | 결과 — KPI·차트·통계(기간 지정) |
 
-- **업무 대시보드** (`/erp/dashboard`) — **action-oriented**. 🔀 **2026-10-17 역할 뷰 5개로 재편**(jin 「적용해줘」, 목업 = `docs/design/mock/2026-10-16/work-dashboard-role-*.html`, 데이터 = `App\Services\Dashboard\WorkDashboardData`, 뷰 조각 = `resources/views/erp/dashboard/*.blade.php`, 가드 = `WorkDashboardRoleViewsTest`):
-  - **담당 영업**(`roleView='영업'`) = **관리가 자기 담당 영업들의 돈을 묶어 본다**(영업은 로그인하지 않는다, jin 10-17). 범위 = `User::getSubordinateSalesmanIds()`(피벗+위임). 팀 합계 → 영업별 카드(**접힌 한 줄이 기본** — 미수·미지급·입금률, 누르면 급한 차 3대 · jin 10-17 «너무 많이 차지한다») → 돈 막힌 차 → 딜러 매입 잔금(「예정일」 = 미래 날짜 잔금 행, 약속일 개념은 없다) → 다음 단계로 넘길 것(영업별 대수)
-  - **수출통관** = 서류 칸반 4칸(기존 큐 4개) + 이번 주 선적·ETA 달력 + 서류 기준 표 / **재무** = 받을 돈·줄 돈 + 정산 대기→확정→보류→2차 진행줄 + 통장 마감잔액 입력 + 채권 위험 표
-  - **관리** = 수출통관 + 재무 합본 — 서류 칸반 축약 + 돈 + 「오늘 먼저」(두 큐를 긴급순으로 합친 처리 필요 항목). 🚫 결재·감독 화면으로 만들지 말 것 — 그건 업무관리자 몫
-  - **업무관리자**(admin·`permission=manager` 만) = 이번 달 올릴 것(월정산 제출 준비 — 확정·미확정·미수 보류는 **정보 줄**, 제출을 막지 않는다) · 퇴사 정산 · 대표 결재 중 · 오래 멈춘 차(🚫 새 N일 없음 — 통관 정체 30일·말소 기한·미수 stale·ETA 없음 기존 큐 합본, 단일 출처 `WorkDashboardData::STUCK_QUEUES` · **15대씩 페이지**(`stuckPage`) + **「멈춘 곳」 칩 하나 고르기**(`stuckWhere`, jin 10-17 — ssancarerp 실측 399줄 = 통관 정체 148·말소 10·미수 21·ETA 220)) · 관리별 팀 단위 미처리 · **보고용 숫자(관리자 대시보드는 대표만 보므로 이 화면 안에, jin 「전자」)**
-  - 공통 = 처리 필요 항목(큐 목록) + 맨 아래 10단계 진행 단계 스트립. 구 「담당자별/역할별」 모드 토글(`viewMode`)은 폐지. 누가 어느 뷰를 여나 = `allowedRoleViews()`(admin·업무관리자 5 / 관리 4 / 그 외 본인 1). 기간 선택 없음 — 숫자가 전부 「지금 상태」(관리자 대시보드와 공통인 미수·미지급·정산은 같은 scope 로 센다)
-- **관리자 대시보드** (`/admin/dashboard`) — **result-oriented**: 날짜 범위 지정 + 결과 현황
-  - 1~12월 연간 매출 차트, 월별 인원별 매출 그래프, 인원별 평균 판매량
-  - 채널별 현황, 전체 진행단계 현황, role별 탭 전환
-- **일반사용자 대시보드** (`/erp/dashboard`, 일반사용자 접근 시) — role별 오늘의 할일
-  - 영업: 현재 유지 (매입미지급·판매미입금 등)
-  - 수출통관: 수출통관·선적 관련 처리 필요 항목
-  - 재무: 입금·출금·정산 관련 처리 필요 항목
-  - 관리: 보류
+**업무 대시보드 역할 뷰 5개**(데이터 `App\Services\Dashboard\WorkDashboardData`, 뷰 `resources/views/erp/dashboard/*.blade.php`, 가드 `WorkDashboardRoleViewsTest`). 누가 어느 뷰를 여나 = `allowedRoleViews()`(admin·업무관리자 5 / 관리 4 / 그 외 본인 1).
+- **담당 영업** — 관리가 자기 담당 영업들의 돈을 묶어 본다. **운영에서 영업은 ERP 에 로그인하지 않는다**(board 를 쓴다) — role=영업 계정·미들웨어는 코드에 남아 있고 지우지 않는다. 범위 `User::getSubordinateSalesmanIds()`. 영업별 카드는 접힌 한 줄이 기본.
+- **수출통관** — 서류 칸반 4칸 + 이번 주 선적·ETA 달력 + 서류 기준 표.
+- **재무** — 받을 돈·줄 돈 + 정산 진행줄 + 통장 마감잔액 입력 + 채권 위험 표.
+- **관리** — 수출통관 + 재무 합본 + 「오늘 먼저」. 🚫 결재·감독 화면으로 만들지 않는다(그건 업무관리자).
+- **업무관리자** — 이번 달 올릴 것(월정산 제출 준비) · 퇴사 정산 · 대표 결재 중 · 오래 멈춘 차(단일 출처 `WorkDashboardData::STUCK_QUEUES`, 새 N일 기준을 만들지 않는다) · 보고용 숫자.
+- 공통 = 처리 필요 항목 + 맨 아래 10단계 진행 단계 스트립. 관리자 대시보드와 공통인 숫자(미수·미지급·정산)는 같은 scope 로 센다.

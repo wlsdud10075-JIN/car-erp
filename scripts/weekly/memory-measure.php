@@ -13,7 +13,8 @@ date_default_timezone_set('Asia/Seoul');
 const MEMORY_MAX_LINES = 150;      // 200 줄부터 뒤가 조용히 잘린다 — 넘기 전에
 const MEMORY_MAX_BYTES = 24_000;
 const LONG_LINE_CHARS = 400;
-const SKILLS_MAX_BYTES = 200_000;
+const SKILLS_MAX_BYTES = 110_000;   // 2026-11-23 트림 뒤 기준(교훈 전문은 아카이브로)
+const LOADED_MAX_BYTES = 230_000;   // 매 세션 읽는 레포 문서 합(CLAUDE·CLAUDE_1·SKILLS·docs/core) — 넘으면 줄이기 제안
 
 $repo = dirname(__DIR__, 2);
 $home = getenv('USERPROFILE') ?: getenv('HOME') ?: '';
@@ -87,10 +88,24 @@ if (is_file($skills) && preg_match_all('/^### (\d+)\./m', (string) file_get_cont
 if ($order !== []) {
     $notes[] = 'SKILLS §8 번호 순서 어긋남 '.count($order).'곳('.implode(', ', array_slice($order, 0, 3)).') — 트림 때 같이';
 }
+// 매 세션 읽는 레포 문서 합 — CLAUDE.md 가 @ 로 불러오는 파일까지 (2026-11-23, 「현재 상태」 줄은 CLAUDE.md 에서 없앴다)
 $claude = $repo.'/CLAUDE.md';
-$master = trim((string) @shell_exec('git -C '.escapeshellarg($repo).' rev-parse --short=8 origin/master 2>'.(PHP_OS_FAMILY === 'Windows' ? 'NUL' : '/dev/null')));
-if (is_file($claude) && preg_match('/현재 상태 \(([0-9-]+)\)\*\*: .*?master\(`([0-9a-f]+)`/us', (string) file_get_contents($claude), $cm) && $master !== '' && ! str_starts_with($master, $cm[2])) {
-    $notes[] = "CLAUDE.md 「현재 상태」 = {$cm[1]} `{$cm[2]}` · 실제 master `{$master}` — 갱신할지 jin 에게";
+$loaded = [];
+if (is_file($claude)) {
+    $loaded['CLAUDE.md'] = filesize($claude);
+    if (preg_match_all('/^>?\s*@(\S+\.md)\s*$/m', (string) file_get_contents($claude), $im)) {
+        foreach ($im[1] as $rel) {
+            $loaded[$rel] = is_file($repo.'/'.$rel) ? filesize($repo.'/'.$rel) : 0;
+            if ($loaded[$rel] === 0) {
+                $notes[] = "CLAUDE.md 가 불러오는 `{$rel}` 이 없다 — 경로 확인";
+            }
+        }
+    }
+}
+$loadedBytes = array_sum($loaded);
+if ($loadedBytes > LOADED_MAX_BYTES) {
+    arsort($loaded);
+    $over[] = '매 세션 읽는 문서 '.round($loadedBytes / 1024).'KB(기준 '.round(LOADED_MAX_BYTES / 1024).'KB) — 큰 것: '.implode(', ', array_map(fn ($k, $v) => $k.' '.round($v / 1024).'KB', array_slice(array_keys($loaded), 0, 3), array_slice($loaded, 0, 3)));
 }
 
 $candidates = count($rows) + count($over);
@@ -101,6 +116,7 @@ $md = "# 메모리·문서 주간 측정 — ".date('Y-m-d H:i')."\n\n"
     ."정리는 이 표를 보고 `/memory-cleanup` 으로(옮기기 전에 jin 확인). 이 측정은 아무것도 고치지 않았다.\n\n"
     .'- MEMORY.md: '.count($lines).'줄 / '.number_format($bytes)." B (기준 ".MEMORY_MAX_LINES.'줄 · '.number_format(MEMORY_MAX_BYTES)." B)\n"
     .'- SKILLS.md: '.number_format($skillsBytes).' B (기준 '.number_format(SKILLS_MAX_BYTES)." B)\n"
+    .'- 매 세션 읽는 레포 문서 합: '.number_format($loadedBytes).' B · '.count($loaded).'개 (기준 '.number_format(LOADED_MAX_BYTES)." B)\n"
     .($over ? "- ⚠️ 기준 넘음: ".implode(' · ', $over)."\n" : '')
     .implode('', array_map(fn ($n) => "- 💡 {$n}\n", $notes))
     ."\n## 정리 후보 (".count($rows).")\n\n| 종류 | 행 | 지금 내용(앞부분) | 제안 |\n|---|---|---|---|\n"
