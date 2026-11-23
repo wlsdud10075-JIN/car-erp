@@ -20,7 +20,7 @@ Specialist는 **단일 부서가 아니라 안건 키워드별로 발동되는 �
 
 ### B. 데이터 무결성 — 안건 키워드: 마이그레이션 / 정산 공식 / 캐시 컬럼 / Python ERP 이관
 - 관점: 기존 row 영향 / Python ERP 데이터 이관 / 회계 일치 / retroactive risk
-- 참조: `CLAUDE.md` 정산 마진 공식 (엑셀 실측 — `purchase_price × 0.09`) / `SKILLS.md §13` 핵심 공식
+- 참조: `docs/core/money-1-settlement.md` 정산 공식 (엑셀 실측 — `purchase_price × 0.09`) / `docs/core/money-1-settlement.md`·`money-3-receivable.md` 핵심 공식
 - 무조건 짚어야 할 항목
   - 기존 `settlement_status=paid` 건 retroactive 변경 시 회계감사 불가 위험
   - `vat_formula_version` 같은 버전 컬럼으로 신규만 적용 분리 가능한가
@@ -57,7 +57,7 @@ Specialist는 **단일 부서가 아니라 안건 키워드별로 발동되는 �
 
 ### F. 회계·정산 감사 — 안건 키워드: 정산 공식 / paid / snapshot / 환율 / 매입가 / 판매가 / 비용
 - 관점: paid 이후 retroactive 변경 차단 / snapshot 기준 표시 / 원장성 데이터 삭제 금지 / 환율·다중통화 감사 가능성
-- 참조: `CLAUDE.md` 정산 공식 / `SKILLS.md §13` 핵심 공식 / `app/Models/Settlement.php`
+- 참조: `docs/core/money-1-settlement.md` 정산 공식 / `docs/core/money-1-settlement.md`·`money-3-receivable.md` 핵심 공식 / `app/Models/Settlement.php`
 - 무조건 짚어야 할 항목
   - `settlement_status=paid` 이후 회계 민감 컬럼 변경이 차단되는가
   - paid 전환 시 `confirmed_snapshot`이 충분한 값을 캡처하는가
