@@ -88,6 +88,12 @@ class BulkContainerPrefixTest extends TestCase
         $this->assertSame('6.08_G', BulkVehicleShippingDateService::containerPrefixOf('6.08_G RORO 12-33_5'));
         $this->assertSame('', BulkVehicleShippingDateService::containerPrefixOf('EISU8533921'));
         $this->assertSame('', BulkVehicleShippingDateService::containerPrefixOf('RORO 4-19'));
+        // 맨 앞 `#` 하나는 접두어로 본다 (jin 2026-11-23, ssancarerp `#6.12_H RORO 22-16_1` 49대) — 그 밖의 표시·한글 약칭은 아니다.
+        $this->assertSame('#6.12_H', BulkVehicleShippingDateService::containerPrefixOf('#6.12_H RORO 22-16_1'));
+        $this->assertSame('6.12_H RORO 22-16_1', BulkVehicleShippingDateService::replaceContainerPrefix('#6.12_H RORO 22-16_1', '#6.12_H', '6.12_H'));
+        foreach (['##6.12_H RORO 1-1', '*6.12_H RORO 1-1', '@6.12_H RORO 1-1', '6.12_현대 RORO 1-1', '# 6.12_H RORO 1-1'] as $no) {
+            $this->assertSame('', BulkVehicleShippingDateService::containerPrefixOf($no), "{$no}: 접두어로 잡히면 안 된다");
+        }
         $this->assertSame('', BulkVehicleShippingDateService::containerPrefixOf('-'));
         $this->assertSame('', BulkVehicleShippingDateService::containerPrefixOf(null));
     }
