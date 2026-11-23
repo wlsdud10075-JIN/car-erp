@@ -46,11 +46,11 @@ class BrainCatalog
         return ['generated_at' => now()->toIso8601String(), 'repo_head' => self::head($repo), 'clusters' => $clusters];
     }
 
-    /** `### 137. 🧩 **제목** (날짜)` 줄 — 본문 SKILLS.md(#96~) + 아카이브(#1~#95). 최신 번호가 먼저. */
+    /** `### 137. 🧩 **제목** (날짜)` 줄 — 본문 SKILLS.md(아직 안 옮긴 새 교훈) + 아카이브 두 파일(#96~#138 · #1~#95). 최신 번호가 먼저. */
     private static function skills(string $repo): array
     {
         $items = [];
-        foreach ([$repo.'/SKILLS.md', $repo.'/docs/archive/skills-8-2026-09-22/SKILLS-8-lessons-1-95.md'] as $file) {
+        foreach ([$repo.'/SKILLS.md', $repo.'/docs/archive/skills-8-2026-11-23/SKILLS-8-lessons-96-138.md', $repo.'/docs/archive/skills-8-2026-09-22/SKILLS-8-lessons-1-95.md'] as $file) {
             if (! is_file($file)) {
                 continue;
             }
