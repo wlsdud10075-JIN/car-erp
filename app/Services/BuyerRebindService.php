@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\DB;
  * 규칙:
  *  - 돈(적립금·현금 원장·이체)이 붙은 바이어 = **삭제 불가**(이관도 안 한다 — 잔액은 바이어×통화 스냅샷이라 옮기면 깨진다.
  *    게다가 넷 다 SoftDeletes 없이 cascadeOnDelete 라 forceDelete 하면 복구 불가로 사라진다).
+ *    예외 하나 — 넣었다가 전부 취소한 적립금 줄만 남은 바이어는 막지 않는다(`blockingSavingsCount`, 2026-11-23).
  *  - 차량이 붙은 바이어 = 이관 대상을 고르면 **차량 3컬럼 + 그 바이어의 컨사이니**를 통째로 넘기고 삭제.
  *    컨사이니를 같이 넘기는 이유 — 차량의 consignee_id 는 옛 바이어의 컨사이니를 가리키고 있어, 바이어만 옮기면
  *    차량 패널의 컨사이니 드롭다운(바이어별 로드)이 그 차의 컨사이니를 못 보여 준다.
@@ -56,7 +57,7 @@ final class BuyerRebindService
         $vehicles['total'] = self::vehiclesOf($buyer)->count();
 
         $money = [
-            'savings' => SavingsStatus::where('buyer_id', $buyer->id)->count(),
+            'savings' => self::blockingSavingsCount($buyer),
             'cash_receipts' => BuyerCashReceipt::where('buyer_id', $buyer->id)->count(),
             'cash_fees' => BuyerCashFee::where('buyer_id', $buyer->id)->count(),
             'transfers' => InterVehicleTransfer::where('buyer_id', $buyer->id)->count(),
@@ -68,6 +69,35 @@ final class BuyerRebindService
             'consignees' => Consignee::withTrashed()->where('buyer_id', $buyer->id)->count(),
             'money' => $money,
         ];
+    }
+
+    /**
+     * 삭제를 막는 적립금 줄 수 (jin 2026-11-23 «이런 일이 또 있을 수 있으니»).
+     *
+     * 적립금 줄은 지울 수 없다(취소 = 반대 줄 추가). 그래서 엉뚱한 바이어에 넣었다가 바로 취소해도 2줄이 영구히 남아
+     * 그 바이어를 지울 길이 없었다(ssancarerp #61 — 264 EUR 적립 1분 뒤 취소, 차량 0대).
+     * **전부 취소로 상쇄된 원장**만 0 으로 센다 — 세 조건을 모두 채울 때:
+     *   ① 모든 줄이 「취소 줄」이거나 「취소 줄이 가리키는 원거래」 ② 통화별 합이 0 ③ 차량에 묶인 줄이 없다.
+     * 실제로 적립하고 쓴 이력은 잔액이 0 이어도 종전대로 막는다. 줄은 지우지 않는다(바이어는 SoftDeletes — 내역·감사로그는 남는다).
+     */
+    private static function blockingSavingsCount(Buyer $buyer): int
+    {
+        $rows = SavingsStatus::where('buyer_id', $buyer->id)
+            ->get(['id', 'currency', 'transaction_type', 'savings', 'vehicle_id', 'original_transaction_id']);
+        if ($rows->isEmpty()) {
+            return 0;
+        }
+
+        $ids = $rows->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $cancelled = $rows->where('transaction_type', 'CANCELLED')->pluck('original_transaction_id')->filter()->map(fn ($id) => (int) $id)->all();
+        $allCancelled = $rows->every(fn (SavingsStatus $r) => $r->vehicle_id === null && (
+            $r->transaction_type === 'CANCELLED'
+                ? in_array((int) $r->original_transaction_id, $ids, true)
+                : in_array((int) $r->id, $cancelled, true)
+        ));
+        $netZero = $rows->groupBy('currency')->every(fn ($g) => abs($g->sum(fn (SavingsStatus $r) => (float) $r->savings)) < 0.005);
+
+        return $allCancelled && $netZero ? 0 : $rows->count();
     }
 
     /** 삭제를 막아야 하는 사유(사람용 문장). null = 지워도 된다. */

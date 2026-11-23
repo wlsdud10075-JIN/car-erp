@@ -84,6 +84,56 @@ class BuyerDeleteGuardTest extends TestCase
         $buyer->delete();
     }
 
+    /**
+     * 엉뚱한 바이어에 적립했다가 취소한 흔적만 남은 바이어는 지울 수 있다 (jin 2026-11-23, ssancarerp #61).
+     * 줄은 지우지 않는다 — 바이어만 휴지통으로 간다.
+     */
+    public function test_a_buyer_whose_savings_rows_are_all_cancelled_can_be_deleted(): void
+    {
+        $admin = $this->admin();
+        $this->actingAs($admin);
+        $buyer = Buyer::create(['name' => 'WRONG TARGET', 'is_active' => true]);
+        $earned = SavingsStatus::create(['buyer_id' => $buyer->id, 'currency' => 'EUR', 'transaction_type' => 'EARNED', 'savings' => 264, 'balance' => 264]);
+        SavingsStatus::create(['buyer_id' => $buyer->id, 'currency' => 'EUR', 'transaction_type' => 'CANCELLED', 'savings' => -264, 'balance' => 0, 'original_transaction_id' => $earned->id]);
+
+        $this->assertNull(BuyerRebindService::blockReason($buyer));
+        Volt::actingAs($admin)->test('erp.buyers.index')->call('delete', $buyer->id);
+
+        $this->assertSoftDeleted('buyers', ['id' => $buyer->id]);
+        $this->assertSame(2, SavingsStatus::where('buyer_id', $buyer->id)->count(), '적립금 줄은 남아 있어야 한다');
+    }
+
+    /** 잔액이 0 이어도 실제로 적립하고 쓴 이력·덜 취소된 원장·차량에 묶인 줄은 종전대로 막는다. */
+    public function test_zero_balance_alone_does_not_open_the_savings_guard(): void
+    {
+        $this->actingAs($this->admin());
+
+        $used = Buyer::create(['name' => 'USED UP', 'is_active' => true]);
+        SavingsStatus::create(['buyer_id' => $used->id, 'currency' => 'EUR', 'transaction_type' => 'EARNED', 'savings' => 100, 'balance' => 100]);
+        SavingsStatus::create(['buyer_id' => $used->id, 'currency' => 'EUR', 'transaction_type' => 'USED', 'savings' => -100, 'balance' => 0]);
+
+        $partial = Buyer::create(['name' => 'PARTIAL', 'is_active' => true]);
+        $a = SavingsStatus::create(['buyer_id' => $partial->id, 'currency' => 'EUR', 'transaction_type' => 'EARNED', 'savings' => 100, 'balance' => 100]);
+        SavingsStatus::create(['buyer_id' => $partial->id, 'currency' => 'EUR', 'transaction_type' => 'EARNED', 'savings' => 50, 'balance' => 150]);
+        SavingsStatus::create(['buyer_id' => $partial->id, 'currency' => 'EUR', 'transaction_type' => 'CANCELLED', 'savings' => -100, 'balance' => 50, 'original_transaction_id' => $a->id]);
+
+        // 차량에 묶인 줄 — 차량이 지워져도(휴지통) 줄의 vehicle_id 는 남는다.
+        $linked = Buyer::create(['name' => 'LINKED', 'is_active' => true]);
+        $car = Vehicle::create(['vehicle_number' => '12가0099', 'sales_channel' => 'export', 'purchase_price' => 1_000_000]);
+        $e = SavingsStatus::create(['buyer_id' => $linked->id, 'vehicle_id' => $car->id, 'currency' => 'EUR', 'transaction_type' => 'EARNED', 'savings' => 30, 'balance' => 30]);
+        SavingsStatus::create(['buyer_id' => $linked->id, 'currency' => 'EUR', 'transaction_type' => 'CANCELLED', 'savings' => -30, 'balance' => 0, 'original_transaction_id' => $e->id]);
+
+        foreach ([$used, $partial, $linked] as $buyer) {
+            try {
+                $buyer->delete();
+                $this->fail("{$buyer->name}: 적립금 이력이 있는데 삭제됐다");
+            } catch (\DomainException $ex) {
+                $this->assertStringContainsString('적립금', $ex->getMessage());
+            }
+            $this->assertNotNull(Buyer::find($buyer->id));
+        }
+    }
+
     public function test_a_clean_buyer_still_deletes(): void
     {
         $this->actingAs($this->admin());
