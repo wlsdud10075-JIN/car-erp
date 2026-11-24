@@ -267,7 +267,7 @@ class PurchasePaidNoticeTest extends TestCase
         // ⚠️ 버튼 **라벨**로 찾지 말 것 — 같은 칸의 안내문구가 라벨을 그대로 인용해 항상 매치된다.
         //    `wire:click` 액션명은 버튼이 실제로 렌더될 때만 나온다.
         $this->assertPanelHas($html, 'openPaidNotice(', '📨 버튼');
-        $this->assertSame(2, substr_count($html, 'openPaidNotice('), '계약금 1 + 잔금 1 = 2개여야 한다');
+        $this->assertSame(2, substr_count($html, 'openPaidNotice('), '계약금 줄 1 + 잔금 줄 1 = 2개여야 한다');
     }
 
     /**
@@ -292,26 +292,44 @@ class PurchasePaidNoticeTest extends TestCase
     }
 
     /**
-     * 🪞 **계약금 행이 잔금 목록에도 뜨는 건 기존 동작**이다(`openEdit` 이 PBP 를 type 구분 없이 싣는다).
-     * 거기에도 📨 를 달면 같은 계약금에 버튼이 2개가 되고, 그중 하나는 눌러도 아무 일이 없다
-     * (발송 액션이 `type='balance'` 만 찾으므로). 그래서 잔금 행에만 단다.
+     * 🔀 2026-11-24 jin «계약금도 매도비도 지급 칸 옆 말고 잔금 행처럼» — 버튼은 **잔금 목록의 줄마다** 하나.
+     * 지급 칸 옆 버튼은 없앴다(같은 돈에 버튼이 둘이면 안 된다). 줄 버튼은 그 줄 번호를 싣는다.
      */
-    public function test_no_duplicate_button_on_the_down_row_inside_the_balance_list(): void
+    public function test_each_confirmed_row_has_exactly_one_button_and_the_fields_have_none(): void
     {
         $this->configureAlimtalk();
         $this->actingAs($this->finance());
 
         $v = $this->vehicle();
-        $this->pay($v, 'down', 3_000_000);
-        $this->pay($v, 'selling_fee', 400_000);
-        $this->pay($v, 'balance', 5_000_000);
+        $down = $this->pay($v, 'down', 3_000_000);
+        $fee = $this->pay($v, 'selling_fee', 400_000);
+        $bal = $this->pay($v, 'balance', 5_000_000);
+        $this->pay($v, 'balance', 1_000_000, confirmed: false);
 
         $html = $this->panelHtml($v);
 
-        // 🔀 2026-11-24 매도비도 금액칸 옆에 1개(jin «매도비도 넣어주라») — 잔금 목록의 계약금·매도비 행에는 여전히 없다.
-        $this->assertSame(3, substr_count($html, 'openPaidNotice('),
-            '계약금 1 + 매도비 1(금액칸 옆) + 잔금 1 = 3개여야 한다 — 잔금 목록의 계약금·매도비 행에도 붙었다');
-        $this->assertSame(1, substr_count($html, "openPaidNotice('selling_fee')"));
+        $this->assertSame(3, substr_count($html, 'openPaidNotice('), '확정 줄 3개 = 버튼 3개(미확정 줄·지급 칸 옆엔 없다)');
+        $this->assertSame(1, substr_count($html, "openPaidNotice('down', {$down->id})"));
+        $this->assertSame(1, substr_count($html, "openPaidNotice('selling_fee', {$fee->id})"));
+        $this->assertSame(1, substr_count($html, "openPaidNotice('balance', {$bal->id})"));
+        $this->assertSame(0, substr_count($html, "openPaidNotice('down')"), '번호 없는 계약금 버튼(지급 칸 옆)은 없앴다');
+    }
+
+    /** 계약금 줄 버튼은 그 줄 금액을 보낸다(잔금과 같은 규칙) — 계약금이 두 줄이어도 누계를 싣지 않는다. */
+    public function test_down_row_button_sends_that_rows_amount(): void
+    {
+        $this->configureAlimtalk();
+        $this->okHttp();
+        $this->actingAs($this->finance());
+
+        $v = $this->vehicle();
+        $this->pay($v, 'down', 1_000_000);
+        $second = $this->pay($v, 'down', 2_000_000);
+
+        $this->send($v, 'down', $second->id);
+        $msg = (string) AlimtalkLog::where('template_code', 'erp_purchase_paid')->latest('id')->value('message');
+        $this->assertStringContainsString('2,000,000원', $msg);
+        $this->assertStringNotContainsString('3,000,000원', $msg);
     }
 
     /**

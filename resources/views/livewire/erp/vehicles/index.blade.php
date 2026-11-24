@@ -3841,34 +3841,6 @@ new #[Layout('components.layouts.app')] class extends Component {
     }
 
     /**
-     * 확정된 계약금 합계 — 딜러 입금완료 알림톡 버튼의 노출 조건·확인문구용 (jin 2026-08-12).
-     * ⚠️ 화면 입력값(`down_payment_str`)이 아니라 **DB 확정분**이다. 아직 저장 안 한 숫자로
-     *    "입금했습니다" 를 보내면 거짓 통지가 된다(발송 액션도 같은 출처를 다시 읽는다).
-     */
-    #[Computed]
-    public function confirmedDownPayment(): int
-    {
-        if ($this->editingId === null) {
-            return 0;
-        }
-
-        return (int) \App\Models\PurchaseBalancePayment::where('vehicle_id', $this->editingId)
-            ->where('type', 'down')->whereNotNull('confirmed_at')->sum('amount');
-    }
-
-    /** 확정된 매도비 합계 — 매도비 입금완료 알림톡 버튼 조건(jin 2026-11-24 «매도비도 넣어주라»). 계약금과 같은 DB 확정분 기준. */
-    #[Computed]
-    public function confirmedSellingFee(): int
-    {
-        if ($this->editingId === null) {
-            return 0;
-        }
-
-        return (int) \App\Models\PurchaseBalancePayment::where('vehicle_id', $this->editingId)
-            ->where('type', 'selling_fee')->whereNotNull('confirmed_at')->sum('amount');
-    }
-
-    /**
      * board 신호 회신 — 이 차 1대만 닫는다(묶음 통째가 아니라 부분입금 대응).
      * 권한 = canConfirmFinance(super·admin·업무관리자·role∈{재무,관리}).
      *
@@ -5843,12 +5815,14 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         // 금액 — 화면 draft 가 아니라 **DB 의 확정 행**에서 읽는다(저장 전 입력값을 보내면 거짓 통지).
-        if ($kind === 'down' || $kind === 'selling_fee') {
+        //   🔀 2026-11-24 — 버튼이 줄마다 달린다(계약금·매도비 줄 포함) → 줄 번호가 오면 **그 줄 금액**. 번호 없이 부르면(옛 호출)
+        //      계약금·매도비는 확정 합계. 잔금은 언제나 줄 단위(나눠 보낸 잔금의 누계 오해 방지).
+        if ($pbpId === null && ($kind === 'down' || $kind === 'selling_fee')) {
             $amount = (int) $vehicle->purchaseBalancePayments()
                 ->where('type', $kind)->whereNotNull('confirmed_at')->sum('amount');
         } else {
             $row = $vehicle->purchaseBalancePayments()
-                ->where('type', 'balance')->whereNotNull('confirmed_at')->find($pbpId);
+                ->where('type', $kind)->whereNotNull('confirmed_at')->find($pbpId);
             $amount = (int) ($row->amount ?? 0);
         }
 
@@ -6026,8 +6000,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
 
         $rows = $vehicle->purchaseBalancePayments()->where('type', $kind)->whereNotNull('confirmed_at');
-        // 계약금·매도비는 차 단위(금액칸 옆 버튼) — 합계를 보내고 이체확인증은 마지막 확정 줄에 붙인다. 잔금은 줄 단위.
-        $perVehicle = $kind === 'down' || $kind === 'selling_fee';
+        // 🔀 2026-11-24 — 계약금·매도비도 잔금처럼 줄 버튼이다(jin «잔금 행처럼»). 그 줄 금액을 보내고 이체확인증도 그 줄에.
+        //    줄 번호 없이 열리면(옛 호출) 계약금·매도비는 합계 + 마지막 확정 줄.
+        $perVehicle = $pbpId === null && ($kind === 'down' || $kind === 'selling_fee');
         $row = $perVehicle ? $rows->orderByDesc('id')->first() : $rows->find($pbpId);
         $amount = $perVehicle
             ? (int) $vehicle->purchaseBalancePayments()->where('type', $kind)->whereNotNull('confirmed_at')->sum('amount')
@@ -6043,6 +6018,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->paidNotice = [
             'kind' => $kind,
             'pbp_id' => $row->id,
+            'per_vehicle' => $perVehicle,   // 합계로 보내는 옛 호출인가(줄 버튼이면 false — 그 줄 금액)
             'amount' => $amount,
             'proof_name' => $row->proof_path ? basename($row->proof_path) : null,
             'proof_url' => $row->proof_path ? \App\Support\VehicleDocUrl::for($row->proof_path) : null,
@@ -6113,7 +6089,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             $proofRow = $row;
         }
 
-        $this->deliverPurchasePaid($n['kind'], $n['kind'] === 'balance' ? $row->id : null, $proofRow);
+        $this->deliverPurchasePaid($n['kind'], ($n['per_vehicle'] ?? false) ? null : $row->id, $proofRow);
     }
 
 
@@ -10677,36 +10653,16 @@ function vehicleColumnsToggle(columns, serverKnows) {
             <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
                 <div>
                     <label class="label-base">{{ __('vehicle.field.down_payment') }}</label>
-                    <div class="flex items-center gap-1">
-                        <input wire:model="down_payment_str" type="text" data-money
-                               class="input-base min-w-0 flex-1 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
-                               placeholder="0" @if(!$canConfirmFinance) disabled @endif />
-                        {{-- 딜러에게 「계약금 입금완료」 통지 (jin 2026-08-12). 확정 계약금이 있을 때만.
-                             ⚠️ 저장 전 입력값이 아니라 **DB 확정분**을 보낸다(액션에서 다시 읽는다). --}}
-                        @if($editingId !== null && $this->paidNoticeEnabled && $this->confirmedDownPayment > 0)
-                        <button type="button" wire:click="openPaidNotice('down')"
-                                title="{{ __('vehicle.paidnotice.btn_title') }}"
-                                class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-600">
-                            {{ __('vehicle.paidnotice.btn') }}
-                        </button>
-                        @endif
-                    </div>
+                    {{-- 🔀 2026-11-24 — 「계약금 입금완료」 딜러알림은 아래 잔금 목록의 계약금 줄로 옮겼다(jin «잔금 행처럼»). --}}
+                    <input wire:model="down_payment_str" type="text" data-money
+                           class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           placeholder="0" @if(!$canConfirmFinance) disabled @endif />
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.selling_fee_payment') }}</label>
-                    <div class="flex items-center gap-1">
-                        <input wire:model="selling_fee_payment_str" type="text" data-money
-                               class="input-base min-w-0 flex-1 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
-                               placeholder="0" @if(!$canConfirmFinance) disabled @endif />
-                        {{-- 딜러에게 「매도비 입금완료」 통지 (jin 2026-11-24) — 계약금과 같은 번호·같은 템플릿, 확정 매도비가 있을 때만. --}}
-                        @if($editingId !== null && $this->paidNoticeEnabled && $this->confirmedSellingFee > 0)
-                        <button type="button" wire:click="openPaidNotice('selling_fee')"
-                                title="{{ __('vehicle.paidnotice.btn_title') }}"
-                                class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-600">
-                            {{ __('vehicle.paidnotice.btn') }}
-                        </button>
-                        @endif
-                    </div>
+                    <input wire:model="selling_fee_payment_str" type="text" data-money
+                           class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                           placeholder="0" @if(!$canConfirmFinance) disabled @endif />
                 </div>
                 {{-- 저당 표시 (jin 2026-08-21) — 계약금·매입잔금 송금 알림톡에 「저당 해지를 부탁드립니다」 를
                      실을지 가른다. 그래서 **송금 칸 옆**에 둔다(딜러 알림톡 번호칸이 아니라).
@@ -10778,12 +10734,14 @@ function vehicleColumnsToggle(columns, serverKnows) {
                               title="{{ __('vehicle.panel.confirmed_title', ['at' => $row['confirmed_at'], 'by' => $row['finance_confirmer'] ?? '?']) }}">
                             {{ __('vehicle.panel.confirmed') }}
                         </span>
-                        {{-- 딜러에게 「매입잔금 입금완료」 통지 — **행마다** 붙는다 (jin 2026-08-12).
+                        {{-- 딜러에게 「입금완료」 통지 — **행마다** 붙는다 (jin 2026-08-12 잔금 → 2026-11-24 계약금·매도비 줄도).
                              ⚠️ 합계 버튼 하나로 만들면 안 된다: 운영 239대 중 24대가 잔금을 2~3회로
                                 나눠 지급하는데, 두 번째 알림에 누계를 실으면 받는 분이 "추가로 그만큼
-                                더 들어왔다"로 읽는다. 이 줄의 금액을 이 줄이 보낸다. --}}
-                        @if($this->paidNoticeEnabled && ($row['type'] ?? 'balance') === 'balance')
-                        <button type="button" wire:click="openPaidNotice('balance', {{ $row['id'] }})"
+                                더 들어왔다"로 읽는다. 이 줄의 금액을 이 줄이 보낸다.
+                             🔀 2026-11-24 jin «계약금도 매도비도 지급 칸 옆 말고 잔금 행처럼» — 지급 칸 옆 버튼은 뺐다(같은 돈에 버튼 둘 금지). --}}
+                        @php $pbpKind = $row['type'] ?? 'balance'; @endphp
+                        @if($this->paidNoticeEnabled && in_array($pbpKind, ['down', 'selling_fee', 'balance'], true))
+                        <button type="button" wire:click="openPaidNotice('{{ $pbpKind }}', {{ $row['id'] }})"
                                 title="{{ __('vehicle.paidnotice.btn_title') }}"
                                 class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1 text-[11px] font-semibold text-white shadow-sm hover:bg-amber-600">
                             {{ __('vehicle.paidnotice.btn') }}
