@@ -52,6 +52,7 @@ MSYS_NO_PATHCONV=1 php board_send.php POST /api/internal/board/requests '{"sales
 | ps_* | board-purchase-sync |
 | sr_scene · sr_explore · sr_reject | shipping-requests |
 | cl_* | buyer-claim |
+| bank_* | bank-documents (연습용 전신문 = `bank_make_tif.py` · 촬영 중 받는 사람을 가짜 예시로 잠깐 바꾸고 되돌린다 · 🚫 [은행으로 보내기] 누르지 않음) |
 | view.js · view2.js | 씬 렌더 확인(`node view2.js <slug>`) |
 
 ⚠️ sale-payment 씬 스크립트는 따로 이름이 없다(scene1 계열에서 이어 찍음) — 점검으로 만들 때 새로 쓴다.
