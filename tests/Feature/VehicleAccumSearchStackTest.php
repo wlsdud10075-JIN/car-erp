@@ -8,6 +8,7 @@ use App\Models\Salesman;
 use App\Models\User;
 use App\Models\Vehicle;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
 
@@ -147,5 +148,41 @@ class VehicleAccumSearchStackTest extends TestCase
         $this->assertStringContainsString('USD 7,000', $html);
         $this->assertStringContainsString('EUR 2,000', $html);
         $this->assertStringContainsString('USD 2,000', $html);
+    }
+
+    /**
+     * 💵 입금금액 합 · 🎟️ 적립금 사용 합 (재무 요청, jin 2026-11-24) — 입금 = 차마다 판매총액 − 미수(캐시).
+     * 과입금 차는 받은 만큼(1,500) 들어가고, 적립금으로 받은 몫도 입금에 포함된다. 적립금 사용이 없으면 칸이 안 보인다.
+     */
+    public function test_totals_show_received_and_savings_used_per_currency(): void
+    {
+        $this->actingAs($this->clearanceUser());
+        $base = ['sale_date' => '2026-09-01', 'buyer_id' => Buyer::create(['name' => 'B1', 'is_active' => true])->id];
+        $usd = $this->car('11가1111', $base + ['currency' => 'USD', 'exchange_rate' => 1400, 'sale_price' => 10_000]);
+        FinalPayment::create(['vehicle_id' => $usd->id, 'type' => 'balance', 'amount' => 3_000, 'payment_date' => '2026-10-01', 'confirmed_at' => now()]);
+        $over = $this->car('22나2222', $base + ['currency' => 'USD', 'exchange_rate' => 1400, 'sale_price' => 1_000]);
+        FinalPayment::create(['vehicle_id' => $over->id, 'type' => 'balance', 'amount' => 1_500, 'payment_date' => '2026-10-01', 'confirmed_at' => now()]);
+        foreach ([$usd, $over] as $v) {
+            $v->refresh()->refreshCaches();
+        }
+
+        $t = Volt::test('erp.vehicles.index');
+        $usdRow = collect($t->get('freightTotalsByCurrency'))->keyBy('currency')['USD'];
+        $this->assertSame(4_500, $usdRow['received'], '3,000 + 과입금 차는 받은 만큼 1,500');
+        $this->assertSame(0, $usdRow['savings']);
+        $this->assertStringContainsString('data-stat-received', $t->html());
+        $this->assertStringNotContainsString('data-stat-savings', $t->html(), '적립금 사용이 없으면 칸이 없다');
+
+        DB::table('vehicles')->where('id', $usd->id)->update(['savings_used' => 500]);
+        $usd->refresh()->refreshCaches();
+        $t = Volt::test('erp.vehicles.index');
+        $usdRow = collect($t->get('freightTotalsByCurrency'))->keyBy('currency')['USD'];
+        $this->assertSame(500, $usdRow['savings']);
+        $this->assertSame(5_000, $usdRow['received'], '적립금으로 받은 500 도 입금에 들어간다(받은 돈 = 입금 + 회수 + 적립금)');
+        $html = $t->html();
+        $this->assertStringContainsString('data-stat-savings', $html);
+        $this->assertStringContainsString('USD 500', $html);
+        $this->assertLessThan(strpos($html, 'data-stat-unpaid'), strpos($html, 'data-stat-received'), '순서: 판매총액 · 입금 · 미수');
+        $this->assertLessThan(strpos($html, 'data-stat-freight-usd') ?: PHP_INT_MAX, strpos($html, 'data-stat-savings'), '적립금은 운임 묶음 앞');
     }
 }

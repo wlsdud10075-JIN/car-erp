@@ -2928,6 +2928,17 @@ new #[Layout('components.layouts.app')] class extends Component {
                 .'COALESCE(SUM(CASE WHEN sale_unpaid_amount_krw_cache > 0 THEN '
                 ."CASE WHEN COALESCE(currency,'KRW') = 'KRW' THEN sale_unpaid_amount_krw_cache "
                 .'ELSE sale_unpaid_amount_krw_cache * 1.0 / NULLIF(exchange_rate,0) END ELSE 0 END),0) AS unpaid, '
+                // 💵 입금금액 (재무 요청, jin 2026-11-24 «판매총액 합 − 미수금 합 = 입금금액 합») — 차마다 판매총액 − 미수(캐시).
+                //   미수 캐시는 과입금이면 음수라 **실제로 받은 만큼**이 된다(위 「미수금 합」은 과입금을 빼고 센다).
+                //   받은 돈 = 확정 입금 + 회수 기록 + 적립금 사용(money-3 §2) — 그래서 적립금으로 받은 몫도 여기 들어 있다.
+                //   캐시가 없는 차(환율 미입력 외화)는 미수금 합처럼 뺀다 — 🚫 미수를 SQL 로 다시 세지 않는다.
+                .'COALESCE(SUM(CASE WHEN sale_unpaid_amount_krw_cache IS NOT NULL THEN '
+                .'(COALESCE(sale_price,0)+COALESCE(transport_fee,0)+COALESCE(sale_other_costs,0)'
+                .'+COALESCE(commission,0)+COALESCE(auto_loading,0)-COALESCE(tax_dc,0)) - '
+                ."CASE WHEN COALESCE(currency,'KRW') = 'KRW' THEN sale_unpaid_amount_krw_cache "
+                .'ELSE sale_unpaid_amount_krw_cache * 1.0 / NULLIF(exchange_rate,0) END ELSE 0 END),0) AS received, '
+                // 🎟️ 적립금 사용 (재무 요청, 같은 날) — 판매탭 「적립금 사용」 칸 합(차량 통화).
+                .'COALESCE(SUM(COALESCE(savings_used,0)),0) AS savings, '
                 .'COUNT(*) AS cnt'
             )
             ->groupBy('cur')
@@ -2939,6 +2950,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 'sale_total' => (int) $r->sale_total,
                 'freight_usd' => (int) $r->freight_usd,
                 'unpaid' => (int) round((float) $r->unpaid),
+                'received' => (int) round((float) $r->received),
+                'savings' => (int) round((float) $r->savings),
                 'cnt' => (int) $r->cnt,
             ])->all();
     }
@@ -8680,32 +8693,17 @@ new #[Layout('components.layouts.app')] class extends Component {
     $freightCurs = $ftc->filter(fn ($c) => $c['freight'] !== 0)->values();
     $saleCurs = $ftc->filter(fn ($c) => $c['sale_total'] !== 0)->values();
     $unpaidCurs = $ftc->filter(fn ($c) => $c['unpaid'] !== 0)->values();
+    // 💵 입금금액 · 🎟️ 적립금 사용 (재무 요청, jin 2026-11-24) — 미수금처럼 통화별로 나란히(통화가 다른 돈은 더하지 않는다).
+    $receivedCurs = $ftc->filter(fn ($c) => ($c['received'] ?? 0) !== 0)->values();
+    $savingsCurs = $ftc->filter(fn ($c) => ($c['savings'] ?? 0) !== 0)->values();
 @endphp
+{{-- 🔀 2026-11-24 순서 (jin) — 총 차량 | 판매총액 · 입금금액 · 미수금 · 적립금 사용(돈 받는 쪽) | 운임비 · 운임비 USD | 매입 미지급 · 발송비.
+     값이 없는 칸(적립금 사용 · 운임비 USD · 미지급 · 발송비)은 종전처럼 통째로 안 보인다. --}}
 <div class="card-tight inline-flex flex-wrap items-start gap-x-5 gap-y-2">
     <div class="flex items-baseline gap-1.5">
         <span class="text-sm">🚗</span>
         <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.count') }}</span>
         <span class="text-sm font-bold text-gray-800">{{ number_format($this->vehicles->total()) }}<span class="ml-0.5 text-xs font-normal text-gray-400">{{ __('vehicle.stat.unit') }}</span></span>
-    </div>
-    <span class="h-4 w-px bg-gray-200"></span>
-    {{-- 운임비합 — 단일 통화면 통화 prefix, 다중 통화면 합계 + 통화별 소계 (jin 2026-07-20) --}}
-    <div class="flex flex-col gap-0.5">
-        <div class="flex items-baseline gap-1.5">
-            <span class="text-sm">🚢</span>
-            <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.freight') }}</span>
-            <span class="text-sm font-bold text-gray-800">
-                @if($freightCurs->count() === 1)
-                    {{ $freightCurs->first()['currency'] }} {{ number_format($freightCurs->first()['freight']) }}
-                @else
-                    {{ number_format($ft['sum']) }}
-                @endif
-            </span>
-        </div>
-        @if($freightCurs->count() > 1)
-        <div class="pl-6 text-[10px] text-gray-400">
-            {{ $freightCurs->map(fn ($c) => $c['currency'].' '.number_format($c['freight']))->implode(' · ') }}
-        </div>
-        @endif
     </div>
     <span class="h-4 w-px bg-gray-200"></span>
     {{-- 판매총액합 — 통화별 (jin 2026-07-20) --}}
@@ -8727,16 +8725,18 @@ new #[Layout('components.layouts.app')] class extends Component {
         </div>
         @endif
     </div>
-    {{-- 🧾 운임비 USD 기록용 합 (jin 2026-10-21) — 판매탭 「운임비 USD」 칸(계산 미포함 메모)의 합. 늘 USD.
-         🅿️ 0 이면 안 보인다 — 그 칸을 안 쓰는 회사의 헤더를 어지럽히지 않게(발송비합과 같은 규칙). --}}
-    @if($ft['freight_usd_sum'] > 0)
     <span class="h-4 w-px bg-gray-200"></span>
-    <div class="flex items-baseline gap-1.5" data-stat-freight-usd>
-        <span class="text-sm">🧾</span>
-        <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.freight_usd') }}</span>
-        <span class="text-sm font-bold text-gray-800">USD {{ number_format($ft['freight_usd_sum']) }}</span>
+    {{-- 💵 입금금액 합 (재무 요청, jin 2026-11-24) — 차마다 판매총액 − 미수(캐시). 과입금은 받은 만큼 들어가고, 적립금으로 받은 몫도 포함. --}}
+    <div class="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5" data-stat-received title="{{ __('vehicle.stat.received_title') }}">
+        <span class="text-sm">💵</span>
+        <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.received') }}</span>
+        @forelse($receivedCurs as $c)
+            <span class="text-sm font-bold text-emerald-700 whitespace-nowrap">{{ $c['currency'] }} {{ number_format($c['received']) }}</span>
+            @if(! $loop->last)<span class="text-xs text-gray-300">·</span>@endif
+        @empty
+            <span class="text-sm font-bold text-gray-800">0</span>
+        @endforelse
     </div>
-    @endif
     <span class="h-4 w-px bg-gray-200"></span>
     {{-- 📉 미수금 합 — 통화별 (jin 2026-10-21) — 받은 돈을 뺀 남은 미수만(과입금 제외).
          통화별 금액을 본 줄에 같은 크기로 나란히 — 통화가 다른 돈은 더하지 않는다(jin «아래 금액이 너무 작아»). --}}
@@ -8750,6 +8750,49 @@ new #[Layout('components.layouts.app')] class extends Component {
             <span class="text-sm font-bold text-gray-800">0</span>
         @endforelse
     </div>
+    {{-- 🎟️ 적립금 사용 합 (재무 요청, jin 2026-11-24 «사용한 게 있다면») — 0 이면 안 보인다(운임비 USD 와 같은 규칙). --}}
+    @if($savingsCurs->isNotEmpty())
+    <span class="h-4 w-px bg-gray-200"></span>
+    <div class="flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5" data-stat-savings title="{{ __('vehicle.stat.savings_title') }}">
+        <span class="text-sm">🎟️</span>
+        <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.savings') }}</span>
+        @foreach($savingsCurs as $c)
+            <span class="text-sm font-bold text-gray-800 whitespace-nowrap">{{ $c['currency'] }} {{ number_format($c['savings']) }}</span>
+            @if(! $loop->last)<span class="text-xs text-gray-300">·</span>@endif
+        @endforeach
+    </div>
+    @endif
+    {{-- ── 운임 묶음 ── 진한 구분선으로 돈 받는 쪽과 가른다(새 클래스 없이 — 빌드된 유틸만) --}}
+    <span class="h-4 w-px bg-gray-300"></span>
+    {{-- 운임비합 — 단일 통화면 통화 prefix, 다중 통화면 합계 + 통화별 소계 (jin 2026-07-20) --}}
+    <div class="flex flex-col gap-0.5">
+        <div class="flex items-baseline gap-1.5">
+            <span class="text-sm">🚢</span>
+            <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.freight') }}</span>
+            <span class="text-sm font-bold text-gray-800">
+                @if($freightCurs->count() === 1)
+                    {{ $freightCurs->first()['currency'] }} {{ number_format($freightCurs->first()['freight']) }}
+                @else
+                    {{ number_format($ft['sum']) }}
+                @endif
+            </span>
+        </div>
+        @if($freightCurs->count() > 1)
+        <div class="pl-6 text-[10px] text-gray-400">
+            {{ $freightCurs->map(fn ($c) => $c['currency'].' '.number_format($c['freight']))->implode(' · ') }}
+        </div>
+        @endif
+    </div>
+    {{-- 🧾 운임비 USD 기록용 합 (jin 2026-10-21) — 판매탭 「운임비 USD」 칸(계산 미포함 메모)의 합. 늘 USD.
+         🅿️ 0 이면 안 보인다 — 그 칸을 안 쓰는 회사의 헤더를 어지럽히지 않게(발송비합과 같은 규칙). --}}
+    @if($ft['freight_usd_sum'] > 0)
+    <span class="h-4 w-px bg-gray-200"></span>
+    <div class="flex items-baseline gap-1.5" data-stat-freight-usd>
+        <span class="text-sm">🧾</span>
+        <span class="text-[11px] text-gray-500">{{ __('vehicle.stat.freight_usd') }}</span>
+        <span class="text-sm font-bold text-gray-800">USD {{ number_format($ft['freight_usd_sum']) }}</span>
+    </div>
+    @endif
     {{-- 💸 미지급 총액 (jin 2026-09-10) — 「지금 지급해야 할 돈」. 매입은 원화 단일이라 통화별로 안 쪼갠다.
          🔑 **숫자를 누르면 그 숫자를 만든 차만** 남는다(action=purchase_unpaid_all 토글) — 진행상태
             「매입중」 pill 로는 미지급 차의 87%가 안 잡히기 때문이다(실측 30대 중 매입중 4대).
