@@ -145,6 +145,13 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
         ->name('vehicles.deregistration-file')
         ->middleware('throttle:vehicle-docs')
         ->whereNumber('id');
+
+    // 🏦 은행 서류 파일(전신문 원본 · 은행용 Proforma) 받기 — 재무 + 관리 이상 · 이어진 차를 볼 수 있어야(jin 2026-11-24)
+    Route::get('bank-remittances/{remittance}/{kind}', [VehicleDocumentController::class, 'bankRemittanceFile'])
+        ->name('bank-remittances.file')
+        ->middleware('throttle:vehicle-docs')
+        ->whereNumber('remittance')
+        ->whereIn('kind', ['remittance', 'invoice']);
 });
 
 // 캐시플로우 — sales role + 컴포넌트 mount()에서 본인 ID 검증

@@ -77,6 +77,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public string $mailFromName = '';
 
+    // 🏦 은행 서류 받는 사람(신한 담당자) — 회사별 (jin 2026-11-24). 🚫 코드에 주소를 박지 않는다.
+    public string $bankMailTo = '';
+
     public string $mailGmailPassword = '';   // 신규 입력용 — 저장된 비밀번호는 로드하지 않음(비밀 보호)
 
     public bool $mailGmailPasswordSet = false;
@@ -314,6 +317,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->mailFromAddress = Setting::get("mail_from_address_{$set}", '') ?: '';
         $this->mailFromName = Setting::get("mail_from_name_{$set}", '') ?: '';
         $this->mailGmailPasswordSet = (bool) Setting::get("mail_gmail_app_password_{$set}");
+        $this->bankMailTo = (string) (Setting::get("bank_mail_to_{$set}", '') ?: '');
         $this->mailGmailPassword = '';
     }
 
@@ -363,6 +367,24 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->mailFromName = $name;
         $this->loadMailSettings();
         $this->dispatch('notify', message: __('feature_settings.mail_saved'), type: 'success');
+    }
+
+    // 🏦 은행 서류 받는 사람 저장 — super 전용. 비우면 모달에서 사람이 직접 적는다.
+    public function saveBankMailTo(): void
+    {
+        if (! auth()->user()?->isSuperAdmin()) {
+            abort(403);
+        }
+        $to = trim($this->bankMailTo);
+        if ($to !== '' && ! filter_var($to, FILTER_VALIDATE_EMAIL)) {
+            $this->addError('bankMailTo', __('feature_settings.mail_from_invalid'));
+
+            return;
+        }
+        $set = Setting::companyTemplateSet();
+        Setting::updateOrCreate(['key' => "bank_mail_to_{$set}"], ['value' => $to, 'type' => 'string', 'description' => "은행 서류 받는 사람 ({$set})"]);
+        $this->bankMailTo = $to;
+        $this->dispatch('notify', message: __('feature_settings.bank_mail_saved'), type: 'success');
     }
 
     private function loadCarmodooSettings(): void
@@ -1614,6 +1636,17 @@ new #[Layout('components.layouts.app')] class extends Component
 
             <div class="flex justify-end pt-1">
                 <button wire:click="saveMail" class="btn-primary">{{ __('common.save') }}</button>
+            </div>
+
+            {{-- 🏦 은행 서류 받는 사람 (jin 2026-11-24) --}}
+            <div class="border-t border-gray-100 pt-3" data-bank-mail-setting>
+                <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.bank_mail_to_label') }}</label>
+                <div class="mt-1 flex gap-2">
+                    <input wire:model="bankMailTo" type="email" class="input-base w-full" placeholder="officer@bank.com" autocomplete="off" />
+                    <button wire:click="saveBankMailTo" class="btn-primary shrink-0">{{ __('common.save') }}</button>
+                </div>
+                <p class="mt-1 text-xs text-gray-500">{{ __('feature_settings.bank_mail_to_hint') }}</p>
+                @error('bankMailTo') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
             </div>
         </div>
     </div>
