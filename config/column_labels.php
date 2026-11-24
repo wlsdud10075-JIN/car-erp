@@ -183,6 +183,7 @@ return [
         'deregistration_notice_phone' => '국내 딜러 알림톡 번호',
         'remitter_name' => '송금인 이름',   // 2026-11 ② — board 기록(차량 단위)
         'remitter_id' => '송금인 ID',   // 2026-11 ④ — board OCR 동봉이 쓰는 첫 칸, AUDITED 등재
+        'bank_remittance' => '은행 서류',   // 2026-11-24 — 서류탭 은행 기록 × (감사 bank_remittance_removed, 지운 기록 = 이전 값)
         'deal_type' => '거래 유형 (DP/FD)',   // 2026-11-01 B2B 파트너스 — 거래별 뱃지
         'cancel_status' => '매입취소 상태',
         'stock_location' => '보관위치',
@@ -651,6 +652,7 @@ return [
         'board_request_resent' => 'board 요청 재전송',
         'board_buyer_contact_read' => 'board 바이어 연락처 조회 (서류 생성용)',   // 2026-11 ② — GET /buyers/{id} 접근 기록
         'claim_used' => '클레임 사용',   // 2026-11-20 — 판매탭 「클레임 사용」(App/Services/ClaimUsage)
+        'bank_remittance_removed' => '은행 서류 삭제',   // 2026-11-24 — 서류탭 은행 기록 ×(이 차에서 뗌, 마지막 차면 파일까지)
         'board_claim_received' => 'board 클레임 받음',   // 2026-11-11 — POST /internal/board/claims
         'board_buyer_credit_read' => 'board 바이어 신용도 조회 (클레임 보고서)',   // 2026-11-11 — GET /buyers/{id}/credit, 등급/점수가 new_value
         // 2026-11-01 B2B 파트너스 — 바이어 계약서·관리대상·거래 유형

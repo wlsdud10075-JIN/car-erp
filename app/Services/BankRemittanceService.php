@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Mail\VehicleDocumentMail;
+use App\Models\AuditLog;
 use App\Models\BankRemittance;
 use App\Models\MailDeliveryLog;
 use App\Models\Setting;
@@ -182,6 +183,35 @@ class BankRemittanceService
             throw new \RuntimeException('Proforma 저장 실패');
         }
         $rec->update(['invoice_path' => $path, 'invoice_name' => $name]);
+    }
+
+    /**
+     * 서류탭 × (jin 11-24 «삭제 조항이 없으니 계속 쌓인다») — 이 차에서만 뗀다. 여러 대가 한 기록을 나눠 쓰므로,
+     * 마지막 차였을 때만 기록과 파일 2개(전신문·은행용 PI)를 지운다. 기본정보 송금인 칸과 메일 발송 로그는 그대로 둔다.
+     */
+    public static function removeFromVehicle(User $user, Vehicle $vehicle, int $recordId): void
+    {
+        abort_unless(self::canUse($user) && $user->canScopeVehicle($vehicle), 403);
+        $rec = $vehicle->bankRemittances()->whereKey($recordId)->firstOrFail();
+
+        DB::transaction(function () use ($user, $vehicle, $rec) {
+            $rec->vehicles()->detach($vehicle->id);
+            AuditLog::create([
+                'user_id' => $user->id,
+                'auditable_type' => Vehicle::class,
+                'auditable_id' => $vehicle->id,
+                'action' => 'bank_remittance_removed',
+                'column_name' => 'bank_remittance',
+                'old_value' => "#{$rec->id} {$rec->remitter_name} ({$rec->created_at?->format('Y-m-d H:i')})",
+                'new_value' => null,
+                'ip_address' => request()?->ip(),
+            ]);
+            if (! $rec->vehicles()->exists()) {
+                $paths = array_values(array_filter([$rec->remittance_path, $rec->invoice_path]));
+                $rec->delete();
+                DB::afterCommit(fn () => Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($paths));
+            }
+        });
     }
 
     /**

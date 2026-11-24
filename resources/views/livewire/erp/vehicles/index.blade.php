@@ -2472,6 +2472,16 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->showMailModal = false;
     }
 
+    // 🏦 서류탭 은행 기록 × — 이 차에서만 뗀다(마지막 차면 기록·파일 삭제). 권한·범위 검사는 서비스가 한다(jin 11-24).
+    public function removeBankRemittance(int $id): void
+    {
+        if (! $this->editingId || $this->editLockedByOther) {
+            return;
+        }
+        \App\Services\BankRemittanceService::removeFromVehicle(auth()->user(), Vehicle::findOrFail($this->editingId), $id);
+        $this->dispatch('notify', message: __('vehicle.bank.removed'), type: 'success');
+    }
+
     // 발송 — 회사 방식(Gmail/SES)대로. 선택 첨부는 이 차량 소속만(IDOR 방지). 결과는 로그 기록.
     public function sendVehicleMail(): void
     {
@@ -12488,7 +12498,14 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     <div class="card-tight text-xs" wire:key="bank-{{ $br->id }}">
                         <div class="flex flex-wrap items-center justify-between gap-2">
                             <span class="font-semibold text-gray-800">{{ $br->remitter_name }}</span>
-                            <span class="text-gray-400">{{ $br->created_at?->format('Y-m-d H:i') }}</span>
+                            <span class="flex items-center gap-2">
+                                <span class="text-gray-400">{{ $br->created_at?->format('Y-m-d H:i') }}</span>
+                                @unless($editLockedByOther)
+                                    <button type="button" wire:click="removeBankRemittance({{ $br->id }})"
+                                            wire:confirm="{{ __('vehicle.bank.remove_confirm', ['name' => $br->remitter_name]) }}"
+                                            class="px-1 text-lg leading-none text-gray-400 hover:text-rose-600" title="{{ __('vehicle.bank.remove') }}" data-bank-remove>&times;</button>
+                                @endunless
+                            </span>
                         </div>
                         <div class="mt-2 flex flex-wrap items-center gap-2">
                             {{-- 파일은 버튼으로 — 작은 밑줄 글씨는 「눌러서 받는 것」인지 안 보였다(jin 11-24) --}}
