@@ -77,8 +77,8 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public string $mailFromName = '';
 
-    // 🏦 은행 서류 받는 사람(신한 담당자) — 회사별 (jin 2026-11-24). 🚫 코드에 주소를 박지 않는다.
-    public string $bankMailTo = '';
+    // 🏦 은행 서류 받는 사람 목록(은행·이름·메일) — 회사별 (jin 2026-11-24 «한 사람이 아니야»). 🚫 코드에 주소를 박지 않는다.
+    public array $bankRecipients = [['bank' => '', 'name' => '', 'email' => '']];
 
     public string $mailGmailPassword = '';   // 신규 입력용 — 저장된 비밀번호는 로드하지 않음(비밀 보호)
 
@@ -317,7 +317,7 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->mailFromAddress = Setting::get("mail_from_address_{$set}", '') ?: '';
         $this->mailFromName = Setting::get("mail_from_name_{$set}", '') ?: '';
         $this->mailGmailPasswordSet = (bool) Setting::get("mail_gmail_app_password_{$set}");
-        $this->bankMailTo = (string) (Setting::get("bank_mail_to_{$set}", '') ?: '');
+        $this->loadBankRecipients();
         $this->mailGmailPassword = '';
     }
 
@@ -369,22 +369,50 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->dispatch('notify', message: __('feature_settings.mail_saved'), type: 'success');
     }
 
-    // 🏦 은행 서류 받는 사람 저장 — super 전용. 비우면 모달에서 사람이 직접 적는다.
+    public function addBankRecipient(): void
+    {
+        $this->bankRecipients[] = ['bank' => '', 'name' => '', 'email' => ''];
+    }
+
+    public function removeBankRecipient(int $i): void
+    {
+        unset($this->bankRecipients[$i]);
+        $this->bankRecipients = array_values($this->bankRecipients) ?: [['bank' => '', 'name' => '', 'email' => '']];
+    }
+
+    // 🏦 은행 서류 받는 사람 목록 저장 — super 전용. 세 칸이 다 빈 줄은 버린다. 비우면 모달에서 보낼 수 없다.
     public function saveBankMailTo(): void
     {
         if (! auth()->user()?->isSuperAdmin()) {
             abort(403);
         }
-        $to = trim($this->bankMailTo);
-        if ($to !== '' && ! filter_var($to, FILTER_VALIDATE_EMAIL)) {
-            $this->addError('bankMailTo', __('feature_settings.mail_from_invalid'));
+        $this->resetErrorBag('bankRecipients');
+        $rows = collect($this->bankRecipients)
+            ->map(fn ($r) => ['bank' => trim((string) ($r['bank'] ?? '')), 'name' => trim((string) ($r['name'] ?? '')), 'email' => trim((string) ($r['email'] ?? ''))])
+            ->filter(fn ($r) => $r['bank'] !== '' || $r['name'] !== '' || $r['email'] !== '')
+            ->values();
+        foreach ($rows as $i => $r) {
+            if (! filter_var($r['email'], FILTER_VALIDATE_EMAIL)) {
+                $this->addError('bankRecipients', __('feature_settings.mail_from_invalid').' ('.($i + 1).')');
+
+                return;
+            }
+        }
+        if ($rows->pluck('email')->map(fn ($e) => mb_strtolower($e))->duplicates()->isNotEmpty()) {
+            $this->addError('bankRecipients', __('feature_settings.bank_mail_dup'));
 
             return;
         }
         $set = Setting::companyTemplateSet();
-        Setting::updateOrCreate(['key' => "bank_mail_to_{$set}"], ['value' => $to, 'type' => 'string', 'description' => "은행 서류 받는 사람 ({$set})"]);
-        $this->bankMailTo = $to;
+        // 🚫 type 'json' 금지 — settings.type 은 enum(boolean·string·integer), 운영 MySQL 에서 저장이 죽는다(§8 #36, 로컬 11-24)
+        Setting::updateOrCreate(['key' => "bank_mail_recipients_{$set}"], ['value' => json_encode($rows->all(), JSON_UNESCAPED_UNICODE), 'type' => 'string', 'description' => "은행 서류 받는 사람 목록 ({$set})"]);
+        $this->loadBankRecipients();
         $this->dispatch('notify', message: __('feature_settings.bank_mail_saved'), type: 'success');
+    }
+
+    private function loadBankRecipients(): void
+    {
+        $this->bankRecipients = \App\Services\BankRemittanceService::recipients() ?: [['bank' => '', 'name' => '', 'email' => '']];
     }
 
     private function loadCarmodooSettings(): void
@@ -1641,12 +1669,22 @@ new #[Layout('components.layouts.app')] class extends Component
             {{-- 🏦 은행 서류 받는 사람 (jin 2026-11-24) --}}
             <div class="border-t border-gray-100 pt-3" data-bank-mail-setting>
                 <label class="block text-sm font-medium text-gray-700">{{ __('feature_settings.bank_mail_to_label') }}</label>
-                <div class="mt-1 flex gap-2">
-                    <input wire:model="bankMailTo" type="email" class="input-base w-full" placeholder="officer@bank.com" autocomplete="off" />
-                    <button wire:click="saveBankMailTo" class="btn-primary shrink-0">{{ __('common.save') }}</button>
+                <p class="mt-0.5 text-xs text-gray-500">{{ __('feature_settings.bank_mail_to_hint') }}</p>
+                <div class="mt-2 space-y-2">
+                    @foreach($bankRecipients as $i => $r)
+                        <div class="flex flex-wrap items-center gap-2 sm:flex-nowrap" wire:key="bank-rcpt-{{ $i }}" data-bank-recipient-row>
+                            <input wire:model="bankRecipients.{{ $i }}.bank" type="text" class="input-base w-full sm:w-32" placeholder="{{ __('feature_settings.bank_mail_bank') }} (신한은행)" autocomplete="off" />
+                            <input wire:model="bankRecipients.{{ $i }}.name" type="text" class="input-base w-full sm:w-32" placeholder="{{ __('feature_settings.bank_mail_name') }}" autocomplete="off" />
+                            <input wire:model="bankRecipients.{{ $i }}.email" type="email" class="input-base w-full" placeholder="{{ __('feature_settings.bank_mail_email') }} (officer@bank.com)" autocomplete="off" />
+                            <button type="button" wire:click="removeBankRecipient({{ $i }})" class="shrink-0 px-2 text-lg leading-none text-gray-400 hover:text-rose-600" title="{{ __('common.delete') }}">&times;</button>
+                        </div>
+                    @endforeach
                 </div>
-                <p class="mt-1 text-xs text-gray-500">{{ __('feature_settings.bank_mail_to_hint') }}</p>
-                @error('bankMailTo') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                @error('bankRecipients') <p class="mt-1 text-xs text-rose-600">{{ $message }}</p> @enderror
+                <div class="mt-2 flex items-center justify-between">
+                    <button type="button" wire:click="addBankRecipient" class="text-xs font-medium text-primary-text hover:underline">{{ __('feature_settings.bank_mail_add') }}</button>
+                    <button wire:click="saveBankMailTo" class="btn-primary">{{ __('common.save') }}</button>
+                </div>
             </div>
         </div>
     </div>

@@ -28,7 +28,6 @@ new class extends Component {
 
     public ?string $ocrStatus = null;
 
-    public ?string $ocrPrefix = null;
 
     public ?string $ocrRead = null;
 
@@ -46,7 +45,7 @@ new class extends Component {
     public function openBank(array $ids = []): void
     {
         $this->resetErrorBag();
-        $this->reset(['bankFile', 'remitterInput', 'ocrStatus', 'ocrPrefix', 'ocrRead', 'recordId', 'mailTo', 'mailSubject', 'mailBody', 'bankError']);
+        $this->reset(['bankFile', 'remitterInput', 'ocrStatus', 'ocrRead', 'recordId', 'mailTo', 'mailSubject', 'mailBody', 'bankError']);
         $vehicles = BankRemittanceService::vehiclesFor(auth()->user(), $ids);
         if (is_string($vehicles)) {
             $this->dispatch('notify', message: __($vehicles), type: 'warning');
@@ -80,7 +79,7 @@ new class extends Component {
     public function updatedBankFile(): void
     {
         $this->bankVehicles();
-        $this->reset(['ocrStatus', 'ocrPrefix', 'ocrRead']);
+        $this->reset(['ocrStatus', 'ocrRead']);
         $this->validate(['bankFile' => ['required', 'file', 'max:'.\App\Models\Vehicle::DOCUMENT_MAX_KB, function ($a, $v, $fail) {
             if (! in_array($this->fileExt(), BankRemittanceService::ACCEPT, true)) {
                 $fail(__('vehicle.bank.err_ext'));
@@ -97,7 +96,7 @@ new class extends Component {
             $max = (int) config('assistant.remitter_ocr.max_pages', 6);
             $p = RemitterNameReader::pdfPages($bytes, $max);
             if ($name = RemitterNameReader::fromText($p['text'])) {
-                $this->applyOcr(['name' => $name, 'prefix' => null, 'status' => 'text']);
+                $this->applyOcr(['name' => $name, 'status' => 'text']);
 
                 return;
             }
@@ -105,7 +104,7 @@ new class extends Component {
         } else {
             $pages = [RemitterNameReader::normalizeImage($bytes)];
         }
-        $this->applyOcr(array_filter($pages) === [] ? ['name' => null, 'prefix' => null, 'status' => 'none'] : (new RemitterNameReader)->read($pages));
+        $this->applyOcr(array_filter($pages) === [] ? ['name' => null, 'status' => 'none'] : (new RemitterNameReader)->read($pages));
     }
 
     /** TIF — 브라우저(UTIF)가 만든 쪽 PNG(base64). 서버는 GD 로 다시 그려서만 보낸다. */
@@ -128,7 +127,7 @@ new class extends Component {
         while ($norm !== [] && end($norm) === null) {
             array_pop($norm);
         }
-        $this->applyOcr(array_filter($norm) === [] ? ['name' => null, 'prefix' => null, 'status' => 'none'] : (new RemitterNameReader)->read($norm));
+        $this->applyOcr(array_filter($norm) === [] ? ['name' => null, 'status' => 'none'] : (new RemitterNameReader)->read($norm));
     }
 
     public function tifUnreadable(): void
@@ -139,7 +138,6 @@ new class extends Component {
     private function applyOcr(array $r): void
     {
         $this->ocrStatus = $r['status'];
-        $this->ocrPrefix = $r['prefix'] ?? null;
         $this->ocrRead = $r['name'] ?? null;
         if ($r['name']) {
             $this->remitterInput = $r['name'];
@@ -172,7 +170,9 @@ new class extends Component {
 
         $this->recordId = $rec->id;
         $company = CompanyMailConfig::active();
-        $this->mailTo = BankRemittanceService::recipient();
+        // 받는 사람이 한 명만 등록돼 있으면 미리 고른다. 여럿이면 사람이 고른다(엉뚱한 은행으로 안 가게).
+        $list = BankRemittanceService::recipients();
+        $this->mailTo = count($list) === 1 ? $list[0]['email'] : '';
         $this->mailSubject = __('vehicle.bank.mail_subject', ['company' => $company->companyLabel(), 'name' => $rec->remitter_name]);
         $this->mailBody = __('vehicle.bank.mail_body', ['company' => $company->companyLabel(), 'name' => $rec->remitter_name, 'cars' => $vehicles->pluck('vehicle_number')->implode(', ')]);
         $this->dispatch('bank-remittance-done', ids: $this->bankIds, name: $rec->remitter_name);
@@ -184,9 +184,11 @@ new class extends Component {
         $this->bankVehicles();
         $rec = BankRemittance::find($this->recordId);
         abort_unless($rec && $rec->vehicles()->whereIn('vehicles.id', $this->bankIds)->exists(), 404);
+        $this->resetErrorBag('mailTo');
         $to = trim($this->mailTo);
-        if (! filter_var($to, FILTER_VALIDATE_EMAIL)) {
-            $this->addError('mailTo', __('vehicle.mail.to_invalid'));
+        // 기능설정에 등록된 사람에게만 보낸다(드롭박스 선택 — 화면 밖 값은 서버가 거른다).
+        if (! array_key_exists($to, BankRemittanceService::recipientOptions())) {
+            $this->addError('mailTo', __('vehicle.bank.pick_recipient'));
 
             return;
         }
@@ -205,7 +207,7 @@ new class extends Component {
         }
         $this->bankOpen = false;
         $this->dispatch('bank-remittance-done', ids: $this->bankIds, name: $rec->remitter_name);
-        $this->dispatch('notify', message: __('vehicle.bank.sent', ['to' => $to]), type: 'success');
+        $this->dispatch('notify', message: __('vehicle.bank.sent', ['to' => BankRemittanceService::recipientLabel($to)]), type: 'success');
     }
 
     public function with(): array
@@ -225,7 +227,9 @@ new class extends Component {
 <div>
 @if($bankOpen)
 <div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-3" data-bank-modal
-     x-data="bankRemit()" @keydown.escape.window="$wire.closeBank()">
+     x-data="bankRemit()" @keydown.escape.window="onEscape()"
+     @keydown.arrow-left.window="lbStep(-1)" @keydown.arrow-right.window="lbStep(1)"
+     @mousemove.window="lbDragMove($event)" @mouseup.window="lbDragEnd()">
     <div class="card w-full max-w-2xl shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
         <div class="flex items-start justify-between gap-3">
             <div>
@@ -259,24 +263,28 @@ new class extends Component {
         {{-- ② 송금인 이름 --}}
         <div class="mt-4">
             <div class="mb-1 text-sm font-medium text-gray-700">② {{ __('vehicle.bank.step_name') }}</div>
-            <div wire:loading wire:target="bankFile,readPages" class="mb-2 rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-700">{{ __('vehicle.bank.reading') }}</div>
-            <div x-show="converting" x-cloak class="mb-2 rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-700">{{ __('vehicle.bank.reading') }}</div>
             @if($ocrStatus && $ocrStatus !== 'reading')
                 @php
-                    $tone = match ($ocrStatus) { 'ok', 'text' => 'border-green-200 bg-green-50 text-green-800', 'unverified', 'mismatch' => 'border-amber-200 bg-amber-50 text-amber-800', default => 'border-gray-200 bg-gray-50 text-gray-700' };
+                    $tone = match ($ocrStatus) { 'ok', 'text' => 'border-green-200 bg-green-50 text-green-800', default => 'border-gray-200 bg-gray-50 text-gray-700' };
                 @endphp
                 <div class="mb-2 rounded-md border px-3 py-2 text-xs {{ $tone }}" data-bank-ocr="{{ $ocrStatus }}">
-                    {{ __('vehicle.bank.ocr_'.$ocrStatus, ['prefix' => $ocrPrefix]) }}
+                    {{ __('vehicle.bank.ocr_'.$ocrStatus) }}
                 </div>
             @endif
             <input type="text" wire:model="remitterInput" maxlength="100" class="input-base w-full font-mono uppercase" placeholder="{{ __('vehicle.bank.name_ph') }}" data-bank-name>
             <p class="mt-1 text-[11px] text-gray-500">{{ __('vehicle.bank.name_hint') }}</p>
             @error('remitterInput')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
             <template x-if="previews.length">
-                <div class="mt-2 grid grid-cols-3 gap-2">
-                    <template x-for="(src, i) in previews" :key="i">
-                        <a :href="src" target="_blank" class="block overflow-hidden rounded border border-gray-200"><img :src="src" class="w-full" alt=""></a>
-                    </template>
+                <div class="mt-2" data-bank-previews>
+                    <p class="mb-1 text-[11px] text-gray-500">{{ __('vehicle.bank.preview_hint') }}</p>
+                    <div class="grid grid-cols-3 gap-2">
+                        <template x-for="(src, i) in previews" :key="i">
+                            <button type="button" @click="lbOpen(i)" class="relative block overflow-hidden rounded border border-gray-200 hover:border-primary">
+                                <img :src="src" class="w-full" alt="">
+                                <span class="absolute bottom-1 right-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white" x-text="(i + 1) + @js(__('vehicle.bank.page_suffix'))"></span>
+                            </button>
+                        </template>
+                    </div>
                 </div>
             </template>
         </div>
@@ -293,10 +301,15 @@ new class extends Component {
         {{-- ③ 만든 것 + 메일 --}}
         <div class="mt-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800" data-bank-done>
             {{ __('vehicle.bank.done_line', ['name' => $rec->remitter_name]) }}
-            <div class="mt-1 flex flex-wrap gap-3 text-xs">
-                <a href="{{ route('erp.bank-remittances.file', [$rec->id, 'remittance']) }}" class="text-primary-text underline">📄 {{ $rec->remittance_name }}</a>
+            <div class="mt-2 flex flex-wrap gap-2 text-xs">
+                {{-- 파일은 버튼으로 — 작은 밑줄 글씨는 「눌러서 받는 것」인지 안 보였다(jin 11-24) --}}
+                <a href="{{ route('erp.bank-remittances.file', [$rec->id, 'remittance']) }}" class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 shadow-sm hover:bg-gray-50" data-bank-file>
+                    📄 {{ __('vehicle.bank.remittance') }} <span class="text-gray-400">{{ $rec->remittance_name }}</span> <span class="text-primary-text">⬇ {{ __('vehicle.bank.download') }}</span>
+                </a>
                 @if($rec->invoice_path)
-                    <a href="{{ route('erp.bank-remittances.file', [$rec->id, 'invoice']) }}" class="text-primary-text underline" data-bank-invoice>📄 {{ $rec->invoice_name }}</a>
+                    <a href="{{ route('erp.bank-remittances.file', [$rec->id, 'invoice']) }}" class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 shadow-sm hover:bg-gray-50" data-bank-invoice data-bank-file>
+                        📄 {{ __('vehicle.bank.invoice') }} <span class="text-gray-400">{{ $rec->invoice_name }}</span> <span class="text-primary-text">⬇ {{ __('vehicle.bank.download') }}</span>
+                    </a>
                 @endif
             </div>
         </div>
@@ -307,8 +320,12 @@ new class extends Component {
                 <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">{{ __('vehicle.mail.not_configured') }}</p>
             @endunless
             <label class="block text-xs text-gray-500">{{ __('vehicle.bank.mail_to') }}</label>
-            <input type="email" wire:model.live.blur="mailTo" class="input-base w-full" data-bank-to>
-            @if($mailTo === '')<p class="text-[11px] text-amber-700">{{ __('vehicle.bank.no_recipient') }}</p>@endif
+            @php $bankTo = \App\Services\BankRemittanceService::recipientOptions(); @endphp
+            <div data-bank-to>
+                <x-erp.combobox model="mailTo" :options="[]" :extra="$bankTo" :selected="$mailTo"
+                                :placeholder="__('vehicle.bank.pick_recipient')" wire:key="bank-to-{{ $recordId }}-{{ $mailTo }}" class="w-full" />
+            </div>
+            @if($bankTo === [])<p class="text-[11px] text-amber-700">{{ __('vehicle.bank.no_recipient') }}</p>@endif
             @error('mailTo')<p class="text-xs text-red-500">{{ $message }}</p>@enderror
             <label class="block text-xs text-gray-500">{{ __('vehicle.bank.mail_subject_label') }}</label>
             <input type="text" wire:model="mailSubject" class="input-base w-full">
@@ -319,12 +336,54 @@ new class extends Component {
 
         <div class="mt-4 flex justify-end gap-2">
             <button type="button" wire:click="closeBank" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">{{ __('vehicle.bank.later') }}</button>
-            <button type="button" wire:click="sendBankMail" wire:loading.attr="disabled" wire:confirm="{{ __('vehicle.bank.send_confirm', ['to' => $mailTo]) }}"
+            <button type="button" wire:click="sendBankMail" wire:loading.attr="disabled" wire:confirm="{{ __('vehicle.bank.send_confirm', ['to' => \App\Services\BankRemittanceService::recipientLabel($mailTo)]) }}"
                     class="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50" data-bank-send>
                 ✉ {{ __('vehicle.bank.send_btn') }}
             </button>
         </div>
         @endif
+    </div>
+
+    {{-- ⏳ 읽는 중 가림막 — 멈춘 건지 헷갈리지 않게, 끝날 때까지 다른 조작을 막는다(jin 11-24).
+         TIF = 브라우저 변환 + 읽기 전체(converting) · PDF·그림 = 서버가 올리면서 바로 읽는 동안(wire:loading) --}}
+    <div x-show="converting" x-cloak class="fixed inset-0 z-[115] flex items-center justify-center bg-black/40" data-bank-reading>
+        <div class="card flex items-center gap-3 px-5 py-4 shadow-2xl">
+            <svg class="h-6 w-6 animate-spin text-primary" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+            <div>
+                <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.bank.reading_title') }}</div>
+                <div class="text-xs text-gray-500">{{ __('vehicle.bank.reading_hint') }}</div>
+            </div>
+        </div>
+    </div>
+    <div wire:loading.flex wire:target="bankFile,readPages" class="fixed inset-0 z-[115] items-center justify-center bg-black/40">
+        <div class="card flex items-center gap-3 px-5 py-4 shadow-2xl">
+            <svg class="h-6 w-6 animate-spin text-primary" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+            <div>
+                <div class="text-sm font-semibold text-gray-800">{{ __('vehicle.bank.reading_title') }}</div>
+                <div class="text-xs text-gray-500">{{ __('vehicle.bank.reading_hint') }}</div>
+            </div>
+        </div>
+    </div>
+
+    {{-- 🔍 쪽 그림 보기 — 기본탭 사진 창처럼 좌우 넘기기(‹ › · ←→ · 밀기). 휠 = Ctrl 없이 바로 확대 · 누르면 확대 · 확대 중 끌기 · 더블클릭 = 원래 크기 --}}
+    <div x-show="lb.open" x-cloak class="fixed inset-0 z-[120] flex flex-col bg-black/85" data-bank-lightbox @click.self="lbClose()">
+        <div class="flex items-center justify-between px-4 py-3 text-white">
+            <span class="text-sm"><span class="text-white/70" x-text="(lb.i + 1) + ' / ' + previews.length"></span><span class="ml-3 hidden text-xs text-white/60 sm:inline">{{ __('vehicle.bank.zoom_hint') }}</span></span>
+            <div class="flex items-center gap-2">
+                <button type="button" @click="lbZoomBy(1 / 1.3)" class="h-8 w-8 rounded-full bg-white/20 text-lg leading-none hover:bg-white/30">−</button>
+                <span class="w-12 text-center text-xs" x-text="Math.round(lb.z * 100) + '%'"></span>
+                <button type="button" @click="lbZoomBy(1.3)" class="h-8 w-8 rounded-full bg-white/20 text-lg leading-none hover:bg-white/30">+</button>
+                <button type="button" @click="lbClose()" class="ml-2 rounded-full bg-white/20 px-2.5 py-0.5 text-lg leading-none hover:bg-white/30">×</button>
+            </div>
+        </div>
+        <div class="relative flex flex-1 items-center justify-center overflow-hidden p-4" @click.self="lbClose()"
+             @wheel.prevent="lbWheel($event)" @touchstart.passive="lbTouchStart($event)" @touchend="lbTouchEnd($event)">
+            <button type="button" x-show="previews.length > 1" @click="lbStep(-1)" class="absolute left-2 top-1/2 z-10 h-11 w-11 -translate-y-1/2 rounded-full bg-white/20 text-2xl leading-none text-white hover:bg-white/35">&lsaquo;</button>
+            <button type="button" x-show="previews.length > 1" @click="lbStep(1)" class="absolute right-2 top-1/2 z-10 h-11 w-11 -translate-y-1/2 rounded-full bg-white/20 text-2xl leading-none text-white hover:bg-white/35">&rsaquo;</button>
+            <img :src="previews[lb.i]" alt="" class="max-h-full max-w-full select-none bg-white object-contain" draggable="false" data-bank-lb-img
+                 @mousedown="lbDragStart($event)" @dblclick="lbReset()"
+                 :style="'transform: translate(' + lb.x + 'px,' + lb.y + 'px) scale(' + lb.z + '); cursor: ' + (lb.z > 1 ? (lb.drag ? 'grabbing' : 'grab') : 'zoom-in')" />
+        </div>
     </div>
 </div>
 @endif
@@ -335,6 +394,45 @@ new class extends Component {
     Alpine.data('bankRemit', () => ({
         converting: false,
         previews: [],
+        lb: { open: false, i: 0, z: 1, x: 0, y: 0, drag: null, tx: null, ty: null },
+        onEscape() {
+            if (this.converting) return;                       // 읽는 중엔 닫지 않는다
+            if (this.lb.open) { this.lbClose(); return; }       // 보기 창부터 닫는다
+            $wire.closeBank();
+        },
+        lbOpen(i) { this.lb.open = true; this.lb.i = i; this.lbReset(); },
+        lbClose() { this.lb.open = false; this.lbReset(); },
+        lbReset() { this.lb.z = 1; this.lb.x = 0; this.lb.y = 0; this.lb.drag = null; },
+        lbStep(d) {
+            const n = this.previews.length;
+            if (! this.lb.open || n < 2) return;
+            this.lb.i = (this.lb.i + d + n) % n; this.lbReset();
+        },
+        lbZoomBy(k, cx = null, cy = null) {
+            const z = this.lb.z, nz = Math.min(6, Math.max(1, z * k));
+            if (nz === 1) { this.lbReset(); return; }
+            const img = this.$root.querySelector('img[data-bank-lb-img]');
+            if (cx !== null && img) {   // 마우스가 가리킨 곳이 그 자리에 남게
+                const r = img.getBoundingClientRect(), f = 1 - nz / z;
+                this.lb.x += (cx - (r.left + r.width / 2)) * f; this.lb.y += (cy - (r.top + r.height / 2)) * f;
+            }
+            this.lb.z = nz;
+        },
+        lbWheel(e) { this.lbZoomBy(e.deltaY < 0 ? 1.2 : 1 / 1.2, e.clientX, e.clientY); },
+        lbDragStart(e) {
+            e.preventDefault();
+            if (this.lb.z <= 1) { this.lbZoomBy(2.5, e.clientX, e.clientY); return; }   // 누르면 바로 확대
+            this.lb.drag = { x: e.clientX - this.lb.x, y: e.clientY - this.lb.y };
+        },
+        lbDragMove(e) { if (this.lb.drag) { this.lb.x = e.clientX - this.lb.drag.x; this.lb.y = e.clientY - this.lb.drag.y; } },
+        lbDragEnd() { this.lb.drag = null; },
+        lbTouchStart(e) { this.lb.tx = e.changedTouches[0].clientX; this.lb.ty = e.changedTouches[0].clientY; },
+        lbTouchEnd(e) {
+            if (this.lb.tx === null || this.lb.z > 1) return;
+            const dx = e.changedTouches[0].clientX - this.lb.tx, dy = e.changedTouches[0].clientY - this.lb.ty;
+            this.lb.tx = null;
+            if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) this.lbStep(dx < 0 ? 1 : -1);
+        },
         async loadUtif() {
             if (window.UTIF) return;
             await new Promise((ok, no) => { const s = document.createElement('script'); s.src = '/vendor/utif/UTIF.js'; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
@@ -357,12 +455,13 @@ new class extends Component {
                     const sc = Math.min(1, 1100 / Math.max(c.width, c.height));
                     const d = document.createElement('canvas'); d.width = Math.round(c.width * sc); d.height = Math.round(c.height * sc);
                     const ctx = d.getContext('2d'); ctx.imageSmoothingQuality = 'high'; ctx.drawImage(c, 0, 0, d.width, d.height);
-                    pages.push(d.toDataURL('image/jpeg', 0.75));
+                    // PNG — JPEG(75%)는 팩스의 가는 글씨를 뭉갰다(11-24 실측). 크기는 쪽당 약 0.2MB 로 비슷하다.
+                    pages.push(d.toDataURL('image/png'));
                 }
                 this.previews = pages;
-                // Livewire 요청 한도 1MB — 대조할 1쪽과 이름이 있는 3쪽을 먼저, 남는 만큼만 2·4쪽…(쪽 번호를 키로).
+                // Livewire 요청 한도 1MB — 이름이 있는 3쪽을 먼저, 남는 만큼만 4·2·5·6쪽(쪽 번호를 키로). 1쪽은 한 장짜리일 때만.
                 const send = {}; let size = 0;
-                for (const i of [0, 2, 1, 3, 4, 5]) {
+                for (const i of (pages.length === 1 ? [0] : [2, 3, 1, 4, 5])) {
                     if (! pages[i] || size + pages[i].length > 900000) continue;
                     send[i] = pages[i]; size += pages[i].length;
                 }

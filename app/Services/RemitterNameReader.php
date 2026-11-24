@@ -15,10 +15,10 @@ use Smalot\PdfParser\XObject\Image;
  *   - 그림이면 회사 GPU PC 의 board OCR 모델(qwen2.5vl)에 쪽 그림을 보낸다. TIF 는 서버(GD)가 못 풀어서
  *     **브라우저가 쪽 PNG 로 바꿔** 보낸다. PDF 안의 JPEG 는 서버가 꺼낸다.
  *
- * 🚨 실측(11-24, 샘플 4건) — 모델에게 「Debtor 이름」을 물으면 Debtor 가 없는 쪽(1쪽)에서 BIC·은행 이름·우리 회사
- *    이름을 답했다. 그래서 ①1쪽 요약표의 「송금의뢰인」(가린 앞글자, 예 `XHEVAHIR NE**`)을 따로 읽고
- *    ②Debtor 후보는 그 앞글자와 맞는 것만 받는다. 앞글자를 못 읽었으면 「확인 필요」로 돌려준다.
- *    결과는 언제나 **사람이 모달에서 보고 고칠 수 있는 제안**이다.
+ * 🧭 이름은 **3쪽에서만** 읽는다(jin 11-24 «1쪽 대조 빼고 3쪽만»). 3쪽에 없을 때만 4·2·5·6쪽, 1쪽은 한 장짜리 그림일 때만.
+ *    1쪽 요약표의 가린 앞글자(`MINDBORI**`)와 맞춰 보던 대조는 뺐다 — 팩스 글씨라 모델이 그 칸을 `MINDBOR^^`·옆 칸 REF-NO 로
+ *    읽어, 이름은 맞는데 「실패」로 뜨는 일이 났다(11-24 실측). Debtor 가 없는 쪽에서 나오는 BIC·우리 회사·한글 이름은
+ *    `plausible()` 이 거른다. 결과는 언제나 **사람이 모달에서 보고 고칠 수 있는 제안**이다.
  */
 class RemitterNameReader
 {
@@ -26,10 +26,6 @@ class RemitterNameReader
         .'If the page contains a section header "< Debtor >", return the value of the "Name" line directly under it, exactly as printed. '
         .'Never return the Creditor name or the Korean customer name. '
         .'Reply with JSON only: {"debtor_name": "..."} or {"debtor_name": null} if there is no "< Debtor >" section on this page.';
-
-    public const PROMPT_PREFIX = 'This image is the first page of a Korean bank incoming remittance notice. It has a summary table with columns '
-        .'구분 | REF-NO | VALUE DATE | 통화 | 금액 | 송금의뢰인. Return the 송금의뢰인 (remitter) cell exactly as printed, including any * characters. '
-        .'Reply with JSON only: {"remitter": "..."} or {"remitter": null} if there is no such table.';
 
     /** 우리 회사 이름 — 송금인 후보에서 뺀다(Creditor 를 잘못 집은 것). */
     private const OWN_NAMES = ['SSANCAR', 'HEYMAN', 'HEY MAN', 'KARABA'];
@@ -113,15 +109,15 @@ class RemitterNameReader
     /**
      * 쪽 그림(PNG base64, 이미 normalizeImage 를 거친 것)에서 송금인 이름을 찾는다.
      *
-     * @param  list<string|null>  $pages  1쪽부터 순서대로
-     * @return array{name: ?string, prefix: ?string, status: string}
-     *                                                               status = ok(앞글자와 맞음) · unverified(앞글자를 못 읽음) · mismatch(맞는 후보 없음) · none(못 찾음) · offline(GPU PC 불통) · busy(다른 사람이 읽는 중)
+     * @param  list<string|null>  $pages  1쪽부터 순서대로(보내지 않은 쪽은 null)
+     * @return array{name: ?string, status: string}
+     *                                              status = ok(읽음) · none(못 찾음) · offline(GPU PC 불통) · busy(다른 사람이 읽는 중)
      */
     public function read(array $pages): array
     {
         $lock = Cache::lock('remitter-ocr', 90);
         if (! $lock->get()) {
-            return ['name' => null, 'prefix' => null, 'status' => 'busy'];
+            return ['name' => null, 'status' => 'busy'];
         }
         try {
             return $this->readUnlocked(array_values($pages));
@@ -139,59 +135,25 @@ class RemitterNameReader
         $ctx = (int) config('assistant.remitter_ocr.num_ctx');
         $started = microtime(true);
 
-        $prefix = null;
-        $candidates = [];
+        // 3쪽부터, 없으면 4·2·5·6쪽. 1쪽은 Debtor 가 없어서(은행 코드를 답한다) 한 장짜리 그림일 때만.
+        $order = count($pages) === 1 ? [0] : array_values(array_filter([2, 3, 1, 4, 5], fn ($i) => $i < count($pages)));
         try {
-            if (! empty($pages[0])) {
-                $prefix = self::clean((string) (self::json($client->vision($model, self::PROMPT_PREFIX, $pages[0], $ctx))['remitter'] ?? '')) ?: null;
-            }
-            // 이름이 있는 쪽은 실측 3쪽 — 3쪽부터, 그다음 4·2·5·6쪽. 1쪽은 Debtor 가 없다(한 장짜리 그림만 예외).
-            $order = array_values(array_filter([2, 3, 1, 4, 5, 0], fn ($i) => $i < count($pages) && ($i > 0 || count($pages) === 1)));   // 한 장짜리 그림이면 그 쪽
             foreach ($order as $i) {
                 if (empty($pages[$i]) || microtime(true) - $started > 24) {   // 운영 PHP 30초 안에서 끝낸다
                     continue;
                 }
                 $name = self::clean((string) (self::json($client->vision($model, self::PROMPT_NAME, $pages[$i], $ctx))['debtor_name'] ?? ''));
-                if (! self::plausible($name)) {
-                    continue;
-                }
-                if ($prefix !== null && self::prefixMatches($prefix, $name)) {
-                    return ['name' => $name, 'prefix' => $prefix, 'status' => 'ok'];
-                }
-                $candidates[] = $name;
-                if ($prefix === null) {
-                    break;   // 대조할 앞글자가 없다 — 첫 후보를 「확인 필요」로
+                if (self::plausible($name)) {
+                    return ['name' => $name, 'status' => 'ok'];
                 }
             }
         } catch (\Throwable $e) {
             report($e);
 
-            return ['name' => $candidates[0] ?? null, 'prefix' => $prefix, 'status' => 'offline'];
+            return ['name' => null, 'status' => 'offline'];
         }
 
-        if ($candidates === []) {
-            return ['name' => null, 'prefix' => $prefix, 'status' => 'none'];
-        }
-
-        return ['name' => $candidates[0], 'prefix' => $prefix, 'status' => $prefix === null ? 'unverified' : 'mismatch'];
-    }
-
-    /** 「XHEVAHIR NE**」 ↔ 「XHEVAHIR NEZIRI」 — 글자·숫자만 비교, 앞글자 길이 중 한 글자 오독까지 허용(I↔| 등). */
-    public static function prefixMatches(string $masked, string $name): bool
-    {
-        $p = self::letters(preg_replace('/\*+.*$/u', '', $masked) ?? '');
-        $n = self::letters($name);
-        if (mb_strlen($p) < 3) {
-            return false;
-        }
-        $head = mb_substr($n, 0, mb_strlen($p));
-
-        return mb_strlen($head) === mb_strlen($p) && levenshtein($p, $head) <= 1;
-    }
-
-    private static function letters(string $s): string
-    {
-        return preg_replace('/[^A-Z0-9]/', '', strtoupper(strtr($s, ['|' => 'I', '!' => 'I']))) ?? '';
+        return ['name' => null, 'status' => 'none'];
     }
 
     private static function plausible(string $name): bool

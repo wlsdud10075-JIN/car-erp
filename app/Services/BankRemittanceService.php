@@ -32,10 +32,41 @@ class BankRemittanceService
     /** 은행용 PI 에서 송금인 이름이 들어가는 칸 — 3사 양식 공통 `D5 Name`(일반 PI 는 바이어 이름). */
     public const NAME_CELL = 'E5';
 
-    /** 받는 사람 = 기능설정 회사별(🚫 코드에 주소를 박지 않는다). */
-    public static function recipient(): string
+    /**
+     * 받는 사람 목록 = 기능설정 회사별 `bank_mail_recipients_{set}`(JSON, 은행·이름·메일 — jin 11-24 «한 사람이 아니야»).
+     * 🚫 코드에 주소를 박지 않는다. 옛 한 칸(`bank_mail_to_{set}`)만 있으면 그 주소 하나로 읽는다.
+     *
+     * @return list<array{bank: string, name: string, email: string}>
+     */
+    public static function recipients(): array
     {
-        return (string) (Setting::get('bank_mail_to_'.Setting::companyTemplateSet(), '') ?: '');
+        $set = Setting::companyTemplateSet();
+        $rows = json_decode((string) (Setting::get("bank_mail_recipients_{$set}", '') ?: ''), true);
+        if (! is_array($rows)) {
+            $old = trim((string) (Setting::get("bank_mail_to_{$set}", '') ?: ''));
+            $rows = $old !== '' ? [['bank' => '', 'name' => '', 'email' => $old]] : [];
+        }
+
+        return collect($rows)
+            ->filter(fn ($r) => is_array($r) && filter_var($r['email'] ?? '', FILTER_VALIDATE_EMAIL))
+            ->map(fn ($r) => ['bank' => trim((string) ($r['bank'] ?? '')), 'name' => trim((string) ($r['name'] ?? '')), 'email' => trim((string) $r['email'])])
+            ->unique('email')->values()->all();
+    }
+
+    /** 드롭박스·기록 표시용 「신한은행 · 홍길동 <a@b.com>」. 목록에 없는 주소는 주소 그대로. */
+    public static function recipientLabel(string $email): string
+    {
+        return self::recipientOptions()[$email] ?? $email;
+    }
+
+    /** @return array<string, string> 메일 => 표시 이름 (공용 콤보 `extra`) */
+    public static function recipientOptions(): array
+    {
+        return collect(self::recipients())->mapWithKeys(function ($r) {
+            $head = implode(' · ', array_filter([$r['bank'], $r['name']], fn ($s) => $s !== ''));
+
+            return [$r['email'] => $head !== '' ? "{$head} <{$r['email']}>" : $r['email']];
+        })->all();
     }
 
     public static function canUse(?User $user): bool

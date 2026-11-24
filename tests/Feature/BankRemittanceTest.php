@@ -74,30 +74,35 @@ class BankRemittanceTest extends TestCase
         return base64_encode($tag);   // 가짜 클라이언트는 그림 내용을 안 본다 — 쪽 구분용 표식
     }
 
-    public function test_reader_takes_the_debtor_name_that_matches_page_one_and_ignores_bank_codes(): void
+    public function test_reader_reads_page_three_only_and_never_asks_page_one(): void
     {
         $this->fakeOcr([
-            'prefix' => ['P1' => '{"remitter": "MINDBOR|**"}'],
-            'name' => ['P1' => '{"debtor_name": "CHASUS33XXX"}', 'P3' => '{"debtor_name": "MINDBORI LLC"}'],
+            'name' => ['P1' => '{"debtor_name": "JPMORGAN CHASE BANK"}', 'P3' => '{"debtor_name": "MINDBORI LLC"}'],
         ]);
         $r = (new RemitterNameReader)->read([$this->page('P1'), $this->page('P2'), $this->page('P3')]);
-        $this->assertSame(['name' => 'MINDBORI LLC', 'prefix' => 'MINDBOR|**', 'status' => 'ok'], $r);
+        $this->assertSame(['name' => 'MINDBORI LLC', 'status' => 'ok'], $r);
 
         $client = app('remitter-ocr.client');
         $this->assertSame([['qwen2.5vl:7b', 4096]], array_values(array_unique(array_map(fn ($c) => [$c[0], $c[1]], $client->calls), SORT_REGULAR)),
             'board OCR 과 같은 모델·num_ctx 로만 부른다(다르면 GPU PC 가 모델을 다시 올린다)');
-        $this->assertCount(2, $client->calls, '1쪽 앞글자 + 3쪽에서 찾으면 멈춘다');
+        $this->assertSame(['P3'], array_map(fn ($c) => base64_decode($c[2]), $client->calls),
+            '3쪽 한 번만 묻는다 — 1쪽 대조는 뺐다(jin 11-24, 팩스라 1쪽 칸을 잘못 읽어 「실패」로 떴다)');
+
+        // 한 장짜리 그림이면 그 쪽
+        $this->fakeOcr(['name' => ['P1' => '{"debtor_name": "JOHN DOE"}']]);
+        $this->assertSame(['name' => 'JOHN DOE', 'status' => 'ok'], (new RemitterNameReader)->read([$this->page('P1')]));
     }
 
-    public function test_reader_rejects_own_company_and_korean_and_reports_mismatch_or_offline(): void
+    public function test_reader_rejects_bank_code_own_company_and_korean_then_tries_next_pages_or_offline(): void
     {
         $this->fakeOcr([
-            'prefix' => ['P1' => '{"remitter": "XHEVAHIR NE**"}'],
-            'name' => ['P3' => '{"debtor_name": "HEY MAN CO., LTD"}', 'P2' => '{"debtor_name": "(주)헤이맨 조태신"}', 'P4' => '{"debtor_name": "JOHN SMITH"}'],
+            'name' => ['P1' => '{"debtor_name": "SHOULD NOT ASK"}', 'P3' => '{"debtor_name": "HEY MAN CO., LTD"}', 'P4' => '{"debtor_name": "CHASUS33XXX"}', 'P2' => '{"debtor_name": "(주)헤이맨 조태신"}'],
         ]);
-        $r = (new RemitterNameReader)->read([$this->page('P1'), $this->page('P2'), $this->page('P3'), $this->page('P4')]);
-        $this->assertSame('mismatch', $r['status']);
-        $this->assertSame('JOHN SMITH', $r['name'], '우리 회사 이름·한글은 후보가 아니다');
+        $this->assertSame(['name' => null, 'status' => 'none'], (new RemitterNameReader)->read([$this->page('P1'), $this->page('P2'), $this->page('P3'), $this->page('P4')]),
+            '우리 회사 이름·은행 코드·한글은 후보가 아니고, 1쪽은 묻지 않는다');
+
+        $this->fakeOcr(['name' => ['P3' => '{"debtor_name": "HEY MAN CO., LTD"}', 'P4' => '{"debtor_name": "JOHN SMITH"}']]);
+        $this->assertSame(['name' => 'JOHN SMITH', 'status' => 'ok'], (new RemitterNameReader)->read([$this->page('P1'), $this->page('P2'), $this->page('P3'), $this->page('P4')]));
 
         $this->app->instance('remitter-ocr.client', new class extends OllamaClient
         {
@@ -114,11 +119,8 @@ class BankRemittanceTest extends TestCase
         $this->assertSame('offline', (new RemitterNameReader)->read([$this->page('P1'), $this->page('P2'), $this->page('P3')])['status']);
     }
 
-    public function test_prefix_match_and_text_pdf(): void
+    public function test_text_pdf(): void
     {
-        $this->assertTrue(RemitterNameReader::prefixMatches('SULEYMANOV ULVI CABRAYILO**', 'SULEYMANOV ULVI CABRAYIL OGHLU'));
-        $this->assertTrue(RemitterNameReader::prefixMatches('MINDBOR|**', 'MINDBORI LLC'), 'I 를 | 로 읽어도');
-        $this->assertFalse(RemitterNameReader::prefixMatches('XHEVAHIR NE**', 'KEB HANA BANK'));
         $this->assertSame('JOHN DOE', RemitterNameReader::fromText("BIC :X\n< Debtor >\nName :JOHN DOE\nTown Name :A\n< Creditor >\nName :SSANCAR LTD"));
         $this->assertNull(RemitterNameReader::fromText("< Creditor >\nName :SSANCAR LTD"));
     }
@@ -212,6 +214,56 @@ class BankRemittanceTest extends TestCase
             ->get(route('erp.bank-remittances.file', [$rec->id, 'remittance']))->assertForbidden();
     }
 
+    public function test_recipient_list_from_settings_is_a_dropdown_and_only_registered_addresses_are_sent(): void
+    {
+        Mail::fake();
+        $set = Setting::companyTemplateSet();
+        Setting::updateOrCreate(['key' => "mail_channel_{$set}"], ['value' => 'ses', 'type' => 'string']);
+        Setting::updateOrCreate(['key' => "mail_from_address_{$set}"], ['value' => 'ops@company.test', 'type' => 'string']);
+
+        // 기능설정 — 은행·이름·메일 줄 목록. 빈 줄은 버리고, 잘못된 주소·중복은 막는다.
+        $this->actingAs(User::factory()->create(['permission' => 'super', 'email_verified_at' => now()]));
+        Volt::test('admin.settings')
+            ->set('bankRecipients', [['bank' => '신한은행', 'name' => '김신한', 'email' => 'not-mail']])
+            ->call('saveBankMailTo')->assertHasErrors('bankRecipients')
+            ->set('bankRecipients', [['bank' => '', 'name' => '', 'email' => 'a@shinhan.test'], ['bank' => 'X', 'name' => '', 'email' => 'A@shinhan.test']])
+            ->call('saveBankMailTo')->assertHasErrors('bankRecipients')
+            ->set('bankRecipients', [
+                ['bank' => '신한은행', 'name' => '김신한', 'email' => 'kim@shinhan.test'],
+                ['bank' => '', 'name' => '', 'email' => ''],
+                ['bank' => '기업은행', 'name' => '박기업', 'email' => 'park@ibk.test'],
+            ])
+            ->call('saveBankMailTo')->assertHasNoErrors()
+            ->assertSet('bankRecipients', [
+                ['bank' => '신한은행', 'name' => '김신한', 'email' => 'kim@shinhan.test'],
+                ['bank' => '기업은행', 'name' => '박기업', 'email' => 'park@ibk.test'],
+            ]);
+        // settings.type 은 MySQL enum(boolean·string·integer) — SQLite 는 안 막는다(§8 #36, 로컬 저장 실패 11-24)
+        $this->assertContains(Setting::where('key', "bank_mail_recipients_{$set}")->value('type'), ['boolean', 'string', 'integer']);
+        $this->assertSame(['kim@shinhan.test' => '신한은행 · 김신한 <kim@shinhan.test>', 'park@ibk.test' => '기업은행 · 박기업 <park@ibk.test>'], BankRemittanceService::recipientOptions());
+
+        [$a] = $this->cars(1);
+        $this->actingAs($this->finance());
+        $t = Volt::test('erp.vehicles.bank-remittance')
+            ->call('openBank', [$a->id])
+            ->set('bankFile', $this->textAdvice('JOHN DOE'))
+            ->call('createBankRecord')
+            ->assertSet('mailTo', '', '여럿이면 미리 고르지 않는다 — 엉뚱한 은행으로 안 가게')
+            ->assertSee('data-bank-to', false)
+            ->assertSee('data-bank-file', false);
+
+        $t->set('mailTo', 'someone@else.test')->call('sendBankMail')->assertHasErrors('mailTo')->assertSet('bankOpen', true);
+        Mail::assertNothingSent();
+
+        $t->set('mailTo', 'park@ibk.test')->call('sendBankMail')->assertHasNoErrors()->assertSet('bankOpen', false);
+        Mail::assertSent(VehicleDocumentMail::class, fn ($m) => $m->hasTo('park@ibk.test'));
+
+        // 서류탭 기록 줄 — 은행·이름이 같이 보이고 파일은 버튼
+        $html = Volt::test('erp.vehicles.index')->call('openEdit', $a->id)->html();
+        $this->assertStringContainsString('기업은행 · 박기업', $html);
+        $this->assertStringContainsString('data-bank-file', $html);
+    }
+
     public function test_docs_tab_shows_bank_area_and_list_has_bulk_button(): void
     {
         [$a] = $this->cars(1);
@@ -260,6 +312,9 @@ class BankRemittanceTest extends TestCase
 
         Volt::test('erp.vehicles.bank-remittance')
             ->call('openBank', [$a->id])
+            ->assertSee('data-bank-reading', false)     // 읽는 중 가림막(조작 막음)
+            ->assertSee('data-bank-lightbox', false)    // 쪽 그림 보기 창(넘기기·확대)
+            ->assertDontSee("toDataURL('image/jpeg'", false)   // 팩스 글씨가 뭉개지는 JPEG 로 보내지 않는다
             ->set('bankFile', UploadedFile::fake()->createWithContent('83202.tif', 'II*'))
             ->assertSet('ocrStatus', 'reading')
             ->call('readPages', [$png('1'), $png('2'), $png('3')])
