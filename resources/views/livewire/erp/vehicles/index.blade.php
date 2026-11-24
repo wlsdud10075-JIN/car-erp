@@ -11432,11 +11432,22 @@ function vehicleColumnsToggle(columns, serverKnows) {
                         </a>
                         <button type="button" wire:click="removeFinalPaymentProof({{ $idx }})" class="text-red-500 hover:underline">{{ __('vehicle.panel.proof_remove') }}</button>
                     @else
-                        {{-- 미첨부 — 업로드 버튼 --}}
-                        <label class="inline-flex cursor-pointer items-center gap-1 rounded border border-dashed border-gray-300 px-2 py-0.5 text-gray-500 hover:border-primary hover:text-primary-text"
+                        {{-- 미첨부 — 업로드 버튼. 🎯 2026-11-24 jin «전신문은 해당 안 되나» — 끌어다 놓기도 받는다(x-erp.file-drop 과 같은 동작:
+                             파일을 끌고 화면에 들어오면 버튼이 커지고, 그 위에 놓으면 첨부. 칸 밖 낙하는 업로드 부품이 막는다). --}}
+                        <label data-filedrop
+                               x-data="{ over: false, dragging: false, hasFiles(e) { return Array.from((e.dataTransfer && e.dataTransfer.types) || []).includes('Files') } }"
+                               x-on:dragenter.window="if (hasFiles($event)) dragging = true"
+                               x-on:dragleave.window="if (! $event.relatedTarget) { dragging = false; over = false }"
+                               x-on:dragend.window="dragging = false; over = false"
+                               x-on:drop.window="dragging = false; over = false"
+                               x-on:dragover.prevent="over = true"
+                               x-on:drop.prevent="if ($event.dataTransfer && $event.dataTransfer.files.length) { $refs.pf.files = $event.dataTransfer.files; $refs.pf.dispatchEvent(new Event('change', { bubbles: true })); }"
+                               class="inline-flex cursor-pointer items-center gap-1 rounded border-dashed hover:border-primary hover:text-primary-text"
+                               :class="over ? 'border-2 border-primary bg-primary-light px-4 py-2 font-semibold text-primary-text'
+                                   : (dragging ? 'border-2 border-primary bg-white px-4 py-2 font-semibold text-primary-text' : 'border border-gray-300 px-2 py-0.5 text-gray-500')"
                                wire:loading.class="opacity-40" wire:target="finalPaymentProofFiles.{{ $idx }}">
                             📎 {{ __('vehicle.panel.proof_attach') }}
-                            <input type="file" wire:model="finalPaymentProofFiles.{{ $idx }}" class="hidden">
+                            <input x-ref="pf" type="file" wire:model="finalPaymentProofFiles.{{ $idx }}" class="hidden">
                         </label>
                         @if($proofCleared && !empty($row['proof_name']))
                             <span class="text-[10px] text-gray-400">{{ __('vehicle.panel.proof_will_remove') }}</span>
