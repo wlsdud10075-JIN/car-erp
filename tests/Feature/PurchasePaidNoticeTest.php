@@ -103,6 +103,31 @@ class PurchasePaidNoticeTest extends TestCase
     }
 
     /**
+     * 💰 매도비 — 계약금과 같은 딜러 번호·같은 템플릿, 「구분」만 매도비(jin 2026-11-24).
+     * 계좌는 매도비 계좌가 따로 있으면 그것(딜러 매도비 받는 계좌), 없으면 매입처 계좌.
+     */
+    public function test_selling_fee_notice_uses_the_fee_account_when_set(): void
+    {
+        $this->configureAlimtalk();
+        $this->okHttp();
+        $this->actingAs($this->finance());
+
+        $v = $this->vehicle();
+        $this->pay($v, 'selling_fee', 440_000);
+        $this->send($v, 'selling_fee');
+        $msg = (string) AlimtalkLog::where('template_code', 'erp_purchase_paid')->latest('id')->value('message');
+        $this->assertStringContainsString('매도비', $msg);
+        $this->assertStringContainsString('440,000원', $msg);
+        $this->assertStringContainsString('국민 ****1234', $msg, '매도비 계좌가 없으면 매입처 계좌');
+
+        $v->update(['purchase_fee_bank' => '신한', 'purchase_fee_account' => '110-222-335577', 'purchase_fee_holder' => '박매도']);
+        $this->send($v, 'selling_fee');
+        $msg = (string) AlimtalkLog::where('template_code', 'erp_purchase_paid')->latest('id')->value('message');
+        $this->assertStringContainsString('신한 ****5577', $msg, '매도비 계좌가 있으면 그것');
+        $this->assertStringNotContainsString('****1234', $msg);
+    }
+
+    /**
      * 🚨 **핵심 가드 — 잔금은 그 행 하나만 보낸다.**
      *
      * 운영 실측 239대 중 24대가 잔금을 2~3회 분할 지급한다. 합계를 보내면 두 번째 알림이
@@ -283,8 +308,10 @@ class PurchasePaidNoticeTest extends TestCase
 
         $html = $this->panelHtml($v);
 
-        $this->assertSame(2, substr_count($html, 'openPaidNotice('),
-            '계약금 1(금액칸 옆) + 잔금 1 = 2개여야 한다 — 계약금·매도비 행에도 붙었다');
+        // 🔀 2026-11-24 매도비도 금액칸 옆에 1개(jin «매도비도 넣어주라») — 잔금 목록의 계약금·매도비 행에는 여전히 없다.
+        $this->assertSame(3, substr_count($html, 'openPaidNotice('),
+            '계약금 1 + 매도비 1(금액칸 옆) + 잔금 1 = 3개여야 한다 — 잔금 목록의 계약금·매도비 행에도 붙었다');
+        $this->assertSame(1, substr_count($html, "openPaidNotice('selling_fee')"));
     }
 
     /**

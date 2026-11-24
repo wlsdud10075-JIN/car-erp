@@ -1348,6 +1348,7 @@ return [
         'btn_title' => '이 금액을 입금했다고 국내 딜러에게 알림톡으로 알립니다',
         'kind_down' => '계약금',
         'kind_balance' => '매입잔금',
+        'kind_selling_fee' => '매도비',
         // 📎 이체확인증 모달 (jin 2026-10-23)
         'modal_title' => '딜러에게 입금 완료 알림톡 보내기',
         'proof' => '이체확인증',

@@ -29,6 +29,17 @@ class AccountMask
         return self::format($vehicle->purchase_seller_bank, $vehicle->purchase_seller_account);
     }
 
+    /**
+     * 매도비 입금 안내용 (jin 2026-11-24) — 매도비 계좌(`purchase_fee_*`)가 따로 있으면 그것, 비었으면 매입처 계좌.
+     * 매도비 계좌는 「비우면 위 매입처 계좌만 쓴다」(차량 등록 가이드) — 송금도 그렇게 나간다.
+     */
+    public static function forSellingFee(Vehicle $vehicle): string
+    {
+        return filled($vehicle->purchase_fee_account) || filled($vehicle->purchase_fee_bank)
+            ? self::format($vehicle->purchase_fee_bank, $vehicle->purchase_fee_account)
+            : self::forVehicle($vehicle);
+    }
+
     /** 예: ('국민', '123456-78-901234') → '국민 ****1234' / 계좌 없으면 '-'. */
     public static function format(?string $bank, ?string $account): string
     {

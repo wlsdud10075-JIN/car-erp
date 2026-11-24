@@ -3856,6 +3856,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             ->where('type', 'down')->whereNotNull('confirmed_at')->sum('amount');
     }
 
+    /** 확정된 매도비 합계 — 매도비 입금완료 알림톡 버튼 조건(jin 2026-11-24 «매도비도 넣어주라»). 계약금과 같은 DB 확정분 기준. */
+    #[Computed]
+    public function confirmedSellingFee(): int
+    {
+        if ($this->editingId === null) {
+            return 0;
+        }
+
+        return (int) \App\Models\PurchaseBalancePayment::where('vehicle_id', $this->editingId)
+            ->where('type', 'selling_fee')->whereNotNull('confirmed_at')->sum('amount');
+    }
+
     /**
      * board 신호 회신 — 이 차 1대만 닫는다(묶음 통째가 아니라 부분입금 대응).
      * 권한 = canConfirmFinance(super·admin·업무관리자·role∈{재무,관리}).
@@ -5812,7 +5824,9 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     private function deliverPurchasePaid(string $kind, ?int $pbpId, ?\App\Models\PurchaseBalancePayment $proofRow): void
     {
-        abort_unless(in_array($kind, ['down', 'balance'], true), 422);
+        // 💰 매도비(selling_fee)도 같은 딜러 번호로 보낸다(jin 2026-11-24 «매도비도 계약금·매입잔금 받는 번호와 같아»).
+        //    승인된 본문의 「구분」이 변수라 재승인 없이 「매도비」로 나간다. 계좌는 매도비 계좌(없으면 매입처 계좌).
+        abort_unless(in_array($kind, ['down', 'balance', 'selling_fee'], true), 422);
         // 🔓 딜러 수동 알림톡 3종은 권한을 나누지 않는다 — 그 차를 볼 수 있으면 보낸다(jin 2026-11-22 «누구나로 변경»).
 
         if ($this->editingId === null) {
@@ -5829,9 +5843,9 @@ new #[Layout('components.layouts.app')] class extends Component {
         }
 
         // 금액 — 화면 draft 가 아니라 **DB 의 확정 행**에서 읽는다(저장 전 입력값을 보내면 거짓 통지).
-        if ($kind === 'down') {
+        if ($kind === 'down' || $kind === 'selling_fee') {
             $amount = (int) $vehicle->purchaseBalancePayments()
-                ->where('type', 'down')->whereNotNull('confirmed_at')->sum('amount');
+                ->where('type', $kind)->whereNotNull('confirmed_at')->sum('amount');
         } else {
             $row = $vehicle->purchaseBalancePayments()
                 ->where('type', 'balance')->whereNotNull('confirmed_at')->find($pbpId);
@@ -5880,9 +5894,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $vars = [
             '차량번호' => $vehicle->vehicle_number,
-            '구분' => $kind === 'down' ? __('vehicle.paidnotice.kind_down') : __('vehicle.paidnotice.kind_balance'),
+            '구분' => __('vehicle.paidnotice.kind_'.$kind),
             '금액' => number_format($amount).'원',
-            '계좌' => \App\Support\AccountMask::forVehicle($vehicle),
+            '계좌' => $kind === 'selling_fee' ? \App\Support\AccountMask::forSellingFee($vehicle) : \App\Support\AccountMask::forVehicle($vehicle),
             '입금자명' => \App\Support\AlimtalkConfig::active()->companyLabel(),
         ];
 
@@ -6001,7 +6015,7 @@ new #[Layout('components.layouts.app')] class extends Component {
      */
     public function openPaidNotice(string $kind, ?int $pbpId = null): void
     {
-        abort_unless(in_array($kind, ['down', 'balance'], true), 422);
+        abort_unless(in_array($kind, ['down', 'balance', 'selling_fee'], true), 422);
         // 🔓 딜러 수동 알림톡 3종은 권한을 나누지 않는다 — 그 차를 볼 수 있으면 보낸다(jin 2026-11-22 «누구나로 변경»).
         if ($this->editingId === null) {
             $this->dispatch('notify', message: __('vehicle.paidnotice.save_first'), type: 'warning');
@@ -6012,9 +6026,11 @@ new #[Layout('components.layouts.app')] class extends Component {
         abort_unless($vehicle && auth()->user()->canScopeVehicle($vehicle), 403);
 
         $rows = $vehicle->purchaseBalancePayments()->where('type', $kind)->whereNotNull('confirmed_at');
-        $row = $kind === 'down' ? $rows->orderByDesc('id')->first() : $rows->find($pbpId);
-        $amount = $kind === 'down'
-            ? (int) $vehicle->purchaseBalancePayments()->where('type', 'down')->whereNotNull('confirmed_at')->sum('amount')
+        // 계약금·매도비는 차 단위(금액칸 옆 버튼) — 합계를 보내고 이체확인증은 마지막 확정 줄에 붙인다. 잔금은 줄 단위.
+        $perVehicle = $kind === 'down' || $kind === 'selling_fee';
+        $row = $perVehicle ? $rows->orderByDesc('id')->first() : $rows->find($pbpId);
+        $amount = $perVehicle
+            ? (int) $vehicle->purchaseBalancePayments()->where('type', $kind)->whereNotNull('confirmed_at')->sum('amount')
             : (int) ($row->amount ?? 0);
         if (! $row || $amount <= 0) {
             $this->dispatch('notify', message: __('vehicle.paidnotice.not_confirmed'), type: 'error');
@@ -10678,9 +10694,19 @@ function vehicleColumnsToggle(columns, serverKnows) {
                 </div>
                 <div>
                     <label class="label-base">{{ __('vehicle.field.selling_fee_payment') }}</label>
-                    <input wire:model="selling_fee_payment_str" type="text" data-money
-                           class="input-base {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
-                           placeholder="0" @if(!$canConfirmFinance) disabled @endif />
+                    <div class="flex items-center gap-1">
+                        <input wire:model="selling_fee_payment_str" type="text" data-money
+                               class="input-base min-w-0 flex-1 {{ $canConfirmFinance ? '' : 'bg-gray-100 text-gray-500' }}"
+                               placeholder="0" @if(!$canConfirmFinance) disabled @endif />
+                        {{-- 딜러에게 「매도비 입금완료」 통지 (jin 2026-11-24) — 계약금과 같은 번호·같은 템플릿, 확정 매도비가 있을 때만. --}}
+                        @if($editingId !== null && $this->paidNoticeEnabled && $this->confirmedSellingFee > 0)
+                        <button type="button" wire:click="openPaidNotice('selling_fee')"
+                                title="{{ __('vehicle.paidnotice.btn_title') }}"
+                                class="shrink-0 whitespace-nowrap rounded-md bg-amber-500 px-2 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-600">
+                            {{ __('vehicle.paidnotice.btn') }}
+                        </button>
+                        @endif
+                    </div>
                 </div>
                 {{-- 저당 표시 (jin 2026-08-21) — 계약금·매입잔금 송금 알림톡에 「저당 해지를 부탁드립니다」 를
                      실을지 가른다. 그래서 **송금 칸 옆**에 둔다(딜러 알림톡 번호칸이 아니라).
@@ -14092,7 +14118,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
 @if($paidNotice)
 @php
     $pn = $paidNotice;
-    $pnKind = $pn['kind'] === 'down' ? __('vehicle.paidnotice.kind_down') : __('vehicle.paidnotice.kind_balance');
+    $pnKind = __('vehicle.paidnotice.kind_'.$pn['kind']);
     $pnV3 = $this->paidNoticeCode === 'erp_purchase_paid_v2' && \App\Support\AlimtalkConfig::active()->canSend('erp_purchase_paid_v3');
     $pnPreview = null;
     if ($paidProofUpload) {
