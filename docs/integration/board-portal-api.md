@@ -858,6 +858,7 @@ OCR(MRZ, 후보 제시만 · 자동 기입 ❌) · 이미지 폐기 · Name·ID 
 - 규칙: **기각(`declined`)은 금액과 무관하게 0 으로 저장**(jin «0원은 기각»). 바이어 = 본문 `buyer_id` → 없으면 그 차의 바이어 → 둘 다 없으면 **422** `{status:'rejected', message:'ERP 에서 이 차의 바이어를 먼저 정해 주세요…'}`(저장 ❌).
 - 멱등: 같은 `board_claim_id` — `revision` 이 더 크면 갱신(200 `updated`), 같으면 그대로(200 `unchanged`), 더 작으면 **409** `stale`. 새 건 = **201** `created`. 응답 `{erp_claim_id, status}`.
 - ERP 저장 = `vehicle_claims` · 바이어 드로어 **「클레임」 탭**(횟수 · 인정/기각 · 통화별 인정 금액 합 · 목록). 🚫 적립금·미수·정산 무관(기록만). 감사 `board_claim_received`.
+- 🔒 (2026-11-24 jin) ERP 판매탭 「클레임 사용」으로 **이미 쓴 클레임**은 더 큰 `revision` 이 와도 바꾸지 않는다 — **409** `used`(같은 회차 재전송은 그대로 `unchanged`). board 도 ERP 로 보낸 클레임의 재결재를 잠근다(board 몫). 여러 건 한 번에 = §20.
 
 ## 16. 보관위치 읽기·쓰기 — 탁송 배차 (2026-11-12 board 기획 `meetings/plan-transport-2026-11.md §11`, jin «착수» · ✅ 구현 dev — `InternalPortalController::stockLocation`·`stockLocationShow`, 가드 `BoardPortalApiTest::test_stock_location_*` 2 · `PurchaseSyncReceiverTest::test_stock_location_*` 2 · `BoardRequestAlimtalkTest::test_request_note_*` 1)
 
@@ -1044,3 +1045,23 @@ board 는 `error` 값을 사람 말로 바꿔 보여 준다(원문도 같이). �
 - 🚫 이미 바이어가 있는 차의 바이어 교체는 이 경로로 하지 않는다(ERP 화면 — 교체 때도 락이 걸린다).
 
 **배포 순서**: ERP 먼저(3사) → board 화면. ERP 미배포 상태에서 부르면 404 다.
+
+## 20. 클레임 묶음 — 같은 바이어 N건을 한 번에 board → ERP (jin 2026-11-24 · ✅ 구현 dev — `BoardClaimController::bundle`, 마이그 `2026_11_24_000001_add_board_bundle_id_to_vehicle_claims`, 가드 `BoardClaimMirrorTest` 9)
+
+> 결재는 board 에서 지금처럼 **건당**. ERP 로 보낼 때만 같은 바이어의 승인 건을 골라 묶는다. 묶음 단위 = **바이어**(판매 영업이 달라도 섞어도 된다 — jin «영업이 퇴사해도 바이어는 남는다»). 단건 규칙 = §15.
+
+- `POST /api/internal/board/claims/bundle` — 인증 = §1 HMAC(본문 서명). board 가 `?salesman_email=`(누른 담당자)을 붙여도 된다(ERP 는 이 엔드포인트에서 범위 검사에 안 쓴다).
+- 본문: `board_bundle_id`(필수, 문자열 ≤ 40자, board 가 정한 값 그대로 저장 — 대소문자 구분) · `buyer_id`(필수) · `currency`(필수) · `total`(필수, 항목 확정 금액 합 — 기각은 0) · `requested_by_email`(누른 담당자, 감사 기록용) · `items`(필수, 1~200건, 각 항목 = §15 단건 본문 그대로. 항목 `salesman_email` = 그 차의 판매 영업).
+- **전부 받거나 전부 거절**(한 트랜잭션). 거절 사유:
+  - **422** `rejected` — ERP 에 없는 바이어 · 같은 `board_claim_id` 두 번 · 항목 바이어(항목 `buyer_id` → 없으면 묶음 `buyer_id` → 그 차 바이어)가 묶음 바이어와 다름 · 항목 통화가 묶음 통화와 다름 · `total` ≠ 항목 합(0.005 초과). 항목 문제면 `board_claim_id` 를 같이 준다.
+  - **409** `other_bundle` — 그 클레임이 이미 **다른** 묶음에 있다(옮기지 않는다).
+  - **409** `bundle_mismatch` — 같은 `board_bundle_id` 로 이미 받은 묶음과 항목 구성이 다르다.
+  - **409** `stale` · `used` — 항목 하나라도 §15 규칙에 걸림(더 옛 회차 · 이미 판매탭에서 쓴 클레임의 새 회차).
+  - 응답 = `{board_bundle_id, status:'rejected', message, (board_claim_id)}` — board 는 `message` 를 그대로 보여 준다.
+- 성공 = **201**(새로 만든 항목이 있을 때) / **200**. `{board_bundle_id, status:'accepted', items:[{board_claim_id, erp_claim_id, status}]}` — 항목 `status`:
+  - `created` 새 건 · `updated` 더 큰 회차로 갱신 · `linked` 단건(§15)으로 먼저 받은 같은 회차 → 묶음에 연결만 · `unchanged` 같은 묶음 재전송(멱등).
+- ERP 저장 = 행마다 `vehicle_claims.board_bundle_id`. **묶음 표·합계는 저장하지 않는다**(합계는 화면이 행을 더한다 — 1건이 재결재돼도 어긋나지 않는다). 묶음 안 1건의 다음 회차는 §15 단건으로 보내면 묶음에 남는다.
+- 바이어 드로어 「클레임」 탭 = 묶음은 머리 줄 하나(「묶음 N대」 · 결재일 범위 · 묶음 id · 통화 합계), 누르면 차량별 줄. 묶음 없는 건은 종전대로 한 줄. 판매탭 「클레임 사용」은 행 단위라 그대로.
+- 감사 = 항목마다 `board_claim_received`(새 값 끝에 묶음 id · 연결은 `linked <묶음 id>`).
+
+**배포 순서**: ERP 먼저(3사, 마이그 1) → board. ERP 미배포 상태에서 부르면 404 다.
