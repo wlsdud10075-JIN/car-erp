@@ -151,6 +151,9 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public $bulkDocFile = null;
 
+    /** 📄 일괄 필증 대조 결과(저장 전) — {number, counts{match,mismatch,other_vehicle,amount_unknown}, rows[]}. 비면 상자 없음. */
+    public array $bulkDeclCheck = [];
+
     /** 이미 파일이 있는 차량도 덮어쓸지 — 기본 꺼짐(실수로 덮는 것 방지, jin). */
     public bool $bulkDocReplace = false;
     /** ✅ 서류와 짝 체크박스(말소·통관)도 함께 켬 — 말소증은 기본 ON (jin 2026-10-15), 통관은 기본 OFF (10-20 · 11-16 수출신고서 → 체크빌로 이동). */
@@ -1734,6 +1737,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     // ── 파일 업로드 ───────────────────────────────────────────────
     public $deregistrationDocFile    = null;
     public $exportDeclarationDocFile = null;
+    /** 📄 필증 확인 결과(파일을 고른 순간 읽는다, 저장 전) — ExportDeclarationReader::check 모양 + number_note. 비면 상자 없음. */
+    public array $declCheck = [];
     public $blDocFile                = null;
     public $checkbillFile            = null;   // 체크빌(B/L 발급 전 확인용, jin 2026-07-18)
 
@@ -3008,6 +3013,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkDocIncludeOutside = true;
         $this->bulkDocMixedAck = false;
         $this->bulkDocReason = '';
+        $this->bulkDeclCheck = [];
         $this->bulkDocOpen = true;
         unset($this->bulkDocPreview);
     }
@@ -3017,7 +3023,38 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkDocOpen = false;
         $this->bulkDocFile = null;
         $this->bulkDocFiles = [];
+        $this->bulkDeclCheck = [];
         unset($this->bulkDocPreview);
+    }
+
+    /**
+     * 📄 일괄 업로드에서 필증을 고르면 저장 전에 대상 차마다 대조한다 (jin 2026-11-24).
+     *   면장금액은 비교만(고치지 않는다) · 이 차 차대번호가 필증에 없으면 「필증에 없음」 — 11-03 오첨부 4대가 이 경우였다.
+     *   신고번호는 저장 때 서비스가 비어 있는 차에만 넣는다(BulkVehicleDocumentService::applyShared).
+     */
+    public function updatedBulkDocFile(): void
+    {
+        $this->bulkDeclCheck = [];
+        if ($this->bulkDocType !== 'export_declaration' || ! ($this->bulkDocFile instanceof \Illuminate\Http\UploadedFile)) {
+            return;
+        }
+        $read = \App\Services\ExportDeclarationReader::fromUpload($this->bulkDocFile);
+        if ($read === null) {
+            return;
+        }
+        $preview = $this->bulkDocPreview;
+        $ids = array_merge(array_column($preview['targets'], 'id'), $this->bulkDocIncludeOutside ? array_column($preview['outside'], 'id') : []);
+        $counts = ['match' => 0, 'mismatch' => 0, 'other_vehicle' => 0, 'amount_unknown' => 0];
+        $rows = [];
+        foreach (Vehicle::whereIn('id', $ids)->orderBy('vehicle_number')->get() as $v) {
+            $erp = (float) $v->export_declaration_amount > 0 ? (float) $v->export_declaration_amount : ((float) $v->declaration_base_amount ?: null);
+            $c = \App\Services\ExportDeclarationReader::check($read, $v->nice_reg_vin, $erp, $v->currency);
+            $counts[$c['status']]++;
+            if (in_array($c['status'], ['mismatch', 'other_vehicle'], true)) {
+                $rows[] = ['number' => (string) $v->vehicle_number, 'status' => $c['status'], 'erp' => $c['erp_amount'], 'pdf' => $c['pdf_amount']];
+            }
+        }
+        $this->bulkDeclCheck = ['number' => $read['number'] ?? implode(', ', $read['numbers']), 'counts' => $counts, 'rows' => $rows];
     }
 
     /** 서류 종류를 바꾸면 「섞임 확인」은 다시 받아야 한다 — 종류마다 보는 번호가 다르다. */
@@ -3027,6 +3064,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 종류가 바뀌면 개별형↔공유형이 갈린다 — 앞서 담은 파일을 그대로 두면 엉뚱한 서류로 나간다.
         $this->bulkDocFile = null;
         $this->bulkDocFiles = [];
+        $this->bulkDeclCheck = [];
         $this->bulkDocSetFlag = $this->bulkDocFlagDefault($this->bulkDocType);
         unset($this->bulkDocPreview);
     }
@@ -5385,6 +5423,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $this->deregistration_document_path     = $v->deregistration_document     ?? '';
         $this->export_declaration_document_path = $v->export_declaration_document ?? '';
+        $this->declCheck = [];
         $this->bl_document_path                 = $v->bl_document                 ?? '';
         $this->checkbill_document_path          = $v->checkbill_document          ?? '';
         $this->deregistrationDocFile = $this->exportDeclarationDocFile = $this->blDocFile = $this->checkbillFile = null;
@@ -6067,6 +6106,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->clearExportDeclarationDoc = true;
         $this->exportDeclarationDocFile = null;
         $this->export_declaration_document_path = '';
+        $this->declCheck = [];
     }
 
     public function removeBlDoc(): void
@@ -6172,6 +6212,65 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         if ($this->exportDeclarationDocFile !== null) {
             $this->clearExportDeclarationDoc = false;
+        }
+        $this->checkExportDeclarationFile();
+    }
+
+    /**
+     * 📄 필증을 고른 순간 읽는다 (jin 2026-11-24 «신고번호는 자동기입, 면장금액은 매칭만»).
+     *   - 이 차 차대번호가 필증에 있으면 신고번호 칸을 채운다(다르면 바꾸고 무엇에서 바뀌었는지 보여 준다).
+     *   - 면장금액은 고치지 않는다 — ERP 칸(비었으면 저장 때 자동으로 들어갈 면장 기준액)과 필증 금액이 맞는지만 보여 준다.
+     *   - 차대번호가 필증에 없으면 신고번호를 넣지 않고 「다른 차의 필증」 경고(11-03 일괄 업로드 오첨부).
+     *   읽지 못하는 파일(그림·엑셀·필증 아님)은 아무것도 안 한다 — 종전처럼 사람이 넣는다.
+     */
+    private function checkExportDeclarationFile(): void
+    {
+        $this->declCheck = [];
+        $file = $this->exportDeclarationDocFile instanceof \Illuminate\Http\UploadedFile ? $this->exportDeclarationDocFile : null;
+        $read = \App\Services\ExportDeclarationReader::fromUpload($file);
+        if ($read === null) {
+            return;
+        }
+
+        $typed = str_replace(',', '', trim($this->export_declaration_amount_str));
+        $erpAmount = is_numeric($typed) && (float) $typed > 0 ? (float) $typed : null;
+        $erpAuto = false;
+        if ($erpAmount === null && $this->editingId) {
+            $base = (float) (Vehicle::find($this->editingId)?->declaration_base_amount ?? 0);
+            if ($base > 0) {
+                $erpAmount = $base;
+                $erpAuto = true;
+            }
+        }
+
+        $check = \App\Services\ExportDeclarationReader::check($read, $this->nice_reg_vin, $erpAmount, $this->currency);
+        $check['erp_auto'] = $erpAuto;
+        $check['vin_tail'] = substr(trim($this->nice_reg_vin), -6);
+        $check['number_note'] = null;
+
+        if ($check['status'] !== 'other_vehicle') {
+            $prev = trim($this->export_declaration_number);
+            if ($check['number'] === null) {
+                $check['number_note'] = __('vehicle.decl_check.number_many');
+            } elseif ($prev === $check['number']) {
+                $check['number_note'] = __('vehicle.decl_check.number_same', ['number' => $check['number']]);
+            } else {
+                $this->export_declaration_number = $check['number'];
+                $check['number_note'] = $prev === ''
+                    ? __('vehicle.decl_check.number_filled', ['number' => $check['number']])
+                    : __('vehicle.decl_check.number_changed', ['from' => $prev, 'to' => $check['number']]);
+            }
+        }
+        $this->declCheck = $check;
+
+        [$type, $key] = match ($check['status']) {
+            'match' => ['success', 'toast_match'],
+            'mismatch' => ['warning', 'toast_mismatch'],
+            'other_vehicle' => ['error', 'toast_other'],
+            default => [null, null],
+        };
+        if ($type !== null) {
+            $this->dispatch('notify', type: $type, message: __('vehicle.decl_check.'.$key));
         }
     }
 
@@ -11677,6 +11776,37 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     </div>
                     @endif
                     </x-erp.file-drop>
+                    {{-- 📄 필증 확인 (jin 2026-11-24) — 파일을 고른 순간 읽은 결과. 신고번호는 위 칸에 이미 들어갔고, 면장금액은 비교만. --}}
+                    @if($declCheck !== [])
+                        @php
+                            $dc = $declCheck;
+                            $dcFmt = fn ($v) => $v === null ? '—' : number_format((float) $v, 2);
+                            $dcBox = match ($dc['status']) {
+                                'match' => 'border-emerald-200 bg-emerald-50 text-emerald-700',
+                                'mismatch' => 'border-amber-200 bg-amber-50 text-amber-800',
+                                'other_vehicle' => 'border-red-200 bg-red-50 text-red-700',
+                                default => 'border-gray-200 bg-gray-50 text-gray-600',
+                            };
+                        @endphp
+                        <div class="mt-2 rounded border px-3 py-2 text-xs {{ $dcBox }}" data-decl-check="{{ $dc['status'] }}">
+                            <p class="font-semibold">📄 {{ __('vehicle.decl_check.title') }}</p>
+                            @if($dc['status'] === 'other_vehicle')
+                                <p class="mt-0.5">{{ __('vehicle.decl_check.other_vehicle', ['vin' => $dc['vin_tail']]) }}</p>
+                            @else
+                                @if($dc['number_note'])<p class="mt-0.5">{{ $dc['number_note'] }}</p>@endif
+                                @if($dc['status'] === 'match')
+                                    <p class="mt-0.5">✅ {{ __('vehicle.decl_check.match', ['currency' => $dc['pdf_currency'] ?? $dc['erp_currency'], 'amount' => $dcFmt($dc['pdf_amount'])]) }}</p>
+                                @elseif($dc['status'] === 'mismatch')
+                                    <p class="mt-0.5">⚠ {{ __('vehicle.decl_check.mismatch', ['erp' => $dcFmt($dc['erp_amount']), 'pdf' => $dcFmt($dc['pdf_amount']), 'currency' => $dc['pdf_currency'] ?? $dc['erp_currency']]) }}</p>
+                                @elseif($dc['reason'])
+                                    <p class="mt-0.5">{{ __('vehicle.decl_check.unknown.'.$dc['reason'], ['pdf' => $dcFmt($dc['pdf_amount']), 'currency' => $dc['pdf_currency'] ?? '', 'erp_currency' => $dc['erp_currency'] ?? '']) }}</p>
+                                @endif
+                                @if(($dc['erp_auto'] ?? false) && in_array($dc['status'], ['match', 'mismatch'], true))
+                                    <p class="mt-0.5 text-[11px] opacity-80">{{ __('vehicle.decl_check.erp_auto') }}</p>
+                                @endif
+                            @endif
+                        </div>
+                    @endif
                 </div>
                 <div><label class="label-base flex items-center gap-1">{{ __('vehicle.field.shipping_date') }} <span class="text-[10px] font-normal text-amber-600">⚠ {{ __('vehicle.field.gate_hint') }}</span></label><input wire:model="shipping_date" type="text" data-date class="input-base input-gated" /></div>
                 <div>
@@ -13037,6 +13167,24 @@ function vehicleColumnsToggle(columns, serverKnows) {
             </x-erp.file-drop>
         </div>
         @error('bulkDocFile')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        {{-- 📄 필증 대조 (jin 2026-11-24) — 저장 전. 다름·필증에 없음이 있으면 노란/빨간 상자, 전부 맞으면 초록. --}}
+        @if($bulkDeclCheck !== [])
+            @php
+                $bc = $bulkDeclCheck['counts'];
+                $bcBox = $bc['other_vehicle'] > 0 ? 'border-red-200 bg-red-50 text-red-700'
+                    : ($bc['mismatch'] > 0 ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700');
+            @endphp
+            <div class="mt-2 max-h-48 overflow-y-auto rounded border px-3 py-2 text-xs {{ $bcBox }}" data-bulk-decl-check>
+                <p class="font-semibold">📄 {{ __('vehicle.decl_check.bulk_title', ['number' => $bulkDeclCheck['number']]) }}</p>
+                <p class="mt-0.5">{{ __('vehicle.decl_check.bulk_summary', ['match' => $bc['match'], 'mismatch' => $bc['mismatch'], 'other' => $bc['other_vehicle'], 'unknown' => $bc['amount_unknown']]) }}</p>
+                @foreach($bulkDeclCheck['rows'] as $r)
+                    <p class="mt-0.5">{{ $r['status'] === 'other_vehicle'
+                        ? '⛔ '.__('vehicle.decl_check.bulk_row_other', ['number' => $r['number']])
+                        : '⚠ '.__('vehicle.decl_check.bulk_row_mismatch', ['number' => $r['number'], 'erp' => number_format((float) $r['erp'], 2), 'pdf' => number_format((float) $r['pdf'], 2)]) }}</p>
+                @endforeach
+                <p class="mt-1 text-[11px] opacity-80">{{ __('vehicle.decl_check.bulk_fill_note') }}</p>
+            </div>
+        @endif
         @endunless
         @error('bulkDocFiles.*')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
 
