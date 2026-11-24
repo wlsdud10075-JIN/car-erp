@@ -12490,13 +12490,18 @@ function vehicleColumnsToggle(columns, serverKnows) {
                             <span class="font-semibold text-gray-800">{{ $br->remitter_name }}</span>
                             <span class="text-gray-400">{{ $br->created_at?->format('Y-m-d H:i') }}</span>
                         </div>
-                        <div class="mt-1 flex flex-wrap gap-3">
-                            <a href="{{ route('erp.bank-remittances.file', [$br->id, 'remittance']) }}" class="text-primary-text underline">📄 {{ __('vehicle.bank.remittance') }}</a>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            {{-- 파일은 버튼으로 — 작은 밑줄 글씨는 「눌러서 받는 것」인지 안 보였다(jin 11-24) --}}
+                            <a href="{{ route('erp.bank-remittances.file', [$br->id, 'remittance']) }}" class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 shadow-sm hover:bg-gray-50" data-bank-file>
+                                📄 {{ __('vehicle.bank.remittance') }} <span class="text-primary-text">⬇ {{ __('vehicle.bank.download') }}</span>
+                            </a>
                             @if($br->invoice_path)
-                                <a href="{{ route('erp.bank-remittances.file', [$br->id, 'invoice']) }}" class="text-primary-text underline">📄 {{ __('vehicle.bank.invoice') }}</a>
+                                <a href="{{ route('erp.bank-remittances.file', [$br->id, 'invoice']) }}" class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 shadow-sm hover:bg-gray-50" data-bank-file>
+                                    📄 {{ __('vehicle.bank.invoice') }} <span class="text-primary-text">⬇ {{ __('vehicle.bank.download') }}</span>
+                                </a>
                             @endif
                             <span class="{{ $br->mailed_at ? 'text-green-700' : 'text-gray-400' }}">
-                                {{ $br->mailed_at ? __('vehicle.bank.mailed', ['to' => $br->mailed_to, 'at' => $br->mailed_at->format('Y-m-d H:i')]) : __('vehicle.bank.not_mailed') }}
+                                {{ $br->mailed_at ? __('vehicle.bank.mailed', ['to' => \App\Services\BankRemittanceService::recipientLabel((string) $br->mailed_to), 'at' => $br->mailed_at->format('Y-m-d H:i')]) : __('vehicle.bank.not_mailed') }}
                             </span>
                         </div>
                     </div>
