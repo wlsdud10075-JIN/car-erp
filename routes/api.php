@@ -128,6 +128,8 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::post('vehicles/{id}/assign-buyer', BoardAssignBuyerController::class)->whereNumber('id')->name('vehicles.assign-buyer');
         // 2026-11-11 jin — board 결재 끝난 클레임을 ERP 바이어 「클레임」 탭으로(확정 금액 하나·기각 0원·멱등 board_claim_id). claim-management.md §10
         Route::post('claims', [BoardClaimController::class, 'store'])->name('claims.store');
+        // 2026-11-24 jin — 같은 바이어 클레임 N건 묶음(전부 받거나 전부 거절). board-portal-api.md §20
+        Route::post('claims/bundle', [BoardClaimController::class, 'bundle'])->name('claims.bundle');
         // ③ 선적·B/L 묶음 v2 (2026-06-30 회의 조건부 GO) — 권위 §5
         Route::get('shippable', [ShippingRequestController::class, 'shippable'])->name('shippable');          // 새로 묶을 차 후보
         // 포워딩사 명부 (2026-08-11) — board 는 고르기만 한다(신규 생성 없음). 활성 {id,name} 만.

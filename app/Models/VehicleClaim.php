@@ -18,7 +18,7 @@ class VehicleClaim extends Model
     public const CURRENCIES = ['USD', 'JPY', 'EUR', 'GBP', 'CNY', 'KRW'];
 
     protected $fillable = [
-        'source', 'board_claim_id', 'revision', 'vehicle_id', 'buyer_id', 'buyer_name', 'vehicle_number', 'vin',
+        'source', 'board_claim_id', 'revision', 'board_bundle_id', 'vehicle_id', 'buyer_id', 'buyer_name', 'vehicle_number', 'vin',
         'confirmed_amount', 'currency', 'compensation_type', 'result', 'result_reason', 'approved_at', 'approved_by_name',
         'handler_name', 'salesman_email', 'board_buyer_claim_count', 'board_url',
     ];
