@@ -325,7 +325,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     public function buyerClaims(): array
     {
         if (! $this->editingId) {
-            return ['rows' => collect(), 'count' => 0, 'accepted' => 0, 'declined' => 0, 'sums' => [], 'board_count' => null];
+            return ['rows' => collect(), 'groups' => [], 'count' => 0, 'accepted' => 0, 'declined' => 0, 'sums' => [], 'board_count' => null];
         }
         $rows = \App\Models\VehicleClaim::where('buyer_id', $this->editingId)->orderByDesc('approved_at')->orderByDesc('id')->get();
         $sums = [];
@@ -333,8 +333,18 @@ new #[Layout('components.layouts.app')] class extends Component {
             $sums[$c->currency] = ($sums[$c->currency] ?? 0) + (float) $c->confirmed_amount;
         }
 
+        // 📦 묶음(jin 11-24) — board 가 한 번에 보낸 N건은 머리 줄 하나(통화 합계)로, 펼치면 차량별 줄. 묶음 없는 건은 한 줄씩.
+        $groups = [];
+        foreach ($rows as $c) {
+            $key = $c->board_bundle_id !== null ? 'b:'.$c->board_bundle_id : 'c:'.$c->id;
+            $groups[$key] ??= ['bundle' => $c->board_bundle_id, 'rows' => [], 'total' => 0.0, 'currency' => $c->currency];
+            $groups[$key]['rows'][] = $c;
+            $groups[$key]['total'] += (float) $c->confirmed_amount;
+        }
+
         return [
             'rows' => $rows,
+            'groups' => array_values($groups),
             'count' => $rows->count(),
             'accepted' => $rows->where('result', 'accepted')->count(),
             'declined' => $rows->where('result', 'declined')->count(),
@@ -2661,11 +2671,23 @@ new #[Layout('components.layouts.app')] class extends Component {
                         <th class="px-2 py-1.5">{{ __('buyer.claims.col_result') }}</th><th class="px-2 py-1.5">{{ __('buyer.claims.col_type') }}</th>
                         <th class="px-2 py-1.5 text-right">{{ __('buyer.claims.col_amount') }}</th><th class="px-2 py-1.5">{{ __('buyer.claims.col_reason') }}</th>
                     </tr></thead>
-                    <tbody>
-                    @foreach($cl['rows'] as $c)
-                        <tr class="border-b border-gray-100 align-top">
+                    @foreach($cl['groups'] as $g)
+                    @php $isBundle = $g['bundle'] !== null; @endphp
+                    <tbody @if($isBundle) x-data="{ open: false }" data-claim-bundle="{{ $g['bundle'] }}" @endif wire:key="claim-group-{{ $g['bundle'] ?? $g['rows'][0]->id }}">
+                    @if($isBundle)
+                        @php $dates = collect($g['rows'])->pluck('approved_at')->filter(); @endphp
+                        <tr class="cursor-pointer border-b border-gray-200 bg-gray-50 align-top hover:bg-gray-100" @click="open = !open">
+                            <td class="px-2 py-1.5 whitespace-nowrap">{{ $dates->min()?->format('Y-m-d') ?? '—' }}@if($dates->count() && $dates->min()->format('Y-m-d') !== $dates->max()->format('Y-m-d')) ~ {{ $dates->max()->format('m-d') }}@endif</td>
+                            <td class="px-2 py-1.5 whitespace-nowrap font-semibold text-gray-800"><span x-text="open ? '▾' : '▸'">▸</span> {{ __('buyer.claims.bundle', ['n' => count($g['rows'])]) }}</td>
+                            <td class="px-2 py-1.5 whitespace-nowrap text-gray-500" colspan="2">{{ $g['bundle'] }}</td>
+                            <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono font-semibold" data-claim-bundle-total>{{ $g['currency'] }} {{ number_format($g['total'], 2) }}</td>
+                            <td class="px-2 py-1.5 text-gray-500">{{ __('buyer.claims.bundle_hint') }}</td>
+                        </tr>
+                    @endif
+                    @foreach($g['rows'] as $c)
+                        <tr class="border-b border-gray-100 align-top" @if($isBundle) x-show="open" x-cloak @endif>
                             <td class="px-2 py-1.5 whitespace-nowrap">{{ $c->approved_at?->format('Y-m-d') ?? '—' }}</td>
-                            <td class="px-2 py-1.5 whitespace-nowrap">{{ $c->vehicle_number ?? '—' }}</td>
+                            <td class="px-2 py-1.5 whitespace-nowrap">@if($isBundle)<span class="text-gray-300">└ </span>@endif{{ $c->vehicle_number ?? '—' }}</td>
                             <td class="px-2 py-1.5 whitespace-nowrap"><span class="badge {{ $c->result === 'accepted' ? 'badge-green' : 'badge-gray' }}">{{ __('buyer.claims.result_'.$c->result) }}</span></td>
                             <td class="px-2 py-1.5 whitespace-nowrap">{{ $c->compensation_type ? __('buyer.claims.type_'.$c->compensation_type) : '—' }}</td>
                             <td class="px-2 py-1.5 whitespace-nowrap text-right font-mono">{{ $c->currency }} {{ number_format((float) $c->confirmed_amount, 2) }}</td>
@@ -2673,6 +2695,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                         </tr>
                     @endforeach
                     </tbody>
+                    @endforeach
                 </table>
             </div>
             @endif

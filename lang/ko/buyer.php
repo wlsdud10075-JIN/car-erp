@@ -187,6 +187,8 @@ return [
         'declined' => '기각',
         'sum' => '인정 확정 금액 합',
         'board_count' => 'board 에서 센 누적 클레임 :n건(아직 ERP 로 안 보낸 것 포함일 수 있음)',
+        'bundle' => '묶음 :n대',
+        'bundle_hint' => '눌러서 차량별 금액 보기',
         'empty' => 'board 에서 넘어온 클레임이 없습니다. board 클레임 탭에서 결재가 끝난 뒤 [ERP 로 보내기]를 누르면 여기에 쌓입니다.',
         'col_date' => '결재일',
         'col_vehicle' => '차량',

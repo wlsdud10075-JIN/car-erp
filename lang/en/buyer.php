@@ -185,6 +185,8 @@ return [
         'declined' => 'Declined',
         'sum' => 'Accepted amount',
         'board_count' => 'Board counts :n claims in total (may include ones not sent to ERP yet)',
+        'bundle' => 'Bundle · :n vehicles',
+        'bundle_hint' => 'Click to see the amount per vehicle',
         'empty' => 'No claims from board yet. They appear here after approval when the handler presses [Send to ERP] on board.',
         'col_date' => 'Approved',
         'col_vehicle' => 'Vehicle',
