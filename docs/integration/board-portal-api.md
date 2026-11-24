@@ -984,3 +984,63 @@ board 가 「재고매입(바이어 미정)」을 체크할 때 미리 묻는다
 
 - `category=general` = 바이어 미정 **그리고** 판매가 없음 / `category=pre_ship` = 바이어 지정 **또는** 판매가 있음.
 - 구 기준은 판매가만 봤다 — 바이어만 지정하고 판매가를 안 넣은 차가 `general` 에서 `pre_ship` 으로 옮겨 간다(실측 ssancarerp 14대 · heymanerp 7대). 응답 형식은 그대로다.
+
+## 19. 재고매입 차에 바이어 + 판매 금액 지정 — board → ERP (jin 2026-11-24 · ✅ 구현 dev — `BoardAssignBuyerController`, 가드 `BoardAssignBuyerTest` 5)
+
+재고매입(바이어 미정)으로 ERP 에 넘어간 차에, 나중에 board 가 바이어와 판매 금액을 정해 보낸다. ERP 에선 **일반재고 → 선적전 재고**로 옮겨 간다.
+purchase-sync 재전송(`fillEmptyFields`)으로 `buyer_id` 를 채우는 길엔 락 검사가 없어서(`purchase-sync-receiver.md` 「재고매입」) 그 길을 넓히지 않고 **전용 경로**를 낸다. 락은 ERP 가 직접 판정한다.
+
+**jin 결정 (2026-11-24, board 세션에서 확인 · 이 세션에서 초안 승인)**
+- 바이어와 판매 금액을 **함께** 보낸다. 판매일은 **받은 날**로 찍힌다(신규 purchase-sync 와 같은 판단 — board 에 판매일 개념이 없다. 정확한 날짜가 필요하면 ERP 에서 고친다. 채권 유예 기산점이 이 날이다).
+- 매입 등록 락은 **구매확정과 똑같이** — 락 걸린 바이어는 §17 승인 대수가 남아 있을 때만 통과하고 1대 차감.
+
+### 19-1. `POST /vehicles/{id}/assign-buyer`
+
+prefix `/api/internal/board`, 인증·서명·replay = §1, 스코프 = §2(`salesman_email` = **등록 영업**, 그 영업의 차만 — 남의 차·없는 차·지운 차 = **403**, 존재 비노출). `scope=all` 은 보지 않는다(쓰기).
+
+```jsonc
+{
+  "salesman_email": "sales@example.com",        // 필수 — 등록 영업(차의 담당자)
+  "buyer_id": 12,                               // 필수 — 그 영업의 활성 바이어(/buyers 목록)
+  "consignee_id": 34,                           // 선택 — 그 바이어의 활성 컨사이니
+  "sale_price": 9000,                           // 필수 > 0 — 판매통화 금액
+  "sale_currency": "USD",                       // 필수 — USD·JPY·EUR·GBP·CNY·KRW
+  "sale_exchange_rate": 1400,                   // 외화면 필수 > 0 · KRW 면 무시(1 로 고정)
+  "transport_fee": 1500,                        // 선택 — 운임비(판매통화). 0·생략 = 안 바꿈
+  "transport_fee_usd": 1500,                    // 선택 — USD 메모
+  "usd_exchange_rate": 1400,                    // 선택 — USD 메모 환율
+  "board_listing_id": 501,                      // 선택 — 승인 대수 차감 기록에 남는 board 차 id
+  "requested_by_email": "manager@example.com"   // 선택 — 실제 누른 사람(감사 행위자). 없으면 salesman_email
+}
+```
+
+**응답**
+
+| 응답 | 뜻 |
+|---|---|
+| `200 { vehicle_id, buyer_id, consignee_id, sale_date, updated:[…], purchase_lock:{ locked, consumed, remaining } }` | 반영됨. `updated` = 실제로 바뀐 ERP 칸(`buyer_undecided` 포함). `purchase_lock.locked` = 지정 직전 판정, `consumed`/`remaining` = 승인 대수 차감 결과 |
+| `422 { error:"already_has_buyer" }` | ERP 에 이미 바이어가 있다 — 바꾸기는 ERP 화면에서 |
+| `422 { error:"purchase_locked", purchase_lock:{ locked:true, consumed:false, remaining:0 } }` | 락 걸린 바이어인데 남은 승인 대수가 없다 → §17 로 요청 |
+| `422 { error:"purchase_cancelled" }` | 매입취소된 차 |
+| `422 { error:"settlement_locked" }` · `422 { error:"ledger_closed" }` | 정산이 확정·지급됐거나 2차 마감된 차(안전장치 — 재고 차엔 보통 없다) |
+| `422 { error:"invalid_buyer" }` | 그 영업의 활성 바이어가 아니다 |
+| `422 { error:"invalid_consignee" }` | 그 바이어의 활성 컨사이니가 아니다 |
+| `422 { error:"missing_exchange_rate" }` | 외화인데 환율이 없다 |
+| `422 { message, errors }` | 형식 검증 실패(Laravel 기본 — 판매가 0·통화 목록 밖 등) |
+| `403` | 남의 차·없는 차·지운 차 |
+
+board 는 `error` 값을 사람 말로 바꿔 보여 준다(원문도 같이). 같은 차를 다시 보내면 두 번째는 `already_has_buyer` 다(멱등 — 두 번 반영되지 않는다).
+
+### 19-2. ERP 가 하는 일
+- 바이어·컨사이니·판매가·통화·환율·판매일(오늘)·운임비 3칸을 넣는다. `buyer_undecided` 는 `Vehicle::saving` 이 내린다.
+- 진행상태가 **판매중**이 되고, 재고 분류가 `general` → `pre_ship` 으로 바뀐다(§18-3 — 바이어 지정 또는 판매가 있음). 매입대금을 아직 안 치른 차(지급대기)도 똑같이 받는다(ERP 화면에서 바이어를 넣을 때와 같다).
+- 락 판정 = `PurchaseRegistrationGate::forBuyer`(지정 직전, 그 바이어의 게이지). 통과하면 `BoardPurchaseLockAllowance::consume` — **락이 아니어도 살아 있는 승인이 있으면 1대 쓴다**(§17 「단순 카운트」, 구매확정과 같다).
+- 감사 = 칸별 변경 행(행위자 = `requested_by_email` 의 User, 없으면 `salesman_email` 의 User) + 출처 행 `board_buyer_assigned`(「재고매입 차 바이어 지정 (board)」, 구역 = 판매·입금) + 차감 행 `board_purchase_lock_used`.
+- 판매가 수정 알림(TaskAlarm)은 울리지 않는다 — 처음 기입이라서(판매가가 있던 차만 대상).
+
+### 19-3. 흡수 금지
+- 🚫 purchase-sync 재전송에 `buyer_id` 를 싣지 않는다(그 길엔 락이 없다 — `purchase-sync-receiver.md`).
+- 🚫 락·승인 대수 판정을 board 에 옮겨 적지 않는다 — board 는 `/buyers` 의 `purchase_locked` · `purchase_lock_allowance` 로 **미리 보여 주기만** 하고, 최종 판정은 이 응답이다.
+- 🚫 이미 바이어가 있는 차의 바이어 교체는 이 경로로 하지 않는다(ERP 화면 — 교체 때도 락이 걸린다).
+
+**배포 순서**: ERP 먼저(3사) → board 화면. ERP 미배포 상태에서 부르면 404 다.
