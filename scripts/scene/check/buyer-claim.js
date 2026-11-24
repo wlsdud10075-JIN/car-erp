@@ -106,7 +106,8 @@ module.exports.run = async function run({ browser }) {
       for (const s of ['인정', '송금', 'USD 300.00', '[예시] 클레임담당']) if (!tr1.includes(s)) throw new Error(`9001 줄에 「${s}」 없음`);
       const tr2 = await box.locator('tr', { hasText: Bv }).first().innerText();
       for (const s of ['기각', 'USD 0.00']) if (!tr2.includes(s)) throw new Error(`9002 줄에 「${s}」 없음`);
-      L.assertEq(await box.locator('tr', { hasText: Bv }).count(), 1, '00가1131 클레임 줄 수(정정이 줄을 늘리지 않음)');
+      // 묶음(board 로컬 시험분 — 00가1131 이 들어 있을 수 있다) 줄은 빼고 센다
+      L.assertEq(await box.locator('tbody:not([data-claim-bundle]) tr', { hasText: Bv }).count(), 1, '00가1131 클레임 줄 수(정정이 줄을 늘리지 않음)');
       await L.assertNoViolations(p);
     });
 
