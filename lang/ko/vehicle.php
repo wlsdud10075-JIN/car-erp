@@ -7,6 +7,33 @@ return [
     'per_page' => ':count개씩',
     'per_page_count_only' => '건수만',
     'count_only_hint' => '조건에 맞는 차량 :count대 — 목록 표시를 생략했습니다. [내보내기]로 전체를 받으세요.',
+    // 📄 수출신고필증 읽기 (jin 2026-11-24) — 신고번호는 자동 기입, 면장금액은 비교만. App\Services\ExportDeclarationReader.
+    'decl_check' => [
+        'title' => '필증 확인',
+        'number_filled' => '신고번호 :number 를 넣었습니다.',
+        'number_changed' => '신고번호를 :from → :to 로 바꿨습니다.',
+        'number_same' => '신고번호 :number 가 맞습니다.',
+        'number_many' => '필증에 신고번호가 여러 개라 넣지 않았습니다.',
+        'match' => '면장금액 일치 — :currency :amount',
+        'mismatch' => '면장금액이 다릅니다 — ERP :erp · 필증 :pdf (:currency)',
+        'erp_auto' => '(ERP 칸이 비어 있어 저장 때 자동으로 들어갈 값과 비교)',
+        'other_vehicle' => '이 필증에 이 차의 차대번호(…:vin)가 없습니다 — 다른 차의 필증일 수 있습니다. 신고번호는 넣지 않았습니다.',
+        'unknown' => [
+            'no_vin' => '이 차에 차대번호가 없어 필증과 대조하지 못했습니다.',
+            'shared_line' => '필증 한 줄에 여러 대가 묶여 있어 이 차 금액을 가를 수 없습니다 — 필증 금액 :pdf',
+            'no_amount' => '필증에서 이 차 금액 줄을 찾지 못했습니다.',
+            'erp_empty' => 'ERP 면장금액이 비어 있어 비교하지 못했습니다 — 필증 :currency :pdf',
+            'currency' => '통화가 다릅니다 — ERP :erp_currency · 필증 :currency',
+        ],
+        'toast_match' => '필증 확인 — 면장금액 일치',
+        'toast_mismatch' => '필증 확인 — 면장금액이 다릅니다',
+        'toast_other' => '필증 확인 — 이 차의 필증이 아닐 수 있습니다',
+        'bulk_title' => '필증 확인 (저장 전) — 신고번호 :number',
+        'bulk_summary' => '일치 :match대 · 다름 :mismatch대 · 필증에 없음 :other대 · 비교 못 함 :unknown대',
+        'bulk_fill_note' => '신고번호가 비어 있는 차에는 저장할 때 이 번호를 넣습니다(필증에 차대번호가 있는 차만).',
+        'bulk_row_mismatch' => ':number — ERP :erp · 필증 :pdf',
+        'bulk_row_other' => ':number — 필증에 이 차가 없습니다',
+    ],
     // 서류 일괄 업로드 (jin 2026-09-04) — 공유형: 파일 1개가 선택 차량 각각에 저장된다.
     'bulk_doc' => [
         'btn' => '서류 일괄 업로드',

@@ -220,12 +220,20 @@ class BulkVehicleDocumentService
 
         $ext = self::extOf($file);
         $open = self::opener($file);
+        // 📄 필증이면 한 번만 읽어 둔다 — 신고번호가 빈 차에만 넣는다(이 차 차대번호가 필증에 있을 때만, jin 2026-11-24).
+        //    이미 번호가 있는 차는 건드리지 않는다(일괄은 여러 대라 덮어쓰기를 열지 않는다 — 단건 패널은 바뀐 것을 보여 주고 바꾼다).
+        $declRead = $type === 'export_declaration' ? ExportDeclarationReader::fromUpload($file) : null;
 
         $applied = 0;
         $skipped = [];
 
         foreach (Vehicle::whereIn('id', $ids)->orderBy('vehicle_number')->get() as $vehicle) {
-            $result = $this->writeOne($vehicle, $cfg, $type, $open, $ext, $by, $replaceExisting, $reason, $setFlag);
+            $extra = [];
+            if ($declRead !== null && $declRead['number'] !== null && blank($vehicle->export_declaration_number)
+                && ExportDeclarationReader::itemFor($declRead, $vehicle->nice_reg_vin)['vin_found']) {
+                $extra['export_declaration_number'] = $declRead['number'];
+            }
+            $result = $this->writeOne($vehicle, $cfg, $type, $open, $ext, $by, $replaceExisting, $reason, $setFlag, $extra);
             if ($result === null) {
                 $applied++;
             } else {
@@ -251,6 +259,7 @@ class BulkVehicleDocumentService
         bool $replaceExisting,
         string $reason,
         bool $setFlag = true,
+        array $extra = [],
     ): ?array {
         $disk = (string) config('filesystems.vehicle_docs_disk');
         $stored = null;
@@ -284,9 +293,10 @@ class BulkVehicleDocumentService
 
             // 차량별 트랜잭션 — 한 대가 걸려도 나머지가 통째로 롤백되지 않는다
             //   (선적일 일괄은 chunkById 전체를 감싸고 있어 그 함정이 있다).
-            DB::transaction(function () use ($vehicle, $cfg, $path, $by, $reason, $type, $setFlag) {
+            DB::transaction(function () use ($vehicle, $cfg, $path, $by, $reason, $type, $setFlag, $extra) {
                 // ✅ 짝 체크박스를 같은 배열에 — 단건 패널과 같은 훅을 타게(§8 #44). 이미 켜져 있으면 덮어도 무영향.
-                $data = [$cfg['column'] => $path];
+                //    필증에서 읽은 신고번호($extra)도 같은 update 에 — 감사 훅이 칸별로 남긴다.
+                $data = $extra + [$cfg['column'] => $path];
                 if ($setFlag && isset($cfg['flag']) && self::flagAllowed($vehicle, $cfg)) {
                     $data[$cfg['flag']] = true;
                 }
