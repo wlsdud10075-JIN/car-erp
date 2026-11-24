@@ -23,6 +23,7 @@ use Illuminate\Support\Facades\Storage;
 use Livewire\Volt\Volt;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 use Tests\TestCase;
 
 /**
@@ -77,10 +78,10 @@ class BankRemittanceTest extends TestCase
     public function test_reader_reads_page_three_only_and_never_asks_page_one(): void
     {
         $this->fakeOcr([
-            'name' => ['P1' => '{"debtor_name": "JPMORGAN CHASE BANK"}', 'P3' => '{"debtor_name": "MINDBORI LLC"}'],
+            'name' => ['P1' => '{"debtor_name": "JPMORGAN CHASE BANK"}', 'P3' => '{"debtor_name": "GOLDEN BRIDGE TRADING LLC"}'],
         ]);
         $r = (new RemitterNameReader)->read([$this->page('P1'), $this->page('P2'), $this->page('P3')]);
-        $this->assertSame(['name' => 'MINDBORI LLC', 'status' => 'ok'], $r);
+        $this->assertSame(['name' => 'GOLDEN BRIDGE TRADING LLC', 'status' => 'ok'], $r);
 
         $client = app('remitter-ocr.client');
         $this->assertSame([['qwen2.5vl:7b', 4096]], array_values(array_unique(array_map(fn ($c) => [$c[0], $c[1]], $client->calls), SORT_REGULAR)),
@@ -179,18 +180,18 @@ class BankRemittanceTest extends TestCase
         $t = Volt::test('erp.vehicles.bank-remittance')
             ->call('openBank', [$a->id, $b->id])
             ->assertSet('bankOpen', true)
-            ->set('bankFile', $this->textAdvice('XHEVAHIR NEZIRI'))
+            ->set('bankFile', $this->textAdvice('JOHN SAMPLE'))
             ->assertSet('ocrStatus', 'text')
-            ->assertSet('remitterInput', 'XHEVAHIR NEZIRI')
+            ->assertSet('remitterInput', 'JOHN SAMPLE')
             ->call('createBankRecord')
             ->assertHasNoErrors()
             ->assertDispatched('bank-remittance-done')
             ->assertSet('mailTo', 'officer@bank.test');
 
         foreach ([$a, $b] as $v) {
-            $this->assertSame('XHEVAHIR NEZIRI', $v->fresh()->remitter_name, '기본정보 송금인 덮어쓰기');
+            $this->assertSame('JOHN SAMPLE', $v->fresh()->remitter_name, '기본정보 송금인 덮어쓰기');
         }
-        $this->assertSame(2, AuditLog::where('column_name', 'remitter_name')->where('new_value', 'XHEVAHIR NEZIRI')->count(), '모델 저장 = 감사로그');
+        $this->assertSame(2, AuditLog::where('column_name', 'remitter_name')->where('new_value', 'JOHN SAMPLE')->count(), '모델 저장 = 감사로그');
 
         $rec = BankRemittance::firstOrFail();
         $this->assertSame([$a->id, $b->id], $rec->vehicles()->orderBy('vehicles.id')->pluck('vehicles.id')->all());
@@ -199,7 +200,7 @@ class BankRemittanceTest extends TestCase
         $tmp = tempnam(sys_get_temp_dir(), 'pi').'.xlsx';
         file_put_contents($tmp, $disk->get($rec->invoice_path));
         $sheet = IOFactory::load($tmp)->getSheetByName('Invoice');
-        $this->assertSame('XHEVAHIR NEZIRI', $sheet->getCell('E5')->getValue(), '은행용 PI 는 Name 칸만 송금인');
+        $this->assertSame('JOHN SAMPLE', $sheet->getCell('E5')->getValue(), '은행용 PI 는 Name 칸만 송금인');
         $this->assertSame('Name', trim((string) $sheet->getCell('D5')->getValue()));
         @unlink($tmp);
 
@@ -264,24 +265,62 @@ class BankRemittanceTest extends TestCase
         $this->assertStringContainsString('data-bank-file', $html);
     }
 
+    public function test_docs_tab_x_removes_record_from_that_vehicle_and_files_only_with_the_last_one(): void
+    {
+        [$a, $b] = $this->cars();
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        $disk->put('bank-remittances/t/advice.tif', 'II*');
+        $disk->put('bank-remittances/t/BANK_pi.xlsx', 'PK');
+        $rec = BankRemittance::create(['remittance_path' => 'bank-remittances/t/advice.tif', 'remittance_name' => 'advice.tif', 'remitter_name' => 'JOHN SAMPLE',
+            'invoice_path' => 'bank-remittances/t/BANK_pi.xlsx', 'invoice_name' => 'BANK_pi.xlsx', 'mailed_to' => 'o@b.test', 'mailed_at' => now()]);
+        $rec->vehicles()->attach([$a->id, $b->id]);
+        Vehicle::whereKey([$a->id, $b->id])->update(['remitter_name' => 'JOHN SAMPLE']);
+
+        // 권한 없는 사람(영업)은 못 지운다
+        $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
+        try {
+            BankRemittanceService::removeFromVehicle($sales, $a, $rec->id);
+            $this->fail('영업은 지울 수 없어야 한다');
+        } catch (HttpException $e) {
+            $this->assertSame(403, $e->getStatusCode());
+        }
+
+        $this->actingAs($this->finance());
+        Volt::test('erp.vehicles.index')->call('openEdit', $a->id)
+            ->assertSee('data-bank-remove', false)
+            ->call('removeBankRemittance', $rec->id)
+            ->assertDispatched('notify');
+
+        $this->assertSame([$b->id], $rec->fresh()->vehicles()->pluck('vehicles.id')->all(), '다른 차에는 남는다');
+        $this->assertTrue($disk->exists('bank-remittances/t/advice.tif'), '아직 다른 차가 쓰므로 파일은 남는다');
+        $this->assertSame('JOHN SAMPLE', $a->fresh()->remitter_name, '기본정보 송금인은 그대로');
+        $log = AuditLog::where('action', 'bank_remittance_removed')->where('auditable_id', $a->id)->firstOrFail();
+        $this->assertStringContainsString('JOHN SAMPLE', (string) $log->old_value);
+
+        Volt::test('erp.vehicles.index')->call('openEdit', $b->id)->call('removeBankRemittance', $rec->id);
+        $this->assertNull(BankRemittance::find($rec->id), '마지막 차였으면 기록이 지워진다');
+        $this->assertFalse($disk->exists('bank-remittances/t/advice.tif'));
+        $this->assertFalse($disk->exists('bank-remittances/t/BANK_pi.xlsx'));
+    }
+
     public function test_docs_tab_shows_bank_area_and_list_has_bulk_button(): void
     {
         [$a] = $this->cars(1);
         $this->actingAs($this->finance());
-        $rec = BankRemittance::create(['remittance_path' => 'x.tif', 'remittance_name' => 'x.tif', 'remitter_name' => 'MINDBORI LLC', 'mailed_to' => 'o@b.test', 'mailed_at' => now()]);
+        $rec = BankRemittance::create(['remittance_path' => 'x.tif', 'remittance_name' => 'x.tif', 'remitter_name' => 'GOLDEN BRIDGE TRADING LLC', 'mailed_to' => 'o@b.test', 'mailed_at' => now()]);
         $rec->vehicles()->attach($a->id);
 
         $html = Volt::test('erp.vehicles.index')->call('openEdit', $a->id)->html();
         $this->assertStringContainsString('data-bank-area', $html);
-        $this->assertStringContainsString('MINDBORI LLC', $html);
+        $this->assertStringContainsString('GOLDEN BRIDGE TRADING LLC', $html);
         $this->assertStringContainsString('data-bank-open', $html);
     }
 
     public function test_tif_waits_for_browser_pages(): void
     {
         $this->fakeOcr([
-            'prefix' => ['P1' => '{"remitter": "XHEVAHIR NE**"}'],
-            'name' => ['P3' => '{"debtor_name": "XHEVAHIR NEZIRI"}'],
+            'prefix' => ['P1' => '{"remitter": "JOHN SA**"}'],
+            'name' => ['P3' => '{"debtor_name": "JOHN SAMPLE"}'],
         ]);
         [$a] = $this->cars(1);
         $this->actingAs($this->finance());
@@ -306,7 +345,7 @@ class BankRemittanceTest extends TestCase
 
             public function vision(string $model, string $prompt, string $imageBase64, int $numCtx): string
             {
-                return str_contains($prompt, '송금의뢰인') ? '{"remitter": "XHEVAHIR NE**"}' : '{"debtor_name": "XHEVAHIR NEZIRI"}';
+                return str_contains($prompt, '송금의뢰인') ? '{"remitter": "JOHN SA**"}' : '{"debtor_name": "JOHN SAMPLE"}';
             }
         });
 
@@ -319,6 +358,6 @@ class BankRemittanceTest extends TestCase
             ->assertSet('ocrStatus', 'reading')
             ->call('readPages', [$png('1'), $png('2'), $png('3')])
             ->assertSet('ocrStatus', 'ok')
-            ->assertSet('remitterInput', 'XHEVAHIR NEZIRI');
+            ->assertSet('remitterInput', 'JOHN SAMPLE');
     }
 }
