@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\Internal\BoardAssignBuyerController;
 use App\Http\Controllers\Api\Internal\BoardClaimController;
 use App\Http\Controllers\Api\Internal\BoardRequestController;
 use App\Http\Controllers\Api\Internal\GeneralStockCapController;
@@ -123,6 +124,8 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         // 2026-11-12 탁송 배차(board 기획 §11, jin «착수») — 보관위치 읽기·쓰기. 권위 §16. 본인 차만(아니면 403), 값 = Vehicle::stockLocations()(422).
         Route::get('vehicles/{id}/stock-location', [InternalPortalController::class, 'stockLocationShow'])->whereNumber('id')->name('vehicles.stock-location.show');
         Route::post('vehicles/{id}/stock-location', [InternalPortalController::class, 'stockLocation'])->whereNumber('id')->name('vehicles.stock-location');
+        // 2026-11-24 jin — 재고매입(바이어 미정) 차에 바이어 + 판매 금액 지정. 락 = 구매확정과 같게(ERP 가 직접 판정). 권위 §19.
+        Route::post('vehicles/{id}/assign-buyer', BoardAssignBuyerController::class)->whereNumber('id')->name('vehicles.assign-buyer');
         // 2026-11-11 jin — board 결재 끝난 클레임을 ERP 바이어 「클레임」 탭으로(확정 금액 하나·기각 0원·멱등 board_claim_id). claim-management.md §10
         Route::post('claims', [BoardClaimController::class, 'store'])->name('claims.store');
         // ③ 선적·B/L 묶음 v2 (2026-06-30 회의 조건부 GO) — 권위 §5
