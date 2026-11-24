@@ -173,9 +173,61 @@ class ExportDeclarationReaderTest extends TestCase
 
         $c->set('bulkDocMixedAck', true)->call('applyBulkDoc')->assertSet('bulkDocOpen', false);
         $this->assertSame('44475-26-110177X', $empty->fresh()->export_declaration_number, '빈 칸은 채운다');
+        $this->assertNotNull($empty->fresh()->export_declaration_document);
         $this->assertSame('KEEP-1', $kept->fresh()->export_declaration_number, '있는 번호는 일괄로 안 바꾼다');
+        $this->assertNotNull($kept->fresh()->export_declaration_document, '번호가 있어도 필증과 맞으면 올린다');
         $this->assertNull($other->fresh()->export_declaration_number, '필증에 없는 차는 안 채운다');
-        $this->assertNotNull($other->fresh()->export_declaration_document, '파일은 종전대로 붙는다(경고만)');
+        $this->assertNull($other->fresh()->export_declaration_document, '🔒 필증에 없는 차는 파일도 안 붙인다(jin 2026-11-24)');
+    }
+
+    /**
+     * ✏️ 안 맞는 차는 창에서 고치거나 빼고 올린다 (jin 2026-11-24 «틀린 걸 보여 주고 수정하게 해서 일괄로»).
+     * 면장금액은 회계 칸이라 고치기는 관리 이상·영업만(차량 창과 같다) — 수출통관은 버튼 대신 안내, 빼기는 된다.
+     */
+    public function test_bulk_mismatch_can_be_fixed_or_excluded_before_upload(): void
+    {
+        Storage::fake((string) config('filesystems.vehicle_docs_disk'));
+        $this->actingAs($this->admin());
+        $diff = $this->vehicle(['export_declaration_amount' => 4736]);
+        $other = $this->vehicle(['nice_reg_vin' => 'KNAXX000000000000']);
+
+        $c = Volt::test('erp.vehicles.index')
+            ->set('shipDocIds', [(string) $diff->id, (string) $other->id])
+            ->call('openBulkDoc')
+            ->set('bulkDocType', 'export_declaration')
+            ->set('bulkDocFile', UploadedFile::fake()->createWithContent('decl.pdf', $this->pdfBytes()));
+        $this->assertSame(['match' => 0, 'mismatch' => 1, 'other_vehicle' => 1, 'amount_unknown' => 0], $c->get('bulkDeclCheck')['counts']);
+        $c->assertSee('필증 금액으로 고치기');
+
+        $c->call('fixBulkDeclAmount', $diff->id);
+        $this->assertEquals(4780, (float) $diff->fresh()->export_declaration_amount, '필증을 다시 읽어 그 차 금액으로');
+        $c->call('excludeFromBulkDoc', $other->id);
+        $this->assertSame(['match' => 1, 'mismatch' => 0, 'other_vehicle' => 0, 'amount_unknown' => 0], $c->get('bulkDeclCheck')['counts']);
+
+        $c->call('applyBulkDoc')->assertSet('bulkDocOpen', false);
+        $this->assertNotNull($diff->fresh()->export_declaration_document);
+        $this->assertSame('44475-26-110177X', $diff->fresh()->export_declaration_number);
+        $this->assertNull($other->fresh()->export_declaration_document, '뺀 차는 손대지 않는다');
+    }
+
+    public function test_clearance_cannot_fix_the_declared_amount_but_can_exclude(): void
+    {
+        Storage::fake((string) config('filesystems.vehicle_docs_disk'));
+        $this->actingAs(User::factory()->create(['permission' => 'user', 'role' => '수출통관', 'email_verified_at' => now()]));
+        $diff = $this->vehicle(['export_declaration_amount' => 4736]);
+
+        $c = Volt::test('erp.vehicles.index')
+            ->set('shipDocIds', [(string) $diff->id])
+            ->call('openBulkDoc')
+            ->set('bulkDocType', 'export_declaration')
+            ->set('bulkDocFile', UploadedFile::fake()->createWithContent('decl.pdf', $this->pdfBytes()))
+            ->assertDontSee('필증 금액으로 고치기')
+            ->assertSee('면장금액 수정 권한 없음')
+            ->call('fixBulkDeclAmount', $diff->id);
+        $this->assertEquals(4736, (float) $diff->fresh()->export_declaration_amount, '권한 없으면 안 바뀐다');
+
+        $c->call('applyBulkDoc');
+        $this->assertNull($diff->fresh()->export_declaration_document, '안 맞는 차는 안 올라간다');
     }
 
     public function test_service_alone_fills_numbers_too(): void

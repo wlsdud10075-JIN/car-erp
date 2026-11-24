@@ -220,8 +220,9 @@ class BulkVehicleDocumentService
 
         $ext = self::extOf($file);
         $open = self::opener($file);
-        // 📄 필증이면 한 번만 읽어 둔다 — 신고번호가 빈 차에만 넣는다(이 차 차대번호가 필증에 있을 때만, jin 2026-11-24).
+        // 📄 필증이면 한 번만 읽어 둔다. 필증과 맞는 차에만 파일을 붙이고, 신고번호는 빈 차에만 넣는다(jin 2026-11-24).
         //    이미 번호가 있는 차는 건드리지 않는다(일괄은 여러 대라 덮어쓰기를 열지 않는다 — 단건 패널은 바뀐 것을 보여 주고 바꾼다).
+        //    읽지 못하는 파일(그림·스캔)은 대조 근거가 없어 종전대로 올린다.
         $declRead = $type === 'export_declaration' ? ExportDeclarationReader::fromUpload($file) : null;
 
         $applied = 0;
@@ -229,9 +230,18 @@ class BulkVehicleDocumentService
 
         foreach (Vehicle::whereIn('id', $ids)->orderBy('vehicle_number')->get() as $vehicle) {
             $extra = [];
-            if ($declRead !== null && $declRead['number'] !== null && blank($vehicle->export_declaration_number)
-                && ExportDeclarationReader::itemFor($declRead, $vehicle->nice_reg_vin)['vin_found']) {
-                $extra['export_declaration_number'] = $declRead['number'];
+            if ($declRead !== null) {
+                // 🔒 매칭될 때만 올린다 (jin 2026-11-24 «매칭되면 업로드, 매칭 안 되면 업로드 안 되는 게 맞다») —
+                //    필증에 이 차가 있고 면장금액이 같을 때만. 다름 · 필증에 없음 · 비교 못 함은 파일도 안 붙이고 사유와 함께 건너뛴다.
+                $check = self::declarationCheck($vehicle, $declRead);
+                if ($check['status'] !== 'match') {
+                    $skipped[] = self::skip($vehicle, 'decl_'.$check['status']);
+
+                    continue;
+                }
+                if ($declRead['number'] !== null && blank($vehicle->export_declaration_number)) {
+                    $extra['export_declaration_number'] = $declRead['number'];
+                }
             }
             $result = $this->writeOne($vehicle, $cfg, $type, $open, $ext, $by, $replaceExisting, $reason, $setFlag, $extra);
             if ($result === null) {
@@ -327,6 +337,21 @@ class BulkVehicleDocumentService
 
             return self::skip($vehicle, 'error', $e->getMessage());
         }
+    }
+
+    /**
+     * 📄 한 차와 필증의 대조 — 일괄 업로드 미리보기(화면)와 실제 저장이 **같은 판정**을 쓴다(§8 #67).
+     * ERP 면장금액이 비어 있으면 저장 때 자동으로 들어갈 면장 기준액과 비교한다.
+     *
+     * @return array{status:string, number:?string, pdf_amount:?float, pdf_currency:?string, erp_amount:?float, erp_currency:?string, reason:?string}
+     */
+    public static function declarationCheck(Vehicle $vehicle, array $read): array
+    {
+        $erp = (float) $vehicle->export_declaration_amount > 0
+            ? (float) $vehicle->export_declaration_amount
+            : ((float) $vehicle->declaration_base_amount ?: null);
+
+        return ExportDeclarationReader::check($read, $vehicle->nice_reg_vin, $erp, $vehicle->currency);
     }
 
     /** 그 차에 이 서류를 붙일 수 없는 사유(모델 판정 위임). 붙일 수 있으면 null. */

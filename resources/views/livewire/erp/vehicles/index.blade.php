@@ -151,8 +151,11 @@ new #[Layout('components.layouts.app')] class extends Component {
 
     public $bulkDocFile = null;
 
-    /** 📄 일괄 필증 대조 결과(저장 전) — {number, counts{match,mismatch,other_vehicle,amount_unknown}, rows[]}. 비면 상자 없음. */
+    /** 📄 일괄 필증 대조 결과(저장 전) — {number, counts{match,mismatch,other_vehicle,amount_unknown}, rows[], can_fix_amount}. 비면 상자 없음. */
     public array $bulkDeclCheck = [];
+
+    /** 🚫 이번 일괄 업로드에서 뺀 차 id(「선택에서 빼기」). 창을 열거나 닫거나 종류를 바꾸면 비운다. */
+    public array $bulkDocExcludeIds = [];
 
     /** 이미 파일이 있는 차량도 덮어쓸지 — 기본 꺼짐(실수로 덮는 것 방지, jin). */
     public bool $bulkDocReplace = false;
@@ -3014,6 +3017,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkDocMixedAck = false;
         $this->bulkDocReason = '';
         $this->bulkDeclCheck = [];
+        $this->bulkDocExcludeIds = [];
         $this->bulkDocOpen = true;
         unset($this->bulkDocPreview);
     }
@@ -3024,6 +3028,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkDocFile = null;
         $this->bulkDocFiles = [];
         $this->bulkDeclCheck = [];
+        $this->bulkDocExcludeIds = [];
         unset($this->bulkDocPreview);
     }
 
@@ -3042,19 +3047,72 @@ new #[Layout('components.layouts.app')] class extends Component {
         if ($read === null) {
             return;
         }
-        $preview = $this->bulkDocPreview;
-        $ids = array_merge(array_column($preview['targets'], 'id'), $this->bulkDocIncludeOutside ? array_column($preview['outside'], 'id') : []);
         $counts = ['match' => 0, 'mismatch' => 0, 'other_vehicle' => 0, 'amount_unknown' => 0];
         $rows = [];
-        foreach (Vehicle::whereIn('id', $ids)->orderBy('vehicle_number')->get() as $v) {
-            $erp = (float) $v->export_declaration_amount > 0 ? (float) $v->export_declaration_amount : ((float) $v->declaration_base_amount ?: null);
-            $c = \App\Services\ExportDeclarationReader::check($read, $v->nice_reg_vin, $erp, $v->currency);
+        // 🔒 저장도 같은 판정(BulkVehicleDocumentService::declarationCheck) — 일치한 차에만 파일이 붙는다(jin 2026-11-24).
+        foreach (Vehicle::whereIn('id', $this->bulkDocTargetIds())->orderBy('vehicle_number')->get() as $v) {
+            $c = \App\Services\BulkVehicleDocumentService::declarationCheck($v, $read);
             $counts[$c['status']]++;
-            if (in_array($c['status'], ['mismatch', 'other_vehicle'], true)) {
-                $rows[] = ['number' => (string) $v->vehicle_number, 'status' => $c['status'], 'erp' => $c['erp_amount'], 'pdf' => $c['pdf_amount']];
+            if ($c['status'] !== 'match') {
+                $rows[] = ['id' => $v->id, 'number' => (string) $v->vehicle_number, 'status' => $c['status'], 'reason' => $c['reason'],
+                    'erp' => $c['erp_amount'], 'pdf' => $c['pdf_amount'], 'currency' => $c['pdf_currency'] ?? $c['erp_currency']];
             }
         }
-        $this->bulkDeclCheck = ['number' => $read['number'] ?? implode(', ', $read['numbers']), 'counts' => $counts, 'rows' => $rows];
+        $this->bulkDeclCheck = ['number' => $read['number'] ?? implode(', ', $read['numbers']), 'counts' => $counts, 'rows' => $rows,
+            'can_fix_amount' => (bool) auth()->user()?->canEditVehicleFinancialFields()];
+    }
+
+    /** 일괄 업로드가 실제로 손댈 차 — 화면 선택 + (켜져 있으면) 같은 번호 선택 밖 − 「선택에서 빼기」 한 차. 미리보기·저장이 같이 쓴다. */
+    private function bulkDocTargetIds(): array
+    {
+        $preview = $this->bulkDocPreview;
+        $ids = array_merge(array_column($preview['targets'], 'id'), $this->bulkDocIncludeOutside ? array_column($preview['outside'], 'id') : []);
+
+        return array_values(array_diff(array_map('intval', $ids), array_map('intval', $this->bulkDocExcludeIds)));
+    }
+
+    /**
+     * ✏️ 일괄 필증 대조에서 「면장금액 다름」인 차를 그 자리에서 필증 금액으로 고친다 (jin 2026-11-24 «틀린 걸 보여 주고 수정하게 해서 일괄로 올리게»).
+     * 권한·잠금은 차량 창과 같다 — 면장금액은 회계 칸이라 `canEditVehicleFinancialFields`(관리 이상·영업)만, 2차 마감 차는 모델 잠금이 막는다.
+     * 금액은 화면이 보낸 값이 아니라 **필증을 다시 읽어** 그 차 줄의 금액을 쓴다.
+     */
+    public function fixBulkDeclAmount(int $vehicleId): void
+    {
+        $user = auth()->user();
+        abort_unless((bool) $user?->canAccessClearance() && in_array($vehicleId, $this->bulkDocTargetIds(), true), 403);
+        if (! $user->canEditVehicleFinancialFields()) {
+            $this->dispatch('notify', type: 'error', message: __('vehicle.decl_check.fix_no_permission'));
+
+            return;
+        }
+        $vehicle = Vehicle::find($vehicleId);
+        abort_unless($vehicle && $user->canScopeVehicle($vehicle), 403);
+        $read = $this->bulkDocFile instanceof \Illuminate\Http\UploadedFile ? \App\Services\ExportDeclarationReader::fromUpload($this->bulkDocFile) : null;
+        $check = $read ? \App\Services\BulkVehicleDocumentService::declarationCheck($vehicle, $read) : null;
+        if (($check['status'] ?? null) !== 'mismatch' || $check['pdf_amount'] === null) {
+            $this->updatedBulkDocFile();
+
+            return;
+        }
+        try {
+            $vehicle->export_declaration_amount = $check['pdf_amount'];
+            $vehicle->save();
+        } catch (\Throwable $e) {
+            $this->dispatch('notify', type: 'error', message: __('vehicle.decl_check.fix_failed', ['number' => $vehicle->vehicle_number, 'reason' => $e->getMessage()]));
+
+            return;
+        }
+        $this->dispatch('notify', type: 'success', message: __('vehicle.decl_check.fix_done', ['number' => $vehicle->vehicle_number, 'amount' => number_format((float) $check['pdf_amount'], 2)]));
+        $this->updatedBulkDocFile();
+    }
+
+    /** 🚫 이번 일괄 업로드에서 그 차를 뺀다(필증에 없는 차를 같이 고른 경우 등). 차량 선택 자체는 그대로. */
+    public function excludeFromBulkDoc(int $vehicleId): void
+    {
+        if (! in_array($vehicleId, $this->bulkDocExcludeIds, true)) {
+            $this->bulkDocExcludeIds[] = $vehicleId;
+        }
+        $this->updatedBulkDocFile();
     }
 
     /** 서류 종류를 바꾸면 「섞임 확인」은 다시 받아야 한다 — 종류마다 보는 번호가 다르다. */
@@ -3065,6 +3123,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->bulkDocFile = null;
         $this->bulkDocFiles = [];
         $this->bulkDeclCheck = [];
+        $this->bulkDocExcludeIds = [];
         $this->bulkDocSetFlag = $this->bulkDocFlagDefault($this->bulkDocType);
         unset($this->bulkDocPreview);
     }
@@ -3151,10 +3210,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 );
                 $result = $svc->applyIndividual($files, $this->bulkDocType, $user, $this->bulkDocReplace, $reason, $this->bulkDocSetFlag);
             } else {
-                $ids = array_column($preview['targets'], 'id');
-                if ($this->bulkDocIncludeOutside) {
-                    $ids = array_merge($ids, array_column($preview['outside'], 'id'));
-                }
+                $ids = $this->bulkDocTargetIds();   // 「선택에서 빼기」 한 차는 뺀다 — 미리보기와 같은 집합
                 $result = $svc->applyShared($ids, $this->bulkDocType, $this->bulkDocFile, $user, $this->bulkDocReplace, $reason, $this->bulkDocSetFlag);
             }
         } catch (\Throwable $e) {
@@ -3177,6 +3233,12 @@ new #[Layout('components.layouts.app')] class extends Component {
             'applied' => $result['applied'],
             'skipped' => count($result['skipped']),
         ]));
+        // 📄 필증과 안 맞아 안 올린 차는 차량번호·사유까지(§8 #67 — 건너뛴 것을 조용히 묻지 않는다).
+        $declSkipped = array_values(array_filter($result['skipped'], fn ($x) => str_starts_with((string) ($x['reason'] ?? ''), 'decl_')));
+        if ($declSkipped !== []) {
+            $list = array_map(fn ($x) => $x['number'].'('.__('vehicle.decl_check.skip_reason.'.substr($x['reason'], 5)).')', array_slice($declSkipped, 0, 6));
+            $this->dispatch('notify', type: 'warning', message: __('vehicle.decl_check.bulk_skipped', ['count' => count($declSkipped), 'list' => implode(', ', $list)]));
+        }
     }
 
     /** 통관 체크 일괄 모달 — 수출신고서 없는 차는 제외, 체크빌 없는 차는 경고만(jin 2026-11-16). */
@@ -13172,10 +13234,25 @@ function vehicleColumnsToggle(columns, serverKnows) {
             <div class="mt-2 max-h-48 overflow-y-auto rounded border px-3 py-2 text-xs {{ $bcBox }}" data-bulk-decl-check>
                 <p class="font-semibold">📄 {{ __('vehicle.decl_check.bulk_title', ['number' => $bulkDeclCheck['number']]) }}</p>
                 <p class="mt-0.5">{{ __('vehicle.decl_check.bulk_summary', ['match' => $bc['match'], 'mismatch' => $bc['mismatch'], 'other' => $bc['other_vehicle'], 'unknown' => $bc['amount_unknown']]) }}</p>
+                {{-- ✏️ 안 맞는 차는 여기서 고치거나 뺀다(jin 2026-11-24) — 일치한 차에만 파일이 붙는다. --}}
                 @foreach($bulkDeclCheck['rows'] as $r)
-                    <p class="mt-0.5">{{ $r['status'] === 'other_vehicle'
-                        ? '⛔ '.__('vehicle.decl_check.bulk_row_other', ['number' => $r['number']])
-                        : '⚠ '.__('vehicle.decl_check.bulk_row_mismatch', ['number' => $r['number'], 'erp' => number_format((float) $r['erp'], 2), 'pdf' => number_format((float) $r['pdf'], 2)]) }}</p>
+                    <div class="mt-1 flex flex-wrap items-center gap-2" data-bulk-decl-row="{{ $r['status'] }}">
+                        <span>{{ match ($r['status']) {
+                            'other_vehicle' => '⛔ '.__('vehicle.decl_check.bulk_row_other', ['number' => $r['number']]),
+                            'mismatch' => '⚠ '.__('vehicle.decl_check.bulk_row_mismatch', ['number' => $r['number'], 'erp' => number_format((float) $r['erp'], 2), 'pdf' => number_format((float) $r['pdf'], 2)]),
+                            default => '… '.$r['number'].' — '.__('vehicle.decl_check.unknown.'.($r['reason'] ?? 'no_amount'), ['pdf' => number_format((float) $r['pdf'], 2), 'currency' => $r['currency'] ?? '', 'erp_currency' => '']),
+                        } }}</span>
+                        @if($r['status'] === 'mismatch')
+                            @if($bulkDeclCheck['can_fix_amount'] ?? false)
+                                <button type="button" wire:click="fixBulkDeclAmount({{ $r['id'] }})" wire:loading.attr="disabled"
+                                        class="rounded border border-amber-200 bg-white px-2 py-0.5 font-semibold hover:bg-amber-50">{{ __('vehicle.decl_check.fix_btn') }}</button>
+                            @else
+                                <span class="text-[11px] opacity-80">{{ __('vehicle.decl_check.fix_no_permission') }}</span>
+                            @endif
+                        @endif
+                        <button type="button" wire:click="excludeFromBulkDoc({{ $r['id'] }})"
+                                class="rounded border border-gray-200 bg-white px-2 py-0.5 text-gray-600 hover:bg-gray-50">{{ __('vehicle.decl_check.exclude_btn') }}</button>
+                    </div>
                 @endforeach
                 <p class="mt-1 text-[11px] opacity-80">{{ __('vehicle.decl_check.bulk_fill_note') }}</p>
             </div>
