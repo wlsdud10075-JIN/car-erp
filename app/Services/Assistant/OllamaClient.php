@@ -44,6 +44,23 @@ class OllamaClient
         return trim(preg_replace('/<think>.*?<\/think>/su', '', $answer));
     }
 
+    /**
+     * 비전 완성 (qwen2.5vl) — 그림 1장 + 프롬프트 → 텍스트. board `OllamaClient::vision()` 과 **같은 본문**이다
+     * (board OCR 이 상주시킨 모델을 다시 올리지 않게 — config assistant.remitter_ocr 주석).
+     */
+    public function vision(string $model, string $prompt, string $imageBase64, int $numCtx): string
+    {
+        $r = $this->post('/api/generate', [
+            'model' => $model,
+            'prompt' => $prompt,
+            'images' => [$imageBase64],
+            'stream' => false,
+            'options' => ['temperature' => 0, 'num_ctx' => $numCtx],
+        ]);
+
+        return trim($r['response'] ?? '');
+    }
+
     private function post(string $path, array $body): array
     {
         $ch = curl_init($this->baseUrl.$path);

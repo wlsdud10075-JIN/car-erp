@@ -53,4 +53,15 @@ return [
     'index_scope' => env('ASSISTANT_INDEX_SCOPE', ''),
 
     'timeout' => (int) env('ASSISTANT_TIMEOUT', 180),
+
+    // 🏦 전신문 송금인 이름 읽기 (jin 2026-11-24) — 회사 GPU PC 의 board OCR 모델을 **같은 설정으로** 같이 쓴다.
+    //   🚨 모델·num_ctx 를 board(`board.payee_extract`)와 다르게 부르면 GPU PC 가 모델을 다시 올리느라
+    //      board OCR 이 30초쯤 멈춘다. 바꾸려면 board 와 같이 바꾼다. 가드 = RemitterNameReaderTest.
+    'remitter_ocr' => [
+        'model' => env('ASSISTANT_VISION_MODEL', 'qwen2.5vl:7b'),
+        'num_ctx' => 4096,
+        'max_px' => 1100,
+        'timeout' => (int) env('ASSISTANT_VISION_TIMEOUT', 20),   // 한 쪽 — 지면 「직접 입력」
+        'max_pages' => 6,
+    ],
 ];

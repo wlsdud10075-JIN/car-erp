@@ -30,6 +30,8 @@ class DocumentAccessLog extends Model
         'shipping_photos' => '선박 사진',
         'ro_cipl' => 'RORO 인보이스·패킹 (옛 양식)',
         'con_cipl' => '컨테이너 인보이스·패킹 (옛 양식)',
+        'bank_remittance' => '은행 서류 — 전신문',          // 2026-11-24 은행 서류 모달
+        'bank_invoice' => '은행 서류 — 은행용 Proforma',
     ];
 
     protected $fillable = [

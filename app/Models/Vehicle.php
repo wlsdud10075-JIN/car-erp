@@ -10,6 +10,7 @@ use App\Support\SearchTerm;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -2358,6 +2359,12 @@ class Vehicle extends Model
         return $this->boardRequests
             ->where('status', BoardRequest::STATUS_OPEN)
             ->pluck('type')->unique()->values()->all();
+    }
+
+    /** 🏦 은행 서류(전신문 · 은행용 Proforma · 은행 메일) — 서류탭 「은행」 영역 (jin 2026-11-24). */
+    public function bankRemittances(): BelongsToMany
+    {
+        return $this->belongsToMany(BankRemittance::class, 'bank_remittance_vehicle')->orderByDesc('bank_remittances.id');
     }
 
     /** 차량 등록 사진 (N장, jpg/png) — 업로드 순서대로. */

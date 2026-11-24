@@ -5079,6 +5079,22 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 패널이 닫혀 있어도 이 요청이 전체를 다시 그리므로 목록은 최신이 된다.
     }
 
+    /**
+     * 🏦 은행 서류 모달이 송금인 이름을 덮어썼다(jin 2026-11-24) — 열린 패널이 그 차면 기본정보 칸·지문을 새 값으로.
+     *    안 하면 패널 저장이 옛 이름으로 되돌리거나 「다른 창이 먼저 저장」으로 막힌다(자기 쓰기).
+     */
+    #[On('bank-remittance-done')]
+    public function bankRemittanceDone(array $ids = [], ?string $name = null): void
+    {
+        if ($this->editingId && in_array((int) $this->editingId, array_map('intval', $ids), true)) {
+            $v = Vehicle::query()->whereKey($this->editingId)->first();
+            if ($v) {
+                $this->remitter_name = $v->remitter_name ?? '';
+                $this->formFingerprint = $v->editFingerprint();
+            }
+        }
+    }
+
     /** 배너의 [최신으로 다시 열기] — 입력은 버리고 남이 저장한 값으로 다시 연다(사용자가 눌렀을 때만). */
     public function reloadFromRemote(): void
     {
@@ -9175,6 +9191,13 @@ new #[Layout('components.layouts.app')] class extends Component {
                 ↑ {{ __('vehicle.bulk_doc.btn') }}
             </button>
         @endif
+        {{-- 🏦 은행 서류 일괄 (jin 2026-11-24) — 송금 한 건이 여러 대 값: 전신문 1장 + 은행용 Proforma 1장(같은 바이어·통화). --}}
+        @if(\App\Services\BankRemittanceService::canUse(auth()->user()))
+            <button type="button" x-on:click="$dispatch('open-bank-remittance', { ids: @js(array_values(array_map('intval', $shipDocIds))) })"
+                    class="rounded border border-amber-300 bg-amber-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-amber-600" data-bank-bulk>
+                🏦 {{ __('vehicle.bank.bulk_btn') }}
+            </button>
+        @endif
         {{-- ①-B 번호 일괄 기입 (jin 2026-09-08) — 선적요청 묶음 화면에만 있던 것을 「선택 N대」로.
              묶음이 아직 없거나 묶음 경계를 넘나드는 선택에서도 신고번호·컨테이너번호를 한 번에 찍는다. --}}
         @if(auth()->user()?->canAccessClearance())
@@ -12446,6 +12469,42 @@ function vehicleColumnsToggle(columns, serverKnows) {
                     @disabled(! $hasId)>
                 {{ __('vehicle.mail.open_btn') }}
             </button>
+
+            {{-- 🏦 은행 — 전신문 · 은행용 Proforma · 신한 메일 (jin 2026-11-24). 모달은 별도 컴포넌트(erp.vehicles.bank-remittance). --}}
+            @if($hasId && \App\Services\BankRemittanceService::canUse(auth()->user()))
+            @php $bankRows = \App\Models\Vehicle::find($editingId)?->bankRemittances()->get() ?? collect(); @endphp
+            <hr class="section-divider mt-5">
+            <div class="section-header">
+                <span class="section-dot bg-amber-500"></span>
+                <span class="section-title">{{ __('vehicle.bank.section') }}</span>
+            </div>
+            <p class="mb-2 text-[11px] text-gray-500">{{ __('vehicle.bank.section_hint') }}</p>
+            <button type="button" x-on:click="$dispatch('open-bank-remittance', { ids: [{{ (int) $editingId }}] })"
+                    class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100" data-bank-open>
+                🏦 {{ __('vehicle.bank.open_btn') }}
+            </button>
+            <div class="mt-3 space-y-2" data-bank-area>
+                @forelse($bankRows as $br)
+                    <div class="card-tight text-xs" wire:key="bank-{{ $br->id }}">
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <span class="font-semibold text-gray-800">{{ $br->remitter_name }}</span>
+                            <span class="text-gray-400">{{ $br->created_at?->format('Y-m-d H:i') }}</span>
+                        </div>
+                        <div class="mt-1 flex flex-wrap gap-3">
+                            <a href="{{ route('erp.bank-remittances.file', [$br->id, 'remittance']) }}" class="text-primary-text underline">📄 {{ __('vehicle.bank.remittance') }}</a>
+                            @if($br->invoice_path)
+                                <a href="{{ route('erp.bank-remittances.file', [$br->id, 'invoice']) }}" class="text-primary-text underline">📄 {{ __('vehicle.bank.invoice') }}</a>
+                            @endif
+                            <span class="{{ $br->mailed_at ? 'text-green-700' : 'text-gray-400' }}">
+                                {{ $br->mailed_at ? __('vehicle.bank.mailed', ['to' => $br->mailed_to, 'at' => $br->mailed_at->format('Y-m-d H:i')]) : __('vehicle.bank.not_mailed') }}
+                            </span>
+                        </div>
+                    </div>
+                @empty
+                    <p class="text-xs text-gray-400">{{ __('vehicle.bank.empty') }}</p>
+                @endforelse
+            </div>
+            @endif
         </div>
 
         {{-- ─── 메모 (공통) ──────────────────────────────── --}}
@@ -14269,5 +14328,8 @@ function vehicleColumnsToggle(columns, serverKnows) {
 @endif
 
 @endisland
+
+{{-- 🏦 은행 서류 모달 (jin 2026-11-24) — 패널 서류탭·목록 선택 두 입구가 같은 컴포넌트를 연다(섬 밖에 한 번만). --}}
+<livewire:erp.vehicles.bank-remittance />
 
 </div>{{-- /root --}}

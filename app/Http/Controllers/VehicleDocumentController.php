@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\BankRemittance;
 use App\Models\DocumentAccessLog;
 use App\Models\Vehicle;
+use App\Services\BankRemittanceService;
 use App\Services\Documents\DocumentFiller;
 use App\Services\Documents\PdfConverter;
 use Illuminate\Http\Request;
@@ -110,6 +112,28 @@ class VehicleDocumentController extends Controller
         $filename = '말소신청서_'.$vehicle->vehicle_number.$vinTail.($ext ? '.'.$ext : '');
 
         return $disk->download($path, $filename);
+    }
+
+    /**
+     * 🏦 은행 서류 파일 — 전신문 원본 또는 은행용 Proforma (jin 2026-11-24).
+     * GET /erp/bank-remittances/{remittance}/{kind}
+     */
+    public function bankRemittanceFile(int $remittance, string $kind, Request $request): StreamedResponse
+    {
+        $rec = BankRemittance::with('vehicles')->findOrFail($remittance);
+        $user = auth()->user();
+        abort_unless(BankRemittanceService::canUse($user), 403);
+        abort_unless($rec->vehicles->isNotEmpty() && $rec->vehicles->every(fn (Vehicle $v) => $user->canScopeVehicle($v)), 403, '접근 권한이 없는 차량입니다.');
+
+        [$path, $name] = $kind === 'invoice' ? [$rec->invoice_path, $rec->invoice_name] : [$rec->remittance_path, $rec->remittance_name];
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        abort_unless($path && $disk->exists($path), 404, '파일을 찾을 수 없습니다.');
+
+        foreach ($rec->vehicles as $v) {
+            DocumentAccessLog::create(['user_id' => $user->id, 'vehicle_id' => $v->id, 'document_type' => 'bank_'.$kind, 'ip_address' => $request->ip()]);
+        }
+
+        return $disk->download($path, $name);
     }
 
     /**
