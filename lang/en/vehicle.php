@@ -1326,6 +1326,7 @@ return [
         'btn_title' => 'Notify the domestic dealer by KakaoTalk that this amount was paid',
         'kind_down' => 'Down payment',
         'kind_balance' => 'Purchase balance',
+        'kind_selling_fee' => 'Selling fee',
         'modal_title' => 'Send payment-complete notice to the dealer',
         'proof' => 'Transfer receipt',
         'paste_hint' => 'Paste the transfer receipt screenshot here with Ctrl+V',
