@@ -36,6 +36,8 @@ class Buyer extends Model
         'is_b2b_partner', 'website', 'office_address', 'city', 'whatsapp_phone',
         'photo_path', 'photo_updated_at', 'map_name_public', 'api_linked',
         'is_dp', 'is_fd',
+        // 2026-11-26 jin — B2B 파트너스 메모(일반 `memo` 와 따로). B2B 칸에서 쓰고 B2B 목록 행에 보인다. 관리 이상.
+        'b2b_memo',
     ];
 
     protected $casts = [

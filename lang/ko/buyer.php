@@ -71,6 +71,7 @@ return [
     ],
 
     'col_b2b' => 'B2B',
+    'col_b2b_memo' => 'B2B 메모',
     'b2b_badge' => 'B2B',
     // 🏷️ 바이어 DP·FD 진행 중 (jin 2026-11-17) — 바이어 지정 + 차량(거래)별 지정 두 곳
     'deal' => [
@@ -100,6 +101,8 @@ return [
         'contract_note' => '메모',
         'contract_note_ph' => '예: 2026 연간 약정 · 2차 추가',
         'contract_file' => '파일',
+        'b2b_memo' => 'B2B 메모',
+        'b2b_memo_ph' => '이 파트너 관련 메모 — B2B 목록에 보입니다',
         'contract_add' => '계약서 추가',
         'contract_replace' => '교체',
         'contract_open' => '열기',
