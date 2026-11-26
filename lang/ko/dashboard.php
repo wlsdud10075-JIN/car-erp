@@ -101,6 +101,16 @@ return [
     'fx_refresh' => '새로고침',
     'fx_fail' => '⚠ 실시간 환율 조회 실패 — 잔금N+ 추가 시 수동 입력하세요.',
     'fx_refreshed' => '환율 새로고침 완료',
+    'fx_closing_title' => ':m월 :d일 마감환율',
+    'fx_closing_title_none' => '마감환율',
+    'fx_closing_kind_receive' => '송금받을때',
+    'fx_closing_kind_base' => '매매기준율',
+    'fx_closing_stale' => '⚠ 직전 영업일 마감이 아직 없습니다(수집 00:30·09:00, 공휴일 다음 날이면 정상)',
+    'fx_closing_fetch' => '받아오기',
+    'fx_closing_fetching' => '받는 중…',
+    'fx_closing_fetched' => ':date 마감환율을 받았습니다',
+    'fx_closing_not_yet' => '아직 새 마감이 없습니다 — 지금은 :date 마감이 최신입니다(보통 09:00 이후 올라옵니다)',
+    'fx_closing_fetch_fail' => '마감환율을 받지 못했습니다 — 잠시 뒤 다시 눌러 주세요',
 
     'actions_title' => '처리 필요 항목',
     'empty' => [
