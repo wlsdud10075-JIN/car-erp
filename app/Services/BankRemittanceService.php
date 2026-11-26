@@ -10,13 +10,13 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Models\Vehicle;
 use App\Services\Documents\DocumentFiller;
-use App\Services\Documents\PdfConverter;
 use App\Support\CompanyMailConfig;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 
 /**
@@ -152,7 +152,9 @@ class BankRemittanceService
     }
 
     /**
-     * 은행용 Proforma — 일반 PI 그대로 만들고 `Name`(E5)만 송금인 이름. PDF(LibreOffice) → 실패하면 xlsx.
+     * 은행용 Proforma — 일반 PI 그대로 만들고 `Name`(E5)만 송금인 이름. **엑셀(.xlsx)** 로 만든다
+     * (🔀 jin 2026-11-26 «PDF 는 수정이 어렵다, Proforma 처럼 엑셀로» — 구: PDF 우선, 실패 시 xlsx).
+     * 금액 칸은 소수점 두 자리 서식(`decimalAmounts`) — 은행에 맞춰 고쳐 넣을 때 센트까지 보이게(jin 같은 날).
      *
      * @param  Collection<int, Vehicle>  $vehicles
      */
@@ -160,21 +162,20 @@ class BankRemittanceService
     {
         $filler = new DocumentFiller($vehicles);
         $sheet = $filler->spreadsheet('invoice');
-        $sheet->getSheetByName('Invoice')?->setCellValue(self::NAME_CELL, $rec->remitter_name);
+        $ws = $sheet->getSheetByName('Invoice');
+        $ws?->setCellValue(self::NAME_CELL, $rec->remitter_name);
+        if ($ws) {
+            self::decimalAmounts($ws);
+            self::totalsAsFormulas($ws);
+        }
         $base = 'BANK_'.preg_replace('/\.xlsx$/i', '', $filler->filename('invoice'));
 
-        try {
-            $binary = app(PdfConverter::class)->fromSpreadsheet($sheet);
-            $name = $base.'.pdf';
-        } catch (\Throwable $e) {
-            report($e);
-            $writer = new Xlsx($sheet);
-            $writer->setPreCalculateFormulas(false);
-            ob_start();
-            $writer->save('php://output');
-            $binary = (string) ob_get_clean();
-            $name = $base.'.xlsx';
-        }
+        $writer = new Xlsx($sheet);
+        $writer->setPreCalculateFormulas(false);
+        ob_start();
+        $writer->save('php://output');
+        $binary = (string) ob_get_clean();
+        $name = $base.'.xlsx';
 
         $disk = config('filesystems.vehicle_docs_disk');
         $path = 'bank-remittances/'.now()->format('Ym').'/'.Str::uuid().'_'.$name;
@@ -183,6 +184,67 @@ class BankRemittanceService
             throw new \RuntimeException('Proforma 저장 실패');
         }
         $rec->update(['invoice_path' => $path, 'invoice_name' => $name]);
+    }
+
+    /**
+     * 금액 칸 서식에 소수점 두 자리를 붙인다 — 양식의 `$#,##0`·`€#,##0` 같은 정수 서식을 `…#,##0.00` 으로.
+     * 빈 칸도 양식에 서식이 있으면 같이 바뀐다(나중에 사람이 금액을 넣어도 소수점이 보이게). 이미 소수점이 있는 서식은 그대로.
+     */
+    public static function decimalAmounts(Worksheet $ws): void
+    {
+        foreach ($ws->getCellCollection()->getCoordinates() as $coord) {
+            $fmt = $ws->getStyle($coord)->getNumberFormat();
+            $code = (string) $fmt->getFormatCode();
+            if (! str_contains($code, '#,##0') || str_contains($code, '#,##0.')) {
+                continue;
+            }
+            $fmt->setFormatCode(str_replace('#,##0', '#,##0.00', $code));
+        }
+    }
+
+    /**
+     * 합계 3칸(SUB TOTAL · TOTAL · BALANCE MONEY)을 값 → 수식으로 (jin 2026-11-26 «합계도 소수점이 그대로 나와야»).
+     * 은행에 맞춰 차량 줄 금액을 고치면 합계가 소수점까지 따라 바뀐다.
+     *   SUB TOTAL = SUM(차량 줄 E:F) — 서류 합계식(`DocValue::documentSaleTotal` = Σ FOB + 운임)과 같은 범위다.
+     *   TOTAL · BALANCE = SUB TOTAL 칸 참조.
+     * 일반 PI 는 양식 SUM 범위가 행 삭제에 안 줄어 값으로 두었다(SalesInvoiceMapping docblock) — 여기선 채운 뒤 범위를 정확히 알고 쓴다.
+     * 🛡️ 지금 숫자와 수식 결과가 다르면(양식이 바뀌었다는 뜻) 건드리지 않는다 — 값으로 남는 편이 틀린 수식보다 낫다.
+     */
+    public static function totalsAsFormulas(Worksheet $ws): void
+    {
+        $header = $sub = null;
+        $rows = [];
+        for ($r = 1; $r <= min(200, $ws->getHighestRow()); $r++) {
+            $label = strtoupper(trim(preg_replace('/\s+/', ' ', (string) $ws->getCell('C'.$r)->getValue())));
+            if ($header === null && strtoupper(trim(preg_replace('/\s+/', ' ', (string) $ws->getCell('E'.$r)->getValue()))) === 'FOB PRICE') {
+                $header = $r;
+            } elseif ($header !== null && $sub === null && $label === 'SUB TOTAL') {
+                $sub = $r;
+            } elseif ($sub !== null && in_array($label, ['TOTAL', 'BALANCE MONEY'], true)) {
+                $rows[] = $r;
+            }
+        }
+        if ($header === null || $sub === null || $sub <= $header + 1) {
+            return;
+        }
+        $first = $header + 1;
+        $last = $first;
+        $sum = 0.0;
+        for ($r = $first; $r < $sub; $r++) {
+            $e = $ws->getCell('E'.$r)->getValue();
+            $f = $ws->getCell('F'.$r)->getValue();
+            if (is_numeric($e) || is_numeric($f)) {
+                $last = $r;
+                $sum += (float) $e + (float) $f;
+            }
+        }
+        if (abs($sum - (float) $ws->getCell('E'.$sub)->getValue()) > 0.005) {
+            return;   // 양식이 예상과 다르다 — 값 그대로
+        }
+        $ws->setCellValue('E'.$sub, "=SUM(E{$first}:F{$last})");
+        foreach ($rows as $r) {
+            $ws->setCellValue('E'.$r, '=E'.$sub);
+        }
     }
 
     /**
