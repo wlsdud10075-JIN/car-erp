@@ -974,7 +974,7 @@ class Vehicle extends Model
     //   - cost_license : 통관 면허비 월명세서, 수출신고번호로 묶어 합계 n/1 분배
     // ⚠️ 봉인 화이트리스트는 BULK_COST_FIELDS(9개) 그대로 — 이건 UI 노출/파서 분기용 축소 목록.
     //   - cost_insurance : 데일리 가입이력조회 xlsx, 차량번호 + 차대번호 매칭 (jin 2026-10-01)
-    public const BULK_COST_UPLOAD_FIELDS = ['cost_towing', 'cost_license', 'cost_insurance', 'cost_carry'];   // 캐리비 = 디케이로지스(jin 2026-11-03, 덮어쓰기)
+    public const BULK_COST_UPLOAD_FIELDS = ['cost_towing', 'cost_license', 'cost_insurance', 'cost_carry'];   // 캐리비 = 디케이로지스(jin 2026-11-03). 🔀 11-26 jin — 명세서 기입은 전부 기존 금액에 더한다
 
     // 명세서 기입 — 대상비용별 거래처(서식) 목록. 회사마다 엑셀 서식이 달라 좌표 파서를 분기한다.
     //   탁송비: wika(기존 범용) / gucheonyuk / hyundai_a1  — 면허비: mutual(기존 xlsx n/1) / seongji(→선적요청 딥링크)

@@ -637,10 +637,13 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 같은 파일을 두 번 올린 것을 알고도 적용(더하기 모드 전용 — 기본 차단). */
     public bool $costImportForce = false;
 
-    /** 더하기 모드 — 보험료만. 달마다 갱신분이 쌓이므로 기존 금액에 더한다(jin 2026-11-02 «덮어쓰기 아니고 + 더해야»). */
+    /** 더하기 모드 — 🔀 2026-11-26 jin «명세서 기입으로 들어가는 모든 금액은 기존 금액의 플러스로» — 탁송비·면허비·캐리비·보험료 전부.
+     *  기존 0원이면 올린 금액 그대로. 이미 적힌 금액은 건드리지 않고 앞으로 올리는 것만 더한다. 정정 재업로드는 차량 창에서 손으로 고친다.
+     *  같은 파일 두 번 올리기는 지문으로 막는다(아래). ⚠️ 선적요청 화면 「면허비 n/1」은 다른 경로라 덮어쓰기 그대로(BulkVehicleCostService 기본값).
+     *  옛 주석: 보험료만. 달마다 갱신분이 쌓이므로 기존 금액에 더한다(jin 2026-11-02 «덮어쓰기 아니고 + 더해야»). */
     public function costImportAccumulates(): bool
     {
-        return $this->costImportColumn === 'cost_insurance';
+        return in_array($this->costImportColumn, \App\Models\Vehicle::BULK_COST_UPLOAD_FIELDS, true);
     }
 
     /** 올린 파일의 지문 — 컬럼 + (차량 id:금액) 정렬 목록. 같은 파일을 다시 올리면 같은 값이 나온다. */

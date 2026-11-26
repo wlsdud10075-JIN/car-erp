@@ -86,7 +86,7 @@ class LicenseFeeImportTest extends TestCase
         $comp->call('applyCostImport')->assertSet('showCostImport', false);
 
         foreach ([$a, $b, $c, $d] as $v) {
-            $this->assertSame(2475, (int) $v->fresh()->cost_license);
+            $this->assertSame(11000 + 2475, (int) $v->fresh()->cost_license, '기존 11,000 + n/1 2,475 — 명세서 기입은 더한다(jin 11-26)');
         }
     }
 
@@ -110,7 +110,7 @@ class LicenseFeeImportTest extends TestCase
 
         $comp->call('applyCostImport');
         foreach ([$a, $b, $c] as $v) {
-            $this->assertSame(2475, (int) $v->fresh()->cost_license);
+            $this->assertSame(11000 + 2475, (int) $v->fresh()->cost_license, '기존 + n/1(더하기, jin 11-26)');
         }
     }
 

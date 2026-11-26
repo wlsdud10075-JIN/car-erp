@@ -1027,7 +1027,7 @@ return [
         'title' => 'Bulk Cost Entry from Statement',
         'subtitle' => 'Paste a vendor statement (e.g. Wika); vehicles are matched by number and the cost is filled at once. Finance, management and above · all vehicles · costs only.',
         'target_col' => 'Target cost',
-        'col_hint' => 'Per-vehicle costs like towing. The matched vehicles get this amount.',
+        'col_hint' => 'Per-vehicle costs like towing. This amount is added to the matched vehicles’ existing amount (or used as-is if it is 0).',
         'file_label' => 'Upload Excel file (vendor statement .xlsx)',
         'file_choose' => 'Choose Excel file',
         'file_btn' => 'Read file',
@@ -1048,7 +1048,7 @@ return [
         'new_amount' => 'New',
         'add_amount' => 'This file',
         'result' => 'Result (current + file)',
-        'accumulate_hint' => 'Insurance is added to the existing amount (not overwritten). :count vehicles already have an amount — the Result column is the sum.',
+        'accumulate_hint' => 'Statement amounts are added to the existing amount (not overwritten; if it is 0 the uploaded amount is used). :count vehicles already have an amount — the Result column is the sum.',
         'dup_blocked' => 'This exact file was already applied (:at, :count vehicles). Blocked to avoid adding it twice — tick the box below and apply again if you really mean to add it once more.',
         'dup_force' => 'Yes, add the same file once more (e.g. the same premium two months in a row)',
         'no_matched' => 'No matched vehicles.',
@@ -1056,7 +1056,7 @@ return [
         'unchanged_suffix' => '(:count unchanged)',
         'apply_btn' => 'Apply',
         // License fee (customs license monthly statement — split total n/1 by export declaration number)
-        'carry_col_hint' => 'DK Logis statement export (F plate · H amount incl. VAT). Matched vehicles get their carry cost replaced with this amount (overwrite — two lines for one vehicle are summed).',
+        'carry_col_hint' => 'DK Logis statement export (F plate · H amount incl. VAT). This amount is added to the matched vehicles’ existing carry cost (two lines for one vehicle are summed).',
         'ins_col_hint' => 'Daily "policy history" export (B plate · C VIN · G premium). Only vehicles whose plate and VIN both match are filled; same plate with a different VIN stays unmatched. Duplicate policies for one vehicle are summed.',
         'reason' => [
             'vin_mismatch' => 'VIN mismatch',
