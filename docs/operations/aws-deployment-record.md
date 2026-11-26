@@ -935,6 +935,12 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-26 (2) — master `000760cb` · 마이그 0 · 은행용 Proforma 엑셀 · 소수점 두 자리 · 합계 수식 (jin «배포해줘»)
+
+- run 45755126995 잡 5개 success · 3사 서버 `000760cb` · /login 200(heysellcar · heymancar · karaba-erp). 로컬 전체 4,129 통과(건너뜀 1). cherry-pick 1커밋.
+- **은행용 Proforma**(`000760cb`) — PDF 우선(실패 시 xlsx) → 항상 xlsx(jin «PDF 는 수정이 어렵다»). 금액 칸 서식 `$#,##0` → `$#,##0.00`(통화 기호 무관, 빈 칸 포함). 합계 3칸(SUB TOTAL · TOTAL · BALANCE MONEY) = 수식(`=SUM(E18:F{마지막 차 줄})` · 참조) — 줄 금액을 고치면 합계가 소수점까지 따라 바뀐다. 값과 수식 결과가 다르면 값 그대로 둠. 이미 만든 기록(PDF)은 그대로.
+- 일반 Proforma(서류 만들기)는 안 바꿈(jin «냅둬»). 업무 가이드 「은행 서류」 문장 · Notion 카드 = dev `4b9612eb`(야간 배치 발행).
+
 ## 2026-11-26 — master `d0a0bf68` · 마이그 1 · 카톡 수집기 1.1.1 · B2B 메모 · 대시보드 마감환율 · 명세서 기입 전 칸 더하기 (jin «그대로 두고 배포해줘»)
 
 - run 45746698827 잡 5개 success · 3사 서버 `d0a0bf68` · 3사 `2026_11_26_000001_add_b2b_memo_to_buyers` Ran · /login 200(heysellcar · heymancar · karaba-erp). 로컬 전체 4,129 통과(건너뜀 1). cherry-pick 5커밋(코드 4 + 업무 가이드 1).
