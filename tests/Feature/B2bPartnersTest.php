@@ -211,6 +211,34 @@ class B2bPartnersTest extends TestCase
         $this->assertSame('Tirana', $b->fresh()->city, '도시 같은 일반 칸은 영업도 적는다');
     }
 
+    /** 📝 B2B 메모(jin 11-26) — 일반 메모와 따로, 관리 이상만 쓰고 B2B 목록 행에 보인다. 회사 토글이 꺼지면 안 보인다. */
+    public function test_b2b_memo_is_saved_by_manager_shown_in_list_and_ignored_for_sales(): void
+    {
+        $sm = $this->salesman();
+        $b = $this->buyer($sm, ['name' => 'MEMO PARTNER', 'is_b2b_partner' => true, 'memo' => 'general note']);
+
+        $this->actingAs($this->manager());
+        Volt::test('erp.buyers.index')->call('openEdit', $b->id)->assertSet('b2b_memo', '')
+            ->set('b2b_memo', '  연간 약정 협의 중 — 12월 재계약  ')->call('save')->assertHasNoErrors();
+        $this->assertSame('연간 약정 협의 중 — 12월 재계약', $b->fresh()->b2b_memo);
+        $this->assertSame('general note', $b->fresh()->memo, '일반 메모는 그대로');
+
+        // B2B 파트너스 화면(?b2b=1)에선 「B2B 메모」 열이 따로 있다(jin 11-26 «헤더를 따로»). 일반 바이어 목록엔 그 열이 없다.
+        Volt::test('erp.buyers.index')->set('b2bFilter', '1')
+            ->assertSeeHtml('data-buyer-b2b-memo-th')->assertSeeHtml('data-buyer-b2b-memo-row')->assertSee('연간 약정 협의 중')
+            ->assertDontSee('general note');
+        Volt::test('erp.buyers.index')->assertDontSeeHtml('data-buyer-b2b-memo-th')->assertDontSee('연간 약정 협의 중');
+        Volt::test('erp.buyers.index')->call('openEdit', $b->id)->assertSet('b2b_memo', '연간 약정 협의 중 — 12월 재계약');
+
+        $this->actingAs($this->sales($sm));
+        Volt::test('erp.buyers.index')->call('openEdit', $b->id)->set('b2b_memo', 'sales edit')->call('save')->assertHasNoErrors();
+        $this->assertSame('연간 약정 협의 중 — 12월 재계약', $b->fresh()->b2b_memo, '영업은 B2B 메모를 못 바꾼다');
+
+        $this->setB2b(false);
+        $this->actingAs($this->manager());
+        Volt::test('erp.buyers.index')->assertDontSeeHtml('data-buyer-b2b-memo-row')->assertDontSeeHtml('data-buyer-b2b-memo-card');
+    }
+
     public function test_b2b_menu_filter_lists_partners_only_even_without_vehicles(): void
     {
         $this->actingAs($this->admin());

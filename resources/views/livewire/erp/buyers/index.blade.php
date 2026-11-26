@@ -199,6 +199,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     /** 🏷️ 바이어 「DP·FD 진행 중」 — 각각 지정(jin 2026-11-17). 차량 거래 유형(vehicles.deal_type)과 따로. 관리 이상. */
     public bool   $is_dp = false;
     public bool   $is_fd = false;
+    /** 🤝 B2B 파트너스 메모(jin 2026-11-26) — 일반 메모와 따로, 목록 B2B 칸에 보인다. 관리 이상. */
+    public string $b2b_memo = '';
     public string $website = '';
     public string $office_address = '';
     public string $city = '';
@@ -684,6 +686,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         $this->is_b2b_partner = (bool) $buyer->is_b2b_partner;
         $this->is_dp = (bool) $buyer->is_dp;
         $this->is_fd = (bool) $buyer->is_fd;
+        $this->b2b_memo = $buyer->b2b_memo ?? '';
         $this->website = $buyer->website ?? '';
         $this->office_address = $buyer->office_address ?? '';
         $this->city = $buyer->city ?? '';
@@ -738,6 +741,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             'city' => 'nullable|string|max:100',
             'whatsapp_phone' => 'nullable|string|max:30',
             'photoUpload' => 'nullable|image|max:4096',
+            'b2b_memo' => 'nullable|string|max:2000',
         ]);
 
         // 영업 role 신규 등록 시 본인 salesman 자동 채움 (vehicles/index L1240~1241 패턴 대칭).
@@ -785,6 +789,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 $data['is_b2b_partner'] = $this->is_b2b_partner;
                 $data['is_dp'] = $this->is_dp;   // 🏷️ DP·FD 진행 중(jin 11-17) — 같은 권한(관리 이상)
                 $data['is_fd'] = $this->is_fd;
+                $data['b2b_memo'] = trim($this->b2b_memo) ?: null;   // 🤝 B2B 메모(jin 11-26) — 같은 권한(관리 이상)
             }
             $data['map_name_public'] = $this->map_name_public;
             $data['api_linked'] = $this->api_linked;
@@ -1813,7 +1818,7 @@ new #[Layout('components.layouts.app')] class extends Component {
     {
         $this->name = $this->country_id_str = $this->salesman_id_str = $this->contact_name
             = $this->contact_email = $this->contact_phone = $this->passport_id
-            = $this->address = $this->memo = '';
+            = $this->address = $this->memo = $this->b2b_memo = '';
         $this->is_active = true;
         $this->is_b2b_partner = $this->map_name_public = $this->api_linked = $this->removePhoto = false;
         $this->is_dp = $this->is_fd = false;
@@ -1918,6 +1923,8 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <th class="pb-2 pr-4 font-medium" data-savings-col>{{ $this->sortTh('savings', __('buyer.col_savings')) }}</th>
                 <th class="pb-2 pr-4 font-medium">{{ $this->sortTh('status', __('common.status')) }}</th>
                 @if(Setting::b2bPartnersEnabled())<th class="pb-2 pr-4 font-medium">{{ $this->sortTh('b2b', __('buyer.col_b2b')) }}</th>@endif
+                {{-- 📝 B2B 메모 열 (jin 11-26 «헤더를 따로, 작아서 보기 불편») — B2B 파트너스 화면(?b2b=1)에서만 --}}
+                @if(Setting::b2bPartnersEnabled() && $b2bFilter === '1')<th class="pb-2 pr-4 font-medium" data-buyer-b2b-memo-th>{{ __('buyer.col_b2b_memo') }}</th>@endif
                 <th class="pb-2 font-medium"></th>
             </tr>
         </thead>
@@ -1966,6 +1973,11 @@ new #[Layout('components.layouts.app')] class extends Component {
                     <x-erp.buyer-deal-badges :buyer="$b" />
                 </td>
                 @endif
+                @if(Setting::b2bPartnersEnabled() && $b2bFilter === '1')
+                <td class="min-w-[200px] max-w-sm py-3 pr-4 text-sm text-gray-700" data-buyer-b2b-memo-row>
+                    @if(filled($b->b2b_memo))<div class="whitespace-pre-line break-words">{{ $b->b2b_memo }}</div>@else<span class="text-gray-300">-</span>@endif
+                </td>
+                @endif
                 <td class="py-3 text-right">
                     @if(auth()->user()?->canApprove())
                     <button wire:click.stop="delete({{ $b->id }})"
@@ -1975,7 +1987,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 </td>
             </tr>
             @empty
-            <tr><td colspan="{{ Setting::b2bPartnersEnabled() ? 9 : 8 }}" class="py-12 text-center text-sm text-gray-400">{{ __('buyer.empty') }}</td></tr>
+            <tr><td colspan="{{ (Setting::b2bPartnersEnabled() ? 9 : 8) + (Setting::b2bPartnersEnabled() && $b2bFilter === '1' ? 1 : 0) }}" class="py-12 text-center text-sm text-gray-400">{{ __('buyer.empty') }}</td></tr>
             @endforelse
         </tbody>
     </table>
@@ -2000,6 +2012,7 @@ new #[Layout('components.layouts.app')] class extends Component {
                 <x-erp.buyer-deal-badges :buyer="$b" />
             </div>
             @endif
+            @if(Setting::b2bPartnersEnabled() && $b2bFilter === '1' && filled($b->b2b_memo))<div class="mt-1 whitespace-pre-line break-words text-sm text-gray-700" data-buyer-b2b-memo-card><span class="mr-1 text-xs font-semibold text-amber-700">{{ __('buyer.col_b2b_memo') }}</span>{{ $b->b2b_memo }}</div>@endif
         </div>
         <span class="badge {{ $b->is_active ? 'badge-green' : 'badge-gray' }}">{{ $b->is_active ? __('common.active') : __('common.inactive') }}</span>
     </div>
@@ -2240,6 +2253,12 @@ new #[Layout('components.layouts.app')] class extends Component {
                             <span class="rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">FD</span> {{ __('buyer.deal.fd_label') }}
                         </label>
                         <span class="block w-full text-[11px] leading-relaxed text-gray-600">{{ __('buyer.deal.flags_hint') }}</span>
+                    </div>
+                    {{-- 📝 B2B 메모 (jin 2026-11-26) — 일반 메모와 따로. B2B 목록 행에 보인다. 관리 이상만 쓴다(저장 시 재인가). --}}
+                    <div class="mt-2 border-t border-amber-200 pt-2" data-buyer-b2b-memo>
+                        <label class="label-base">{{ __('buyer.field.b2b_memo') }}</label>
+                        <textarea wire:model="b2b_memo" class="input-base" rows="2" maxlength="2000" placeholder="{{ __('buyer.field.b2b_memo_ph') }}" @disabled(! $canB2b)></textarea>
+                        @error('b2b_memo')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
                     </div>
                     @if(! $canB2b)<p class="mt-1 text-[11px] text-gray-500">{{ __('buyer.field.b2b_readonly') }}</p>@endif
 

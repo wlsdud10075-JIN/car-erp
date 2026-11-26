@@ -71,6 +71,7 @@ return [
     ],
 
     'col_b2b' => 'B2B',
+    'col_b2b_memo' => 'B2B memo',
     'b2b_badge' => 'B2B',
     // Buyer DP/FD in progress (2026-11-17) — set on the buyer and per vehicle (deal), separately
     'deal' => [
@@ -99,6 +100,8 @@ return [
         'contract_note' => 'Note',
         'contract_note_ph' => 'e.g. 2026 annual · 2nd addendum',
         'contract_file' => 'File',
+        'b2b_memo' => 'B2B memo',
+        'b2b_memo_ph' => 'Notes about this partner — shown in the B2B list',
         'contract_add' => 'Add contract',
         'contract_replace' => 'Replace',
         'contract_open' => 'Open',
