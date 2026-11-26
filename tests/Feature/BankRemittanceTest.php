@@ -332,6 +332,153 @@ class BankRemittanceTest extends TestCase
         $this->assertStringContainsString('data-bank-open', $html);
     }
 
+    /** 안 보낸 기록 1건 — 전신문·은행용 PI 파일까지 디스크에 만든다. */
+    private function pendingRecord(Vehicle $v, string $name, string $tag): BankRemittance
+    {
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        $disk->put("bank-remittances/t/{$tag}.tif", 'II*'.$tag);
+        $disk->put("bank-remittances/t/BANK_{$tag}.xlsx", 'PK'.$tag);
+        $rec = BankRemittance::create(['remittance_path' => "bank-remittances/t/{$tag}.tif", 'remittance_name' => "{$tag}.tif", 'remitter_name' => $name,
+            'invoice_path' => "bank-remittances/t/BANK_{$tag}.xlsx", 'invoice_name' => "BANK_{$tag}.xlsx"]);
+        $rec->vehicles()->attach($v->id);
+
+        return $rec;
+    }
+
+    private function mailSettings(): void
+    {
+        $set = Setting::companyTemplateSet();
+        Setting::updateOrCreate(['key' => "mail_channel_{$set}"], ['value' => 'ses', 'type' => 'string']);
+        Setting::updateOrCreate(['key' => "mail_from_address_{$set}"], ['value' => 'ops@company.test', 'type' => 'string']);
+        Setting::updateOrCreate(['key' => "bank_mail_to_{$set}"], ['value' => 'officer@bank.test', 'type' => 'string']);
+    }
+
+    // ✏️ 수정본 올리기 (jin 2026-11-26 «수정하고 나서 올리는 게 없었네») — 고친 파일이 은행으로 가는 파일이 된다.
+    public function test_revised_invoice_replaces_the_file_that_is_downloaded_and_mailed(): void
+    {
+        [$a] = $this->cars(1);
+        $rec = $this->pendingRecord($a, 'JOHN SAMPLE', 'one');
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        $fin = $this->finance();
+        $this->actingAs($fin);
+
+        // 서류탭에 버튼이 있다
+        $this->assertStringContainsString('data-bank-replace-open', Volt::test('erp.vehicles.index')->call('openEdit', $a->id)->html());
+
+        // 엑셀·PDF 가 아니면 거절하고 원래 파일 그대로
+        Volt::test('erp.vehicles.bank-remittance')->call('startReplace', $rec->id)->assertSet('replaceId', $rec->id)
+            ->set('replaceFile', UploadedFile::fake()->createWithContent('memo.txt', 'x'))
+            ->assertHasErrors('replaceFile');
+        $this->assertSame('BANK_one.xlsx', $rec->fresh()->invoice_name);
+
+        Volt::test('erp.vehicles.bank-remittance')->call('startReplace', $rec->id)
+            ->set('replaceFile', UploadedFile::fake()->createWithContent('BANK_one_fixed.xlsx', 'PK-fixed'))
+            ->assertHasNoErrors()->assertSet('replaceId', null)->assertDispatched('bank-remittance-done');
+
+        $rec->refresh();
+        $this->assertSame('BANK_one_fixed.xlsx', $rec->invoice_name);
+        $this->assertSame('PK-fixed', $disk->get($rec->invoice_path));
+        $this->assertFalse($disk->exists('bank-remittances/t/BANK_one.xlsx'), '먼저 있던 파일은 지운다');
+        $this->assertNotNull($rec->invoice_revised_at);
+        $this->assertSame($fin->id, $rec->invoice_revised_by);
+        $log = AuditLog::where('action', 'bank_invoice_replaced')->where('auditable_id', $a->id)->firstOrFail();
+        $this->assertSame(['BANK_one.xlsx', 'BANK_one_fixed.xlsx'], [$log->old_value, $log->new_value]);
+        $html = Volt::test('erp.vehicles.index')->call('openEdit', $a->id)->html();
+        $this->assertStringContainsString('data-bank-revised', $html);
+        $this->assertMatchesRegularExpression('/data-bank-revised-name>BANK_one_fixed\.xlsx</', $html, '수정본 표시 옆에 올린 파일 이름');
+
+        // 안 보낸 건이 있는 차로 또 만들려 하면 알려 준다(막지는 않는다) — 보낸 뒤에는 안 뜬다
+        Volt::test('erp.vehicles.bank-remittance')->call('openBank', [$a->id])->assertSet('bankOpen', true)
+            ->assertSee('data-bank-dup', false)->assertSee('송금인 JOHN SAMPLE');
+        $rec->update(['mailed_to' => 'officer@bank.test', 'mailed_at' => now()]);
+        Volt::test('erp.vehicles.bank-remittance')->call('openBank', [$a->id])->assertDontSee('data-bank-dup', false);
+
+        // 권한 없는 사람(영업)은 못 바꾼다
+        $this->actingAs(User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]));
+        Volt::test('erp.vehicles.bank-remittance')->call('startReplace', $rec->id)->assertForbidden();
+    }
+
+    // 📤 모아 보내기 (jin 2026-11-26 «한 번에 모아서 보낸다 · 며칠 치일 수 있다») — 안 보낸 건을 메일 한 통으로.
+    public function test_batch_sends_unsent_records_in_one_mail_with_numbered_files(): void
+    {
+        Mail::fake();
+        $this->mailSettings();
+        [$a, $b, $c] = $this->cars(3);
+        $r1 = $this->pendingRecord($a, 'JOHN SAMPLE', 'one');
+        $r2 = $this->pendingRecord($b, 'MARY SAMPLE', 'two');
+        $r3 = $this->pendingRecord($c, 'THIRD SAMPLE', 'three');
+        $sent = $this->pendingRecord($a, 'ALREADY SENT', 'old');
+        $sent->update(['mailed_to' => 'officer@bank.test', 'mailed_at' => now()->subDay()]);
+        BankRemittance::whereKey($r1->id)->update(['created_at' => now()->subDays(3)]);   // 며칠 치가 섞여도 된다
+        $this->actingAs($this->finance());
+
+        // 목록 버튼에 안 보낸 건수
+        $html = Volt::test('erp.vehicles.index')->html();
+        $this->assertStringContainsString('data-bank-batch-open', $html);
+        $this->assertMatchesRegularExpression('/data-bank-batch-badge>3</', $html);
+
+        $t = Volt::test('erp.vehicles.bank-remittance')->call('openBatch')
+            ->assertSet('batchOpen', true)
+            ->assertSet('batchPick', [$r1->id, $r2->id, $r3->id])   // 안 보낸 것만, 전부 체크된 채로
+            ->assertSet('batchTo', 'officer@bank.test')
+            ->assertDontSee('ALREADY SENT')
+            ->set('batchPick', [(string) $r1->id, (string) $r3->id])   // 2번은 뺀다
+            ->assertSee('02. 송금인 THIRD SAMPLE');
+
+        // 등록 안 된 주소로는 안 나간다
+        $t->set('batchTo', 'someone@else.test')->call('sendBatchMail')->assertHasErrors('batchTo');
+        Mail::assertNothingSent();
+
+        $t->set('batchTo', 'officer@bank.test')->call('sendBatchMail')->assertHasNoErrors()->assertSet('batchOpen', false);
+
+        Mail::assertSent(VehicleDocumentMail::class, 1);
+        Mail::assertSent(VehicleDocumentMail::class, function ($m) {
+            $this->assertSame(['01_one.tif', '01_BANK_one.xlsx', '02_three.tif', '02_BANK_three.xlsx'], array_column($m->storedFiles, 'name'));
+            $this->assertStringContainsString('01. 송금인 JOHN SAMPLE — 차량 00가9511', $m->bodyText);
+            $this->assertStringContainsString('02. 송금인 THIRD SAMPLE', $m->bodyText);
+            $this->assertStringNotContainsString('MARY SAMPLE', $m->bodyText);
+
+            return $m->hasTo('officer@bank.test');
+        });
+        $this->assertNotNull($r1->fresh()->mailed_at);
+        $this->assertNotNull($r3->fresh()->mailed_at);
+        $this->assertNull($r2->fresh()->mailed_at, '뺀 건은 안 보낸 채로 남는다');
+        $this->assertSame(2, MailDeliveryLog::where('status', 'sent')->count(), '차마다 로그');
+        $this->assertSame(['01_one.tif', '01_BANK_one.xlsx'], MailDeliveryLog::where('vehicle_id', $a->id)->firstOrFail()->document_names);
+        $this->assertSame([$r2->id], BankRemittanceService::pending(auth()->user())->pluck('id')->all());
+
+        // 아무것도 안 고르면 안 나간다
+        Volt::test('erp.vehicles.bank-remittance')->call('openBatch')->set('batchPick', [])->call('sendBatchMail')->assertHasErrors('batchPick');
+        Mail::assertSent(VehicleDocumentMail::class, 1);
+    }
+
+    public function test_batch_lists_only_records_the_user_can_see_and_blocks_others(): void
+    {
+        [$a] = $this->cars(1);
+        $this->pendingRecord($a, 'JOHN SAMPLE', 'one');
+
+        // 관리 — 담당 영업이 없으면 그 차를 못 본다 → 목록이 빈다
+        $mgr = User::factory()->create(['permission' => 'user', 'role' => '관리', 'email_verified_at' => now()]);
+        $this->assertCount(0, BankRemittanceService::pending($mgr));
+        $this->assertCount(1, BankRemittanceService::pending($this->finance()));
+
+        // 영업 — 열 수 없다
+        $this->actingAs(User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]));
+        Volt::test('erp.vehicles.bank-remittance')->call('openBatch')->assertForbidden();
+    }
+
+    public function test_batch_refuses_when_attachments_are_too_large(): void
+    {
+        Mail::fake();
+        $this->mailSettings();
+        [$a] = $this->cars(1);
+        $rec = $this->pendingRecord($a, 'JOHN SAMPLE', 'one');
+        Storage::disk(config('filesystems.vehicle_docs_disk'))->put($rec->remittance_path, str_repeat('x', BankRemittanceService::BATCH_MAX_BYTES + 1));
+
+        $this->expectExceptionMessage('too_large');
+        BankRemittanceService::sendBatch(collect([$rec]), $this->finance(), 'officer@bank.test', 's', 'b');
+    }
+
     public function test_tif_waits_for_browser_pages(): void
     {
         $this->fakeOcr([

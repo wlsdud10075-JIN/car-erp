@@ -71,7 +71,7 @@ class AuditArea
         'purchase_overpay_corrected' => self::PURCHASE, 'purchase_payment_after_paid' => self::PURCHASE, 'purchase_proof_viewed' => self::PURCHASE,
         'board_request_rejected' => self::PURCHASE, 'board_request_resent' => self::PURCHASE,
         // 판매·입금
-        'claim_used' => self::SALE, 'bank_remittance_removed' => self::SALE, 'board_claim_received' => self::SALE, 'board_buyer_assigned' => self::SALE,
+        'claim_used' => self::SALE, 'bank_remittance_removed' => self::SALE, 'bank_invoice_replaced' => self::SALE, 'board_claim_received' => self::SALE, 'board_buyer_assigned' => self::SALE,
         'overpay_converted_to_company_income' => self::SALE, 'overpay_converted_to_misc_loss' => self::SALE, 'overpay_converted_to_savings' => self::SALE,
         'savings_adjustment' => self::SALE, 'savings_cancelled' => self::SALE, 'savings_earned' => self::SALE, 'savings_refund' => self::SALE, 'savings_used' => self::SALE,
         'deal_type_cleared_on_buyer_change' => self::SALE, 'contract_signed' => self::SALE, 'signing_session_revoked' => self::SALE,
