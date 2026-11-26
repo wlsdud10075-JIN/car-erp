@@ -181,6 +181,41 @@ def child_windows(hwnd: int) -> list[tuple[str, str, tuple[int, int, int, int]]]
 CLS_INPUT, CLS_SEARCH, CLS_LIST = "RICHEDIT50W", "Edit", "EVA_VH_ListControl_Dblclk"   # 방 창의 자식: 메시지 입력칸 / 대화 검색칸 / 대화 목록
 
 
+def find_child(hwnd: int, cls_name: str) -> int | None:
+    """그 창 안에서 클래스가 cls_name 인 보이는 자식 창 중 가장 큰 것의 핸들."""
+    best: list[tuple[int, int]] = []
+
+    @ctypes.WINFUNCTYPE(ctypes.c_bool, w.HWND, w.LPARAM)
+    def cb(c, _):
+        cls = ctypes.create_unicode_buffer(128)
+        u.GetClassNameW(c, cls, 128)
+        if cls.value == cls_name and u.IsWindowVisible(c):
+            r = w.RECT()
+            u.GetWindowRect(c, ctypes.byref(r))
+            best.append(((r.right - r.left) * (r.bottom - r.top), c))
+        return True
+
+    u.EnumChildWindows(hwnd, cb, 0)
+    return max(best)[1] if best else None
+
+
+def focus_list(hwnd: int) -> bool:
+    """대화 내용 영역(목록)에 **클릭 없이** 키보드 포커스를 넣는다(jin 11-25 — 목록을 클릭하다 이모티콘을 눌러 카톡이 로그아웃됐다, 2회 목격).
+    마우스를 안 쓰니 이모티콘·사진·프로필이 열릴 일이 없다. 실패하면 False — 🚫 클릭으로 되돌아가지 않는다(호출부가 그 방을 건너뛴다)."""
+    lst = find_child(hwnd, CLS_LIST)
+    if not lst:
+        return False
+    tid = u.GetWindowThreadProcessId(hwnd, None)
+    my = k32.GetCurrentThreadId()
+    u.AttachThreadInput(my, tid, True)
+    try:
+        u.SetFocus(lst)
+    finally:
+        u.AttachThreadInput(my, tid, False)
+    time.sleep(0.2)
+    return focused_child(hwnd)[0] == CLS_LIST
+
+
 def focused_child(hwnd: int) -> tuple[str, tuple[int, int, int, int]]:
     """그 창 안에서 지금 키 입력을 받는 자식 창의 (클래스, 사각형). 🔑 Enter·붙여넣기 전에 **반드시** 이걸로 어느 칸인지 확인한다 —
     11-10 실측: 메시지 입력칸 = RICHEDIT50W(아래), 대화 검색칸 = Edit(돋보기를 누르면 위에 176x22 로 생김), 목록 = EVA_VH_ListControl_Dblclk."""
@@ -264,6 +299,10 @@ def open_room(name: str, timeout: float = 4.0) -> dict | None:
     try:
         click(right + MAIN_SEARCH_ICON[0], top + MAIN_SEARCH_ICON[1])
         time.sleep(0.5)
+        # 🚫 누른 곳이 정말 검색칸(Edit)일 때만 붙여넣기·Enter(1.1.1, jin 11-25) — 창 크기·배율이 다른 PC 에서 돋보기 대신 메뉴를 누르면
+        #    Enter 가 그 메뉴 항목을 실행한다. 검색칸이 아니면 아무 키도 치지 않고 그 방을 건너뛴다.
+        if focused_child(main["hwnd"])[0] != CLS_SEARCH:
+            return None
         pyperclip.copy(name)
         time.sleep(0.2)
         key(VK_V, ctrl=True)
@@ -343,24 +382,13 @@ def read_room(cfg: dict, name: str, since: date, dry: bool) -> dict:
     try:
         if not focus(hwnd):
             return {"room": name, "ok": False, "message": f"「{name}」 창을 앞으로 가져오지 못했습니다. 그 방 창을 한 번 클릭한 뒤 다시 [지금 읽기]."}
-        left, top, right, bottom = win["rect"]
-        fx, fy = cfg.get("click_fraction", [0.5, 0.35])
-        click(int(left + (right - left) * fx), int(top + (bottom - top) * fy))   # 목록 빈 여백(사진 위를 누르면 뷰어가 뜬다 → config 로 조정)
-        time.sleep(0.3)
-        # 🚫 여기서 무조건 ESC 를 치면 안 된다 — 카톡 PC 는 기본 설정이 「ESC 로 채팅창 닫기」라 방 창이 닫히고 맨 앞이 브라우저가 되어
-        #    Ctrl+A·C 가 ERP 페이지를 읽어 보냈다(jin 11-10 실사고 «카톡방을 안 읽고 웹페이지를 읽는데?»). ESC 는 사진 뷰어가 떴을 때만.
-        if not is_foreground(hwnd):
-            if u.GetForegroundWindow() in {k["hwnd"] for k in kakao_windows()}:   # 카톡의 다른 창(사진 뷰어) → 닫고 방으로 복귀
-                key(VK_ESCAPE)
-                time.sleep(0.3)
-                focus(hwnd)
-            if not is_foreground(hwnd):   # 🚫 다른 창에 Ctrl+A·C 를 보내지 않는다(브라우저·엑셀 내용을 읽어 보내는 사고 방지)
-                return {"room": name, "ok": False, "message": f"「{name}」 창이 앞에 있지 않아 중단했습니다. 읽는 동안 다른 창을 누르지 마세요."}
-        if focused_child(hwnd)[0] != CLS_LIST:   # 검색칸·입력칸에 포커스면 Ctrl+A·C 가 그 칸만 복사한다 → 목록을 한 번 더 누르고, 그래도 아니면 중단
-            click(int(left + (right - left) * fx), int(top + (bottom - top) * fy))
-            time.sleep(0.3)
-            if focused_child(hwnd)[0] != CLS_LIST:
-                return {"room": name, "ok": False, "message": f"「{name}」 대화 목록에 포커스를 못 잡았습니다(검색칸이 열려 있으면 닫아 주세요)."}
+        # 🚫 목록을 마우스로 클릭하지 않는다(1.1.1, jin 11-25) — 클릭 자리에 이모티콘이 있으면 그게 눌려 카톡이 로그아웃됐다(2회 목격).
+        #    대화 영역(EVA_VH_ListControl_Dblclk)에 SetFocus 로 커서만 넣는다. 안 되면 그 방을 건너뛴다(클릭으로 되돌아가지 않는다).
+        # 🚫 ESC 도 치지 않는다 — 카톡 PC 기본 설정이 「ESC 로 채팅창 닫기」(11-10 실사고). 클릭을 안 하니 사진 뷰어도 안 뜬다.
+        if not focus_list(hwnd):
+            return {"room": name, "ok": False, "message": f"「{name}」 대화 영역에 커서를 넣지 못해 건너뜁니다(검색칸이 열려 있으면 닫아 주세요)."}
+        if not is_foreground(hwnd):   # 🚫 다른 창에 Ctrl+A·C 를 보내지 않는다(브라우저·엑셀 내용을 읽어 보내는 사고 방지)
+            return {"room": name, "ok": False, "message": f"「{name}」 창이 앞에 있지 않아 중단했습니다. 읽는 동안 다른 창을 누르지 마세요."}
 
         batch = int(cfg.get("pageup_batch", 20))
         max_pageups = int(cfg.get("max_pageups", 400))
@@ -419,7 +447,7 @@ def main() -> int:
     except Exception:
         pass
     ap = argparse.ArgumentParser()
-    ap.add_argument("cmd", choices=["setup", "windows", "read"])
+    ap.add_argument("cmd", choices=["setup", "windows", "read", "probe"])
     ap.add_argument("--dry", action="store_true", help="보내지 않고 복사·건수만")
     ap.add_argument("--room", help="이 방만")
     args = ap.parse_args()
@@ -443,6 +471,19 @@ def main() -> int:
         for win in kakao_windows():
             print(f"{win['cls']:22} {win['rect'][2]-win['rect'][0]}x{win['rect'][3]-win['rect'][1]}  {win['title']}")
         return 0
+
+    if args.cmd == "probe":   # 로컬 시험 — ERP·토큰 없이 한 방을 (닫혀 있으면 열고) 복사만 한다. 전송 안 함.
+        if not args.room:
+            print("--room 이름 이 필요합니다(python collector.py windows 로 확인).")
+            return 2
+        if not find_room_window(args.room):
+            print(f"「{args.room}」 닫혀 있음 → 메인 창 검색으로 엽니다")
+            if not open_room(args.room):
+                print("열지 못함(검색칸 확인 실패 또는 방 없음) — 아무 키도 치지 않았습니다")
+                return 1
+        info = read_room({"pageup_batch": 2, "max_pageups": 2}, args.room, date.today(), dry=True)
+        print(json.dumps(info, ensure_ascii=False))
+        return 0 if info.get("ok") else 1
 
     cfg = load_json(CONFIG, None)
     if not cfg:
