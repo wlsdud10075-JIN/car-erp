@@ -1,6 +1,6 @@
 # scripts/scene — 업무 가이드 씬 촬영 스크립트 (dev 전용, master 제외)
 
-가이드 씬 29장(`resources/guides/{slug}/`)을 찍을 때 쓴 스크립트 원본. **주 1회 씬 점검(화면 회귀) 스킬의 재료**다
+가이드 씬 35장(`resources/guides/{slug}/`)을 찍을 때 쓴 스크립트 원본. **주 1회 씬 점검(화면 회귀) 스킬의 재료**다
 — 기획·재개 절차 = `docs/design/scene-walkthrough.md §7·§8`.
 
 ⚠️ 지금은 **사진을 찍는 스크립트**다. 점검용으로 쓰려면 「사진 저장」을 「DB 값 · 화면 문구 확인」으로 바꿔야 한다(§8 1단계).
@@ -53,6 +53,8 @@ MSYS_NO_PATHCONV=1 php board_send.php POST /api/internal/board/requests '{"sales
 | sr_scene · sr_explore · sr_reject | shipping-requests |
 | cl_* | buyer-claim |
 | bank_* | bank-documents (연습용 전신문 = `bank_make_tif.py` · 촬영 중 받는 사람을 가짜 예시로 잠깐 바꾸고 되돌린다 · 🚫 [은행으로 보내기] 누르지 않음) |
+| b2bm_scene.cjs | b2b-partner-memo (데모 바이어 「B2B데모 파트너 LLC」 · 촬영 전 원래 메모를 백업하고 끝나면 되돌린다) |
+| fxc_scene.cjs | exchange-rate-closing (재무 · [받아오기]는 로컬 마감환율만 다시 넣음 · 아래 카드는 샘플 DB 이름이 있어 위쪽만 자른다) |
 | view.js · view2.js | 씬 렌더 확인(`node view2.js <slug>`) |
 
 ⚠️ sale-payment 씬 스크립트는 따로 이름이 없다(scene1 계열에서 이어 찍음) — 점검으로 만들 때 새로 쓴다.
