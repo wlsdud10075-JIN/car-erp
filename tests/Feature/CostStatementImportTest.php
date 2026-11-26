@@ -64,7 +64,8 @@ class CostStatementImportTest extends TestCase
         $this->assertSame('999없9999', $parsed['unmatched'][0]['number']);
     }
 
-    public function test_apply_overwrites_cost_towing_on_matched_vehicles(): void
+    /** 🔀 jin 2026-11-26 — 명세서 기입은 전 칸 기존 금액에 더한다(이 차들은 기존 탁송비 30,000 으로 만들어진다). */
+    public function test_apply_adds_cost_towing_to_matched_vehicles(): void
     {
         $this->actingAs($this->admin());
         $v1 = $this->makeVehicle('393어3064');
@@ -78,8 +79,8 @@ class CostStatementImportTest extends TestCase
             ->call('applyCostImport')
             ->assertSet('showCostImport', false);
 
-        $this->assertSame(35000, (int) $v1->fresh()->cost_towing);
-        $this->assertSame(65000, (int) $v2->fresh()->cost_towing);
+        $this->assertSame(30000 + 35000, (int) $v1->fresh()->cost_towing);
+        $this->assertSame(30000 + 65000, (int) $v2->fresh()->cost_towing);
     }
 
     public function test_xlsx_upload_parses_and_matches(): void
@@ -107,7 +108,7 @@ class CostStatementImportTest extends TestCase
             ->assertSet('costImportParsed.matched.0.number', '393어3064')   // 자동 파싱됨
             ->call('applyCostImport');
 
-        $this->assertSame(35000, (int) $v->fresh()->cost_towing);
+        $this->assertSame(30000 + 35000, (int) $v->fresh()->cost_towing, '기존 30,000 + 명세서 35,000');
         @unlink($path);
     }
 
@@ -361,29 +362,47 @@ class CostStatementImportTest extends TestCase
     }
 
     /** 탁송비는 종전대로 덮어쓰기 — 더하기는 보험료에만. */
-    public function test_towing_import_still_overwrites(): void
+    /** 🔀 jin 2026-11-26 «명세서 기입으로 들어가는 모든 금액은 기존 금액의 플러스로, 기존 0원이면 업로드 금액만» — 탁송비도 더한다. */
+    public function test_towing_import_adds_and_zero_takes_the_uploaded_amount(): void
     {
         $this->actingAs($this->admin());
         $v = $this->makeVehicle('12가3456');
         $v->forceFill(['cost_towing' => 30000])->save();
 
         $c = Volt::test('erp.vehicles.index')->call('openCostImport');
-        $this->assertFalse($c->instance()->costImportAccumulates());
+        foreach (Vehicle::BULK_COST_UPLOAD_FIELDS as $col) {
+            $this->assertTrue($c->set('costImportColumn', $col)->instance()->costImportAccumulates(), $col.' 도 더하기');
+        }
+        $c->set('costImportColumn', 'cost_towing');
         $c->set('costImportParsed', ['matched' => [['id' => $v->id, 'number' => '12가3456', 'model' => '', 'current' => 30000, 'amount' => 50000, 'finalized' => false]], 'unmatched' => []])
             ->call('applyCostImport');
-        $this->assertSame(50000, (int) $v->fresh()->cost_towing, '탁송비는 교체');
+        $this->assertSame(80000, (int) $v->fresh()->cost_towing, '기존 30,000 + 50,000');
+
+        // 기존 0원이면 올린 금액 그대로
+        $z = $this->makeVehicle('34나5678');
+        $z->forceFill(['cost_towing' => 0])->save();
+        Volt::test('erp.vehicles.index')->call('openCostImport')->set('costImportColumn', 'cost_towing')
+            ->set('costImportParsed', ['matched' => [['id' => $z->id, 'number' => '34나5678', 'model' => '', 'current' => 0, 'amount' => 45000, 'finalized' => false]], 'unmatched' => []])
+            ->call('applyCostImport');
+        $this->assertSame(45000, (int) $z->fresh()->cost_towing);
+
+        // 같은 내용을 두 번 올리면 막힌다(두 배 방지) — 보험료와 같은 지문 장치
+        Volt::test('erp.vehicles.index')->call('openCostImport')->set('costImportColumn', 'cost_towing')
+            ->set('costImportParsed', ['matched' => [['id' => $z->id, 'number' => '34나5678', 'model' => '', 'current' => 45000, 'amount' => 45000, 'finalized' => false]], 'unmatched' => []])
+            ->call('applyCostImport');
+        $this->assertSame(45000, (int) $z->fresh()->cost_towing, '같은 파일 재업로드는 막힌다');
     }
 
     /** 보험료 거래처 목록은 데일리뿐 — 붙여넣기는 막힌다(좌표 파서). */
     /**
      * 🚚 디케이로지스 거래명세서 → 캐리비 (jin 2026-11-03) — 13행 머리글 · F 「차대NO」 칸 = 차량번호 · H 「비고」 = 금액(부가세 포함).
-     *   덮어쓰기(jin «덮어쓰기») · 같은 차 두 줄은 합산 · 합계·회사정보 줄 skip · G(공급가액)를 읽지 않는다.
+     *   기존 금액에 더하기(🔀 jin 11-26 — 11-03 엔 덮어쓰기) · 같은 차 두 줄은 합산 · 합계·회사정보 줄 skip · G(공급가액)를 읽지 않는다.
      */
-    public function test_dk_logis_statement_overwrites_carry_cost_from_column_h(): void
+    public function test_dk_logis_statement_adds_carry_cost_from_column_h(): void
     {
         $this->actingAs($this->admin());
         $a = $this->makeVehicle('159머1768');
-        $a->forceFill(['cost_carry' => 50000])->save();   // 기존 값 — 덮어써야 한다
+        $a->forceFill(['cost_carry' => 50000])->save();   // 기존 값 — 더한다(🔀 jin 11-26, 11-03 엔 덮어쓰기)
         $b = $this->makeVehicle('22가3333');
         $this->assertSame(['dk_logis'], Vehicle::COST_IMPORT_COMPANIES['cost_carry']);
 
@@ -408,7 +427,7 @@ class CostStatementImportTest extends TestCase
         $this->assertCount(2, $amounts, '합계·회사정보 줄은 차량이 아니다');
 
         $c->call('applyCostImport');
-        $this->assertSame(77000, (int) $a->fresh()->cost_carry, '기존 50,000 을 덮어쓴다(더하지 않는다)');
+        $this->assertSame(50000 + 77000, (int) $a->fresh()->cost_carry, '기존 50,000 + 명세서 77,000');
         $this->assertSame(44000, (int) $b->fresh()->cost_carry);
         $this->assertDatabaseHas('audit_logs', ['auditable_id' => $a->id, 'action' => 'bulk_cost_applied', 'column_name' => 'cost_carry']);
     }

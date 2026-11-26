@@ -30,8 +30,8 @@ class BulkVehicleCostService
      * @param  string  $column  Vehicle::BULK_COST_FIELDS 중 하나 (예: cost_towing / cost_license)
      * @param  array<int, int|float>  $amounts  [vehicleId => 금액] (원, 음수 불가)
      * @param  bool  $fleetWide  true=탁송비(재무 이상, 전체) / false=면허비(canUnlockLedger 팀)
-     * @param  bool  $accumulate  true=**기존 금액에 더한다**(보험료 — 달마다 갱신분이 쌓이는 비용, jin 2026-11-02 «덮어쓰기 아니고 + 더해야»)
-     *                            / false=덮어쓴다(탁송비·면허비 — 건당 1회 비용). 더하기는 같은 파일을 두 번 올리면 두 배가 되므로
+     * @param  bool  $accumulate  true=**기존 금액에 더한다** — 차량관리 「명세서 기입」은 전 칸 이것(🔀 jin 2026-11-26 «모든 금액은 기존 금액의 플러스로», 처음엔 보험료만 11-02)
+     *                            / false=덮어쓴다(선적요청 화면 면허비 n/1 이 이 기본값을 쓴다). 더하기는 같은 파일을 두 번 올리면 두 배가 되므로
      *                            호출측(명세서 기입)이 파일 지문으로 재업로드를 막는다.
      * @return array{applied:int, unchanged:int, skipped:list<array{id:int,number:?string,reason:string}>}
      */
