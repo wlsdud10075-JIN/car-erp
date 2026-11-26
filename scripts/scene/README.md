@@ -55,6 +55,7 @@ MSYS_NO_PATHCONV=1 php board_send.php POST /api/internal/board/requests '{"sales
 | bank_* | bank-documents (연습용 전신문 = `bank_make_tif.py` · 촬영 중 받는 사람을 가짜 예시로 잠깐 바꾸고 되돌린다 · 🚫 [은행으로 보내기] 누르지 않음) |
 | b2bm_scene.cjs | b2b-partner-memo (데모 바이어 「B2B데모 파트너 LLC」 · 촬영 전 원래 메모를 백업하고 끝나면 되돌린다) |
 | fxc_scene.cjs | exchange-rate-closing (재무 · [받아오기]는 로컬 마감환율만 다시 넣음 · 아래 카드는 샘플 DB 이름이 있어 위쪽만 자른다) |
+| bankbatch_scene.cjs | bank-documents 05~09 (담아 두기 · 수정본 올리기 · 모아 보내기 — 재무 · 🚫 보내기는 안 누름 · 🔐 찍기 전 로컬의 예시 아닌 은행 기록을 차에서 떼고 받는 사람 목록을 가짜로, 찍은 뒤 되돌린다) |
 | view.js · view2.js | 씬 렌더 확인(`node view2.js <slug>`) |
 
 ⚠️ sale-payment 씬 스크립트는 따로 이름이 없다(scene1 계열에서 이어 찍음) — 점검으로 만들 때 새로 쓴다.
