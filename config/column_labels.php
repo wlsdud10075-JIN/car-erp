@@ -653,6 +653,7 @@ return [
         'board_buyer_contact_read' => 'board 바이어 연락처 조회 (서류 생성용)',   // 2026-11 ② — GET /buyers/{id} 접근 기록
         'claim_used' => '클레임 사용',   // 2026-11-20 — 판매탭 「클레임 사용」(App/Services/ClaimUsage)
         'bank_remittance_removed' => '은행 서류 삭제',   // 2026-11-24 — 서류탭 은행 기록 ×(이 차에서 뗌, 마지막 차면 파일까지)
+        'bank_invoice_replaced' => '은행용 Proforma 수정본 올림',   // 2026-11-26 — 고친 엑셀로 바꿔 넣음(이전·이후 = 파일 이름)
         'board_claim_received' => 'board 클레임 받음',   // 2026-11-11 — POST /internal/board/claims
         'board_buyer_credit_read' => 'board 바이어 신용도 조회 (클레임 보고서)',   // 2026-11-11 — GET /buyers/{id}/credit, 등급/점수가 new_value
         // 2026-11-01 B2B 파트너스 — 바이어 계약서·관리대상·거래 유형

@@ -9919,6 +9919,15 @@ function vehicleColumnsToggle(columns, serverKnows) {
             {{ __('vehicle.cost_import.btn') }}
         </button>
         @endif
+        {{-- 🏦 은행 서류 모아 보내기 (jin 2026-11-26) — 아직 안 보낸 건을 메일 한 통으로. 숫자 = 안 보낸 건수. --}}
+        @if(\App\Services\BankRemittanceService::canUse(auth()->user()))
+        @php $bankPendingCount = \App\Services\BankRemittanceService::pending(auth()->user())->count(); @endphp
+        <button type="button" x-on:click="$dispatch('open-bank-batch')"
+                class="inline-flex items-center gap-1 whitespace-nowrap rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50" data-bank-batch-open>
+            🏦 {{ __('vehicle.bank.batch_btn') }}
+            @if($bankPendingCount > 0)<span class="rounded-full bg-amber-500 px-1.5 text-xs font-semibold text-white" data-bank-batch-badge>{{ $bankPendingCount }}</span>@endif
+        </button>
+        @endif
         {{-- EMS/DHL 발송 일괄 기입 (jin 2026-08-31) — 「명세서 기입」과 같은 자리. 권한은 관리 이상 그대로. --}}
         @if(auth()->user()?->canApprove())
         <button type="button" wire:click="openShipmentBulk"
@@ -12520,10 +12529,24 @@ function vehicleColumnsToggle(columns, serverKnows) {
                                     📄 {{ __('vehicle.bank.invoice') }} <span class="text-primary-text">⬇ {{ __('vehicle.bank.download') }}</span>
                                 </a>
                             @endif
+                            {{-- ✏️ 수정본 올리기 (jin 2026-11-26) — 엑셀로 받아 고친 파일로 바꿔 넣는다. 모달은 은행 서류 컴포넌트가 띄운다. --}}
+                            @unless($editLockedByOther)
+                                <button type="button" x-on:click="$dispatch('open-bank-replace', { id: {{ (int) $br->id }} })"
+                                        class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 font-semibold text-amber-800 hover:bg-amber-100" data-bank-replace-open>
+                                    ✏️ {{ __('vehicle.bank.replace_btn') }}
+                                </button>
+                            @endunless
+                            @if($br->invoice_revised_at)
+                                <span class="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800" data-bank-revised>{{ __('vehicle.bank.revised', ['at' => $br->invoice_revised_at->format('m-d H:i')]) }}</span>
+                            @endif
                             <span class="{{ $br->mailed_at ? 'text-green-700' : 'text-gray-400' }}">
                                 {{ $br->mailed_at ? __('vehicle.bank.mailed', ['to' => \App\Services\BankRemittanceService::recipientLabel((string) $br->mailed_to), 'at' => $br->mailed_at->format('Y-m-d H:i')]) : __('vehicle.bank.not_mailed') }}
                             </span>
                         </div>
+                        {{-- 수정본 파일 이름 — 버튼 줄 아래 작은 한 줄로 고정(jin 11-26 «중구난방» — 이름 길이에 따라 옆·아래로 오가던 것) --}}
+                        @if($br->invoice_revised_at)
+                            <p class="mt-1 break-all text-[11px] text-gray-500" data-bank-revised-name>{{ $br->invoice_name }}</p>
+                        @endif
                     </div>
                 @empty
                     <p class="text-xs text-gray-400">{{ __('vehicle.bank.empty') }}</p>

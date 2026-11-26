@@ -41,6 +41,149 @@ new class extends Component {
 
     public string $bankError = '';
 
+    // ── 📤 모아 보내기 (jin 2026-11-26) — 아직 안 보낸 기록을 골라 메일 한 통으로. 며칠 치가 섞여도 된다.
+    public bool $batchOpen = false;
+
+    /** @var list<int|string> 체크한 기록 id */
+    public array $batchPick = [];
+
+    public string $batchTo = '';
+
+    public string $batchSubject = '';
+
+    public string $batchBody = '';
+
+    // ── ✏️ 수정본 올리기 (jin 2026-11-26) — 엑셀로 받아 고친 Proforma 를 그 기록에 바꿔 넣는다. 서류탭·모아 보내기 양쪽에서 연다.
+    public ?int $replaceId = null;
+
+    public $replaceFile = null;
+
+    #[On('open-bank-batch')]
+    public function openBatch(): void
+    {
+        abort_unless(BankRemittanceService::canUse(auth()->user()), 403);
+        $this->resetErrorBag();
+        $this->reset(['replaceId', 'replaceFile']);
+        $pending = BankRemittanceService::pending(auth()->user());
+        $this->batchPick = $pending->take(BankRemittanceService::BATCH_MAX)->pluck('id')->all();
+        $company = CompanyMailConfig::active();
+        $list = BankRemittanceService::recipients();
+        $this->batchTo = count($list) === 1 ? $list[0]['email'] : '';
+        $this->batchSubject = __('vehicle.bank.batch_subject', ['company' => $company->companyLabel()]);
+        $this->batchBody = __('vehicle.bank.batch_body', ['company' => $company->companyLabel()]);
+        $this->bankOpen = false;
+        $this->batchOpen = true;
+    }
+
+    public function closeBatch(): void
+    {
+        $this->batchOpen = false;
+        $this->reset(['replaceId', 'replaceFile']);
+    }
+
+    /** 체크한 것 중 지금도 「안 보냄 · 내가 볼 수 있음」인 기록만, 만든 순서로. */
+    private function batchRecords()
+    {
+        $pick = array_map('intval', $this->batchPick);
+
+        return BankRemittanceService::pending(auth()->user())->filter(fn ($r) => in_array($r->id, $pick, true))->values();
+    }
+
+    /** 본문 끝에 붙는 목록 — 화면 미리보기와 실제 메일이 같은 함수를 쓴다. */
+    private function batchListText($recs): string
+    {
+        return $recs->values()->map(fn ($r, $i) => __('vehicle.bank.batch_line', [
+            'no' => sprintf('%02d', $i + 1), 'name' => $r->remitter_name, 'cars' => $r->vehicles->pluck('vehicle_number')->implode(', '),
+        ]))->implode("\n");
+    }
+
+    public function sendBatchMail(): void
+    {
+        abort_unless(BankRemittanceService::canUse(auth()->user()), 403);
+        $this->resetErrorBag();
+        $recs = $this->batchRecords();
+        if ($recs->isEmpty()) {
+            $this->addError('batchPick', __('vehicle.bank.batch_none'));
+
+            return;
+        }
+        if ($recs->count() > BankRemittanceService::BATCH_MAX) {
+            $this->addError('batchPick', __('vehicle.bank.batch_max', ['n' => BankRemittanceService::BATCH_MAX]));
+
+            return;
+        }
+        $to = trim($this->batchTo);
+        if (! array_key_exists($to, BankRemittanceService::recipientOptions())) {
+            $this->addError('batchTo', __('vehicle.bank.pick_recipient'));
+
+            return;
+        }
+        $body = rtrim($this->batchBody)."\n\n".$this->batchListText($recs);
+
+        try {
+            BankRemittanceService::sendBatch($recs, auth()->user(), $to, $this->batchSubject, $body);
+        } catch (\DomainException $e) {
+            $key = match ($e->getMessage()) {
+                'too_large' => 'vehicle.bank.batch_too_large',
+                'file_missing' => 'vehicle.bank.batch_file_missing',
+                'not_configured' => 'vehicle.mail.not_configured',
+                default => 'vehicle.mail.send_failed',
+            };
+            $this->dispatch('notify', message: __($key), type: 'warning');
+
+            return;
+        } catch (\Throwable $e) {
+            report($e);
+            $this->dispatch('notify', message: __('vehicle.mail.send_failed'), type: 'error');
+
+            return;
+        }
+        $this->batchOpen = false;
+        $this->dispatch('bank-remittance-done', ids: $recs->flatMap(fn ($r) => $r->vehicles->pluck('id'))->unique()->values()->all());
+        $this->dispatch('notify', message: __('vehicle.bank.batch_sent', ['n' => $recs->count(), 'to' => BankRemittanceService::recipientLabel($to)]), type: 'success');
+    }
+
+    #[On('open-bank-replace')]
+    public function startReplace(int $id): void
+    {
+        $rec = BankRemittance::with('vehicles')->find($id);
+        abort_unless($rec && BankRemittanceService::canTouch(auth()->user(), $rec), 403);
+        $this->resetErrorBag('replaceFile');
+        $this->replaceFile = null;
+        $this->replaceId = $rec->id;
+    }
+
+    public function cancelReplace(): void
+    {
+        $this->reset(['replaceId', 'replaceFile']);
+    }
+
+    /** 파일을 고르는 순간 바꿔 넣는다 — 버튼을 한 번 더 누르게 하지 않는다. */
+    public function updatedReplaceFile(): void
+    {
+        $rec = $this->replaceId ? BankRemittance::with('vehicles')->find($this->replaceId) : null;
+        abort_unless($rec && BankRemittanceService::canTouch(auth()->user(), $rec), 403);
+        $this->validate(['replaceFile' => ['required', 'file', 'max:'.\App\Models\Vehicle::DOCUMENT_MAX_KB]], [], ['replaceFile' => __('vehicle.bank.invoice')]);
+
+        try {
+            BankRemittanceService::replaceInvoice($rec, auth()->user(), $this->replaceFile);
+        } catch (\DomainException) {
+            $this->replaceFile = null;
+            $this->addError('replaceFile', __('vehicle.bank.err_invoice_ext'));
+
+            return;
+        } catch (\Throwable $e) {
+            report($e);
+            $this->replaceFile = null;
+            $this->dispatch('notify', message: __('vehicle.bank.create_failed'), type: 'error');
+
+            return;
+        }
+        $this->reset(['replaceId', 'replaceFile']);
+        $this->dispatch('bank-remittance-done', ids: $rec->vehicles->pluck('id')->all());
+        $this->dispatch('notify', message: __('vehicle.bank.replaced'), type: 'success');
+    }
+
     #[On('open-bank-remittance')]
     public function openBank(array $ids = []): void
     {
@@ -58,6 +201,10 @@ new class extends Component {
 
     public function closeBank(): void
     {
+        // 만들고 안 보낸 채 닫으면 「은행 서류 보내기」 목록에 남는다 — 어디로 갔는지 말해 준다(jin 11-26 «연결 고리가 있어야»).
+        if ($this->bankOpen && $this->recordId && BankRemittance::whereKey($this->recordId)->whereNull('mailed_at')->exists()) {
+            $this->dispatch('notify', message: __('vehicle.bank.queued'), type: 'info');
+        }
         $this->bankOpen = false;
     }
 
@@ -212,11 +359,25 @@ new class extends Component {
 
     public function with(): array
     {
+        $pending = $this->batchOpen ? BankRemittanceService::pending(auth()->user()) : collect();
+        $pick = array_map('intval', $this->batchPick);
+        $picked = $pending->filter(fn ($r) => in_array($r->id, $pick, true))->values();
+        $batch = [
+            'pending' => $pending,
+            'pickedCount' => $picked->count(),
+            'batchList' => $this->batchListText($picked),
+            'replaceRec' => $this->replaceId ? BankRemittance::find($this->replaceId) : null,
+        ];
         if (! $this->bankOpen) {
-            return ['cars' => collect(), 'rec' => null, 'mailReady' => false];
+            return $batch + ['dups' => collect(), 'cars' => collect(), 'rec' => null, 'mailReady' => $this->batchOpen && CompanyMailConfig::active()->isConfigured()];
         }
 
-        return [
+        // 고른 차에 이어진 「안 보낸」 기록 — 같은 송금으로 두 번 만드는 것을 알아채게(막지는 않는다).
+        $dups = $this->recordId ? collect() : BankRemittance::with('vehicles:id,vehicle_number')->whereNull('mailed_at')
+            ->whereHas('vehicles', fn ($q) => $q->whereIn('vehicles.id', $this->bankIds))->orderBy('id')->get();
+
+        return $batch + [
+            'dups' => $dups,
             'cars' => \App\Models\Vehicle::whereIn('id', $this->bankIds)->get(['id', 'vehicle_number', 'buyer_id', 'currency', 'remitter_name']),
             'rec' => $this->recordId ? BankRemittance::find($this->recordId) : null,
             'mailReady' => CompanyMailConfig::active()->isConfigured(),
@@ -247,6 +408,18 @@ new class extends Component {
         </div>
 
         @if(! $rec)
+        @if($dups->isNotEmpty())
+            {{-- ⚠️ 이 차에 안 보낸 은행 서류가 이미 있다 (jin 2026-11-26) — 막지는 않는다(계약금·잔금처럼 송금이 여러 번일 수 있다). --}}
+            <div class="mt-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800" data-bank-dup>
+                <div class="font-semibold">{{ __('vehicle.bank.dup_title') }}</div>
+                <ul class="mt-1 space-y-0.5">
+                    @foreach($dups as $d)
+                        <li>· {{ __('vehicle.bank.dup_line', ['name' => $d->remitter_name, 'cars' => $d->vehicles->pluck('vehicle_number')->implode(', '), 'at' => $d->created_at?->format('m-d H:i')]) }}</li>
+                    @endforeach
+                </ul>
+                <div class="mt-1">{{ __('vehicle.bank.dup_hint') }}</div>
+            </div>
+        @endif
         {{-- ① 전신문 --}}
         <div class="mt-4">
             <div class="mb-1 text-sm font-medium text-gray-700">① {{ __('vehicle.bank.step_file') }}</div>
@@ -332,6 +505,7 @@ new class extends Component {
             <label class="block text-xs text-gray-500">{{ __('vehicle.bank.mail_body_label') }}</label>
             <textarea wire:model="mailBody" rows="5" class="input-base w-full"></textarea>
             <p class="text-[11px] text-gray-500">{{ __('vehicle.bank.attach_note') }}</p>
+            <p class="rounded-md bg-sky-50 px-3 py-2 text-xs text-sky-800" data-bank-queue-hint>{{ __('vehicle.bank.queue_hint') }}</p>
         </div>
 
         <div class="mt-4 flex justify-end gap-2">
@@ -383,6 +557,132 @@ new class extends Component {
             <img :src="previews[lb.i]" alt="" class="max-h-full max-w-full select-none bg-white object-contain" draggable="false" data-bank-lb-img
                  @mousedown="lbDragStart($event)" @dblclick="lbReset()"
                  :style="'transform: translate(' + lb.x + 'px,' + lb.y + 'px) scale(' + lb.z + '); cursor: ' + (lb.z > 1 ? (lb.drag ? 'grabbing' : 'grab') : 'zoom-in')" />
+        </div>
+    </div>
+</div>
+@endif
+
+{{-- 📤 모아 보내기 (jin 2026-11-26) — 아직 안 보낸 은행 서류를 골라 메일 한 통으로. 며칠 치가 섞여도 된다. --}}
+@if($batchOpen)
+<div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-3" data-bank-batch
+     x-data @keydown.escape.window="$wire.replaceId ? $wire.cancelReplace() : $wire.closeBatch()">
+    <div class="card w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
+        <div class="flex items-start justify-between gap-3">
+            <div>
+                <h3 class="text-base font-semibold text-gray-900">📤 {{ __('vehicle.bank.batch_title') }}</h3>
+                <p class="mt-0.5 text-xs text-gray-500">{{ __('vehicle.bank.batch_subtitle') }}</p>
+            </div>
+            <button type="button" wire:click="closeBatch" class="text-gray-400 hover:text-gray-700">&times;</button>
+        </div>
+
+        @if($pending->isEmpty())
+            <p class="mt-6 rounded-md bg-gray-50 px-3 py-6 text-center text-sm text-gray-500" data-bank-batch-empty>{{ __('vehicle.bank.batch_empty') }}</p>
+            <div class="mt-4 flex justify-end">
+                <button type="button" wire:click="closeBatch" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.close') }}</button>
+            </div>
+        @else
+        <div class="mt-4">
+            <div class="mb-1 flex flex-wrap items-center justify-between gap-2 text-sm font-medium text-gray-700">
+                <span>① {{ __('vehicle.bank.batch_step_pick') }}</span>
+                <span class="text-xs font-normal text-gray-500" data-bank-batch-count>{{ __('vehicle.bank.batch_count', ['n' => $pickedCount, 'total' => $pending->count()]) }}</span>
+            </div>
+            <div class="space-y-2">
+                @foreach($pending as $p)
+                    <div class="card-tight text-xs" wire:key="bank-batch-{{ $p->id }}" data-bank-batch-row>
+                        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+                            <label class="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                                <input type="checkbox" wire:model.live="batchPick" value="{{ $p->id }}" class="h-4 w-4 rounded border-gray-300">
+                                <span class="font-semibold text-gray-800">{{ $p->remitter_name }}</span>
+                                <span class="text-gray-500">{{ $p->vehicles->pluck('vehicle_number')->implode(', ') }}</span>
+                            </label>
+                            <span class="text-gray-400">{{ $p->created_at?->format('m-d H:i') }}@if($p->creator) · {{ $p->creator->name }}@endif</span>
+                        </div>
+                        <div class="mt-2 flex flex-wrap items-center gap-2">
+                            <a href="{{ route('erp.bank-remittances.file', [$p->id, 'remittance']) }}" class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                                📄 {{ __('vehicle.bank.remittance') }} <span class="text-primary-text">⬇</span>
+                            </a>
+                            @if($p->invoice_path)
+                                <a href="{{ route('erp.bank-remittances.file', [$p->id, 'invoice']) }}" class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 shadow-sm hover:bg-gray-50">
+                                    📄 {{ __('vehicle.bank.invoice') }} <span class="text-primary-text">⬇</span>
+                                </a>
+                            @endif
+                            <button type="button" wire:click="startReplace({{ $p->id }})" class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1.5 font-semibold text-amber-800 hover:bg-amber-100" data-bank-replace-open>
+                                ✏️ {{ __('vehicle.bank.replace_btn') }}
+                            </button>
+                            @if($p->invoice_revised_at)
+                                <span class="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800" data-bank-revised>{{ __('vehicle.bank.revised', ['at' => $p->invoice_revised_at->format('m-d H:i')]) }}</span>
+                            @endif
+                        </div>
+                        {{-- 수정본 파일 이름 — 버튼 줄 아래 작은 한 줄로 고정(jin 11-26 «중구난방» — 이름 길이에 따라 옆·아래로 오가던 것) --}}
+                        @if($p->invoice_revised_at)
+                            <p class="mt-1 break-all text-[11px] text-gray-500" data-bank-revised-name>{{ $p->invoice_name }}</p>
+                        @endif
+                    </div>
+                @endforeach
+            </div>
+            @error('batchPick')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+        </div>
+
+        <div class="mt-4 space-y-2">
+            <div class="text-sm font-medium text-gray-700">② {{ __('vehicle.bank.step_mail') }}</div>
+            @unless($mailReady)
+                <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">{{ __('vehicle.mail.not_configured') }}</p>
+            @endunless
+            <label class="block text-xs text-gray-500">{{ __('vehicle.bank.mail_to') }}</label>
+            @php $batchToOptions = \App\Services\BankRemittanceService::recipientOptions(); @endphp
+            <div data-bank-batch-to>
+                <x-erp.combobox model="batchTo" :options="[]" :extra="$batchToOptions" :selected="$batchTo"
+                                :placeholder="__('vehicle.bank.pick_recipient')" wire:key="bank-batch-to-{{ $batchTo }}" class="w-full" />
+            </div>
+            @if($batchToOptions === [])<p class="text-[11px] text-amber-700">{{ __('vehicle.bank.no_recipient') }}</p>@endif
+            @error('batchTo')<p class="text-xs text-red-500">{{ $message }}</p>@enderror
+            <label class="block text-xs text-gray-500">{{ __('vehicle.bank.mail_subject_label') }}</label>
+            <input type="text" wire:model="batchSubject" class="input-base w-full">
+            <label class="block text-xs text-gray-500">{{ __('vehicle.bank.mail_body_label') }}</label>
+            <textarea wire:model="batchBody" rows="3" class="input-base w-full"></textarea>
+            <label class="block text-xs text-gray-500">{{ __('vehicle.bank.batch_list_label') }}</label>
+            <pre class="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700" data-bank-batch-list>{{ $batchList }}</pre>
+            <p class="text-[11px] text-gray-500">{{ __('vehicle.bank.batch_attach_note') }}</p>
+        </div>
+
+        <div class="mt-4 flex justify-end gap-2">
+            <button type="button" wire:click="closeBatch" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.close') }}</button>
+            <button type="button" wire:click="sendBatchMail" wire:loading.attr="disabled" wire:target="sendBatchMail"
+                    wire:confirm="{{ __('vehicle.bank.batch_confirm', ['n' => $pickedCount, 'to' => \App\Services\BankRemittanceService::recipientLabel($batchTo)]) }}"
+                    @disabled($pickedCount === 0)
+                    class="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50" data-bank-batch-send>
+                ✉ {{ __('vehicle.bank.batch_send_btn', ['n' => $pickedCount]) }}
+            </button>
+        </div>
+        <p wire:loading wire:target="sendBatchMail" class="mt-2 text-right text-xs text-sky-700">{{ __('vehicle.bank.batch_sending') }}</p>
+        @endif
+    </div>
+</div>
+@endif
+
+{{-- ✏️ 수정본 올리기 (jin 2026-11-26) — 엑셀로 받아 고친 Proforma 로 바꿔 넣는다. 서류탭 · 모아 보내기 양쪽에서 연다. --}}
+@if($replaceRec)
+<div class="fixed inset-0 z-[120] flex items-center justify-center bg-black/50 p-3" data-bank-replace
+     x-data @keydown.escape.window="$wire.cancelReplace()">
+    <div class="card w-full max-w-md shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
+        <div class="flex items-start justify-between gap-3">
+            <div>
+                <h3 class="text-base font-semibold text-gray-900">✏️ {{ __('vehicle.bank.replace_title') }}</h3>
+                <p class="mt-0.5 text-xs text-gray-500">{{ __('vehicle.bank.replace_subtitle', ['name' => $replaceRec->remitter_name]) }}</p>
+            </div>
+            <button type="button" wire:click="cancelReplace" class="text-gray-400 hover:text-gray-700">&times;</button>
+        </div>
+        <p class="mt-3 break-all rounded-md bg-gray-50 px-3 py-2 text-xs text-gray-600">
+            {{ __('vehicle.bank.replace_current') }} <span class="font-medium text-gray-800">{{ $replaceRec->invoice_name ?: '—' }}</span>
+        </p>
+        <div class="mt-3">
+            <x-erp.file-drop model="replaceFile" accept=".xlsx,.xls,.pdf" :label="__('vehicle.bank.replace_label')" />
+            @error('replaceFile')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
+            <p class="mt-2 text-[11px] text-gray-500">{{ __('vehicle.bank.replace_hint') }}</p>
+        </div>
+        <p wire:loading wire:target="replaceFile" class="mt-2 text-xs text-sky-700">{{ __('vehicle.bank.replace_saving') }}</p>
+        <div class="mt-4 flex justify-end">
+            <button type="button" wire:click="cancelReplace" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.close') }}</button>
         </div>
     </div>
 </div>

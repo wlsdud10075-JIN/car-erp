@@ -30,6 +30,14 @@ class BankRemittanceService
 
     public const ACCEPT = ['tif', 'tiff', 'pdf', 'png', 'jpg', 'jpeg'];
 
+    /** 수정본으로 올릴 수 있는 은행용 Proforma — 엑셀로 받아 고친 것, 또는 PDF 로 저장한 것. */
+    public const INVOICE_ACCEPT = ['xlsx', 'xls', 'pdf'];
+
+    /** 모아 보내기 — 메일 한 통에 싣는 건수·용량 상한(Gmail 첨부 25MB 아래로). */
+    public const BATCH_MAX = 30;
+
+    public const BATCH_MAX_BYTES = 20 * 1024 * 1024;
+
     /** 은행용 PI 에서 송금인 이름이 들어가는 칸 — 3사 양식 공통 `D5 Name`(일반 PI 는 바이어 이름). */
     public const NAME_CELL = 'E5';
 
@@ -276,26 +284,141 @@ class BankRemittanceService
         });
     }
 
+    /** 이 기록을 만질 수 있나 — 재무·관리 이상이고, 이어진 차를 전부 볼 수 있어야 한다(파일 내려받기와 같은 규칙). */
+    public static function canTouch(?User $user, BankRemittance $rec): bool
+    {
+        return self::canUse($user) && $rec->vehicles->isNotEmpty()
+            && $rec->vehicles->every(fn (Vehicle $v) => $user->canScopeVehicle($v));
+    }
+
     /**
-     * 은행 담당자에게 전신문 + 은행용 PI 첨부 메일. 실패면 예외(호출측 토스트). 로그는 차마다 1행.
+     * 아직 은행으로 안 보낸 기록 — 모아 보내기 목록(jin 2026-11-26 «한 번에 모아서 보낸다», 며칠 치가 섞여도 된다).
+     * 오래된 것부터(은행에 보낼 순서 = 만든 순서).
+     *
+     * @return Collection<int, BankRemittance>
+     */
+    public static function pending(?User $user): Collection
+    {
+        if (! self::canUse($user)) {
+            return collect();
+        }
+
+        return BankRemittance::with(['vehicles', 'creator:id,name'])
+            ->whereNull('mailed_at')->orderBy('id')->get()
+            ->filter(fn (BankRemittance $r) => self::canTouch($user, $r))->values();
+    }
+
+    /**
+     * 은행용 Proforma 수정본 — 엑셀로 받아 고친 파일로 바꿔 넣는다. 이후 보내기·내려받기는 이 파일이다.
+     * 옛 파일은 지운다(은행으로 가는 것은 하나뿐이어야 한다). 차마다 감사로그.
+     */
+    public static function replaceInvoice(BankRemittance $rec, User $user, UploadedFile $file): void
+    {
+        $rec->loadMissing('vehicles');
+        abort_unless(self::canTouch($user, $rec), 403);
+        $ext = strtolower($file->getClientOriginalExtension());
+        if (! in_array($ext, self::INVOICE_ACCEPT, true)) {
+            throw new \DomainException('ext');
+        }
+        $disk = config('filesystems.vehicle_docs_disk');
+        $path = $file->storeAs('bank-remittances/'.now()->format('Ym'), Str::uuid().'.'.$ext, $disk);
+        if (! $path || ! Storage::disk($disk)->exists($path)) {   // §8 #47
+            throw new \RuntimeException('Proforma 수정본 저장 실패');
+        }
+        $old = ['path' => $rec->invoice_path, 'name' => $rec->invoice_name];
+        $name = mb_substr($file->getClientOriginalName(), 0, 200);
+
+        DB::transaction(function () use ($rec, $user, $path, $name, $old) {
+            $rec->update(['invoice_path' => $path, 'invoice_name' => $name, 'invoice_revised_at' => now(), 'invoice_revised_by' => $user->id]);
+            foreach ($rec->vehicles as $v) {
+                AuditLog::create([
+                    'user_id' => $user->id,
+                    'auditable_type' => Vehicle::class,
+                    'auditable_id' => $v->id,
+                    'action' => 'bank_invoice_replaced',
+                    'column_name' => 'bank_remittance',
+                    'old_value' => $old['name'],
+                    'new_value' => $name,
+                    'ip_address' => request()?->ip(),
+                ]);
+            }
+        });
+        if ($old['path'] && $old['path'] !== $path) {
+            Storage::disk($disk)->delete($old['path']);
+        }
+    }
+
+    /**
+     * 은행 담당자에게 전신문 + 은행용 PI 첨부 메일(1건). 실패면 예외(호출측 토스트). 로그는 차마다 1행.
      */
     public static function send(BankRemittance $rec, User $user, string $to, string $subject, string $body): void
+    {
+        self::sendBatch(collect([$rec]), $user, $to, $subject, $body);
+    }
+
+    /**
+     * 메일에 실을 파일 — 여러 건이면 이름 앞에 순번(01_ · 02_)을 붙여 전신문과 Proforma 가 짝지어 보이게 한다.
+     *
+     * @param  Collection<int, BankRemittance>  $recs
+     * @return array<int, list<array{path: string, name: string}>> 기록 id => 파일들
+     */
+    public static function batchFiles(Collection $recs): array
+    {
+        $many = $recs->count() > 1;
+        $out = [];
+        foreach ($recs->values() as $i => $rec) {
+            $no = $many ? sprintf('%02d_', $i + 1) : '';
+            $files = [['path' => $rec->remittance_path, 'name' => $no.$rec->remittance_name]];
+            if ($rec->invoice_path) {
+                $files[] = ['path' => $rec->invoice_path, 'name' => $no.$rec->invoice_name];
+            }
+            $out[$rec->id] = $files;
+        }
+
+        return $out;
+    }
+
+    /**
+     * 여러 건을 메일 한 통으로 (jin 2026-11-26 — 은행엔 며칠 치를 모아 한 번에 보낸다). 한 통이라 전부 가거나 전부 안 간다.
+     * 실패 사유(DomainException 메시지) = not_configured · batch_count · file_missing · too_large.
+     *
+     * @param  Collection<int, BankRemittance>  $recs
+     */
+    public static function sendBatch(Collection $recs, User $user, string $to, string $subject, string $body): void
     {
         $company = CompanyMailConfig::active();
         if (! $company->isConfigured()) {
             throw new \DomainException('not_configured');
         }
-        $files = [['path' => $rec->remittance_path, 'name' => $rec->remittance_name]];
-        if ($rec->invoice_path) {
-            $files[] = ['path' => $rec->invoice_path, 'name' => $rec->invoice_name];
+        $recs = $recs->values();
+        if ($recs->isEmpty() || $recs->count() > self::BATCH_MAX) {
+            throw new \DomainException('batch_count');
+        }
+        $byRec = self::batchFiles($recs);
+        $files = array_merge(...array_values($byRec));
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        $bytes = 0;
+        foreach ($files as $f) {
+            if (! $disk->exists($f['path'])) {
+                throw new \DomainException('file_missing');
+            }
+            $bytes += $disk->size($f['path']);
+        }
+        if ($bytes > self::BATCH_MAX_BYTES) {
+            throw new \DomainException('too_large');
         }
         $subject = trim($subject) !== '' ? trim($subject) : $company->companyLabel();
         $mailable = (new VehicleDocumentMail($subject, $body, $files))->to($to);
-        $vehicleIds = $rec->vehicles()->pluck('vehicles.id')->all();
-        $log = fn (string $status, ?string $err) => collect($vehicleIds)->each(fn ($vid) => MailDeliveryLog::create([
-            'vehicle_id' => $vid, 'user_id' => $user->id, 'channel' => $company->channel, 'from_address' => $company->fromAddress,
-            'to_email' => $to, 'subject' => $subject, 'document_names' => array_column($files, 'name'), 'status' => $status, 'error' => $err,
-        ]));
+        $log = function (string $status, ?string $err) use ($recs, $byRec, $user, $company, $to, $subject) {
+            foreach ($recs as $rec) {
+                foreach ($rec->vehicles()->pluck('vehicles.id') as $vid) {
+                    MailDeliveryLog::create([
+                        'vehicle_id' => $vid, 'user_id' => $user->id, 'channel' => $company->channel, 'from_address' => $company->fromAddress,
+                        'to_email' => $to, 'subject' => $subject, 'document_names' => array_column($byRec[$rec->id], 'name'), 'status' => $status, 'error' => $err,
+                    ]);
+                }
+            }
+        };
 
         try {
             $company->send($mailable);
@@ -304,6 +427,9 @@ class BankRemittanceService
             throw $e;
         }
         $log('sent', null);
-        $rec->update(['mailed_to' => $to, 'mailed_at' => now()]);
+        $now = now();
+        foreach ($recs as $rec) {
+            $rec->update(['mailed_to' => $to, 'mailed_at' => $now]);
+        }
     }
 }

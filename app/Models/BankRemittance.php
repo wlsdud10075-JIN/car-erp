@@ -13,10 +13,10 @@ class BankRemittance extends Model
 {
     protected $fillable = [
         'remittance_path', 'remittance_name', 'remitter_name', 'ocr_name', 'ocr_status',
-        'invoice_path', 'invoice_name', 'mailed_to', 'mailed_at', 'created_by',
+        'invoice_path', 'invoice_name', 'invoice_revised_at', 'invoice_revised_by', 'mailed_to', 'mailed_at', 'created_by',
     ];
 
-    protected $casts = ['mailed_at' => 'datetime'];
+    protected $casts = ['mailed_at' => 'datetime', 'invoice_revised_at' => 'datetime'];
 
     public function vehicles(): BelongsToMany
     {
