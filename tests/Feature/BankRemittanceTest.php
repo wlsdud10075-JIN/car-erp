@@ -37,12 +37,12 @@ class BankRemittanceTest extends TestCase
     {
         parent::setUp();
         Storage::fake(config('filesystems.vehicle_docs_disk'));
-        // PDF 변환(LibreOffice)은 테스트에서 돌리지 않는다 — 실패 → xlsx 로 떨어지는 길을 탄다
+        // 🔀 은행용 PI 는 PDF 로 만들지 않는다(jin 11-26 «수정이 어렵다, 엑셀로») — 불리면 테스트가 깨지게
         $this->app->instance(PdfConverter::class, new class extends PdfConverter
         {
             public function fromSpreadsheet(Spreadsheet $s): string
             {
-                throw new \RuntimeException('no soffice in tests');
+                throw new \LogicException('bank PI must stay xlsx');
             }
         });
     }
@@ -195,13 +195,29 @@ class BankRemittanceTest extends TestCase
 
         $rec = BankRemittance::firstOrFail();
         $this->assertSame([$a->id, $b->id], $rec->vehicles()->orderBy('vehicles.id')->pluck('vehicles.id')->all());
-        $this->assertStringEndsWith('.xlsx', $rec->invoice_name, 'PDF 변환 실패 → xlsx');
+        $this->assertStringEndsWith('.xlsx', $rec->invoice_name, '은행용 PI 는 엑셀(고쳐 쓸 수 있게)');
         $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
         $tmp = tempnam(sys_get_temp_dir(), 'pi').'.xlsx';
         file_put_contents($tmp, $disk->get($rec->invoice_path));
         $sheet = IOFactory::load($tmp)->getSheetByName('Invoice');
         $this->assertSame('JOHN SAMPLE', $sheet->getCell('E5')->getValue(), '은행용 PI 는 Name 칸만 송금인');
         $this->assertSame('Name', trim((string) $sheet->getCell('D5')->getValue()));
+        // 금액 칸은 소수점 두 자리 서식 — 정수 서식(#,##0 뒤에 . 없음)이 하나도 남지 않는다(jin 11-26)
+        $amountFormats = collect($sheet->getCellCollection()->getCoordinates())
+            ->map(fn ($c) => (string) $sheet->getStyle($c)->getNumberFormat()->getFormatCode())
+            ->filter(fn ($f) => str_contains($f, '#,##0'));
+        $this->assertNotEmpty($amountFormats->all(), '금액 서식 칸이 있어야 한다');
+        $this->assertSame([], $amountFormats->reject(fn ($f) => str_contains($f, '#,##0.00'))->unique()->values()->all(), '소수점 없는 금액 서식이 남았다');
+        // 합계 3칸은 수식 — 차량 줄을 고치면 소수점까지 따라 바뀐다(jin 11-26). 2대 = 18·19행.
+        $formulas = collect($sheet->getCellCollection()->getCoordinates())
+            ->filter(fn ($c) => str_starts_with($c, 'E') && str_starts_with((string) $sheet->getCell($c)->getValue(), '='))
+            ->map(fn ($c) => (string) $sheet->getCell($c)->getValue())->values();
+        $this->assertSame('=SUM(E18:F19)', $formulas->first(), 'SUB TOTAL = 차량 줄 E:F 합');
+        $this->assertCount(3, $formulas, 'SUB TOTAL · TOTAL · BALANCE MONEY');
+        $sheet->getCell('E18')->setValue((float) $sheet->getCell('E18')->getValue() + 0.5);
+        $subCoord = collect($sheet->getCellCollection()->getCoordinates())->first(fn ($c) => (string) $sheet->getCell($c)->getValue() === '=SUM(E18:F19)');
+        $expected = (float) $sheet->getCell('E18')->getValue() + (float) $sheet->getCell('F18')->getValue() + (float) $sheet->getCell('E19')->getValue() + (float) $sheet->getCell('F19')->getValue();
+        $this->assertEqualsWithDelta($expected, (float) $sheet->getCell($subCoord)->getCalculatedValue(), 0.001, '고친 줄의 소수점이 합계에 반영');
         @unlink($tmp);
 
         $t->call('sendBankMail')->assertHasNoErrors()->assertSet('bankOpen', false);
