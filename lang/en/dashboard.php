@@ -101,6 +101,16 @@ return [
     'fx_refresh' => 'Refresh',
     'fx_fail' => '⚠ Live rate lookup failed — enter manually when adding balance payments.',
     'fx_refreshed' => 'Exchange rates refreshed',
+    'fx_closing_title' => 'Closing rate :m/:d',
+    'fx_closing_title_none' => 'Closing rate',
+    'fx_closing_kind_receive' => 'T/T buying',
+    'fx_closing_kind_base' => 'Base rate',
+    'fx_closing_stale' => '⚠ The previous business day closing is not in yet (collected 00:30 · 09:00; normal after a holiday)',
+    'fx_closing_fetch' => 'Fetch',
+    'fx_closing_fetching' => 'Fetching…',
+    'fx_closing_fetched' => 'Fetched the :date closing rate',
+    'fx_closing_not_yet' => 'No newer closing yet — :date is the latest (usually posted after 09:00)',
+    'fx_closing_fetch_fail' => 'Could not fetch closing rates — please try again shortly',
 
     'actions_title' => 'Action Items',
     'empty' => [

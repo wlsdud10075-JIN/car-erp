@@ -4,6 +4,7 @@ use App\Models\ApprovalRequest;
 use App\Models\CashAccount;
 use App\Models\CashAccountBalance;
 use App\Models\CashSnapshot;
+use App\Models\DailyExchangeRate;
 use App\Models\Salesman;
 use App\Models\Settlement;
 use App\Models\Vehicle;
@@ -419,6 +420,56 @@ new #[Layout('components.layouts.app')] class extends Component {
         app(ExchangeRateService::class)->refresh();
         unset($this->exchangeRates);
         $this->dispatch('notify', message: __('dashboard.fx_refreshed'), type: 'success');
+    }
+
+    /** 💱 마감환율 줄에 보여 줄 종류(jin 2026-11-26 «둘 다, 추후 뺄 건 뺄 수 있게») — 하나를 빼려면 여기서만 지운다. */
+    public const FX_CLOSING_KINDS = [DailyExchangeRate::KIND_RECEIVE, DailyExchangeRate::KIND_BASE];
+
+    /**
+     * 💱 전날 마감환율 (jin 2026-11-26) — 오늘보다 앞선 가장 최근 영업일의 확정 환율. 단일 출처 `DailyExchangeRate::closingBefore`
+     * (12-01 부터 판매잔금 자동 기록이 쓰는 그 값). 가벼운 조회 10번이라 30초 폴링에 올려도 된다.
+     *
+     * @return array{date: ?string, stale: bool, rows: array<string, array<string, ?float>>}
+     */
+    #[Computed]
+    public function closingRates(): array
+    {
+        $today = now()->toDateString();
+        $rows = [];
+        $dates = [];
+        foreach (['USD', 'JPY', 'EUR', 'GBP', 'CNY'] as $cur) {
+            foreach (self::FX_CLOSING_KINDS as $kind) {
+                $hit = DailyExchangeRate::closingBefore($cur, $today, $kind);
+                $rows[$kind][$cur] = $hit['rate'] ?? null;
+                if ($hit) {
+                    $dates[] = $hit['date'];
+                }
+            }
+        }
+        $date = $dates ? min($dates) : null;   // 통화마다 날짜가 다르면 가장 오래된 날 — 하나라도 늦으면 「받아오기」가 필요하다
+        // 받아야 할 날 = 직전 평일(공휴일은 모른다 — 공휴일 다음 날엔 「지난 마감」 표시가 정상이다)
+        $expected = now()->subDay();
+        while ($expected->isWeekend()) {
+            $expected->subDay();
+        }
+
+        return ['date' => $date, 'stale' => $date === null || $date < $expected->toDateString(), 'rows' => $rows];
+    }
+
+    /** [받아오기] — 네이버 날짜별 확정 환율을 다시 받는다(스케줄 00:30·09:00 과 같은 명령). 재무 이상(jin 11-26). */
+    public function fetchClosingRates(): void
+    {
+        abort_unless((bool) auth()->user()?->canConfirmFinance(), 403);
+        $code = \Illuminate\Support\Facades\Artisan::call('exchange:snapshot-daily');
+        unset($this->closingRates);
+        $c = $this->closingRates;
+        if ($code !== 0) {
+            $this->dispatch('notify', message: __('dashboard.fx_closing_fetch_fail'), type: 'error');
+        } elseif ($c['stale']) {
+            $this->dispatch('notify', message: __('dashboard.fx_closing_not_yet', ['date' => $c['date'] ?? '-']), type: 'warning');
+        } else {
+            $this->dispatch('notify', message: __('dashboard.fx_closing_fetched', ['date' => $c['date']]), type: 'success');
+        }
     }
 
     #[Computed]
@@ -1050,6 +1101,26 @@ new #[Layout('components.layouts.app')] class extends Component {
 @else
 <div class="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700">{{ __('dashboard.fx_fail') }} <button wire:click="refreshExchangeRates" class="text-violet-600 hover:underline">{{ __('dashboard.fx_refresh') }}</button></div>
 @endif
+{{-- 💱 전날 마감환율 (jin 2026-11-26) — 종류는 FX_CLOSING_KINDS 한 곳. 날짜를 같이 찍는다(새벽엔 전날 값이 아직 안 들어왔을 수 있다 — 수집 00:30·09:00). [받아오기] = 재무 이상. --}}
+@php $closing = $this->closingRates; $canFetchClosing = (bool) auth()->user()?->canConfirmFinance(); @endphp
+<div class="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-gray-600" data-fx-closing>
+    <span class="font-medium text-gray-700">{{ $closing['date'] ? __('dashboard.fx_closing_title', ['m' => (int) substr($closing['date'], 5, 2), 'd' => (int) substr($closing['date'], 8, 2)]) : __('dashboard.fx_closing_title_none') }}</span>
+    @foreach($this::FX_CLOSING_KINDS as $kind)
+    <span class="whitespace-nowrap" data-fx-closing-kind="{{ $kind }}">
+        <span class="text-gray-400">{{ __('dashboard.fx_closing_kind_'.$kind) }}</span>
+        @foreach(['USD','JPY','EUR','GBP','CNY'] as $cur)
+        <span class="ml-1.5">{{ $cur }}@if($cur === 'JPY')<span class="text-[10px]">(100)</span>@endif <b class="text-gray-800">{{ isset($closing['rows'][$kind][$cur]) ? '₩'.number_format($closing['rows'][$kind][$cur], 2) : '—' }}</b></span>
+        @endforeach
+    </span>
+    @endforeach
+    @if($closing['stale'])<span class="text-amber-700" data-fx-closing-stale>{{ __('dashboard.fx_closing_stale') }}</span>@endif
+    @if($canFetchClosing)
+    <button wire:click="fetchClosingRates" wire:loading.attr="disabled" wire:target="fetchClosingRates" class="text-violet-600 hover:underline" data-fx-closing-fetch>
+        <span wire:loading.remove wire:target="fetchClosingRates">{{ __('dashboard.fx_closing_fetch') }}</span>
+        <span wire:loading wire:target="fetchClosingRates">{{ __('dashboard.fx_closing_fetching') }}</span>
+    </button>
+    @endif
+</div>
 @endif
 
 {{-- 역할 뷰 본문 --}}
