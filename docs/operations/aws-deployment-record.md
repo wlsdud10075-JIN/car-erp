@@ -935,6 +935,16 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-26 — master `d0a0bf68` · 마이그 1 · 카톡 수집기 1.1.1 · B2B 메모 · 대시보드 마감환율 · 명세서 기입 전 칸 더하기 (jin «그대로 두고 배포해줘»)
+
+- run 45746698827 잡 5개 success · 3사 서버 `d0a0bf68` · 3사 `2026_11_26_000001_add_b2b_memo_to_buyers` Ran · /login 200(heysellcar · heymancar · karaba-erp). 로컬 전체 4,129 통과(건너뜀 1). cherry-pick 5커밋(코드 4 + 업무 가이드 1).
+- **카톡 수집기 1.1.1**(`59354c55`) — 대화 목록을 클릭하지 않고 SetFocus 로 커서만(김다정 PC 이모티콘 눌림 → 카톡 로그아웃 2회) · 방 열기 Enter 는 메인 창 검색칸 확인 뒤에만. **배포 전에** 3사 `public/downloads/KakaoAgent.exe` 교체(md5 a39a9bd8… 일치, 옛 파일 `KakaoAgent.exe.1.1.0.bak`) · 3사 `.env` 에 KAKAO_AGENT_VERSION 없음(코드 1.1.1 이 쓰임).
+- **B2B 메모**(`0bbdff70`) — `buyers.b2b_memo` · 바이어 창 B2B 칸(관리 이상) · B2B 파트너스 화면에 「B2B 메모」 열.
+- **대시보드 마감환율**(`40a1cddf`) — 실시간 환율 아래 「○월 ○일 마감환율」(송금받을때·매매기준율, `closingBefore`) · [받아오기] 재무 이상. 운영 실측: 전날 마감은 매일 09:00 수집에 들어온다(00:30 엔 아직 없음).
+- **명세서 기입 전 칸 더하기**(`a8b1e52c`) — 탁송비·면허비·캐리비도 기존 금액에 더함(보험료만이던 것을 넓힘, 앞으로 올리는 것만), 같은 파일 두 번 차단 전 칸. 선적요청 「면허비 n/1」(성지)은 덮어쓰기 그대로(jin).
+- 업무 가이드(`d0a0bf68`) — 새 씬 `b2b-partner-memo` · `exchange-rate-closing`, `secondary-settlement` 명세서 기입 그림·표 「더함」. Notion 카드·재무 가이드·돈 ④ §5 = dev `6b7e3e38`(야간 배치 발행).
+- 배포 뒤 할 일(jin): 각 PC 카톡 수집기 「다시 연결」(김다정 PC 부터) — 로그아웃 재발 여부 확인.
+
 ## 2026-11-24 (4) — master `a66125e2` · 마이그 1 · 은행 서류(전신문 → 송금인 → 은행용 Proforma → 은행 메일) (jin «배포진행해줘»)
 
 - run 45400765779 잡 5개 success · 3사 서버 `a66125e2` · /login 200(heysellcar · heymancar · karaba-erp) · ssancarerp `2026_11_25_000001_create_bank_remittances` Ran(나머지 두 회사는 배포 잡 migrate 성공 — SSH 연속 접속 차단을 피해 직접 확인 안 함). 로컬 전체 4,124 통과(건너뜀 1) · master 상태 관련 30 통과. cherry-pick 3커밋.
