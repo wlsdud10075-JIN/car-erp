@@ -15,6 +15,7 @@ use App\Models\ShippingRequest;
 use App\Models\TaskAlarm;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Models\VehicleClaim;
 use App\Services\BuyerCreditScore;
 use App\Services\SavingsLedger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -1074,6 +1075,59 @@ class BoardPortalApiTest extends TestCase
         $this->assertSame('me@a.com', $log->first()->old_value);
         $this->assertSame('-/0', $log->first()->new_value);
         $this->assertSame(0, AuditLog::where('action', 'board_buyer_contact_read')->count());   // 연락처 기록은 안 생긴다
+    }
+
+    // 바이어 전체 기준 요약 (jin 2026-11-27 «클레임이 있는 바이어만») — 클레임 담당자 창, 전 영업 합계, 클레임 차로만 열린다
+    public function test_buyer_summary_is_buyer_wide_and_opens_only_with_a_claim_context(): void
+    {
+        $me = $this->salesman('me@a.com');
+        $other = $this->salesman('other@a.com');
+        $b = Buyer::create(['name' => 'WIDE', 'is_active' => true, 'salesman_id' => $other->id, 'contact_phone' => '010', 'address' => 'SECRET ADDR']);
+        $car = fn (string $no, $sm, string $cur, ?float $rate, float $price, float $paid, int $monthsAgo) => tap(Vehicle::create([
+            'vehicle_number' => $no, 'sales_channel' => 'export', 'salesman_id' => $sm->id, 'buyer_id' => $b->id,
+            'purchase_price' => 1_000_000, 'sale_price' => $price, 'sale_date' => now()->subMonths($monthsAgo), 'currency' => $cur, 'exchange_rate' => $rate,
+        ]), fn (Vehicle $v) => $paid > 0 ? $v->finalPayments()->create(['type' => 'balance', 'amount' => $paid, 'payment_date' => now()->subDays(3), 'confirmed_at' => now()]) : null);
+        $mine = $car('11가1111', $me, 'USD', 1400, 2000, 2000, 2);      // 내가 판 차 — 완납
+        $theirs = $car('22가2222', $other, 'USD', 1400, 3000, 1000, 20);   // 다른 영업이 판 차 — 미수 2000, 12개월 밖
+        $noFx = $car('33가3333', $other, 'EUR', 0, 1000, 0, 1);        // 환율 없는 외화 — 원화 합에서 빠진다
+        foreach ([$mine, $theirs, $noFx] as $v) {
+            $v->fresh()->refreshCaches();
+        }
+        $stranger = Vehicle::create(['vehicle_number' => '99가9999', 'sales_channel' => 'export', 'salesman_id' => $me->id, 'sale_price' => 500, 'sale_date' => now(), 'currency' => 'USD', 'exchange_rate' => 1400,
+            'buyer_id' => Buyer::create(['name' => 'ELSE', 'is_active' => true, 'salesman_id' => $me->id])->id]);
+        $url = '/api/internal/board/buyers/'.$b->id.'/summary';
+
+        // 🚪 클레임 맥락 없이는 안 열린다 — 차를 안 주거나, 이 바이어 차가 아니면 403(기록 0)
+        $this->signedGet($url, ['salesman_email' => 'me@a.com'])->assertStatus(403)->assertJsonPath('error', 'claim_context_required');
+        $this->signedGet($url, ['salesman_email' => 'me@a.com', 'vehicle_id' => $stranger->id])->assertStatus(403);
+        $this->assertSame(0, AuditLog::where('action', 'board_buyer_summary_read')->count());
+
+        // 클레임이 걸린 차(이 바이어에게 판 차)를 주면 — 전 영업 합계
+        $res = $this->signedGet($url, ['salesman_email' => 'me@a.com', 'vehicle_id' => $theirs->id])->assertOk();
+        $d = $res->json('data');
+        $this->assertSame(3, $d['vehicle_count'], '내가 판 차 + 다른 영업이 판 차 전부');
+        $this->assertSame(2, $d['vehicle_count_12m']);
+        $this->assertSame(now()->subMonths(20)->toDateString(), $d['first_sale_date']);
+        $usd = collect($d['by_currency'])->firstWhere('currency', 'USD');
+        $this->assertSame([2, 5000.0, 2000.0, 0.6], [$usd['vehicle_count'], (float) $usd['sale_total'], (float) $usd['unpaid'], (float) $usd['paid_ratio']]);
+        $this->assertSame(2_800_000, $d['unpaid_total_krw'], '환율 있는 차만 합(2000 USD × 1400)');
+        $this->assertSame(1, $d['fx_missing_count']);
+        $this->assertSame(2, $d['unpaid_vehicle_count'], '미수 차 + 환율 없는 차');
+        $this->assertSame(0.6, (float) $d['paid_ratio'], '기존 집계 미수율(환율 없는 차 제외)의 반대');
+        $this->assertSame([$theirs->id, 'USD', 3000.0, 2000.0, false], [$d['vehicle']['vehicle_id'], $d['vehicle']['currency'], (float) $d['vehicle']['sale_total'], (float) $d['vehicle']['unpaid'], $d['vehicle']['fully_paid']]);
+        $this->assertEqualsWithDelta(2000 / 3000, (float) $d['vehicle']['unpaid_ratio'], 0.001);
+        $this->assertStringNotContainsString('010', $res->getContent());
+        $this->assertStringNotContainsString('SECRET', $res->getContent());
+        $this->assertStringNotContainsString('margin', $res->getContent());
+        $log = AuditLog::where('action', 'board_buyer_summary_read')->firstOrFail();
+        $this->assertSame(['me@a.com', 'vehicle:'.$theirs->id, $b->id], [$log->old_value, $log->new_value, (int) $log->auditable_id]);
+
+        // ERP 에 이 바이어의 클레임 기록이 이미 있으면 차 없이도 열린다(vehicle 은 null)
+        VehicleClaim::create(['source' => 'board', 'board_claim_id' => 901, 'revision' => 1, 'buyer_id' => $b->id, 'buyer_name' => 'WIDE', 'confirmed_amount' => 100, 'currency' => 'USD', 'result' => VehicleClaim::RESULTS[0]]);
+        $this->assertNull($this->signedGet($url, ['salesman_email' => 'me@a.com'])->assertOk()->json('data.vehicle'));
+
+        // 없는 · 지운 바이어 = 404
+        $this->signedGet('/api/internal/board/buyers/999999/summary', ['salesman_email' => 'me@a.com', 'vehicle_id' => $mine->id])->assertNotFound();
     }
 
     /** 거래 이력이 있는 바이어는 실제 점수·등급이 실린다 — 화면(buyers/index creditScore)과 같은 단일 출처. */
