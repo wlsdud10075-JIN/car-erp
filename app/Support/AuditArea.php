@@ -95,7 +95,7 @@ class AuditArea
         // 바이어·컨사이니
         'b2b_contract_read' => self::BUYER, 'b2b_contract_superseded' => self::BUYER, 'b2b_contract_uploaded' => self::BUYER,
         'b2b_partner_toggled' => self::BUYER, 'buyer_deal_flag_toggled' => self::BUYER, 'buyer_rebound' => self::BUYER,
-        'buyers_portal_backfill' => self::BUYER, 'board_buyer_contact_read' => self::BUYER, 'board_buyer_credit_read' => self::BUYER,
+        'buyers_portal_backfill' => self::BUYER, 'board_buyer_contact_read' => self::BUYER, 'board_buyer_credit_read' => self::BUYER, 'board_buyer_summary_read' => self::BUYER,
         'buyer_cash_fee_added' => self::BUYER, 'buyer_cash_fee_deleted' => self::BUYER, 'buyer_cash_receipt_added' => self::BUYER,
         'buyer_cash_receipt_deleted' => self::BUYER, 'buyer_cash_savings_reverted' => self::BUYER, 'buyer_cash_to_savings' => self::BUYER,
         // 사람·권한

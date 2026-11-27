@@ -298,6 +298,7 @@ return [
         'contact_email' => '이메일',
         'contact_phone' => '전화번호',
         'address' => '주소',
+        'buyer_summary' => '거래·미수 요약',   // 2026-11-27 — board 클레임 담당자 창으로 나간 바이어 전체 요약(감사 board_buyer_summary_read)
         'credit_score' => '신용도 점수',   // 2026-11-11 — board 클레임 보고서로 나간 신용도(감사 board_buyer_credit_read 의 column_name)
         'memo' => '메모',
         'is_active' => '활성 상태',
@@ -656,6 +657,7 @@ return [
         'bank_remittance_removed' => '은행 서류 삭제',   // 2026-11-24 — 서류탭 은행 기록 ×(이 차에서 뗌, 마지막 차면 파일까지)
         'bank_invoice_replaced' => '은행용 Proforma 수정본 올림',   // 2026-11-26 — 고친 엑셀로 바꿔 넣음(이전·이후 = 파일 이름)
         'board_claim_received' => 'board 클레임 받음',   // 2026-11-11 — POST /internal/board/claims
+        'board_buyer_summary_read' => 'board 바이어 거래·미수 요약 조회 (클레임 담당자)',   // 2026-11-27 — GET /buyers/{id}/summary, new_value = 클레임 차량
         'board_buyer_credit_read' => 'board 바이어 신용도 조회 (클레임 보고서)',   // 2026-11-11 — GET /buyers/{id}/credit, 등급/점수가 new_value
         // 2026-11-01 B2B 파트너스 — 바이어 계약서·관리대상·거래 유형
         'deal_type_cleared_on_buyer_change' => '거래 유형(DP/FD) 자동 해제 (바이어 변경)',

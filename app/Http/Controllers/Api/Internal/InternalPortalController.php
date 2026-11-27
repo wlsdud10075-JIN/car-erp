@@ -14,6 +14,7 @@ use App\Models\SettlementPayoutAdjustment;
 use App\Models\SettlementPayoutBatch;
 use App\Models\User;
 use App\Models\Vehicle;
+use App\Models\VehicleClaim;
 use App\Services\BoardPurchaseLockAllowance;
 use App\Services\BuyerCreditScore;
 use App\Services\ExchangeRateService;
@@ -22,6 +23,7 @@ use App\Services\SalesmanResolver;
 use App\Services\SavingsLedger;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
 
 /**
@@ -711,6 +713,76 @@ class InternalPortalController extends Controller
             'credit_grade' => (string) $credit['grade'],
             'credit_available' => (bool) $credit['available'],
         ]);
+    }
+
+    /**
+     * 바이어 전체 기준 거래·미수 요약 — board **클레임 담당자 창** 전용 (jin 2026-11-27, 스펙 §21).
+     *
+     * 배경: 클레임 담당자를 ERP 에서 관리(본인 팀만)로 좁히면, 다른 영업이 판 차의 클레임을 볼 때 그 바이어의 구매 대수·미수·입금률을
+     *   볼 곳이 없다. 영업 명의 응답(/receivables)은 「그 영업이 판 차」만 주므로, 신용도(/credit)처럼 **바이어 id 로**(전 영업) 모은다.
+     *
+     * 🚪 **금액이 영업 구분 없이 나가는 첫 응답이라 문을 둔다**(jin «클레임이 있는 바이어만»):
+     *   ① `vehicle_id` 가 **이 바이어에게 판 차**이거나 ② ERP 에 이 바이어의 클레임 기록이 이미 있을 때만 연다. 아니면 403.
+     *   (board 클레임은 최종 승인 뒤에야 ERP 로 오므로 「ERP 에 클레임이 있다」만으로는 새 클레임 접수 때 못 본다 — 그래서 ①을 같이 둔다.)
+     * - 값은 전부 기존 accessor·캐시(`sale_total_amount` · `sale_unpaid_amount` · `sale_unpaid_amount_krw_cache` · `unpaid_ratio` ·
+     *   `Vehicle::aggregateUnpaidRatioPct`) — 다시 계산하지 않는다. 환율 없는 외화 차는 원화 합·전체 입금률에서 빠지고 `fx_missing_count` 로 센다.
+     * - 🚫 연락처·주소·정산·마진·차량 목록 없음. 접근 기록 1행 `board_buyer_summary_read`.
+     */
+    public function buyerSummary(Request $request, int $id): JsonResponse
+    {
+        $b = Buyer::query()->whereKey($id)->first();
+        abort_if($b === null, 404);
+
+        $sold = fn () => Vehicle::query()->where('buyer_id', $b->id)->where('sale_price', '>', 0);
+        $vid = (int) $request->query('vehicle_id', 0);
+        $claimCar = $vid > 0 ? $sold()->whereKey($vid)->with(['finalPayments', 'receivableHistories'])->first() : null;
+        if ($claimCar === null && ! VehicleClaim::where('buyer_id', $b->id)->exists()) {
+            return response()->json(['error' => 'claim_context_required'], 403);
+        }
+
+        $cars = $sold()->with(['finalPayments', 'receivableHistories'])->get();
+        $byCurrency = $cars->groupBy('currency')->map(function ($g, $cur) {
+            $total = (float) $g->sum(fn (Vehicle $v) => (float) $v->sale_total_amount);
+            $unpaid = (float) $g->sum(fn (Vehicle $v) => max(0.0, (float) $v->sale_unpaid_amount));   // 과입금(음수)은 다른 차 미수를 깎지 않는다
+
+            return [
+                'currency' => (string) $cur,
+                'vehicle_count' => $g->count(),
+                'sale_total' => round($total, 2),
+                'unpaid' => round($unpaid, 2),
+                'paid_ratio' => $total > 0 ? round(max(0.0, 1 - $unpaid / $total), 3) : null,
+            ];
+        })->sortByDesc('vehicle_count')->values()->all();
+        $pct = Vehicle::aggregateUnpaidRatioPct($sold());
+        $firstSale = $cars->pluck('sale_date')->filter()->min();
+
+        AuditLog::create([
+            'user_id' => null,
+            'auditable_type' => Buyer::class, 'auditable_id' => $b->id,
+            'action' => 'board_buyer_summary_read', 'column_name' => 'buyer_summary',
+            'old_value' => (string) $request->query('salesman_email', ''), 'new_value' => $claimCar ? 'vehicle:'.$claimCar->id : 'claim-on-file',
+            'ip_address' => $request->ip(),
+        ]);
+
+        return response()->json(['data' => [
+            'buyer_id' => $b->id,
+            'vehicle_count' => $cars->count(),
+            'vehicle_count_12m' => $cars->filter(fn (Vehicle $v) => $v->sale_date && $v->sale_date->gte(now()->subMonths(12)->startOfDay()))->count(),
+            'first_sale_date' => $firstSale ? Carbon::parse($firstSale)->toDateString() : null,
+            'by_currency' => $byCurrency,
+            'unpaid_total_krw' => (int) round($cars->sum(fn (Vehicle $v) => max(0.0, (float) ($v->sale_unpaid_amount_krw_cache ?? 0)))),
+            'paid_ratio' => $pct === null ? null : round(max(0.0, 1 - $pct / 100), 3),
+            'unpaid_vehicle_count' => $cars->filter(fn (Vehicle $v) => $v->sale_unpaid_amount_krw_cache === null || $v->sale_unpaid_amount_krw_cache > 0)->count(),
+            'fx_missing_count' => $cars->filter(fn (Vehicle $v) => $v->sale_unpaid_amount_krw_cache === null)->count(),
+            'vehicle' => $claimCar ? [
+                'vehicle_id' => $claimCar->id,
+                'currency' => $claimCar->currency,
+                'sale_total' => (float) $claimCar->sale_total_amount,
+                'unpaid' => (float) $claimCar->sale_unpaid_amount,
+                'unpaid_ratio' => $claimCar->unpaid_ratio,
+                'fully_paid' => $claimCar->sale_unpaid_amount_krw_cache !== null && $claimCar->sale_unpaid_amount_krw_cache <= 0,
+            ] : null,
+        ]]);
     }
 
     /**

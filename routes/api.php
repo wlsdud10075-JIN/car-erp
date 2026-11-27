@@ -119,6 +119,8 @@ Route::middleware([VerifyBoardReadHmac::class, 'throttle:board-read'])
         Route::get('buyers/{id}', [InternalPortalController::class, 'buyer'])->whereNumber('id')->name('buyers.show');
         // 2026-11-11 jin «그 바이어의 신용도만» — board 클레임 보고서 BUYER PRIORITY. 바이어 id 만(영업 매칭 ❌), 연락처 ❌. 권위 §4 행.
         Route::get('buyers/{id}/credit', [InternalPortalController::class, 'buyerCredit'])->whereNumber('id')->name('buyers.credit');
+        // 클레임 담당자 창 — 그 바이어 전체(전 영업) 거래·미수 요약. 클레임이 걸린 차로만 열린다(2026-11-27, 스펙 §21)
+        Route::get('buyers/{id}/summary', [InternalPortalController::class, 'buyerSummary'])->whereNumber('id')->name('buyers.summary');
         // 2026-11 ② — 송금인 Name·ID 전용 전송(덮어쓰기, won 뒤). 권위 §14-2. 본인 차만(아니면 403).
         Route::post('vehicles/{id}/remitter', [InternalPortalController::class, 'remitter'])->whereNumber('id')->name('vehicles.remitter');
         // 2026-11-12 탁송 배차(board 기획 §11, jin «착수») — 보관위치 읽기·쓰기. 권위 §16. 본인 차만(아니면 403), 값 = Vehicle::stockLocations()(422).
