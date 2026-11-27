@@ -1,4 +1,4 @@
-// 씬 점검 — buyer-claim (resources/guides/buyer-claim). 촬영 원본 = cap/cl_scene.js
+// 씬 점검 — buyer-claim (resources/guides/buyer-claim). 촬영 원본 = cap/cl_scene.js · cap/cl_ledger_scene.cjs(01 · 05)
 // 계정 = manage@. 예시 = GUIDE SAMPLE TRADING 에 board 결재 끝난 클레임 2건(board_claim_id 9001 · 9002 — 가짜 번호).
 //   9001 = 00가1141 인정 · 송금 · USD 300
 //   9002 = 00가1131 1회차 인정 USD 200 → 2회차 기각(0원) — 「board 에서 판정을 고쳐 다시 보내면 같은 줄이 새 내용으로」
@@ -102,12 +102,18 @@ module.exports.run = async function run({ browser }) {
       const usd = `USD ${Number(db.usd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
       if (!sum.includes(usd)) throw new Error(`「인정 확정 금액 합」 기대 ${usd} / 실제 ${sum}`);
       await L.expectText(p, `board 에서 센 누적 클레임 ${Number(db.bc)}건`, 'board 누적 문구', { scope: '[data-buyer-claims]' });
-      const tr1 = await box.locator('tr', { hasText: A }).first().innerText();
+      // 발생·사용 내역(11-27) — 인정 클레임이 「발생」 줄로, 기각은 안 나온다. 목록 표는 그 아래 마지막 표.
+      const lg = box.locator('[data-claim-ledger]');
+      const in1 = await lg.locator('[data-claim-ledger-row="in"]', { hasText: A }).first().innerText();
+      for (const s of ['발생', '+300.00']) if (!in1.includes(s)) throw new Error(`내역 9001 발생 줄에 「${s}」 없음`);
+      await L.expectText(p, '남은 클레임 금액 (통화별)', '남은 금액 상자', { scope: '[data-buyer-claims]' });
+      const list = box.locator('table').last();
+      const tr1 = await list.locator('tr', { hasText: A }).first().innerText();
       for (const s of ['인정', '송금', 'USD 300.00', '[예시] 클레임담당']) if (!tr1.includes(s)) throw new Error(`9001 줄에 「${s}」 없음`);
-      const tr2 = await box.locator('tr', { hasText: Bv }).first().innerText();
+      const tr2 = await list.locator('tr', { hasText: Bv }).first().innerText();
       for (const s of ['기각', 'USD 0.00']) if (!tr2.includes(s)) throw new Error(`9002 줄에 「${s}」 없음`);
       // 묶음(board 로컬 시험분 — 00가1131 이 들어 있을 수 있다) 줄은 빼고 센다
-      L.assertEq(await box.locator('tbody:not([data-claim-bundle]) tr', { hasText: Bv }).count(), 1, '00가1131 클레임 줄 수(정정이 줄을 늘리지 않음)');
+      L.assertEq(await list.locator('tbody:not([data-claim-bundle]) tr', { hasText: Bv }).count(), 1, '00가1131 클레임 줄 수(정정이 줄을 늘리지 않음)');
       await L.assertNoViolations(p);
     });
 
