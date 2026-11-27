@@ -290,7 +290,18 @@ ADJUSTMENT / CANCELLED → balance += savings  (savings 양/음수 모두 가능
 
 ### 새 교훈 (#139~) — 여기 아래에 추가
 
-(아직 없음)
+### 139. 🧩 부모가 다시 그려지면 키 없는 자식 Livewire 컴포넌트가 통째로 새로 만들어진다 (2026-11-27)
+- 증상: 차량관리에서 은행 서류 모아 보내기 창을 연 채 차량 창을 열면(부모 root 재렌더) 고른 목록·합친 PDF 상태가 초기화됐다. 브라우저 쪽에서는 진행 중이던 `$wire` 호출이 「Component not found: undefined」로 죽고 끝나지 않았다.
+- 원인: `<livewire:erp.vehicles.bank-remittance />` 에 key 가 없었다. → `:key="'bank-remittance'"` 로 고정.
+- 같이 걸린 것 둘: ①컴포넌트 안에서 `<template x-if>` 로 끼워 넣은 노드는 다음 응답의 morph 가 요소를 갈아 끼우다 같은 오류로 죽는다(호출 경로 `swapElements → added → findComponentByEl`) → `x-show` 로 숨긴다. ②`@script` 안의 `@js(__('…'))` 는 `LivewireExtractedScriptTest` 가 JS 문법 오류로 읽는다 → 문구는 `data-*` 로 넘긴다.
+- 규칙: 상태를 가진 자식 컴포넌트를 부모 뷰에 직접 둘 땐 **고정 key**. 오류 위치를 모르겠으면 `livewire.js` 의 `throw "Component not found: "` 를 `throw new Error(…)` 로 바꿔 받아(Playwright route) 호출 경로를 본다 — 추측으로 세 번 고쳤다가 이걸로 한 번에 찾았다.
+
+### 140. 🐢 「예전엔 바로 됐는데 느려졌다」 — 코드가 아니라 그릴 때마다 도는 계산 × 데이터 증가 (2026-11-27)
+- 증상: 카톡 할 일 [확인] 이 3~5초 뒤에 반영. 11-13 이후 그 화면 코드는 안 바뀌었다.
+- 원인: 저장하지 않고 **렌더마다** 계산하는 판정(`KakaoAutoClose::for`)이 「요청 글마다 뒤쪽 글 전부」를 훑는 제곱 구조였고, 읽는 방·글이 늘며 2.2초가 됐다(DB 는 0.09초 — PHP 루프).
+- 찾는 법: nginx `log_format timed` 의 `rt=`·`urt=` 를 화면(referer)·응답 크기·날짜로 집계 → 「큰 응답만 일정하게 3.3초, 서버 부하는 낮음, 11-25 부터」 → 운영에서 서비스 호출을 부분별로 `microtime` + `DB::listen` 으로 잰다.
+- 고친 법: 읽은 재료 전체의 지문(md5(serialize))이 같으면 지난 결과를 쓴다 — 시간으로 무효화하지 않으므로 낡은 값이 안 보인다. 결과가 「지금 시각」·설정·사용자에 기대면 그것도 지문에 넣는다.
+- 규칙: 렌더마다 도는 계산에는 **입력 크기에 대한 상한이나 재사용**을 처음부터 둔다(#96-C 의 poll 화면만이 아니다). 실시간 값(미수·지급)을 보여 주는 계산은 같은 방식으로 보관하지 않는다.
 
 ## 9. 구현 패턴
 → `docs/reference/ui-patterns.md` — 차량목록 dateType·진행상태 pill 3상태·대시보드 → 목록 `action` 정합·`wire:model` 선택 기준·파이프라인 스트립. 목록 화면 공용 부품은 `docs/design/list-screen-commons.md`.
