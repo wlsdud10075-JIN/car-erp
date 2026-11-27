@@ -8,6 +8,7 @@ use App\Models\Vehicle;
 use App\Services\BankRemittanceService;
 use App\Services\Documents\DocumentFiller;
 use App\Services\Documents\PdfConverter;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -125,15 +126,41 @@ class VehicleDocumentController extends Controller
         abort_unless(BankRemittanceService::canUse($user), 403);
         abort_unless($rec->vehicles->isNotEmpty() && $rec->vehicles->every(fn (Vehicle $v) => $user->canScopeVehicle($v)), 403, '접근 권한이 없는 차량입니다.');
 
-        [$path, $name] = $kind === 'invoice' ? [$rec->invoice_path, $rec->invoice_name] : [$rec->remittance_path, $rec->remittance_name];
+        [$path, $name] = match ($kind) {
+            'invoice', 'invoice-pdf' => [$rec->invoice_path, $rec->invoice_name],
+            'bundle' => [$rec->sent_bundle_path, $rec->sent_bundle_name],   // 은행에 보낸 합친 PDF(2026-11-27)
+            default => [$rec->remittance_path, $rec->remittance_name],
+        };
         $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
         abort_unless($path && $disk->exists($path), 404, '파일을 찾을 수 없습니다.');
+
+        // 합치기용 — Proforma 를 PDF 로(엑셀이면 그 자리에서 변환, 이미 PDF 면 그대로). 화면이 받아 전신문과 이어 붙인다.
+        if ($kind === 'invoice-pdf') {
+            $ext = strtolower(pathinfo((string) $path, PATHINFO_EXTENSION));
+            try {
+                $pdf = $ext === 'pdf' ? (string) $disk->get($path) : app(PdfConverter::class)->fromFileBytes((string) $disk->get($path), $ext);
+            } catch (\Throwable $e) {
+                report($e);
+                abort(422, 'Proforma 를 PDF 로 바꾸지 못했습니다.');
+            }
+
+            return response()->streamDownload(fn () => print ($pdf), 'proforma.pdf', ['Content-Type' => 'application/pdf']);
+        }
 
         foreach ($rec->vehicles as $v) {
             DocumentAccessLog::create(['user_id' => $user->id, 'vehicle_id' => $v->id, 'document_type' => 'bank_'.$kind, 'ip_address' => $request->ip()]);
         }
 
         return $disk->download($path, $name);
+    }
+
+    /** 🏦 화면이 합친 은행 서류 PDF 를 받아 임시로 둔다(재무 + 관리 이상). 보낼 때 그 표(token)로 꺼내 쓴다. */
+    public function bankMergedUpload(Request $request): JsonResponse
+    {
+        abort_unless(BankRemittanceService::canUse(auth()->user()), 403);
+        $request->validate(['file' => ['required', 'file', 'mimes:pdf', 'max:'.intdiv(BankRemittanceService::BATCH_MAX_BYTES, 1024)]]);
+
+        return response()->json(['token' => BankRemittanceService::storeMergedTmp($request->file('file'))]);
     }
 
     /**

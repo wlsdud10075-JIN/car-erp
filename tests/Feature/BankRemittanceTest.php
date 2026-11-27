@@ -20,6 +20,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Livewire\Volt\Volt;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -43,6 +44,11 @@ class BankRemittanceTest extends TestCase
             public function fromSpreadsheet(Spreadsheet $s): string
             {
                 throw new \LogicException('bank PI must stay xlsx');
+            }
+
+            public function fromFileBytes(string $bytes, string $ext = 'xlsx'): string
+            {
+                return '%PDF-1.4 converted-from-'.$ext.':'.$bytes;
             }
         });
     }
@@ -345,6 +351,13 @@ class BankRemittanceTest extends TestCase
         return $rec;
     }
 
+    /** 화면이 합친 PDF 를 전용 주소로 올리고 표(token)를 받는다 — 실제 길 그대로. */
+    private function uploadMerged(string $content = '%PDF-1.4 merged'): string
+    {
+        return $this->post(route('erp.bank-remittances.merged'), ['file' => UploadedFile::fake()->createWithContent('merged.pdf', $content)], ['Accept' => 'application/json'])
+            ->assertOk()->json('token');
+    }
+
     private function mailSettings(): void
     {
         $set = Setting::companyTemplateSet();
@@ -421,6 +434,8 @@ class BankRemittanceTest extends TestCase
             ->assertSet('batchOpen', true)
             ->assertSet('batchPick', [$r1->id, $r2->id, $r3->id])   // 안 보낸 것만, 전부 체크된 채로
             ->assertSet('batchTo', 'officer@bank.test')
+            ->assertSet('batchMode', 'merged')   // 기본 = PDF 한 파일로 합쳐 보내기(jin 11-27)
+            ->set('batchMode', 'files')
             ->assertDontSee('ALREADY SENT')
             ->set('batchPick', [(string) $r1->id, (string) $r3->id])   // 2번은 뺀다
             ->assertSee('02. 송금인 THIRD SAMPLE');
@@ -448,8 +463,132 @@ class BankRemittanceTest extends TestCase
         $this->assertSame([$r2->id], BankRemittanceService::pending(auth()->user())->pluck('id')->all());
 
         // 아무것도 안 고르면 안 나간다
-        Volt::test('erp.vehicles.bank-remittance')->call('openBatch')->set('batchPick', [])->call('sendBatchMail')->assertHasErrors('batchPick');
+        Volt::test('erp.vehicles.bank-remittance')->call('openBatch')->set('batchMode', 'files')->set('batchPick', [])->call('sendBatchMail')->assertHasErrors('batchPick');
         Mail::assertSent(VehicleDocumentMail::class, 1);
+    }
+
+    // 📎 PDF 한 파일로 합쳐 보내기 (jin 2026-11-27 «싼카에서 PDF 합쳐진 파일처럼 · 두 가지 공존 · 내려받아 검사»)
+    public function test_merged_mode_sends_one_pdf_keeps_it_and_requires_a_fresh_merge(): void
+    {
+        Mail::fake();
+        $this->mailSettings();
+        [$a, $b] = $this->cars();
+        $r1 = $this->pendingRecord($a, 'JOHN SAMPLE', 'one');
+        $r2 = $this->pendingRecord($b, 'MARY SAMPLE', 'two');
+        $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        $this->actingAs($this->finance());
+
+        $t = Volt::test('erp.vehicles.bank-remittance')->call('openBatch')->assertSet('batchMode', 'merged')
+            ->assertSee('data-bank-merge-btn', false);
+
+        // 합치지 않고는 못 보낸다
+        $t->call('sendBatchMail')->assertHasErrors('mergedFile');
+        Mail::assertNothingSent();
+
+        // 화면이 합친 PDF 를 올리고 「이 목록으로 만들었다」를 적는다 — 그 목록 그대로일 때만 준비됨
+        $t->call('setMerged', $this->uploadMerged(), $t->viewData('batchKey'))->assertHasNoErrors();
+        $this->assertTrue($t->viewData('mergedReady'));
+
+        // 합친 뒤 건을 빼면 다시 합쳐야 한다
+        $t->set('batchPick', [(string) $r1->id]);
+        $this->assertFalse($t->viewData('mergedReady'));
+        $t->call('sendBatchMail')->assertHasErrors('mergedFile');
+        Mail::assertNothingSent();
+
+        // 합친 뒤 수정본을 올려도 다시 합쳐야 한다(파일이 바뀌었다)
+        $t->set('batchPick', [(string) $r1->id, (string) $r2->id]);
+        $this->assertTrue($t->viewData('mergedReady'));
+        BankRemittanceService::replaceInvoice($r2->fresh(), auth()->user(), UploadedFile::fake()->createWithContent('BANK_two_fixed.xlsx', 'PK-fixed'));
+        $t->call('sendBatchMail')->assertHasErrors('mergedFile');
+
+        // PDF 가 아닌 것은 받지 않는다 · 없는 표는 무시된다 · 영업은 올릴 수 없다
+        $this->post(route('erp.bank-remittances.merged'), ['file' => UploadedFile::fake()->createWithContent('merged.txt', 'x')], ['Accept' => 'application/json'])->assertStatus(422);
+        $t->call('setMerged', (string) Str::uuid(), $t->viewData('batchKey'));
+        $this->assertFalse($t->viewData('mergedReady'));
+        $t->call('setMerged', '../../.env', $t->viewData('batchKey'));
+        $this->assertFalse($t->viewData('mergedReady'));
+
+        // 다시 합쳐 보낸다 — 첨부는 합친 PDF 하나
+        $token = $this->uploadMerged();
+        $t->call('setMerged', $token, $t->viewData('batchKey'))
+            ->call('sendBatchMail')->assertHasNoErrors()->assertSet('batchOpen', false);
+        $this->assertFileDoesNotExist(BankRemittanceService::mergedTmpPath($token), '보낸 뒤 임시 파일은 치운다');
+
+        $name = BankRemittanceService::bundleName(2);
+        Mail::assertSent(VehicleDocumentMail::class, 1);
+        Mail::assertSent(VehicleDocumentMail::class, function ($m) use ($name) {
+            $this->assertSame([$name], array_column($m->storedFiles, 'name'));
+            $this->assertStringContainsString('01. 송금인 JOHN SAMPLE', $m->bodyText);
+            $this->assertStringContainsString('02. 송금인 MARY SAMPLE', $m->bodyText);
+
+            return $m->hasTo('officer@bank.test');
+        });
+        [$r1, $r2] = [$r1->fresh(), $r2->fresh()];
+        $this->assertNotNull($r1->mailed_at);
+        $this->assertSame($r1->sent_bundle_path, $r2->sent_bundle_path, '같이 보낸 건은 같은 합친 PDF 를 가리킨다');
+        $this->assertSame('%PDF-1.4 merged', $disk->get($r1->sent_bundle_path), '은행에 간 파일을 보관한다');
+        $this->assertSame([$name], MailDeliveryLog::where('vehicle_id', $a->id)->firstOrFail()->document_names);
+
+        // 서류탭에서 보낸 합친 PDF 를 받는다
+        $this->assertStringContainsString('data-bank-bundle', Volt::test('erp.vehicles.index')->call('openEdit', $a->id)->html());
+        $this->get(route('erp.bank-remittances.file', [$r1->id, 'bundle']))->assertOk();
+
+        // 한 건을 지워도 다른 건이 쓰는 합친 PDF 는 남고, 마지막 건을 지우면 같이 지워진다
+        $bundle = $r1->sent_bundle_path;
+        BankRemittanceService::removeFromVehicle(auth()->user(), $a, $r1->id);
+        $this->assertTrue($disk->exists($bundle));
+        BankRemittanceService::removeFromVehicle(auth()->user(), $b, $r2->id);
+        $this->assertFalse($disk->exists($bundle));
+    }
+
+    // 🪟 합치는 동안 창을 닫아도 이어진다 (jin 2026-11-27 «닫기 누르면 백그라운드, 취소 버튼»)
+    public function test_closing_the_window_keeps_the_merge_and_cancel_clears_it(): void
+    {
+        $this->mailSettings();
+        [$a, $b] = $this->cars();
+        $r1 = $this->pendingRecord($a, 'JOHN SAMPLE', 'one');
+        $r2 = $this->pendingRecord($b, 'MARY SAMPLE', 'two');
+        $this->actingAs($this->finance());
+
+        // 한 건만 고르고 합치기 시작 → 창 닫기 → 다시 열어도 고른 목록이 그대로다
+        $t = Volt::test('erp.vehicles.bank-remittance')->call('openBatch')
+            ->set('batchPick', [(string) $r2->id])
+            ->call('mergeStarted')->assertSet('mergeBusy', true)
+            ->call('closeBatch')->assertSet('batchOpen', false)
+            ->assertSee('data-bank-merge-chip', false)
+            ->call('openBatch')->assertSet('batchOpen', true)->assertSet('batchPick', [(string) $r2->id]);
+
+        // 다 합쳐 올린 뒤 닫았다 열어도 「합침」 그대로
+        $token = $this->uploadMerged();
+        $t->call('setMerged', $token, $t->viewData('batchKey'))->assertSet('mergeBusy', false)
+            ->call('closeBatch')->call('openBatch')->assertSet('batchPick', [(string) $r2->id]);
+        $this->assertTrue($t->viewData('mergedReady'));
+
+        // 취소(또는 실패)하면 합친 것이 없고, 다음에 열면 처음처럼 전부 체크된다
+        $t->call('mergeStarted')->call('mergeStopped')->assertSet('mergeBusy', false)->assertSet('mergedKey', '');
+        $this->assertFalse($t->viewData('mergedReady'));
+        $this->assertFileDoesNotExist(BankRemittanceService::mergedTmpPath($token), '취소하면 임시 파일도 치운다');
+        $t->call('closeBatch')->call('openBatch')->assertSet('batchPick', [$r1->id, $r2->id]);
+    }
+
+    public function test_merge_part_route_gives_the_proforma_as_pdf(): void
+    {
+        [$a] = $this->cars(1);
+        $rec = $this->pendingRecord($a, 'JOHN SAMPLE', 'one');
+        $this->actingAs($this->finance());
+
+        // 엑셀 Proforma → 그 자리에서 PDF 로 (테스트 변환기 = 가짜 PDF)
+        $res = $this->get(route('erp.bank-remittances.merge-part', [$rec->id, 'invoice-pdf']))->assertOk();
+        $this->assertStringStartsWith('%PDF-1.4 converted-from-xlsx:PK', $res->streamedContent());
+
+        // 수정본을 PDF 로 올렸으면 변환 없이 그대로
+        BankRemittanceService::replaceInvoice($rec, auth()->user(), UploadedFile::fake()->createWithContent('fixed.pdf', '%PDF-1.4 by-hand'));
+        $this->assertSame('%PDF-1.4 by-hand', $this->get(route('erp.bank-remittances.merge-part', [$rec->id, 'invoice-pdf']))->assertOk()->streamedContent());
+
+        // 전신문 원본도 같은 길로 받는다 · 권한 없는 사람은 못 받는다
+        $this->get(route('erp.bank-remittances.merge-part', [$rec->id, 'remittance']))->assertOk();
+        $this->actingAs(User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]))
+            ->get(route('erp.bank-remittances.merge-part', [$rec->id, 'invoice-pdf']))->assertForbidden();
     }
 
     public function test_batch_lists_only_records_the_user_can_see_and_blocks_others(): void

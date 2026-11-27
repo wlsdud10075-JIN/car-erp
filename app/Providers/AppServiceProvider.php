@@ -61,6 +61,7 @@ class AppServiceProvider extends ServiceProvider
         // 사용자당 분당 제한 + (이론상) 미인증 시 IP fallback. 정상 사용(하루 수~수십 건)은 무영향.
         // 다중차량(showMulti)은 1요청=최대 30대라 분당 횟수를 더 낮게 잡아 대량열람 억제.
         RateLimiter::for('vehicle-docs', fn ($request) => Limit::perMinute(30)->by($request->user()?->id ?: $request->ip()));
+        RateLimiter::for('bank-merge', fn ($request) => Limit::perMinute(240)->by($request->user()?->id ?: $request->ip()));
         RateLimiter::for('vehicle-docs-multi', fn ($request) => Limit::perMinute(10)->by($request->user()?->id ?: $request->ip()));
 
         // 정기 작업 실패 → 시스템관리자 텔레그램 (jin 2026-09-11, 3단계).
