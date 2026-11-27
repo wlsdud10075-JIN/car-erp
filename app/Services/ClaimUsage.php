@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Exceptions\ClaimUsageException;
 use App\Models\AuditLog;
 use App\Models\ReceivableHistory;
+use App\Models\User;
 use App\Models\Vehicle;
 use App\Models\VehicleClaim;
 use App\Models\VehicleClaimUsage;
@@ -141,6 +142,84 @@ class ClaimUsage
      *
      * @return list<array{id:int, remaining:float}>
      */
+    /**
+     * 🧾 바이어 한 명의 클레임 원장 — 인정된 클레임(발생 +)과 차량 미수에 쓴 내역(사용 −)을 한 줄씩, 달마다 묶어 최신순으로
+     * (jin 2026-11-27 «적립금탭처럼 클레임 발생·사용 내역을 월별로»). 바이어 창 「클레임」 탭이 그린다. 읽기 전용.
+     *
+     * - 남은 금액(통화별) = `balance()` 그대로(단일 출처). 「다음에 쓰일 클레임」 = 가장 오래된, 돈이 남은 인정 클레임(쓰는 순서와 같다).
+     * - 사용 줄 = 한 번의 입력(같은 차 · 같은 상계 줄)을 한 줄로 묶고, 어느 클레임에서 얼마씩 나갔는지를 상세로 싣는다.
+     * - 줄마다 그 시점의 누적 잔액(통화별)을 싣는다. 기각 클레임은 돈이 없으므로 원장에 넣지 않는다(목록에는 그대로 나온다).
+     *
+     * @return array{balances: array<string, float>, next: array<string, array>, months: array<string, list<array>>, multi: bool}
+     */
+    public static function ledger(int $buyerId): array
+    {
+        $claims = VehicleClaim::query()->where('buyer_id', $buyerId)->where('result', 'accepted')
+            ->orderByRaw('COALESCE(approved_at, created_at)')->orderBy('id')->get()->keyBy('id');
+        if ($claims->isEmpty()) {
+            return ['balances' => [], 'next' => [], 'months' => [], 'multi' => false];
+        }
+        $usages = VehicleClaimUsage::with('vehicle:id,vehicle_number')->whereIn('vehicle_claim_id', $claims->keys())->orderBy('created_at')->orderBy('id')->get();
+        $users = User::whereIn('id', $usages->pluck('created_by')->filter()->unique())->pluck('name', 'id');
+        $usedOf = $usages->groupBy('vehicle_claim_id')->map(fn ($g) => round((float) $g->sum('amount'), 2));
+        $claimAt = fn (VehicleClaim $c) => $c->approved_at ?? $c->created_at;
+
+        $events = [];
+        foreach ($claims as $c) {
+            $used = (float) ($usedOf[$c->id] ?? 0);
+            $events[] = [
+                'key' => 'c'.$c->id, 'kind' => 'in', 'at' => $claimAt($c), 'currency' => (string) $c->currency,
+                'amount' => round((float) $c->confirmed_amount, 2), 'vehicle_id' => $c->vehicle_id, 'vehicle_number' => (string) $c->vehicle_number,
+                'used' => $used, 'left' => max(0.0, round((float) $c->confirmed_amount - $used, 2)), 'type' => $c->compensation_type, 'parts' => [], 'by' => '',
+            ];
+        }
+        // 한 번의 입력 = 같은 차 · 같은 상계 줄(오래된 클레임부터 나눠 써서 줄이 여러 개일 수 있다)
+        foreach ($usages->groupBy(fn ($u) => $u->vehicle_id.'|'.($u->receivable_history_id ?? 'u'.$u->id)) as $group) {
+            $first = $group->first();
+            $events[] = [
+                'key' => 'u'.$first->id, 'kind' => 'out', 'at' => $group->max('created_at'), 'currency' => (string) $claims[$first->vehicle_claim_id]->currency,
+                'amount' => -round((float) $group->sum('amount'), 2), 'vehicle_id' => $first->vehicle_id, 'vehicle_number' => (string) ($first->vehicle?->vehicle_number ?? ''),
+                'used' => 0.0, 'left' => 0.0, 'type' => null, 'by' => (string) ($users[$first->created_by] ?? ''),
+                'parts' => $group->map(function ($u) use ($claims, $claimAt, $usedOf) {
+                    $c = $claims[$u->vehicle_claim_id];
+
+                    return [
+                        'date' => $claimAt($c)?->format('Y-m-d'), 'vehicle_number' => (string) $c->vehicle_number, 'amount' => round((float) $u->amount, 2),
+                        'left' => max(0.0, round((float) $c->confirmed_amount - (float) ($usedOf[$c->id] ?? 0), 2)),
+                    ];
+                })->values()->all(),
+            ];
+        }
+        usort($events, fn ($a, $b) => [$a['at']?->getTimestamp() ?? 0, $a['kind'] === 'in' ? 0 : 1, $a['key']] <=> [$b['at']?->getTimestamp() ?? 0, $b['kind'] === 'in' ? 0 : 1, $b['key']]);
+
+        $running = [];
+        foreach ($events as &$e) {
+            $running[$e['currency']] = round(($running[$e['currency']] ?? 0) + $e['amount'], 2);
+            $e['balance'] = $running[$e['currency']];
+            $e['ym'] = $e['at']?->format('Y-m') ?? '';
+            $e['at'] = $e['at']?->format('Y-m-d H:i') ?? '';
+        }
+        unset($e);
+
+        $balances = [];
+        $next = [];
+        foreach ($claims->pluck('currency')->unique() as $cur) {
+            $balances[$cur] = self::balance($buyerId, $cur);
+            $open = self::openClaims($buyerId, $cur, false);
+            if ($open !== []) {
+                $c = $claims[$open[0]['id']];
+                $next[$cur] = ['date' => $claimAt($c)?->format('Y-m-d'), 'vehicle_number' => (string) $c->vehicle_number, 'remaining' => $open[0]['remaining']];
+            }
+        }
+
+        $months = [];
+        foreach (array_reverse($events) as $e) {
+            $months[$e['ym']][] = $e;
+        }
+
+        return ['balances' => $balances, 'next' => $next, 'months' => $months, 'multi' => count($balances) > 1];
+    }
+
     private static function openClaims(int $buyerId, string $currency, bool $lock): array
     {
         $claims = VehicleClaim::query()->where('buyer_id', $buyerId)->where('currency', $currency)->where('result', 'accepted')

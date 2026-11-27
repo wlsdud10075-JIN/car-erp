@@ -110,6 +110,56 @@ class ClaimUsageTest extends TestCase
         $this->assertSame(500.0, ClaimUsage::balance($this->buyer->id, 'EUR'));
     }
 
+    // 🧾 바이어 창 클레임 탭의 발생·사용 원장 (jin 2026-11-27 «적립금탭처럼 월별로») — 남은 금액 · 다음에 쓰일 클레임 · 달마다 묶은 내역
+    public function test_buyer_claim_tab_lists_accruals_and_uses_by_month_with_running_balance(): void
+    {
+        $old = $this->claim(300, daysAgo: 40);                 // 지난달 발생
+        $new = $this->claim(500, daysAgo: 3);                  // 이번 달 발생
+        $this->claim(999, 'declined', daysAgo: 2);             // 기각 — 원장에는 안 들어간다
+        $usd = $this->claim(200, currency: 'USD', daysAgo: 5); // 다른 통화
+        $car = $this->car('00클7001');
+
+        ClaimUsage::setForVehicle($car, 450, $this->user->id);   // 오래된 300 을 다 쓰고 새 클레임에서 150
+
+        $lg = ClaimUsage::ledger($this->buyer->id);
+        $this->assertSame(['EUR' => 350.0, 'USD' => 200.0], $lg['balances'], '남은 금액 = ClaimUsage::balance 와 같다');
+        $this->assertSame(ClaimUsage::balance($this->buyer->id, 'EUR'), $lg['balances']['EUR']);
+        $this->assertSame(350.0, $lg['next']['EUR']['remaining'], '다음에 쓰일 클레임 = 돈이 남은 가장 오래된 것');
+        $this->assertTrue($lg['multi']);
+
+        $rows = collect($lg['months'])->flatten(1);
+        $this->assertCount(4, $rows, '발생 3(EUR 2 + USD 1) + 사용 1 — 기각은 없다');
+        $use = $rows->firstWhere('kind', 'out');
+        $this->assertSame([-450.0, 350.0, '00클7001', $car->id], [$use['amount'], $use['balance'], $use['vehicle_number'], $use['vehicle_id']], '사용은 한 줄 · 그 시점 남은 금액');
+        $this->assertSame([300.0, 150.0], array_column($use['parts'], 'amount'), '어느 클레임에서 얼마씩 — 오래된 것부터');
+        $this->assertSame([0.0, 350.0], array_column($use['parts'], 'left'));
+        $this->assertSame($this->user->name, $use['by']);
+        $oldRow = $rows->firstWhere('key', 'c'.$old->id);
+        $this->assertSame([300.0, 300.0, 0.0], [$oldRow['amount'], $oldRow['used'], $oldRow['left']]);
+        $this->assertSame([now()->format('Y-m'), now()->subDays(40)->format('Y-m')], array_values(array_unique(array_keys($lg['months']))), '달마다 묶고 최근 달이 먼저');
+
+        // 화면 — 남은 금액 · 다음 클레임 · 원장 · 차량 열기 링크. 클레임 목록은 그대로 남는다.
+        $html = Volt::test('erp.buyers.index')->call('openEdit', $this->buyer->id)->html();
+        $this->assertStringContainsString('data-claim-balances', $html);
+        $this->assertMatchesRegularExpression('/data-claim-balance="EUR"[\s\S]{0,900}350\.00/u', $html);
+        $this->assertStringContainsString('data-claim-next', $html);
+        $this->assertSame(1, substr_count($html, 'data-claim-ledger-row="out"'));
+        $this->assertSame(3, substr_count($html, 'data-claim-ledger-row="in"'));
+        $this->assertStringContainsString('openVehicle='.$car->id, $html);
+        $this->assertStringContainsString('00클7001', $html);
+
+        // 사용을 0 으로 되돌리면 사용 줄이 사라지고 남은 금액이 돌아온다
+        ClaimUsage::setForVehicle($car->fresh(), 0, $this->user->id);
+        $back = ClaimUsage::ledger($this->buyer->id);
+        $this->assertSame(800.0, $back['balances']['EUR']);
+        $this->assertNull(collect($back['months'])->flatten(1)->firstWhere('kind', 'out'));
+
+        // 클레임이 없는 바이어 — 원장 블록이 없다
+        $none = Buyer::create(['name' => 'NO CLAIM', 'is_active' => true, 'salesman_id' => $this->sm->id]);
+        $this->assertSame(['balances' => [], 'next' => [], 'months' => [], 'multi' => false], ClaimUsage::ledger($none->id));
+        $this->assertStringNotContainsString('data-claim-ledger', Volt::test('erp.buyers.index')->call('openEdit', $none->id)->html());
+    }
+
     public function test_same_value_is_a_strict_noop(): void
     {
         $this->claim(300);
