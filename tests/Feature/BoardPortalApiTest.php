@@ -7,6 +7,7 @@ use App\Http\Controllers\VehicleDocumentController;
 use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\Consignee;
+use App\Models\DailyExchangeRate;
 use App\Models\Salesman;
 use App\Models\SavingsStatus;
 use App\Models\Settlement;
@@ -17,7 +18,9 @@ use App\Models\Vehicle;
 use App\Services\BuyerCreditScore;
 use App\Services\SavingsLedger;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -780,6 +783,46 @@ class BoardPortalApiTest extends TestCase
         $res->assertJsonPath('rates.EUR', 1738.8);   // board 가 쓰는 USD/EUR
         $res->assertJsonPath('fetched_at', '2026-07-03 15:00');
         $res->assertJsonPath('source', 'naver_전신환매입률');
+    }
+
+    // 마감환율 블록 (jin 2026-11-27) — 대시보드와 같은 값 · 날짜 지정 조회
+    public function test_rates_carries_the_closing_block_and_accepts_a_closing_date(): void
+    {
+        Carbon::setTestNow('2026-11-27 10:00:00');   // 금요일
+        Http::fake(['*' => Http::response('', 500)]);
+        $row = fn (string $cur, string $date, float $rate, ?float $base) => DailyExchangeRate::create(['currency' => $cur, 'rate_date' => $date, 'rate' => $rate, 'base_rate' => $base, 'source' => 'test']);
+        $row('USD', '2026-11-20', 1500.1, null);      // 금 — 매매기준율이 없는 옛 행
+        $row('USD', '2026-11-26', 1516.4, 1531.5);    // 목 = 전날 마감
+        $row('EUR', '2026-11-26', 1650.6, 1667.2);
+        $row('USD', '2026-11-27', 1520.0, 1535.0);    // 오늘 값은 「전날 마감」이 아니다
+
+        // 인자 없음 = 대시보드와 같은 값
+        $c = $this->signedGet('/api/internal/board/rates', [])->assertOk()->json('closing');
+        $dash = DailyExchangeRate::closingSummary();
+        $this->assertSame('2026-11-26', $c['date']);
+        $this->assertFalse($c['stale']);
+        $this->assertSame(1516.4, (float) $c['receive']['USD']);
+        $this->assertSame(1667.2, (float) $c['base']['EUR']);
+        $this->assertNull($c['receive']['JPY'], '없는 통화는 null');
+        $this->assertSame($dash['rows']['receive'], $c['receive']);
+        $this->assertSame($dash['date'], $c['date']);
+
+        // 날짜 지정 — 주말(11-22 일)은 직전 영업일(11-20) 값, date 는 실제 값이 있는 날, stale 은 늘 false
+        $res = $this->signedGet('/api/internal/board/rates', ['closing_date' => '2026-11-22'])->assertOk();
+        $this->assertArrayHasKey('rates', $res->json(), '기존 키는 그대로');
+        $past = $res->json('closing');
+        $this->assertSame('2026-11-20', $past['date']);
+        $this->assertFalse($past['stale']);
+        $this->assertSame(1500.1, (float) $past['receive']['USD']);
+        $this->assertNull($past['base']['USD'], '매매기준율이 없는 옛 날짜는 null');
+
+        // 그날 값이 있으면 그날 것(그날 포함)
+        $this->assertSame(1516.4, (float) $this->signedGet('/api/internal/board/rates', ['closing_date' => '2026-11-26'])->json('closing.receive.USD'));
+
+        // 그날 이전 데이터가 없으면 closing 은 null · 날짜 형식이 틀리면 거절
+        $this->assertNull($this->signedGet('/api/internal/board/rates', ['closing_date' => '2026-01-05'])->assertOk()->json('closing'));
+        $this->signedGet('/api/internal/board/rates', ['closing_date' => '11/22'])->assertStatus(422);
+        Carbon::setTestNow();
     }
 
     public function test_rates_requires_valid_hmac(): void
