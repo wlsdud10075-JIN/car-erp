@@ -92,10 +92,10 @@ class PaymentRateAutoRecordTest extends TestCase
             ->call('save')->assertHasNoErrors();
 
         $fp = FinalPayment::where('vehicle_id', $v->id)->sole();
-        $this->assertEqualsWithDelta(1324.4, (float) $fp->exchange_rate, 0.001, '입금일(12-02) 전날 12-01 마감 · 송금 받으실 때');
+        $this->assertEqualsWithDelta(1324.0, (float) $fp->exchange_rate, 0.001, '입금일(12-02) 전날 12-01 마감 1324.4 의 소수점을 버린 값 · 송금 받으실 때');
         $this->assertSame('2026-12-01', $fp->rate_source_date->toDateString());
         $this->assertSame('receive', $fp->rate_kind);
-        $this->assertEqualsWithDelta(1_324_400.0, (float) $fp->amount_krw, 0.01);
+        $this->assertEqualsWithDelta(1_324_000.0, (float) $fp->amount_krw, 0.01);
     }
 
     public function test_kind_setting_switches_to_the_base_rate_and_monday_uses_friday(): void
@@ -103,6 +103,25 @@ class PaymentRateAutoRecordTest extends TestCase
         $this->settings('2026-12-01', 'base');
 
         $this->assertSame(['exchange_rate' => 1333.0, 'rate_source_date' => '2026-11-27', 'rate_kind' => 'base'], FinalPayment::autoRateFields('USD', '2026-11-30'), '월요일 입금 = 금요일 마감 매매기준율');
+    }
+
+    // ✂️ 자동으로 적히는 환율은 소수점 아래를 버린다 (jin 2026-11-27) — 반올림 아님, 수집 원본은 그대로
+    public function test_the_recorded_rate_drops_the_decimals_but_the_collected_rate_stays(): void
+    {
+        DailyExchangeRate::create(['currency' => 'EUR', 'rate_date' => '2026-12-03', 'rate' => 1459.90, 'base_rate' => 1474.64, 'source' => 'test']);
+        $set = Setting::companyTemplateSet();
+
+        Setting::updateOrCreate(['key' => "payment_rate_kind_{$set}"], ['value' => 'base', 'type' => 'string']);
+        Setting::flushRiskParamMemo();
+        $this->assertSame(['exchange_rate' => 1474.0, 'rate_source_date' => '2026-12-03', 'rate_kind' => 'base'], FinalPayment::autoRateFields('EUR', '2026-12-04'), '1474.64 → 1474 (반올림이면 1475)');
+
+        Setting::updateOrCreate(['key' => "payment_rate_kind_{$set}"], ['value' => 'receive', 'type' => 'string']);
+        Setting::flushRiskParamMemo();
+        $this->assertSame(1459.0, FinalPayment::autoRateFields('EUR', '2026-12-04')['exchange_rate'], '종류와 무관하게 버린다 — 1459.90 → 1459');
+
+        $row = DailyExchangeRate::where('currency', 'EUR')->whereDate('rate_date', '2026-12-03')->firstOrFail();
+        $this->assertSame('1474.6400', (string) $row->base_rate, '수집해 둔 마감환율은 건드리지 않는다');
+        $this->assertSame(1474.64, DailyExchangeRate::closingSummary('2026-12-03')['rows']['base']['EUR'], '대시보드·board 표시는 원래 값');
     }
 
     public function test_confirmed_rows_and_earlier_human_rates_are_not_overwritten(): void
@@ -128,9 +147,9 @@ class PaymentRateAutoRecordTest extends TestCase
         $h = ReceivableHistory::create(['vehicle_id' => $v->id, 'collected_at' => '2026-12-02', 'collector_id' => $user->id, 'method' => 'deposit', 'amount' => 500, 'exchange_rate' => 1399]);
 
         $fp = FinalPayment::find($h->fresh()->final_payment_id);
-        $this->assertEqualsWithDelta(1324.4, (float) $fp->exchange_rate, 0.001, '사람이 적은 1399 대신 전날 마감');
+        $this->assertEqualsWithDelta(1324.0, (float) $fp->exchange_rate, 0.001, '사람이 적은 1399 대신 전날 마감');
         $this->assertSame('2026-12-01', $fp->rate_source_date->toDateString());
-        $this->assertEqualsWithDelta(1324.4, (float) $h->fresh()->exchange_rate, 0.001, '회수 줄도 같은 값');
+        $this->assertEqualsWithDelta(1324.0, (float) $h->fresh()->exchange_rate, 0.001, '회수 줄도 같은 값');
     }
 
     public function test_company_profit_gets_the_fx_of_settlements_that_excluded_it(): void

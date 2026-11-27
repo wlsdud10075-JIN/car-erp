@@ -75,7 +75,10 @@ class FinalPayment extends Model
             return [];
         }
 
-        return ['exchange_rate' => $hit['rate'], 'rate_source_date' => $hit['date'], 'rate_kind' => $kind];
+        // ✂️ 소수점 아래는 버린다 (jin 2026-11-27 «판매잔금에 들어갈 때 소숫점은 절삭») — 1,474.64 → 1,474.
+        //    반올림이 아니라 버림이다. 수집해 둔 마감환율(daily_exchange_rates)과 대시보드·board 표시는 원래 값 그대로이고,
+        //    입금 줄에 「적히는 값」만 정수다. 출처(rate_source_date·rate_kind)는 그대로 남아 원래 값을 되짚을 수 있다.
+        return ['exchange_rate' => (float) floor($hit['rate']), 'rate_source_date' => $hit['date'], 'rate_kind' => $kind];
     }
 
     /**
