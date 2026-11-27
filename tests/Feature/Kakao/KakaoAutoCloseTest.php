@@ -53,6 +53,51 @@ class KakaoAutoCloseTest extends TestCase
         return KakaoAutoClose::for(collect([$this->room->fresh()]), Carbon::parse(self::DAY.' 00:00:00'));
     }
 
+    /**
+     * ⚡ 보관한 판정 (jin 2026-11-27 «[확인] 누르면 3~5초 뒤에 적용») — 재료가 그대로면 다시 계산하지 않고,
+     * 재료(글·분류·답글 연결)가 바뀌면 반드시 다시 계산한다. 보관본에서 꺼낸 값도 처음 계산한 값과 같아야 한다.
+     */
+    public function test_the_kept_verdict_is_reused_only_while_the_inputs_are_the_same(): void
+    {
+        $a = $this->msg('16:25', '영업A', '질문', '혹시 carnival');
+        $b = $this->msg('16:25', '영업A', '질문', 'Van이에요?');
+        $this->msg('16:37', '수출팀A', '대답', '네. VAN 운임입니다', $b);
+
+        $first = $this->closed();
+        $this->assertSame('thread', $first[$a->id]['rule']);
+        $key = 'kakao-autoclose:'.md5((string) $this->room->id);
+        $kept = \Illuminate\Support\Facades\Cache::get($key);
+        $this->assertIsArray($kept, '판정을 보관한다');
+
+        // 재료가 그대로 — 보관본을 쓴다(보관본에 표식을 심어 그것이 돌아오는지로 확인)
+        $kept['out'][$a->id]['note'] = 'FROM-KEPT';
+        \Illuminate\Support\Facades\Cache::put($key, $kept, 600);
+        $again = $this->closed();
+        $this->assertSame('FROM-KEPT', $again[$a->id]['note']);
+        $this->assertInstanceOf(Carbon::class, $again[$a->id]['at'], '시각은 보관본에서도 날짜 객체로 돌아온다');
+        $this->assertTrue($first[$a->id]['at']->equalTo($again[$a->id]['at']));
+
+        // 새 글이 들어오면 다시 계산한다 — 표식이 사라지고 새 글의 판정이 생긴다
+        $c = $this->msg('17:00', '영업A', '질문', '선적일은 언제죠?');
+        $d = $this->msg('17:00', '영업A', '질문', '다음 주인가요?');
+        $this->msg('17:05', '수출팀A', '대답', '다음 주 화요일입니다', $d);
+        $fresh = $this->closed();
+        $this->assertNotSame('FROM-KEPT', $fresh[$a->id]['note']);
+        $this->assertSame('thread', $fresh[$c->id]['rule']);
+
+        // 글의 분류가 바뀌어도(같은 건수·같은 마지막 글) 다시 계산한다
+        $kept = \Illuminate\Support\Facades\Cache::get($key);
+        $kept['out'][$a->id]['note'] = 'FROM-KEPT';
+        \Illuminate\Support\Facades\Cache::put($key, $kept, 600);
+        $a->update(['type' => '정보']);
+        $this->assertArrayNotHasKey($a->id, $this->closed(), '요청이 아니게 된 글은 판정에서 빠진다');
+
+        // 기간(창 시작)이 달라지면 다른 판정이다
+        $other = KakaoAutoClose::for(collect([$this->room->fresh()]), Carbon::parse(self::DAY.' 16:50:00'));
+        $this->assertArrayNotHasKey($a->id, $other);
+        $this->assertSame('thread', $other[$c->id]['rule']);
+    }
+
     /** 한 사람이 두 줄로 나눠 묻고 답은 둘째 줄에만 붙는다 — 첫 줄도 끝난 일이다. */
     public function test_a_split_question_closes_with_the_line_that_got_the_answer(): void
     {

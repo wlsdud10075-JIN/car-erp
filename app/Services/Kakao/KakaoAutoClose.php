@@ -6,6 +6,7 @@ use App\Models\KakaoMessage;
 use App\Models\KakaoRoom;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -81,6 +82,25 @@ class KakaoAutoClose
             ->where(fn ($q) => $q->whereIn('p.vehicle_id', $vehicleIds)->orWhereIn('v.salesman_id', $scopeAll))
             ->orderBy('p.confirmed_at')->get(['p.id', 'p.vehicle_id', 'p.amount', 'p.confirmed_at', 'v.vehicle_number', 'v.salesman_id']);
 
+        // 🐢 → ⚡ 재료가 그대로면 지난 판정을 그대로 쓴다 (jin 2026-11-27 «[확인] 누르면 3~5초 뒤에 적용된다»).
+        //   이 판정은 저장하지 않고 화면을 그릴 때마다 계산한다. 아래 방별 루프가 「요청 글마다 그 뒤 글 전부」를 훑어 글 수의 제곱으로 느려져,
+        //   ssancarerp 방 30개 · 3일 글 2,679건에서 2.2초였다(그릴 때마다 — [확인]·[완료] 한 번마다).
+        //   [확인]은 판정의 재료(글·차량 연결·매입 지급·방 사람 구성)를 바꾸지 않으므로, 위에서 읽은 재료의 지문이 같으면 루프를 건너뛴다.
+        //   지문이 재료 전부를 담으므로 새 글·분류 변경·지급 확정·기간 경계가 바뀌면 저절로 다시 계산한다(시간으로 무효화하지 않는다).
+        //   ⚠️ 판정이 「지금 시각」·설정·로그인 사용자에 기대게 고치면 그것도 지문에 넣어야 한다(지금은 기대지 않는다). 규칙을 고치면 CACHE_VERSION 을 올린다.
+        $roles = $rooms->mapWithKeys(fn ($r) => [$r->id => $r->personRoles()])->all();
+        $fingerprint = md5(serialize([
+            self::CACHE_VERSION, $since->format('Y-m-d H:i:s'), $roles,
+            $all->map(fn ($g) => $g->map(fn ($m) => $m->getAttributes())->all())->all(),
+            $links->map(fn ($g) => $g->map(fn ($l) => [$l->message_id, $l->vehicle_id])->all())->all(),
+            $payments->map(fn ($p) => (array) $p)->all(), $salesmanOf->all(),
+        ]));
+        $cacheKey = 'kakao-autoclose:'.md5($rooms->pluck('id')->sort()->implode(','));   // 방 묶음마다 한 칸(같은 방을 체크한 사람끼리 같이 쓴다)
+        $hit = Cache::get($cacheKey);
+        if (is_array($hit) && ($hit['fp'] ?? null) === $fingerprint) {
+            return array_map(fn ($r) => ['rule' => $r['rule'], 'at' => $r['at'] ? Carbon::parse($r['at']) : null, 'note' => $r['note']], $hit['out']);
+        }
+
         $out = [];
         foreach ($rooms as $room) {
             $msgs = ($all->get($room->id) ?? collect())->values();
@@ -88,11 +108,17 @@ class KakaoAutoClose
                 continue;
             }
             $scope = $roomVehicles[$room->id]->map(fn ($vid) => $salesmanOf->get($vid))->filter()->unique()->values()->all();
-            $out += self::room($msgs, $links, $payments, $scope, $room->personRoles());
+            $out += self::room($msgs, $links, $payments, $scope, $roles[$room->id]);
         }
+        Cache::put($cacheKey, ['fp' => $fingerprint, 'out' => array_map(
+            fn ($r) => ['rule' => $r['rule'], 'at' => $r['at']?->format('Y-m-d H:i:s'), 'note' => $r['note']], $out
+        )], now()->addHours(12));
 
         return $out;
     }
+
+    /** 판정 규칙을 고치면 올린다 — 보관해 둔 옛 판정을 버리게. */
+    private const CACHE_VERSION = 1;
 
     /** 방 하나 — $msgs 는 시각 순. */
     private static function room(Collection $msgs, Collection $links, Collection $payments, array $scope, array $people): array

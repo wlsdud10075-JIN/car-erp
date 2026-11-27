@@ -47,6 +47,7 @@ return [
     'btn_not_mine' => '내 일이 아님',
     'btn_ignore' => '무시',
     'btn_reopen' => '다시 할 일로',
+    'row_busy' => '처리 중…',
     'btn_fix_type' => '분류 수정',
     'snooze_title' => '언제 다시 볼까요',
     'snooze_today' => '오늘 16:00',

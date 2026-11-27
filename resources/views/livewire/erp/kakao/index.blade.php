@@ -402,7 +402,9 @@ new #[Layout('components.layouts.app')] class extends Component
     }
 }; ?>
 
-<div class="p-3 md:p-6" x-data="{ open: {}, menu: null }">
+{{-- rowBusy — [완료]·[응답 확인] 등을 누르는 즉시 그 줄을 흐리게 하고 「처리 중」을 보인다(jin 2026-11-27 — 서버가 끝날 때까지 아무 반응이 없었다).
+     서버 응답이 오면 줄이 다른 묶음으로 옮겨지거나 다시 그려져 저절로 풀린다. --}}
+<div class="p-3 md:p-6" x-data="{ open: {}, menu: null, rowBusy(el) { const row = el.closest('[data-row]'); if (! row) return; row.classList.add('opacity-50', 'pointer-events-none'); const b = row.querySelector('[data-row-busy]'); if (b) b.classList.remove('hidden'); } }">
     {{-- 헤더 --}}
     <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -765,12 +767,13 @@ new #[Layout('components.layouts.app')] class extends Component
                             </div>
                             <div class="flex flex-wrap items-center gap-1">
                                 @if(in_array($key, ['missed', 'now', 'today', 'snoozed', 'review', 'none', 'teammate']))
-                                    <button type="button" wire:click="markDone({{ $r['id'] }})" class="btn-primary h-9 px-2 text-xs sm:h-7">{{ $key === 'snoozed' ? __('kakao.btn_do_now') : __('kakao.btn_done') }}</button>
+                                    <button type="button" wire:click="markDone({{ $r['id'] }})" @click="rowBusy($el)" class="btn-primary h-9 px-2 text-xs sm:h-7">{{ $key === 'snoozed' ? __('kakao.btn_do_now') : __('kakao.btn_done') }}</button>
                                 @elseif($key === 'waiting' || ($key === 'done' && $r['auto']))
-                                    <button type="button" wire:click="markDone({{ $r['id'] }})" class="btn-primary h-9 px-2 text-xs sm:h-7">{{ __('kakao.btn_confirm_reply') }}</button>
+                                    <button type="button" wire:click="markDone({{ $r['id'] }})" @click="rowBusy($el)" class="btn-primary h-9 px-2 text-xs sm:h-7">{{ __('kakao.btn_confirm_reply') }}</button>
                                 @else
-                                    <button type="button" wire:click="reopenItem({{ $r['id'] }})" class="h-9 rounded border border-gray-300 px-2 text-xs text-gray-700 sm:h-7">{{ __('kakao.btn_reopen') }}</button>
+                                    <button type="button" wire:click="reopenItem({{ $r['id'] }})" @click="rowBusy($el)" class="h-9 rounded border border-gray-300 px-2 text-xs text-gray-700 sm:h-7">{{ __('kakao.btn_reopen') }}</button>
                                 @endif
+                                <span class="hidden animate-pulse text-xs text-sky-700" data-row-busy>{{ __('kakao.row_busy') }}</span>
                                 @if(! in_array($key, ['done']))
                                     <button type="button" wire:click="openSnooze({{ $r['id'] }})" class="h-9 rounded border border-gray-300 px-2 text-xs text-gray-700 sm:h-7">{{ __('kakao.btn_snooze') }}</button>
                                 @endif
@@ -783,9 +786,9 @@ new #[Layout('components.layouts.app')] class extends Component
                                             <a href="{{ route('erp.vehicles.index', ['openVehicle' => $r['vehicle_id']]) }}" wire:navigate @click="menu = null" class="block w-full px-3 py-2 text-left text-blue-700 hover:bg-gray-50">{{ __('kakao.btn_open_vehicle') }}</a>
                                         @endif
                                         <button type="button" wire:click="openFix({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_fix_type') }}</button>
-                                        <button type="button" wire:click="markNotMine({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_not_mine') }}</button>
-                                        <button type="button" wire:click="ignoreItem({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_ignore') }}</button>
-                                        <button type="button" wire:click="reopenItem({{ $r['id'] }})" @click="menu = null" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_reopen') }}</button>
+                                        <button type="button" wire:click="markNotMine({{ $r['id'] }})" @click="menu = null; rowBusy($el)" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_not_mine') }}</button>
+                                        <button type="button" wire:click="ignoreItem({{ $r['id'] }})" @click="menu = null; rowBusy($el)" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_ignore') }}</button>
+                                        <button type="button" wire:click="reopenItem({{ $r['id'] }})" @click="menu = null; rowBusy($el)" class="block w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50">{{ __('kakao.btn_reopen') }}</button>
                                     </div>
                                 </div>
                             </div>

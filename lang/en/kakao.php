@@ -46,6 +46,7 @@ return [
     'btn_not_mine' => 'Not mine',
     'btn_ignore' => 'Ignore',
     'btn_reopen' => 'Back to to-do',
+    'row_busy' => 'Working…',
     'btn_fix_type' => 'Fix type',
     'snooze_title' => 'When to see it again',
     'snooze_today' => 'Today 16:00',
