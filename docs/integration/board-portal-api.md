@@ -1084,3 +1084,34 @@ board 는 `error` 값을 사람 말로 바꿔 보여 준다(원문도 같이). �
 - 감사 = 항목마다 `board_claim_received`(새 값 끝에 묶음 id · 연결은 `linked <묶음 id>`).
 
 **배포 순서**: ERP 먼저(3사, 마이그 1) → board. ERP 미배포 상태에서 부르면 404 다.
+
+## 21. 바이어 전체 기준 거래·미수 요약 — 클레임 담당자 창 (jin 2026-11-27 · ✅ 구현 dev — `InternalPortalController::buyerSummary`, 가드 `BoardPortalApiTest::test_buyer_summary_is_buyer_wide_and_opens_only_with_a_claim_context`)
+
+> 배경: 클레임 담당자를 ERP 에서 관리(본인 팀만)로 좁히면 다른 영업이 판 차의 클레임을 볼 때 그 바이어의 구매 대수·미수·입금률을 볼 곳이 없다. 영업 명의 응답은 「그 영업이 판 차」만 주므로 신용도(§ `/buyers/{id}/credit`)처럼 **바이어 id 로**(전 영업) 모은다.
+
+`GET /api/internal/board/buyers/{id}/summary?salesman_email=…&vehicle_id=…` — 인증 §1 HMAC. `salesman_email` = 스코프 아님(접근 기록용).
+
+🚪 **문 (jin «클레임이 있는 바이어만»)** — 금액이 영업 구분 없이 나가는 첫 응답이라 아무 바이어나 열지 않는다. 아래 중 하나일 때만 200:
+1. `vehicle_id` 가 **이 바이어에게 판 차**(`buyer_id` 일치 · 판매가 > 0) — 클레임이 걸린 그 차. 새 클레임 접수 때는 이 길.
+2. ERP 에 이 바이어의 클레임 기록(`vehicle_claims`)이 이미 있다 — `vehicle_id` 없이도 열린다.
+
+둘 다 아니면 **403** `{"error":"claim_context_required"}`. 없는·지운 바이어 = 404. (board 클레임은 최종 승인 뒤 [ERP 로 보내기] 때에야 ERP 에 오므로(§15) 2번만으로는 새 클레임을 못 본다 — 그래서 1번을 같이 둔다. **board 는 접수 때 `vehicle_id` 를 꼭 붙인다.**)
+
+```jsonc
+{"data": {
+  "buyer_id": 7,
+  "vehicle_count": 15,                // 그 바이어에게 판 전체 대수(전 영업, 판매가 > 0, 지운 차 제외)
+  "vehicle_count_12m": 6,             // 판매일이 최근 12개월
+  "first_sale_date": "2024-03-11",    // 없으면 null
+  "by_currency": [{"currency":"USD","vehicle_count":10,"sale_total":123000,"unpaid":12000,"paid_ratio":0.902}],   // 대수 많은 통화부터
+  "unpaid_total_krw": 21500000,       // 환율 있는 차만 합(원화 미수 캐시), 과입금은 0 으로
+  "paid_ratio": 0.91,                 // 1 − 집계 미수율(환율 없는 외화 차 제외). 판정 불가면 null
+  "unpaid_vehicle_count": 3,          // 완납이 아닌 차(환율 없는 차 포함)
+  "fx_missing_count": 1,              // 환율 미입력(완납 판정 불가)
+  "vehicle": {"vehicle_id":55,"currency":"USD","sale_total":12000,"unpaid":0,"unpaid_ratio":0.0,"fully_paid":true}   // 1번 길로 열렸을 때만, 아니면 null
+}}
+```
+- 값은 전부 ERP 기존 값 그대로다 — `sale_total` = 총판매가(`sale_total_amount`) · `unpaid` = `sale_unpaid_amount`(통화 그대로, `by_currency` 에서는 차마다 0 아래로 안 내려간다 — 한 차의 과입금이 다른 차 미수를 깎지 않게) · `unpaid_ratio`·`fully_paid` = §3 `/receivables`·`/shippable` 과 같은 뜻 · `paid_ratio`(전체) = `Vehicle::aggregateUnpaidRatioPct`. 🚫 board 는 다시 계산·분류하지 않는다.
+- 🚫 연락처·주소·정산·마진·차량 목록 없음. 접근 기록 1행 `board_buyer_summary_read`(old = `salesman_email`, new = `vehicle:{id}` 또는 `claim-on-file`).
+- board 사용 조건 = 클레임 담당자 창(과 jin 이 정하면 결재 화면)만, 영업 화면 ❌, 접수·[ERP 다시 불러오기] 때 1회 읽어 클레임 행에 스냅샷.
+
