@@ -151,7 +151,17 @@ Route::middleware(['auth', 'verified', 'erp'])->prefix('erp')->name('erp.')->gro
         ->name('bank-remittances.file')
         ->middleware('throttle:vehicle-docs')
         ->whereNumber('remittance')
-        ->whereIn('kind', ['remittance', 'invoice']);
+        ->whereIn('kind', ['remittance', 'invoice', 'bundle']);
+    // 합치기용(화면이 건마다 전신문 + Proforma PDF 를 받아 이어 붙인다, 2026-11-27) — 30건이면 60번이라 전용 한도
+    Route::get('bank-remittances/{remittance}/merge/{kind}', [VehicleDocumentController::class, 'bankRemittanceFile'])
+        ->name('bank-remittances.merge-part')
+        ->middleware('throttle:bank-merge')
+        ->whereNumber('remittance')
+        ->whereIn('kind', ['remittance', 'invoice-pdf']);
+    // 화면이 합친 PDF 를 올리는 곳 — Livewire 파일 올리기를 쓰지 않는다(차량 창의 주기 갱신과 겹치면 마무리가 안 끝났다, 2026-11-27)
+    Route::post('bank-remittances/merged', [VehicleDocumentController::class, 'bankMergedUpload'])
+        ->name('bank-remittances.merged')
+        ->middleware('throttle:vehicle-docs');
 });
 
 // 캐시플로우 — sales role + 컴포넌트 mount()에서 본인 ID 검증

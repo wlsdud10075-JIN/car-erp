@@ -12529,6 +12529,12 @@ function vehicleColumnsToggle(columns, serverKnows) {
                                     📄 {{ __('vehicle.bank.invoice') }} <span class="text-primary-text">⬇ {{ __('vehicle.bank.download') }}</span>
                                 </a>
                             @endif
+                            @if($br->sent_bundle_path)
+                                {{-- 📎 은행에 보낸 합친 PDF (jin 2026-11-27) — 같이 보낸 건들이 같은 파일을 가리킨다 --}}
+                                <a href="{{ route('erp.bank-remittances.file', [$br->id, 'bundle']) }}" class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 shadow-sm hover:bg-gray-50" data-bank-bundle>
+                                    📎 {{ __('vehicle.bank.bundle') }} <span class="text-primary-text">⬇ {{ __('vehicle.bank.download') }}</span>
+                                </a>
+                            @endif
                             {{-- ✏️ 수정본 올리기 (jin 2026-11-26) — 엑셀로 받아 고친 파일로 바꿔 넣는다. 모달은 은행 서류 컴포넌트가 띄운다. --}}
                             @unless($editLockedByOther)
                                 <button type="button" x-on:click="$dispatch('open-bank-replace', { id: {{ (int) $br->id }} })"
@@ -14378,6 +14384,6 @@ function vehicleColumnsToggle(columns, serverKnows) {
 @endisland
 
 {{-- 🏦 은행 서류 모달 (jin 2026-11-24) — 패널 서류탭·목록 선택 두 입구가 같은 컴포넌트를 연다(섬 밖에 한 번만). --}}
-<livewire:erp.vehicles.bank-remittance />
+<livewire:erp.vehicles.bank-remittance :key="'bank-remittance'" />
 
 </div>{{-- /root --}}

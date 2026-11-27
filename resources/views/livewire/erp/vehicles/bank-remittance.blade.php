@@ -53,6 +53,18 @@ new class extends Component {
 
     public string $batchBody = '';
 
+    /** 보내는 방식 — merged = 전신문 → Proforma 순서로 PDF 한 파일(jin 2026-11-27) · files = 건마다 파일 따로 */
+    public string $batchMode = 'merged';
+
+    /** 화면(브라우저)이 합쳐 올린 PDF 의 표 — 파일은 서버 임시 폴더에 있다(BankRemittanceService::mergedTmpPath) */
+    public string $mergedToken = '';
+
+    /** 그 PDF 가 어떤 목록으로 만들어졌는지 — 합친 뒤 체크·수정본이 바뀌면 다시 합쳐야 한다 */
+    public string $mergedKey = '';
+
+    /** 화면이 지금 합치는 중 — 창을 닫았다 다시 열어도 고른 목록을 그대로 둔다(백그라운드 합치기, jin 2026-11-27) */
+    public bool $mergeBusy = false;
+
     // ── ✏️ 수정본 올리기 (jin 2026-11-26) — 엑셀로 받아 고친 Proforma 를 그 기록에 바꿔 넣는다. 서류탭·모아 보내기 양쪽에서 연다.
     public ?int $replaceId = null;
 
@@ -63,7 +75,16 @@ new class extends Component {
     {
         abort_unless(BankRemittanceService::canUse(auth()->user()), 403);
         $this->resetErrorBag();
-        $this->reset(['replaceId', 'replaceFile']);
+        // 합치는 중이거나, 합쳐 둔 PDF 가 지금 고른 목록 그대로면 — 다시 열 때 아무것도 지우지 않는다(닫아 두고 다른 일을 하다 돌아온 것).
+        if ($this->mergeBusy || ($this->hasMerged() && $this->mergedKey !== '' && $this->mergedKey === $this->batchKey($this->batchRecords()))) {
+            $this->reset(['replaceId', 'replaceFile']);
+            $this->bankOpen = false;
+            $this->batchOpen = true;
+
+            return;
+        }
+        $this->dropMerged();
+        $this->reset(['replaceId', 'replaceFile', 'batchMode']);
         $pending = BankRemittanceService::pending(auth()->user());
         $this->batchPick = $pending->take(BankRemittanceService::BATCH_MAX)->pluck('id')->all();
         $company = CompanyMailConfig::active();
@@ -77,8 +98,64 @@ new class extends Component {
 
     public function closeBatch(): void
     {
+        // 합친 PDF·고른 목록은 남긴다 — 합치는 동안 닫아 두고 다른 일을 할 수 있게(다시 열면 이어진다). 보내면 그때 비운다.
         $this->batchOpen = false;
         $this->reset(['replaceId', 'replaceFile']);
+    }
+
+    private function hasMerged(): bool
+    {
+        $path = BankRemittanceService::mergedTmpPath($this->mergedToken);
+
+        return $path !== null && is_file($path);
+    }
+
+    /** 합쳐 둔 PDF 를 버린다(임시 파일까지). */
+    private function dropMerged(): void
+    {
+        BankRemittanceService::forgetMergedTmp($this->mergedToken);
+        $this->reset(['mergedToken', 'mergedKey']);
+    }
+
+    public function mergeStarted(): void
+    {
+        abort_unless(BankRemittanceService::canUse(auth()->user()), 403);
+        $this->resetErrorBag('mergedFile');
+        $this->dropMerged();
+        $this->mergeBusy = true;
+    }
+
+    /** 취소했거나 실패했다 — 합친 것은 없다. */
+    public function mergeStopped(): void
+    {
+        $this->mergeBusy = false;
+        $this->dropMerged();
+    }
+
+    /** 합칠 목록의 지문 — 건 id 와 그 파일 경로(수정본을 올리면 경로가 바뀐다)를 순서대로. */
+    private function batchKey($recs): string
+    {
+        return md5($recs->map(fn ($r) => $r->id.'|'.$r->remittance_path.'|'.$r->invoice_path)->implode(';'));
+    }
+
+    /** 화면이 합친 PDF 를 올린 뒤 부른다 — 받은 표와, 어떤 목록으로 만든 것인지 적어 둔다. */
+    public function setMerged(string $token, string $key): void
+    {
+        abort_unless(BankRemittanceService::canUse(auth()->user()), 403);
+        $this->resetErrorBag('mergedFile');
+        $this->dropMerged();
+        $this->mergeBusy = false;
+        $path = BankRemittanceService::mergedTmpPath($token);
+        if ($path && is_file($path)) {
+            $this->mergedToken = $token;
+            $this->mergedKey = $key;
+        }
+    }
+
+    public function updatedBatchMode(): void
+    {
+        $this->batchMode = $this->batchMode === 'files' ? 'files' : 'merged';
+        $this->resetErrorBag();
     }
 
     /** 체크한 것 중 지금도 「안 보냄 · 내가 볼 수 있음」인 기록만, 만든 순서로. */
@@ -118,13 +195,24 @@ new class extends Component {
 
             return;
         }
+        $merged = null;
+        if ($this->batchMode === 'merged') {
+            // 합친 PDF 가 「지금 체크한 목록 그대로」 만든 것일 때만 보낸다 — 합친 뒤 건을 빼거나 수정본을 올렸으면 다시 합친다.
+            if (! $this->hasMerged() || $this->mergedKey !== $this->batchKey($recs)) {
+                $this->addError('mergedFile', __('vehicle.bank.merge_needed'));
+
+                return;
+            }
+            $merged = new \Illuminate\Http\UploadedFile(BankRemittanceService::mergedTmpPath($this->mergedToken), 'merged.pdf', 'application/pdf', null, true);
+        }
         $body = rtrim($this->batchBody)."\n\n".$this->batchListText($recs);
 
         try {
-            BankRemittanceService::sendBatch($recs, auth()->user(), $to, $this->batchSubject, $body);
+            BankRemittanceService::sendBatch($recs, auth()->user(), $to, $this->batchSubject, $body, $merged);
         } catch (\DomainException $e) {
             $key = match ($e->getMessage()) {
                 'too_large' => 'vehicle.bank.batch_too_large',
+                'merged_invalid' => 'vehicle.bank.merge_needed',
                 'file_missing' => 'vehicle.bank.batch_file_missing',
                 'not_configured' => 'vehicle.mail.not_configured',
                 default => 'vehicle.mail.send_failed',
@@ -139,6 +227,9 @@ new class extends Component {
             return;
         }
         $this->batchOpen = false;
+        $this->dropMerged();
+        $this->reset(['mergeBusy']);
+        $this->dispatch('bank-remittance-merge-cleared');
         $this->dispatch('bank-remittance-done', ids: $recs->flatMap(fn ($r) => $r->vehicles->pluck('id'))->unique()->values()->all());
         $this->dispatch('notify', message: __('vehicle.bank.batch_sent', ['n' => $recs->count(), 'to' => BankRemittanceService::recipientLabel($to)]), type: 'success');
     }
@@ -359,13 +450,22 @@ new class extends Component {
 
     public function with(): array
     {
-        $pending = $this->batchOpen ? BankRemittanceService::pending(auth()->user()) : collect();
+        $pending = ($this->batchOpen || $this->mergeBusy || $this->mergedToken !== '') ? BankRemittanceService::pending(auth()->user()) : collect();
         $pick = array_map('intval', $this->batchPick);
         $picked = $pending->filter(fn ($r) => in_array($r->id, $pick, true))->values();
         $batch = [
             'pending' => $pending,
             'pickedCount' => $picked->count(),
             'batchList' => $this->batchListText($picked),
+            'batchKey' => $this->batchKey($picked),
+            'mergedReady' => $this->hasMerged() && $picked->isNotEmpty() && $this->mergedKey === $this->batchKey($picked),
+            'mergeItems' => $picked->map(fn ($r) => [
+                'label' => $r->remitter_name,
+                'rem' => route('erp.bank-remittances.merge-part', [$r->id, 'remittance']),
+                'remExt' => strtolower(pathinfo((string) $r->remittance_path, PATHINFO_EXTENSION)),
+                'inv' => $r->invoice_path ? route('erp.bank-remittances.merge-part', [$r->id, 'invoice-pdf']) : null,
+            ])->all(),
+            'bundleName' => BankRemittanceService::bundleName($picked->count()),
             'replaceRec' => $this->replaceId ? BankRemittance::find($this->replaceId) : null,
         ];
         if (! $this->bankOpen) {
@@ -565,7 +665,7 @@ new class extends Component {
 {{-- 📤 모아 보내기 (jin 2026-11-26) — 아직 안 보낸 은행 서류를 골라 메일 한 통으로. 며칠 치가 섞여도 된다. --}}
 @if($batchOpen)
 <div class="fixed inset-0 z-[110] flex items-center justify-center bg-black/50 p-3" data-bank-batch
-     x-data @keydown.escape.window="$wire.replaceId ? $wire.cancelReplace() : $wire.closeBatch()">
+     x-data="bankBatch()" @keydown.escape.window="$wire.replaceId ? $wire.cancelReplace() : $wire.closeBatch()">
     <div class="card w-full max-w-3xl shadow-2xl max-h-[90vh] overflow-y-auto" @click.stop>
         <div class="flex items-start justify-between gap-3">
             <div>
@@ -623,8 +723,44 @@ new class extends Component {
             @error('batchPick')<p class="mt-1 text-xs text-red-500">{{ $message }}</p>@enderror
         </div>
 
+        {{-- ② 보내는 방식 (jin 2026-11-27 «두 가지 공존») — 합친 PDF 한 파일 / 건마다 파일 따로 --}}
+        <div class="mt-4" data-bank-batch-mode="{{ $batchMode }}">
+            <div class="mb-1 text-sm font-medium text-gray-700">② {{ __('vehicle.bank.step_mode') }}</div>
+            <div class="flex flex-wrap gap-x-5 gap-y-1 text-sm text-gray-700">
+                <label class="flex cursor-pointer items-center gap-1.5"><input type="radio" wire:model.live="batchMode" value="merged" class="h-4 w-4"> {{ __('vehicle.bank.mode_merged') }}</label>
+                <label class="flex cursor-pointer items-center gap-1.5"><input type="radio" wire:model.live="batchMode" value="files" class="h-4 w-4"> {{ __('vehicle.bank.mode_files') }}</label>
+            </div>
+            @if($batchMode === 'merged')
+                <div class="mt-2 rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700" data-bank-merge>
+                    <span x-ref="mergeData" class="hidden" data-key="{{ $batchKey }}" data-name="{{ $bundleName }}" data-upload="{{ route('erp.bank-remittances.merged') }}" data-csrf="{{ csrf_token() }}" data-items="{{ json_encode($mergeItems, JSON_UNESCAPED_UNICODE) }}"
+                          data-msgs="{{ json_encode(['convert' => __('vehicle.bank.merge_err_convert'), 'fetch' => __('vehicle.bank.merge_err_fetch'), 'read' => __('vehicle.bank.merge_err_read'), 'upload' => __('vehicle.bank.merge_err_upload'), 'uploading' => __('vehicle.bank.merge_uploading'), 'remittance' => __('vehicle.bank.remittance'), 'invoice' => __('vehicle.bank.invoice'), 'finished' => __('vehicle.bank.merge_finished'), 'failed' => __('vehicle.bank.merge_failed')], JSON_UNESCAPED_UNICODE) }}"></span>
+                    <p>{{ __('vehicle.bank.merge_hint') }}</p>
+                    <div class="mt-2 flex flex-wrap items-center gap-2">
+                        <button type="button" @click="mergeAll()" :disabled="$store.bankMerge.merging" @disabled($pickedCount === 0)
+                                class="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 font-semibold text-amber-800 hover:bg-amber-100 disabled:opacity-50" data-bank-merge-btn>
+                            📎 {{ $mergedReady ? __('vehicle.bank.merge_again') : __('vehicle.bank.merge_btn') }}
+                        </button>
+                        <button type="button" x-show="$store.bankMerge.merging" x-cloak @click="$store.bankMerge.stop()"
+                                class="rounded-md border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-600 hover:bg-gray-50" data-bank-merge-cancel>
+                            {{ __('vehicle.bank.merge_cancel') }}
+                        </button>
+                        <span x-show="$store.bankMerge.merging" x-cloak class="text-sky-700" data-bank-merge-progress>{{ __('vehicle.bank.merging') }} <span x-text="$store.bankMerge.step"></span> · {{ __('vehicle.bank.merge_bg_hint') }}</span>
+                        @if($mergedReady)
+                            <a x-show="$store.bankMerge.url && ! $store.bankMerge.merging" x-cloak :href="$store.bankMerge.url" download="{{ $bundleName }}"
+                               class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 bg-white px-2.5 py-1.5 font-medium text-gray-700 shadow-sm hover:bg-gray-50" data-bank-merge-download>
+                                📄 {{ $bundleName }} <span class="text-primary-text">⬇ {{ __('vehicle.bank.merge_download') }}</span>
+                            </a>
+                            <span x-show="! $store.bankMerge.merging" class="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-800" data-bank-merge-ready>{{ __('vehicle.bank.merge_ready') }}<span x-show="$store.bankMerge.pages" x-text="' · ' + $store.bankMerge.pages + @js(__('vehicle.bank.merge_pages')) + ' · ' + $store.bankMerge.size"></span></span>
+                        @endif
+                    </div>
+                    <p x-show="$store.bankMerge.error" x-cloak x-text="$store.bankMerge.error" class="mt-2 text-red-600" data-bank-merge-error></p>
+                    @error('mergedFile')<p class="mt-2 text-red-600">{{ $message }}</p>@enderror
+                </div>
+            @endif
+        </div>
+
         <div class="mt-4 space-y-2">
-            <div class="text-sm font-medium text-gray-700">② {{ __('vehicle.bank.step_mail') }}</div>
+            <div class="text-sm font-medium text-gray-700">③ {{ __('vehicle.bank.step_mail') }}</div>
             @unless($mailReady)
                 <p class="rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-700">{{ __('vehicle.mail.not_configured') }}</p>
             @endunless
@@ -640,16 +776,16 @@ new class extends Component {
             <input type="text" wire:model="batchSubject" class="input-base w-full">
             <label class="block text-xs text-gray-500">{{ __('vehicle.bank.mail_body_label') }}</label>
             <textarea wire:model="batchBody" rows="3" class="input-base w-full"></textarea>
-            <label class="block text-xs text-gray-500">{{ __('vehicle.bank.batch_list_label') }}</label>
+            <label class="block text-xs text-gray-500">{{ __($batchMode === 'merged' ? 'vehicle.bank.batch_list_label_merged' : 'vehicle.bank.batch_list_label') }}</label>
             <pre class="max-h-40 overflow-y-auto whitespace-pre-wrap rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-700" data-bank-batch-list>{{ $batchList }}</pre>
-            <p class="text-[11px] text-gray-500">{{ __('vehicle.bank.batch_attach_note') }}</p>
+            <p class="text-[11px] text-gray-500">{{ __($batchMode === 'merged' ? 'vehicle.bank.batch_attach_note_merged' : 'vehicle.bank.batch_attach_note', ['name' => $bundleName]) }}</p>
         </div>
 
         <div class="mt-4 flex justify-end gap-2">
             <button type="button" wire:click="closeBatch" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-50">{{ __('common.close') }}</button>
             <button type="button" wire:click="sendBatchMail" wire:loading.attr="disabled" wire:target="sendBatchMail"
                     wire:confirm="{{ __('vehicle.bank.batch_confirm', ['n' => $pickedCount, 'to' => \App\Services\BankRemittanceService::recipientLabel($batchTo)]) }}"
-                    @disabled($pickedCount === 0)
+                    @disabled($pickedCount === 0 || ($batchMode === 'merged' && ! $mergedReady))
                     class="rounded-lg bg-primary px-4 py-1.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50" data-bank-batch-send>
                 ✉ {{ __('vehicle.bank.batch_send_btn', ['n' => $pickedCount]) }}
             </button>
@@ -688,8 +824,130 @@ new class extends Component {
 </div>
 @endif
 
+{{-- 🪟 합치는 동안 창을 닫아 두면 화면 위 가운데에 뜨는 띠(아래는 페이지 번호와 겹쳤다 — jin 같은 날) (jin 2026-11-27 «닫기 누르면 백그라운드») — 열기 · 취소.
+     🚫 이 띠 안에서는 $wire 를 쓰지 않는다 — 차량 목록이 다시 그려진 뒤 띠의 반응식이 $wire 를 찾다 「Component not found」 로 죽고
+        그 예외가 진행 중이던 요청 처리까지 끊어 합치기가 「저장 중」에서 멈췄다(같은 날 실측). 창 열림 여부 = 저장소의 open. --}}
+<div x-data x-cloak x-show="$store.bankMerge && ! $store.bankMerge.open && ($store.bankMerge.merging || $store.bankMerge.done)"
+     style="position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:100" data-bank-merge-chip
+     x-on:bank-remittance-merge-cleared.window="$store.bankMerge.done = false">
+    <div class="flex items-center gap-2 rounded-full border border-sky-200 bg-white px-4 py-2 text-xs text-gray-700 shadow-lg">
+        {{-- 🚫 <template x-if> 를 쓰지 않는다 — x-if 가 끼워 넣은 노드 때문에 다음 응답의 morph 가 요소를 갈아 끼우다
+             「Component not found」 로 죽었다(호출 경로: swapElements → added → findComponentByEl, 같은 날 실측). x-show 로 자리만 숨긴다. --}}
+        <span x-show="$store.bankMerge.merging" class="flex items-center gap-2">
+                <svg class="h-4 w-4 animate-spin text-primary" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="3" class="opacity-25"/><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+                <span>📎 {{ __('vehicle.bank.merge_chip_running') }} <b x-text="$store.bankMerge.step"></b></span>
+                <button type="button" @click="$store.bankMerge.stop()" class="rounded-md border border-gray-300 px-2 py-0.5 text-gray-600 hover:bg-gray-50" data-bank-merge-chip-cancel>{{ __('vehicle.bank.merge_cancel') }}</button>
+        </span>
+        <span x-show="! $store.bankMerge.merging && $store.bankMerge.done">✅ {{ __('vehicle.bank.merge_chip_done') }}</span>
+        <button type="button" @click="$store.bankMerge.done = false; Livewire.dispatch('open-bank-batch')" class="rounded-md bg-primary px-2.5 py-0.5 font-semibold text-white hover:opacity-90" data-bank-merge-chip-open>{{ __('vehicle.bank.merge_chip_open') }}</button>
+    </div>
+</div>
+
 @script
 <script>
+    // 📎 PDF 한 파일로 합치기 (jin 2026-11-27) — 건마다 「전신문 → Proforma」 순서로 이어 붙인다.
+    //   브라우저가 한다: 은행 팩스(TIF)를 풀 수 있는 곳이 브라우저뿐이다(서버는 GD 만). Proforma 엑셀은 서버가 PDF 로 바꿔 준다.
+    //   다 합치면 서버에 올려 두고(mergedFile) 어떤 목록으로 만들었는지 적는다(mergedKey) — 그 뒤 목록이 바뀌면 다시 합쳐야 보낼 수 있다.
+    //   🪟 창을 닫아도 계속 돈다(jin 같은 날 «닫기 누르면 백그라운드, 취소 버튼») — 상태를 창이 아니라 Alpine 저장소에 둔다.
+    //      창이 닫혀 있는 동안은 화면 위 가운데의 작은 띠가 진행을 보여 준다. 차량관리 화면을 떠나면(다른 메뉴) 멈춘다.
+    if (! Alpine.store('bankMerge')) {
+        Alpine.store('bankMerge', {
+            merging: false, step: '', error: '', url: null, pages: 0, size: '', done: false, stopAsked: false, msgs: {}, open: false,
+            async loadScript(src, ready) {
+                if (ready()) return;
+                await new Promise((ok, no) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+            },
+            async bytesOf(url, what) {
+                const r = await fetch(url, { credentials: 'same-origin' });
+                if (! r.ok) throw new Error(what + ' — ' + (r.status === 422 ? this.msgs.convert : this.msgs.fetch));
+                return new Uint8Array(await r.arrayBuffer());
+            },
+            addImagePage(out, img) {
+                const W = 595.28, H = 841.89, s = Math.min(W / img.width, H / img.height), w = img.width * s, h = img.height * s;
+                out.addPage([W, H]).drawImage(img, { x: (W - w) / 2, y: (H - h) / 2, width: w, height: h });
+            },
+            check() { if (this.stopAsked) { const e = new Error('stopped'); e.stopped = true; throw e; } },
+            async addFile(out, url, ext, what) {
+                this.check();
+                const bytes = await this.bytesOf(url, what);
+                this.check();
+                try {
+                    if (ext === 'pdf') {
+                        const src = await PDFLib.PDFDocument.load(bytes, { ignoreEncryption: true });
+                        (await out.copyPages(src, src.getPageIndices())).forEach(p => out.addPage(p));
+                    } else if (ext === 'tif' || ext === 'tiff') {
+                        await this.loadScript('/vendor/utif/UTIF.js', () => !! window.UTIF);
+                        const buf = bytes.buffer;
+                        for (const ifd of UTIF.decode(buf)) {
+                            this.check();
+                            UTIF.decodeImage(buf, ifd);
+                            const c = document.createElement('canvas'); c.width = ifd.width; c.height = ifd.height;
+                            c.getContext('2d').putImageData(new ImageData(new Uint8ClampedArray(UTIF.toRGBA8(ifd)), ifd.width, ifd.height), 0, 0);
+                            const png = await new Promise(ok => c.toBlob(b => b.arrayBuffer().then(ok), 'image/png'));
+                            this.addImagePage(out, await out.embedPng(png));
+                        }
+                    } else {
+                        this.addImagePage(out, ext === 'png' ? await out.embedPng(bytes) : await out.embedJpg(bytes));
+                    }
+                } catch (e) {
+                    if (e.stopped) throw e;
+                    console.error(e);
+                    throw new Error(what + ' — ' + this.msgs.read);
+                }
+            },
+            stop() { if (this.merging) this.stopAsked = true; },
+            async run(wire, items, key, name, msgs, uploadUrl, csrf) {
+                if (this.merging || ! items.length) return;
+                this.msgs = msgs; this.merging = true; this.stopAsked = false; this.done = false; this.error = ''; this.step = '';
+                try {
+                    await wire.mergeStarted();
+                    await this.loadScript('/vendor/pdf-lib/pdf-lib.min.js', () => !! window.PDFLib);
+                    const out = await PDFLib.PDFDocument.create();
+                    for (let i = 0; i < items.length; i++) {
+                        const it = items[i], no = String(i + 1).padStart(2, '0');
+                        this.step = (i + 1) + ' / ' + items.length;
+                        await this.addFile(out, it.rem, it.remExt, no + '. ' + it.label + ' ' + msgs.remittance);
+                        if (it.inv) await this.addFile(out, it.inv, 'pdf', no + '. ' + it.label + ' ' + msgs.invoice);
+                    }
+                    this.check();
+                    const file = new File([await out.save()], name, { type: 'application/pdf' });
+                    this.step = msgs.uploading;
+                    // Livewire 파일 올리기(wire.upload)를 쓰지 않는다 — 차량 창이 열려 있으면 그 창의 주기 갱신 요청과 겹쳐
+                    // 올리기 마무리가 끝나지 않았다(2026-11-27 실측). 전용 주소로 직접 올리고 받은 표만 넘긴다.
+                    const form = new FormData(); form.append('file', file);
+                    const up = await fetch(uploadUrl, { method: 'POST', body: form, credentials: 'same-origin', headers: { 'X-CSRF-TOKEN': csrf, 'Accept': 'application/json' } });
+                    if (! up.ok) throw new Error(msgs.upload);
+                    const token = (await up.json()).token;
+                    this.check();
+                    await wire.setMerged(token, key);
+                    if (this.url) URL.revokeObjectURL(this.url);
+                    this.url = URL.createObjectURL(file);
+                    this.pages = out.getPageCount();
+                    this.size = file.size > 1048576 ? (file.size / 1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(file.size / 1024)) + 'KB';
+                    this.done = true;
+                    if (! this.open) window.dispatchEvent(new CustomEvent('notify', { detail: { message: msgs.finished, type: 'success' } }));
+                } catch (e) {
+                    this.error = e.stopped ? '' : (e.message || String(e));
+                    if (this.url) URL.revokeObjectURL(this.url);
+                    this.url = null; this.done = false;
+                    await wire.mergeStopped();
+                    if (! e.stopped && ! this.open) window.dispatchEvent(new CustomEvent('notify', { detail: { message: msgs.failed, type: 'error' } }));
+                } finally {
+                    this.merging = false; this.stopAsked = false;
+                }
+            },
+        });
+    }
+    Alpine.data('bankBatch', () => ({
+        init() { Alpine.store('bankMerge').open = true; },
+        destroy() { Alpine.store('bankMerge').open = false; },
+        mergeAll() {
+            const el = this.$refs.mergeData;
+            if (! el) return;
+            Alpine.store('bankMerge').run($wire, JSON.parse(el.dataset.items), el.dataset.key, el.dataset.name, JSON.parse(el.dataset.msgs), el.dataset.upload, el.dataset.csrf);
+        },
+    }));
+
     // TIF(은행 팩스, Group3)는 서버(GD)가 못 푼다 — 브라우저가 UTIF 로 쪽마다 긴 변 1100px PNG 를 만들어 보낸다.
     Alpine.data('bankRemit', () => ({
         converting: false,

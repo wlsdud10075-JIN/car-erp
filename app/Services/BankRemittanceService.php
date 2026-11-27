@@ -278,6 +278,9 @@ class BankRemittanceService
             ]);
             if (! $rec->vehicles()->exists()) {
                 $paths = array_values(array_filter([$rec->remittance_path, $rec->invoice_path]));
+                if ($rec->sent_bundle_path && ! BankRemittance::where('sent_bundle_path', $rec->sent_bundle_path)->whereKeyNot($rec->id)->exists()) {
+                    $paths[] = $rec->sent_bundle_path;   // 합친 PDF 는 같이 보낸 다른 건이 남아 있으면 둔다
+                }
                 $rec->delete();
                 DB::afterCommit(fn () => Storage::disk(config('filesystems.vehicle_docs_disk'))->delete($paths));
             }
@@ -384,7 +387,7 @@ class BankRemittanceService
      *
      * @param  Collection<int, BankRemittance>  $recs
      */
-    public static function sendBatch(Collection $recs, User $user, string $to, string $subject, string $body): void
+    public static function sendBatch(Collection $recs, User $user, string $to, string $subject, string $body, ?UploadedFile $merged = null): void
     {
         $company = CompanyMailConfig::active();
         if (! $company->isConfigured()) {
@@ -394,9 +397,22 @@ class BankRemittanceService
         if ($recs->isEmpty() || $recs->count() > self::BATCH_MAX) {
             throw new \DomainException('batch_count');
         }
-        $byRec = self::batchFiles($recs);
-        $files = array_merge(...array_values($byRec));
         $disk = Storage::disk(config('filesystems.vehicle_docs_disk'));
+        // 📎 합친 PDF 한 파일로 (jin 2026-11-27 «싼카에서 PDF 합쳐진 파일처럼») — 화면이 전신문 → Proforma 순서로 이어 붙여 올린 파일.
+        //    은행에 실제로 간 파일이라 보관하고, 건마다 그 파일을 가리킨다. 메일이 실패하면 지운다.
+        $bundle = null;
+        if ($merged) {
+            if (strtolower($merged->getClientOriginalExtension()) !== 'pdf' || ! str_starts_with((string) file_get_contents($merged->getRealPath(), false, null, 0, 5), '%PDF-')) {
+                throw new \DomainException('merged_invalid');
+            }
+            $path = $merged->storeAs('bank-remittances/'.now()->format('Ym'), Str::uuid().'_bundle.pdf', config('filesystems.vehicle_docs_disk'));
+            if (! $path || ! $disk->exists($path)) {
+                throw new \RuntimeException('합친 PDF 저장 실패');
+            }
+            $bundle = ['path' => $path, 'name' => self::bundleName($recs->count())];
+        }
+        $byRec = $bundle ? $recs->mapWithKeys(fn ($r) => [$r->id => [$bundle]])->all() : self::batchFiles($recs);
+        $files = $bundle ? [$bundle] : array_merge(...array_values($byRec));
         $bytes = 0;
         foreach ($files as $f) {
             if (! $disk->exists($f['path'])) {
@@ -405,6 +421,9 @@ class BankRemittanceService
             $bytes += $disk->size($f['path']);
         }
         if ($bytes > self::BATCH_MAX_BYTES) {
+            if ($bundle) {
+                $disk->delete($bundle['path']);
+            }
             throw new \DomainException('too_large');
         }
         $subject = trim($subject) !== '' ? trim($subject) : $company->companyLabel();
@@ -424,12 +443,56 @@ class BankRemittanceService
             $company->send($mailable);
         } catch (\Throwable $e) {
             $log('failed', mb_substr($e->getMessage(), 0, 500));
+            if ($bundle) {
+                $disk->delete($bundle['path']);
+            }
             throw $e;
         }
         $log('sent', null);
         $now = now();
         foreach ($recs as $rec) {
-            $rec->update(['mailed_to' => $to, 'mailed_at' => $now]);
+            $rec->update(['mailed_to' => $to, 'mailed_at' => $now, 'sent_bundle_path' => $bundle['path'] ?? null, 'sent_bundle_name' => $bundle['name'] ?? null]);
         }
+    }
+
+    /** 합친 PDF 임시 보관 폴더(서버 로컬) — 보내면 정식 보관소로 옮기고 지운다. */
+    public static function mergedTmpPath(string $token): ?string
+    {
+        return Str::isUuid($token) ? storage_path('app/bank-merged-tmp/'.$token.'.pdf') : null;
+    }
+
+    /** 화면이 합쳐 올린 PDF 를 임시로 받아 두고 표(token)를 돌려준다. 하루 넘은 임시 파일은 이때 치운다. */
+    public static function storeMergedTmp(UploadedFile $file): string
+    {
+        $dir = storage_path('app/bank-merged-tmp');
+        if (! is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+        foreach (glob($dir.'/*.pdf') ?: [] as $old) {
+            if (filemtime($old) < time() - 86400) {
+                @unlink($old);
+            }
+        }
+        $token = (string) Str::uuid();
+        $file->move($dir, $token.'.pdf');
+        if (! is_file($dir.'/'.$token.'.pdf')) {
+            throw new \RuntimeException('합친 PDF 임시 저장 실패');
+        }
+
+        return $token;
+    }
+
+    public static function forgetMergedTmp(string $token): void
+    {
+        $path = self::mergedTmpPath($token);
+        if ($path && is_file($path)) {
+            @unlink($path);
+        }
+    }
+
+    /** 합친 PDF 파일 이름 — 「해외송금증빙_20261127_3건.pdf」. */
+    public static function bundleName(int $count): string
+    {
+        return '해외송금증빙_'.now()->format('Ymd').'_'.$count.'건.pdf';
     }
 }

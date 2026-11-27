@@ -66,6 +66,36 @@ XML;
     }
 
     /**
+     * 이미 있는 엑셀 파일(바이트) → PDF 바이트. 사람이 엑셀에서 고쳐 올린 파일을 그대로 변환한다
+     * (PhpSpreadsheet 로 다시 읽지 않는다 — 그림·서식을 잃지 않게). 은행용 Proforma 수정본 합치기(2026-11-27).
+     *
+     * @throws \RuntimeException
+     */
+    public function fromFileBytes(string $bytes, string $ext = 'xlsx'): string
+    {
+        $workDir = $this->makeWorkDir();
+        $src = $workDir.'/doc.'.(in_array($ext, ['xlsx', 'xls'], true) ? $ext : 'xlsx');
+
+        try {
+            file_put_contents($src, $bytes);
+            [$pdf, $err] = $this->convert($src, $workDir, $this->sharedProfile());
+            if ($pdf !== null) {
+                return $pdf;
+            }
+            $isolated = $workDir.'/profile';
+            $this->seedProfile($isolated);
+            [$pdf, $err] = $this->convert($src, $workDir, $isolated);
+            if ($pdf !== null) {
+                return $pdf;
+            }
+
+            throw new \RuntimeException('LibreOffice PDF 변환 실패: '.$err);
+        } finally {
+            $this->deleteDir($workDir);
+        }
+    }
+
+    /**
      * soffice 1회 변환. 성공 시 [pdf바이트, null], 실패 시 [null, 에러문자열].
      *
      * @return array{0: ?string, 1: string}
