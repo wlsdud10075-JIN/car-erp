@@ -935,6 +935,15 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-27 — master `dea7b3d4` · 마이그 2 · 은행 서류 모아 보내기 · 수정본 올리기 · PDF 한 파일로 합쳐 보내기 · board `/rates` 마감환율 (jin «배포해줘»)
+
+- run 45933848940 잡 5개 success · 3사 서버 `dea7b3d4` · 3사 `2026_11_27_000001_add_invoice_revised_to_bank_remittances` · `000002_add_sent_bundle_to_bank_remittances` Ran · /login 200(heysellcar · heymancar · karaba-erp). 로컬 전체 4,137 통과(건너뜀 1). cherry-pick 3커밋.
+- **은행 서류 모아 보내기 · 수정본 올리기**(`66d7e725`, dev `07a5081d`) — 차량관리 목록 위 [은행 서류 보내기](숫자 = 안 보낸 건수) → 안 보낸 건을 골라 메일 한 통(며칠 치가 섞여도 됨, 30건·20MB). [수정본 올리기] = 엑셀로 받아 고친 Proforma 로 바꿔 넣음(옛 파일 삭제, 「수정본 · 날짜」 + 파일 이름). 만든 뒤 닫는 버튼 = 「모아 보내기에 담아 두기」 · 안 보낸 건이 있는 차로 또 열면 알림(막지 않음). 계기 = 싼카는 은행에 여러 건을 스캔 PDF 한 파일로 모아 보낸다.
+- **PDF 한 파일로 합쳐 보내기**(`dea7b3d4`, dev `abc4dfbf`) — 「보내는 방식」 = 합쳐 보내기(기본) / 건마다 파일 따로. [PDF 합치기] = 전신문 → Proforma 순서로 브라우저가 합친다(`public/vendor/pdf-lib`, 은행 팩스 TIF 는 브라우저만 풀 수 있다), 엑셀 Proforma 는 서버가 PDF 로(`PdfConverter::fromFileBytes`). [내려받아 확인] · 합치는 중 창을 닫아도 계속(화면 위 가운데 진행 띠 · 취소) · 합친 뒤 목록·수정본이 바뀌면 다시 합쳐야 보냄 · 보낸 합친 PDF 보관(서류탭 [보낸 합친 PDF]). 같이 고친 것 = 차량 창을 열면 은행 서류 컴포넌트가 새로 만들어져 열린 창·고른 목록이 초기화되던 것(고정 key).
+- **board `/rates` 마감환율**(`6b22c31b`, dev `2f917205`) — 응답에 `closing{date, stale, receive, base}` + `closing_date=Y-m-d`(그날 또는 직전 영업일). 단일 출처 `DailyExchangeRate::closingSummary()`(업무 대시보드 「전날 마감」도 같은 함수 — 동작 그대로). 기존 키는 그대로. 스펙 = `docs/integration/board-portal-api.md` §4-1. board 는 매입예정·전달 대기·구매 화면에 표시(board 쪽 배포는 그쪽 세션).
+- 업무 가이드 `bank-documents` 5~11단계(담아 두기 · 수정본 · 모아 보내기 · 보내는 방식 · 백그라운드 합치기) 글·그림 — 코드 커밋에 포함. Notion 카드·재무 가이드 = dev `5f3e636d` · `78bb6c59`(야간 배치 발행).
+- 배포 뒤 할 일(jin): **운영에서 한 건 합쳐 보고 PDF 글꼴·쪽 나눔 확인**(수정본 엑셀을 서버가 그대로 PDF 로 바꾸는 길은 이번이 처음). 안 맞으면 「건마다 파일 따로 첨부」로 보내거나 수정본을 PDF 로 올린다. 은행이 한 파일을 요구하는지는 아직 미확인.
+
 ## 2026-11-26 (2) — master `000760cb` · 마이그 0 · 은행용 Proforma 엑셀 · 소수점 두 자리 · 합계 수식 (jin «배포해줘»)
 
 - run 45755126995 잡 5개 success · 3사 서버 `000760cb` · /login 200(heysellcar · heymancar · karaba-erp). 로컬 전체 4,129 통과(건너뜀 1). cherry-pick 1커밋.
