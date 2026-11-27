@@ -935,6 +935,13 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-27 (3) — master `3593ceec` · 마이그 0 · 카톡 [확인] 지연 수정 · 판매잔금 자동 환율 소수점 버림 · 바이어 클레임 탭 발생·사용 내역 (jin «배포해줘», 저녁)
+
+- run 45992169474 잡 5개 success · 3사 서버 `3593ceec` · /login 200(heysellcar · heymancar · karaba-erp). 로컬 전체 4,141 통과(건너뜀 1, 가이드 커밋 포함 실행). cherry-pick 4커밋(dev `83e574ab` · `b2ab8672` · `5842f729` · `0a03e793`).
+- **카톡 할 일 [확인]·[완료] 3~5초 지연** — 클릭마다 다시 돌던 자동 닫기 판정(`KakaoAutoClose::for`, 글 수 제곱)을 재료 지문이 같으면 다시 쓴다(ssancarerp 실측 2.18초 → 0.12초). 누르면 바로 「처리 중」. ERP 카드 0.7초는 실시간 값이라 그대로. 배포 뒤 nginx `rt=` 재측정은 다음 업무일 사용분으로.
+- **판매잔금 자동 환율 소수점 버림** — `FinalPayment::autoRateFields()` 한 곳(1,474.64 → 1,474, 반올림 아님). 수집해 둔 마감환율·대시보드·board `/rates` 표시는 그대로. 12-01 자동 기록 시작 전에 나감(heyman·ssancar 설정 입력 끝, karaba 미설정).
+- **바이어 창 클레임 탭** — 통화별 남은 클레임 금액 · 다음에 쓰일 클레임 · 달마다 묶은 발생·사용 내역(읽기 전용, `ClaimUsage::ledger`). 업무 가이드 `buyer-claim` 3단계 추가 · 그림 01·05(jin 로컬 확인 뒤).
+
 ## 2026-11-27 (2) — master `60c6b89c` · 마이그 0 · board 바이어 전체 기준 거래·미수 요약 `GET /buyers/{id}/summary` (jin «배포해줘»)
 
 - run 45945476963 잡 5개 success · 3사 서버 `60c6b89c` · /login 200(heysellcar · heymancar · karaba-erp). 로컬 전체 4,138 통과(건너뜀 1). cherry-pick 1커밋(dev `07cebca0`).
