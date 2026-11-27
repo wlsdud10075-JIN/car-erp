@@ -1,4 +1,4 @@
-// 업무 가이드 「은행 서류」 씬 — 담아 두기 · 수정본 올리기 · 모아 보내기 (2026-11-26). 재무 계정, 예시 차 00가1151·00가1152.
+// 업무 가이드 「은행 서류」 씬 — 담아 두기 · 수정본 올리기 · 모아 보내기 (2026-11-26) · PDF 합치기 · 진행 띠 (11-27). 재무 계정, 예시 차 00가1151·00가1152.
 // 🚫 [보내기]는 누르지 않는다. 🚫 127.0.0.1:47321(카톡 에이전트) 차단.
 // 🔐 로컬에 예시가 아닌 은행 기록(실제 이름)이 있으면 찍기 전에 차에서 떼어 두고, 받는 사람 목록도 가짜로 바꿔 둔다(찍은 뒤 되돌린다).
 //    새로 만든 기록의 송금인 이름은 중간에 호출 쪽이 가짜 다른 이름으로 바꾼다(MID 명령) — 목록에 두 건이 서로 다르게 보이게.
@@ -82,12 +82,23 @@ const B = 'http://localhost:8001';
   await btn.click();
   await p.waitForSelector('[data-bank-batch]');
   await p.waitForTimeout(1500);
-  await p.locator('[data-bank-batch-to] input').click();
-  await p.waitForTimeout(600);
-  await p.locator('[data-bank-batch-to] li, [data-bank-batch-to] [role=option]').first().click().catch(() => console.log('recipient pick skipped'));
+  // ④ PDF 한 파일로 합치기 → 「합침」 + [내려받아 확인] (2026-11-27)
+  await p.locator('[data-bank-merge-btn]').click();
+  await p.waitForSelector('[data-bank-merge-ready]', { timeout: 180000 });
   await p.waitForTimeout(1500);
   await noPopups();
   await p.locator('[data-bank-batch] .card').first().screenshot({ path: out + '09.png' });
-  console.log('rows', await p.locator('[data-bank-batch-row]').count());
+  console.log('rows', await p.locator('[data-bank-batch-row]').count(), '|', await p.locator('[data-bank-merge-ready]').innerText());
+  // ⑤ 다시 합치는 동안 창을 닫으면 화면 위 가운데에 진행 띠 — 찍고 나서 취소
+  await p.locator('[data-bank-merge-btn]').click();
+  await p.waitForSelector('[data-bank-merge-cancel]', { state: 'visible' });
+  await p.keyboard.press('Escape');
+  await p.waitForSelector('[data-bank-batch]', { state: 'detached' });
+  await p.waitForTimeout(700);
+  await noPopups();
+  const chip = await p.locator('[data-bank-merge-chip]').boundingBox();
+  await p.screenshot({ path: out + '10.png', clip: { x: Math.max(0, chip.x - 260), y: 0, width: chip.width + 520, height: chip.y + chip.height + 28 } });
+  await p.locator('[data-bank-merge-chip-cancel]').click();
+  await p.waitForFunction(() => ! Alpine.store('bankMerge').merging, null, { timeout: 60000 });
   await b.close();
 })().catch(e => { console.error(e.message.slice(0, 700)); process.exit(1); });

@@ -198,6 +198,25 @@ board 의 **전송 감사 명령 `board:purchase-sync-audit`**(board dev `cb9974
 - car-erp 는 이미 이 환율을 1h 캐시로 저장/조회 중 → **그 값을 노출만** 함(새 스크래핑 없음, 부하 무시). board 는 lazy `refreshIfStale`(1h)로 호출 → car-erp 부하 1시간 1회.
 - **배포 순서**: car-erp `/rates` 먼저 배포 → board 소스 전환. (엔드포인트 없으면 board 는 폴백으로 도니 안전.)
 
+**마감환율 블록 `closing` (2026-11-27, jin 지시 — board 매입예정·전달 대기·구매 화면이 ERP 대시보드처럼 실시간 + 마감환율을 보여 준다)**
+
+```jsonc
+// GET /rates            → 최신 마감(업무 대시보드 「전날 마감」과 같은 값)
+// GET /rates?closing_date=2026-11-22 → 그 날짜 기준
+"closing": {
+  "date": "2026-11-26",                      // 실제 값이 있는 날짜(Y-m-d). 통화마다 다르면 가장 오래된 날
+  "stale": false,                            // 받아야 할 날(직전 평일)보다 늦으면 true. 날짜 지정 조회는 늘 false
+  "receive": {"USD": 1516.4, "JPY": null, "EUR": 1650.6, "GBP": null, "CNY": null},   // 송금받을때
+  "base":    {"USD": 1531.5, "JPY": null, "EUR": 1667.2, "GBP": null, "CNY": null}    // 매매기준율
+}
+```
+- 단일 출처 = `DailyExchangeRate::closingSummary()` — 대시보드와 이 응답이 같은 함수를 쓴다. 🚫 board 는 날짜·stale 을 다시 계산하지 않는다.
+- 통화 5종 키는 늘 있고 값이 없으면 `null`(매매기준율이 없는 옛 날짜 포함). **값이 하나도 없으면 `closing: null`.**
+- `closing_date` = 그날, 주말·공휴일이면 직전 영업일(`rate_date <= closing_date` 최신). 모양이 `Y-m-d` 가 아니면 `422 {"error":"invalid_closing_date"}`.
+- 기존 키(`rates`·`fetched_at`·`source`)는 인자와 무관하게 그대로. `closing` 을 모르는 board 는 무시하므로 배포 순서 무관.
+- 표시용이다 — 계산·ERP 전송에 쓰는 환율은 종전 `rates` 그대로. 판매잔금 자동 기록 환율 종류(receive/base 중 무엇)는 이 응답에 없다(jin 미결정).
+- 가드 = `BoardPortalApiTest::test_rates_carries_the_closing_block_and_accepts_a_closing_date`.
+
 ## 5. ③ 선적·B/L 묶음 (bundle) — 영속 그룹 + 선언형 sync + 재무 집계
 > **v2 묶음 모델 (2026-06-30, jin 4턴 설계).** 구 단발 선적요청(1 POST=1 batch, 판매완료서 자연소멸, car-erp만 취소)을 **영속 묶음**으로 확장. 핵심 통찰 = **1 묶음 = 1 선적 = 1 B/L = 1 오리지널/써랜더.** 묶음은 선적단계→B/L단계까지 살아있고 board에서 안 사라짐(같은 묶음을 B/L요청으로 재사용). 회의록 = `docs/meetings/2026-06-18-board-portal-api.md` + `docs/meetings/2026-06-30-bl-shipment-bundle-v2.md`(풀회의 조건부 GO) + 본 절.
 >
