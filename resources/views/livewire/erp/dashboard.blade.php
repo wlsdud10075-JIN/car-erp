@@ -434,26 +434,8 @@ new #[Layout('components.layouts.app')] class extends Component {
     #[Computed]
     public function closingRates(): array
     {
-        $today = now()->toDateString();
-        $rows = [];
-        $dates = [];
-        foreach (['USD', 'JPY', 'EUR', 'GBP', 'CNY'] as $cur) {
-            foreach (self::FX_CLOSING_KINDS as $kind) {
-                $hit = DailyExchangeRate::closingBefore($cur, $today, $kind);
-                $rows[$kind][$cur] = $hit['rate'] ?? null;
-                if ($hit) {
-                    $dates[] = $hit['date'];
-                }
-            }
-        }
-        $date = $dates ? min($dates) : null;   // 통화마다 날짜가 다르면 가장 오래된 날 — 하나라도 늦으면 「받아오기」가 필요하다
-        // 받아야 할 날 = 직전 평일(공휴일은 모른다 — 공휴일 다음 날엔 「지난 마감」 표시가 정상이다)
-        $expected = now()->subDay();
-        while ($expected->isWeekend()) {
-            $expected->subDay();
-        }
-
-        return ['date' => $date, 'stale' => $date === null || $date < $expected->toDateString(), 'rows' => $rows];
+        // 계산은 모델 한 곳(board `/rates` 의 closing 도 같은 함수를 쓴다 — 두 화면 숫자가 갈리지 않게, 2026-11-27)
+        return DailyExchangeRate::closingSummary();
     }
 
     /** [받아오기] — 네이버 날짜별 확정 환율을 다시 받는다(스케줄 00:30·09:00 과 같은 명령). 재무 이상(jin 11-26). */

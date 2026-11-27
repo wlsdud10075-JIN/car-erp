@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Buyer;
 use App\Models\Consignee;
+use App\Models\DailyExchangeRate;
 use App\Models\PayoutHold;
 use App\Models\SavingsStatus;
 use App\Models\Settlement;
@@ -74,7 +75,7 @@ class InternalPortalController extends Controller
      * 값은 car-erp 원본 그대로(소수 가능) — 반올림하면 board 값과 어긋나 통일 목적 무너짐.
      * JPY 는 100엔 기준(car-erp 관례). board 는 필요한 통화만 사용, 없는 키는 board 폴백.
      */
-    public function rates(): JsonResponse
+    public function rates(Request $request): JsonResponse
     {
         $service = app(ExchangeRateService::class);
 
@@ -82,7 +83,36 @@ class InternalPortalController extends Controller
             'rates' => $service->getRates() ?? [],
             'fetched_at' => $service->fetchedAt(),
             'source' => 'naver_전신환매입률',
+            'closing' => $this->closingBlock($request),
         ]);
+    }
+
+    /**
+     * 마감환율 블록 (jin 2026-11-27 — board 매입예정·전달 대기·구매 화면이 ERP 대시보드처럼 보여 준다, 스펙 §4-1).
+     * 값·날짜·stale 은 업무 대시보드와 같은 함수(`DailyExchangeRate::closingSummary`)에서 나온다 — board 는 계산하지 않고 그대로 쓴다.
+     * `closing_date=YYYY-MM-DD` 가 오면 그 날짜 기준(그날 또는 직전 영업일). 값이 하나도 없으면 null.
+     *
+     * @return array{date: string, stale: bool, receive: array<string, ?float>, base: array<string, ?float>}|null
+     */
+    private function closingBlock(Request $request): ?array
+    {
+        $on = $request->query('closing_date');
+        if ($on !== null) {
+            // 연동 API 라 검증 실패를 302 로 돌려보내지 않는다 — 날짜 모양이 틀리면 JSON 422
+            $d = is_string($on) ? \DateTime::createFromFormat('!Y-m-d', $on) : false;
+            abort_if(! $d || $d->format('Y-m-d') !== $on, response()->json(['error' => 'invalid_closing_date'], 422));
+        }
+        $c = DailyExchangeRate::closingSummary($on !== null ? (string) $on : null);
+        if ($c['date'] === null) {
+            return null;
+        }
+
+        return [
+            'date' => $c['date'],
+            'stale' => $c['stale'],
+            'receive' => $c['rows'][DailyExchangeRate::KIND_RECEIVE],
+            'base' => $c['rows'][DailyExchangeRate::KIND_BASE],
+        ];
     }
 
     /**
