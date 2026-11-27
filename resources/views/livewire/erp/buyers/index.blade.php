@@ -355,6 +355,13 @@ new #[Layout('components.layouts.app')] class extends Component {
         ];
     }
 
+    /** 🧾 클레임 탭의 발생·사용 원장 (jin 2026-11-27) — 계산은 ClaimUsage::ledger 한 곳. 드로어가 열린 바이어 한 명만. */
+    #[Computed]
+    public function buyerClaimLedger(): array
+    {
+        return $this->editingId ? \App\Services\ClaimUsage::ledger((int) $this->editingId) : ['balances' => [], 'next' => [], 'months' => [], 'multi' => false];
+    }
+
     #[Computed]
     public function domesticForeignCount(): int
     {
@@ -2680,6 +2687,94 @@ new #[Layout('components.layouts.app')] class extends Component {
             @if($cl['board_count'] !== null)
                 <p class="mb-3 text-xs text-gray-500">{{ __('buyer.claims.board_count', ['n' => $cl['board_count']]) }}</p>
             @endif
+            {{-- 🧾 발생·사용 원장 (jin 2026-11-27 «적립금탭처럼») — 통화별 남은 금액 + 달마다 묶은 내역. 읽기 전용(발생 = board 결재, 사용 = 차량 판매탭). --}}
+            @php $lg = $this->buyerClaimLedger; @endphp
+            @if($lg['balances'] !== [])
+            @php $lgMax = max(array_map('abs', $lg['balances'])) ?: 1; @endphp
+            <div class="mb-4 space-y-2 rounded-lg border border-gray-200 bg-gray-50 p-3" data-claim-balances>
+                <div class="text-[10px] font-semibold uppercase text-gray-400">{{ __('buyer.claims.balances_title') }}</div>
+                @foreach($lg['balances'] as $cur => $bal)
+                <div data-claim-balance="{{ $cur }}">
+                    <div class="flex items-center gap-2 text-xs">
+                        <span class="w-10 shrink-0 font-mono font-semibold text-gray-600">{{ $cur }}</span>
+                        <div class="h-3 flex-1 overflow-hidden rounded-full border border-gray-200 bg-white">
+                            <div class="h-full {{ $bal > 0 ? 'bg-emerald-400' : 'bg-gray-300' }}" style="width: {{ max(2, min(100, abs($bal) / $lgMax * 100)) }}%"></div>
+                        </div>
+                        <span class="w-28 shrink-0 text-right font-medium tabular-nums {{ $bal > 0 ? 'text-emerald-700' : 'text-gray-500' }}">{{ number_format($bal, 2) }}</span>
+                    </div>
+                    @if(! empty($lg['next'][$cur]))
+                    <div class="mt-1 pl-12">
+                        <span class="inline-flex items-center gap-1.5 rounded-md border border-primary-light bg-primary-light/50 px-2 py-1 text-xs font-medium text-primary-text" data-claim-next>
+                            <span class="text-[13px] leading-none">↓</span>
+                            {{ __('buyer.claims.next_out_line', ['date' => $lg['next'][$cur]['date'], 'vehicle' => $lg['next'][$cur]['vehicle_number'] ?: '—', 'amount' => number_format($lg['next'][$cur]['remaining'], 2)]) }}
+                        </span>
+                    </div>
+                    @endif
+                </div>
+                @endforeach
+                <p class="text-[11px] text-gray-500">{{ __('buyer.claims.ledger_hint') }}</p>
+            </div>
+
+            <div class="mb-5 overflow-x-auto rounded-lg border border-gray-200" data-claim-ledger>
+                <table class="w-full text-left text-xs">
+                    <thead class="bg-gray-50 text-gray-500">
+                        <tr>
+                            <th class="px-2 py-2">{{ __('buyer.claims.col_date') }}</th>
+                            <th class="px-2 py-2">{{ __('buyer.claims.lg_kind') }}</th>
+                            <th class="px-2 py-2">{{ __('buyer.claims.col_vehicle') }}</th>
+                            <th class="px-2 py-2 text-right">{{ __('buyer.claims.lg_amount') }}</th>
+                            <th class="px-2 py-2 text-right">{{ __('buyer.claims.lg_balance') }}</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    @foreach($lg['months'] as $ym => $monthRows)
+                    <tbody x-data="{ open: {{ $loop->first ? 'true' : 'false' }}, sel: null }" wire:key="clm-{{ $ym }}" data-claim-month="{{ $ym }}">
+                        <tr class="cursor-pointer select-none border-t border-gray-200 bg-gray-100/80 hover:bg-gray-100" @click="open = !open">
+                            <td colspan="6" class="px-2 py-1.5 text-[11px] font-semibold text-gray-600">
+                                <span x-text="open ? '▾' : '▸'"></span> {{ $ym }} <span class="font-normal text-gray-400">· {{ __('buyer.claims.month_count', ['n' => count($monthRows)]) }}</span>
+                            </td>
+                        </tr>
+                        @foreach($monthRows as $e)
+                        <tr x-show="open" class="cursor-pointer border-t border-gray-100 hover:bg-violet-50/40" :class="sel === '{{ $e['key'] }}' && 'bg-violet-50/60'"
+                            @click="sel = sel === '{{ $e['key'] }}' ? null : '{{ $e['key'] }}'" data-claim-ledger-row="{{ $e['kind'] }}">
+                            <td class="px-2 py-2 whitespace-nowrap text-gray-500">{{ substr($e['at'], 5, 5) }}</td>
+                            <td class="px-2 py-2 whitespace-nowrap font-medium {{ $e['kind'] === 'in' ? 'text-green-600' : 'text-red-500' }}">{{ __('buyer.claims.lg_'.$e['kind']) }}</td>
+                            <td class="px-2 py-2 whitespace-nowrap font-mono text-gray-700">{{ $e['vehicle_number'] ?: '—' }}</td>
+                            <td class="px-2 py-2 whitespace-nowrap text-right font-mono {{ $e['amount'] >= 0 ? 'text-green-600' : 'text-red-500' }}">
+                                {{ $e['amount'] >= 0 ? '+' : '' }}{{ number_format($e['amount'], 2) }}@if($lg['multi']) <span class="text-[10px] text-gray-400">{{ $e['currency'] }}</span>@endif
+                            </td>
+                            <td class="px-2 py-2 whitespace-nowrap text-right font-mono text-gray-700">{{ number_format($e['balance'], 2) }}</td>
+                            <td class="pr-2 text-right text-gray-300"><span x-text="sel === '{{ $e['key'] }}' ? '⌄' : '›'"></span></td>
+                        </tr>
+                        <tr x-show="open && sel === '{{ $e['key'] }}'" x-cloak class="bg-violet-50/40">
+                            <td colspan="6" class="px-3 pb-3 pt-1 text-[11px] leading-relaxed text-gray-600" data-claim-ledger-detail>
+                                @if($e['kind'] === 'in')
+                                    <div>
+                                        {{ $e['type'] ? __('buyer.claims.type_'.$e['type']).' · ' : '' }}{{ __('buyer.claims.lg_used', ['amount' => number_format($e['used'], 2)]) }} ·
+                                        @if($e['left'] > 0.004)<span class="text-emerald-700">{{ __('buyer.claims.lg_left', ['amount' => number_format($e['left'], 2)]) }}</span>@else{{ __('buyer.claims.lg_spent') }}@endif
+                                    </div>
+                                @else
+                                    <div><span class="mr-1 text-gray-400">{{ __('buyer.claims.lg_from') }}</span>
+                                        @foreach($e['parts'] as $pt){{ $loop->first ? '' : ' · ' }}{{ __('buyer.claims.lg_take_line', ['date' => $pt['date'], 'vehicle' => $pt['vehicle_number'] ?: '—', 'amount' => number_format($pt['amount'], 2), 'left' => number_format($pt['left'], 2)]) }}@endforeach
+                                    </div>
+                                @endif
+                                <div class="mt-1 flex flex-wrap items-center justify-between gap-2 text-gray-400">
+                                    <span>{{ $e['at'] }} · {{ $e['currency'] }}@if($e['by'] !== '') · {{ $e['by'] }}@endif</span>
+                                    @if($e['vehicle_id'])
+                                    <a href="{{ route('erp.vehicles.index', ['openVehicle' => $e['vehicle_id']]) }}" wire:navigate @click.stop
+                                       class="rounded border border-gray-200 bg-white px-2 py-0.5 text-[11px] text-blue-700 hover:border-blue-300" data-claim-open-vehicle>{{ __('buyer.claims.lg_open_vehicle') }}</a>
+                                    @endif
+                                </div>
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
+                    @endforeach
+                </table>
+            </div>
+            <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">{{ __('buyer.claims.list_title') }}</h3>
+            @endif
+
             @if($cl['count'] === 0)
                 <p class="text-sm text-gray-400">{{ __('buyer.claims.empty') }}</p>
             @else
