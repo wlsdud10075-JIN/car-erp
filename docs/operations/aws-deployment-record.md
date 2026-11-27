@@ -935,6 +935,13 @@ jin «배포할 거 잘 묶어서 갖고 있어. 저녁에 배포하게». dev �
 - 과입금 잡손실·회사이익 전환 collector_id 버그(ssancarerp 박수정 5회 FK 실패, §8 #126) · 사용자관리 권한 하위 묶음 칩 + 두 열 카드
 - 배포 뒤 확인: ssancarerp 334소8009(7367) 는 최영숙이 13:39 에 전환 완료(업무관리자라 통과) — 박수정 재시도 불필요.
 
+## 2026-11-27 (2) — master `60c6b89c` · 마이그 0 · board 바이어 전체 기준 거래·미수 요약 `GET /buyers/{id}/summary` (jin «배포해줘»)
+
+- run 45945476963 잡 5개 success · 3사 서버 `60c6b89c` · /login 200(heysellcar · heymancar · karaba-erp). 로컬 전체 4,138 통과(건너뜀 1). cherry-pick 1커밋(dev `07cebca0`).
+- **바이어 요약 응답** — board 클레임 담당자 창용. 그 바이어에게 판 전체(전 영업) 대수 · 통화별 판매총액·미수·입금률 · 원화 미수 합 · 클레임 차 한 대의 미수. 값은 기존 accessor·캐시 그대로, 연락처·주소·정산·마진·차량 목록 없음, 접근 기록 `board_buyer_summary_read`.
+- 🚪 문(jin «클레임이 있는 바이어만» → 실제 구현은 1번 방식 확정): `vehicle_id` 가 그 바이어에게 판 차이거나 ERP 에 그 바이어의 클레임 기록이 있을 때만 200, 아니면 403 `claim_context_required`. board 클레임은 최종 승인 뒤에야 ERP 로 와서(§15) 「ERP 에 클레임이 있다」만으로는 새 클레임 접수 때 못 본다.
+- 계기 = ssancarboard 클레임 담당자 계정을 ERP 에서 업무관리자 → 관리로 좁히면 다른 영업 차의 클레임에서 바이어 구매·미수를 볼 곳이 없어짐. 스펙 = `docs/integration/board-portal-api.md` §21(dev `0001c64a`). ERP 화면 변경 없음(업무 가이드 해당 없음).
+
 ## 2026-11-27 — master `dea7b3d4` · 마이그 2 · 은행 서류 모아 보내기 · 수정본 올리기 · PDF 한 파일로 합쳐 보내기 · board `/rates` 마감환율 (jin «배포해줘»)
 
 - run 45933848940 잡 5개 success · 3사 서버 `dea7b3d4` · 3사 `2026_11_27_000001_add_invoice_revised_to_bank_remittances` · `000002_add_sent_bundle_to_bank_remittances` Ran · /login 200(heysellcar · heymancar · karaba-erp). 로컬 전체 4,137 통과(건너뜀 1). cherry-pick 3커밋.
