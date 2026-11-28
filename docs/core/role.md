@@ -65,7 +65,7 @@
 - `isAdmin()` = super·admin 뿐. 업무관리자까지는 `canAccessAdmin()`. `isUser()` 는 호출처 0.
 - `canSubmitPayoutBatch` 에 최고관리자가 없는 것 · 선적요청 B/L 번호 기입이 관리 이상(수출통관 제외)인 것은 **jin 확인(11-22) — 그대로**. B/L 기입은 나중에 넓힐 수 있게 `canApprove` 한 곳에서만 본다.
 - `canApprove` · `canApproveUnpaidExport` · `canManageUsers` · `canManagePorts` · `canManageForwarding` 은 본문이 같다. 묶어 고칠 때 하나만 고치지 않는다.
-- 🧮 **「정산 처리」 화면은 역할이 아니라 지정이다**(jin 2026-11-28 — 기능설정 공개 범위 표 「정산 처리」 칸, 설정 키 `settlement_viewers`). `canSeeSettlementScreen` 이 메뉴 · 화면 mount · 정산 엑셀 · 대시보드에서 넘어가는 링크를 가른다. `canAccessSettlement`(라우트 — 사내직원관리 · 재무 처리 · 월정산 · 차량 엑셀의 정산 칸)와 버튼 권한(`canConfirmFinance` · `canSubmitPayoutBatch` · `canCorrectSecondaryCosts` · `canUnlockLedger`)은 그대로다 — 다만 정산 확정 · 2차 마감 · 월정산 제출 · 회계 재조정 시작이 전부 이 화면 안에 있어, **지정에서 빠진 사람은 권한이 있어도 할 길이 없다.** 지정은 저장하는 순간 고정된다(나중에 만든 계정은 체크해 줘야 보인다). 이미 열어 둔 탭은 새로 고칠 때까지 그대로다. 관리가 전체를 보는 돈 화면(재무 처리 · 채권관리 · 바이어 정산현황 · 사내직원관리 · 승인 큐)에는 담당 범위가 걸려 있지 않다 — 일부러가 아니라 지금 상태(11-28 확인). 가드 `SettlementScreenVisibilityTest`.
+- 🧮 **「정산 처리」 화면은 역할이 아니라 지정이다**(jin 2026-11-28 — 기능설정 공개 범위 표 「정산 처리」 칸, 설정 키 `settlement_viewers`). `canSeeSettlementScreen` 이 메뉴 · 화면 mount · 정산 엑셀 · 대시보드에서 넘어가는 링크 · 차량 관리 「데이터 내려받기」의 정산 항목(고르는 칸과 서버 허용 목록 둘 다)을 가른다. `canAccessSettlement`(라우트 — 사내직원관리 · 재무 처리 · 월정산)와 버튼 권한(`canConfirmFinance` · `canSubmitPayoutBatch` · `canCorrectSecondaryCosts` · `canUnlockLedger`)은 그대로다 — 다만 정산 확정 · 2차 마감 · 월정산 제출 · 회계 재조정 시작이 전부 이 화면 안에 있어, **지정에서 빠진 사람은 권한이 있어도 할 길이 없다.** 지정은 저장하는 순간 고정된다(나중에 만든 계정은 체크해 줘야 보인다). 이미 열어 둔 탭은 새로 고칠 때까지 그대로다. 관리가 전체를 보는 돈 화면(재무 처리 · 채권관리 · 바이어 정산현황 · 사내직원관리 · 승인 큐)에는 담당 범위가 걸려 있지 않다 — 일부러가 아니라 지금 상태(11-28 확인). 가드 `SettlementScreenVisibilityTest`.
 
 ### 4. 담당 범위
 | 누구 | `canScopeVehicle()` | 목록(차량·바이어·컨사이니·재고·엑셀) |
