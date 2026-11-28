@@ -34,7 +34,7 @@
 | `clearance` | `canAccessClearance` | 수출통관·관리 | **물린 라우트 없음**(alias 만 등록) |
 
 - 위 메서드는 전부 super·admin·manager 를 먼저 통과시킨다(`admin-dashboard`·`super-admin` 제외).
-- **화면 `mount()` 가 다시 좁히는 곳**(라우트는 `erp`·`settlement`·`auth` 까지만): 포워딩사 · 항구 · 예치가수금 · 알람함 · 선적요청(관리 이상 + 수출통관 + 재무 — 재무는 비용 탭만) · 카톡 · 월정산(지정자 또는 자기 차례 결재자) · 관제센터(`isOpsOwner`) · 월정산 엑셀(컨트롤러). mount 가드를 빠뜨리면 라우트 통과자 전원에게 열린다.
+- **화면 `mount()` 가 다시 좁히는 곳**(라우트는 `erp`·`settlement`·`auth` 까지만): 정산 처리(`canSeeSettlementScreen` — 기능설정 지정자, 정산 엑셀도 같은 판정) · 포워딩사 · 항구 · 예치가수금 · 알람함 · 선적요청(관리 이상 + 수출통관 + 재무 — 재무는 비용 탭만) · 카톡 · 월정산(지정자 또는 자기 차례 결재자) · 관제센터(`isOpsOwner`) · 월정산 엑셀(컨트롤러). mount 가드를 빠뜨리면 라우트 통과자 전원에게 열린다.
 - 재무처리 mount(`canConfirmFinanceTransfer`)는 `settlement` 미들웨어와 같은 집합이라 좁히지 않는다.
 - 로그인 없이 열리는 것 = 월정산 승인 링크(`a/payout/{batch}`, 서명 URL + 결재자 id) — 승인·반려·인센티브 추가·엑셀. 판정은 `canDecide`·`canEditAdjustments`.
 - 개발용 사용자 전환(`config('app.dev_user_switch')`, 기본 = 로컬만) — 원래 계정이 super 일 때만, 검차·내수는 대상에서 뺀다.
@@ -57,7 +57,7 @@
 | 업무관리자 이상 + 재무 (**관리 제외**) | `canEnterCashBalance`(통장 마감잔액) |
 | super · 관리 · 업무관리자 (**최고관리자 제외**) | `canSubmitPayoutBatch`(월정산·퇴사 정산 제출, 재전송은 super 도 제외) |
 | 범위가 붙는 것 | `canScopeVehicle`(§4) · `canUnlockLedger`(업무관리자 이상 전체 / 관리는 본인 팀 차) · `canManageUserAccount`(§4) · `canSeeAlarm` |
-| 기능설정에서 사람을 고르는 것 | `canSeeStaffPayout`(미저장이면 관리 이상) · `canSeeDomesticPayout`(회사 토글 + 지정자) · `canSeePayrollCategory`/`canSeePayrollOf`(급여 칸별) · `canUseKakaoAssistant`(토글 + 미저장이면 전원). super 는 지정 없이 통과하지만 **회사 토글이 꺼진 기능은 super 도 불가** |
+| 기능설정에서 사람을 고르는 것 | `canSeeSettlementScreen`(「정산 처리」 화면 — 미저장이면 `canAccessSettlement` 전원, 저장 뒤엔 그중 체크한 사람) · `canSeeStaffPayout`(미저장이면 관리 이상) · `canSeeDomesticPayout`(회사 토글 + 지정자) · `canSeePayrollCategory`/`canSeePayrollOf`(급여 칸별) · `canUseKakaoAssistant`(토글 + 미저장이면 전원). super 는 지정 없이 통과하지만 **회사 토글이 꺼진 기능은 super 도 불가** |
 | 챗봇 등급 5개(`canUse*Assistant`) | 재무 이상 / 관리 이상 / super·admin / super 로 나뉜다(`canUseAssistant` 는 설정에 따라 ERP 전원 또는 재무 이상) — 고칠 때 `User.php` 를 본다 |
 | 위 표에 없는 것 | `canAccessErp`·`canViewAdminDashboard` 등 라우트용은 §2 · `isManager` = permission 이 manager |
 
@@ -65,6 +65,7 @@
 - `isAdmin()` = super·admin 뿐. 업무관리자까지는 `canAccessAdmin()`. `isUser()` 는 호출처 0.
 - `canSubmitPayoutBatch` 에 최고관리자가 없는 것 · 선적요청 B/L 번호 기입이 관리 이상(수출통관 제외)인 것은 **jin 확인(11-22) — 그대로**. B/L 기입은 나중에 넓힐 수 있게 `canApprove` 한 곳에서만 본다.
 - `canApprove` · `canApproveUnpaidExport` · `canManageUsers` · `canManagePorts` · `canManageForwarding` 은 본문이 같다. 묶어 고칠 때 하나만 고치지 않는다.
+- 🧮 **「정산 처리」 화면은 역할이 아니라 지정이다**(jin 2026-11-28 — 기능설정 공개 범위 표 「정산 처리」 칸, 설정 키 `settlement_viewers`). `canSeeSettlementScreen` 이 메뉴 · 화면 mount · 정산 엑셀 · 대시보드에서 넘어가는 링크를 가른다. `canAccessSettlement`(라우트 — 사내직원관리 · 재무 처리 · 월정산 · 차량 엑셀의 정산 칸)와 버튼 권한(`canConfirmFinance` · `canSubmitPayoutBatch` · `canCorrectSecondaryCosts` · `canUnlockLedger`)은 그대로다 — 다만 정산 확정 · 2차 마감 · 월정산 제출 · 회계 재조정 시작이 전부 이 화면 안에 있어, **지정에서 빠진 사람은 권한이 있어도 할 길이 없다.** 지정은 저장하는 순간 고정된다(나중에 만든 계정은 체크해 줘야 보인다). 이미 열어 둔 탭은 새로 고칠 때까지 그대로다. 관리가 전체를 보는 돈 화면(재무 처리 · 채권관리 · 바이어 정산현황 · 사내직원관리 · 승인 큐)에는 담당 범위가 걸려 있지 않다 — 일부러가 아니라 지금 상태(11-28 확인). 가드 `SettlementScreenVisibilityTest`.
 
 ### 4. 담당 범위
 | 누구 | `canScopeVehicle()` | 목록(차량·바이어·컨사이니·재고·엑셀) |
