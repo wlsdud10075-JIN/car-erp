@@ -106,7 +106,7 @@ class AuditArea
         'b2b_partners_toggle_changed' => self::ETC, 'buyer_cash_toggle_changed' => self::ETC, 'domestic_payout_toggle_changed' => self::ETC,
         'domestic_payout_viewers_changed' => self::ETC, 'fx_settings_changed' => self::ETC, 'kakao_assistant_toggle_changed' => self::ETC,
         'kakao_params_changed' => self::ETC, 'kakao_viewers_changed' => self::ETC, 'lock_threshold_changed' => self::ETC,
-        'lock_toggle_changed' => self::ETC, 'payroll_viewers_changed' => self::ETC, 'staff_payout_viewers_changed' => self::ETC,
+        'lock_toggle_changed' => self::ETC, 'payroll_viewers_changed' => self::ETC, 'staff_payout_viewers_changed' => self::ETC, 'settlement_viewers_changed' => self::ETC,
         'unsecured_limit_toggle_changed' => self::ETC,
         'kakao_agent_rebound' => self::ETC, 'kakao_installer_downloaded' => self::ETC, 'kakao_room_fixed' => self::ETC,
     ];

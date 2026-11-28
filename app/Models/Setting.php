@@ -354,6 +354,21 @@ class Setting extends Model
     }
 
     /**
+     * 「정산 처리」 화면을 볼 사람(user id) — jin 2026-11-28 «볼 사람 지정 방식으로». null = 한 번도 저장 안 함 → 종전(정산 접근 권한자 전원).
+     * 기능설정 공개 범위 표의 「정산 처리」 칸이 쓴다. 사내직원관리·재무 처리·월정산 화면과는 무관하다.
+     */
+    public static function settlementViewerIds(): ?array
+    {
+        $raw = self::get('settlement_viewers');
+        if ($raw === null || $raw === '') {
+            return null;
+        }
+        $ids = is_array($raw) ? $raw : json_decode((string) $raw, true);
+
+        return is_array($ids) ? array_values(array_unique(array_map('intval', $ids))) : null;
+    }
+
+    /**
      * 📱 카톡자동화(내 카톡 할 일)를 쓰는 사람(user id) — jin 2026-11-10 «공개 범위 표에서 공개하는 인원에게만».
      * null = 한 번도 저장 안 함 → 종전(회사 토글이 켜져 있으면 로그인하는 전원). 기능설정 공개 범위 표의 「카톡자동화」 칸이 쓴다.
      */

@@ -853,7 +853,8 @@ new #[Layout('components.layouts.app')] class extends Component
                         (int) $byPerson[$id]['payout'] - (int) $byPerson[$id]['adjust'],
                     ) : null,
                 // 🔗 이름 클릭 → 정산관리 그 담당자 카드(펼친 상태). 월 = 이 기간에 지급된 마지막 귀속월.
-                'link' => route('erp.settlements.index', array_filter(['salesmanFilter' => (int) $id, 'monthFilter' => $lastMonth, 'focus' => (int) $id])),
+                'link' => auth()->user()?->canSeeSettlementScreen()   // 볼 사람 지정(2026-11-28) — 못 보면 이름만
+                    ? route('erp.settlements.index', array_filter(['salesmanFilter' => (int) $id, 'monthFilter' => $lastMonth, 'focus' => (int) $id])) : null,
             ];
         }
 
@@ -1255,7 +1256,7 @@ new #[Layout('components.layouts.app')] class extends Component
         <div class="card border-violet-200 bg-violet-50/30">
             <div class="flex items-center justify-between">
                 <span class="text-xs font-semibold text-violet-700">{{ __('admin_dash.lead_profit') }} <span class="font-normal text-gray-400">{{ __('admin_dash.lead_profit_sub', ['month' => now()->format('n')]) }}</span></span>
-                <a href="{{ route('erp.settlements.index') }}" wire:navigate class="text-xs text-violet-600 hover:underline">{{ __('admin_dash.lead_profit_link') }}</a>
+                @if(auth()->user()?->canSeeSettlementScreen())<a href="{{ route('erp.settlements.index') }}" wire:navigate class="text-xs text-violet-600 hover:underline">{{ __('admin_dash.lead_profit_link') }}</a>@endif
             </div>
             <div class="mt-1 text-3xl font-bold {{ $leadProfit['company_net'] < 0 ? 'text-red-600' : 'text-gray-900' }}" data-lead-profit>₩@krw($leadProfit['company_net'])</div>
             <p class="mt-1 text-[11px] text-gray-500">{{ __('admin_dash.lead_profit_formula', ['margin' => \App\Support\Money::krw($leadProfit['margin_sum']), 'payout' => \App\Support\Money::krw($leadProfit['payout_sum']), 'ship' => \App\Support\Money::krw($leadProfit['shipping_sum'] + $leadProfit['common_labor'])]) }}@if(($leadProfit['domestic_profit'] ?? 0) !== 0) · {{ __('admin_dash.lead_profit_domestic', ['amount' => \App\Support\Money::krw($leadProfit['domestic_profit'])]) }}@endif@if($leadProfit['overpay_income'] > 0) · {{ __('admin_dash.lead_profit_overpay', ['amount' => \App\Support\Money::krw($leadProfit['overpay_income'])]) }}@endif</p>

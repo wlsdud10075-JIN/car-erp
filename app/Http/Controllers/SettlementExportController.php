@@ -25,6 +25,7 @@ class SettlementExportController extends Controller
     public function download(Request $request, SettlementExportService $exporter): StreamedResponse
     {
         $user = $request->user();
+        abort_unless((bool) $user?->canSeeSettlementScreen(), 403);   // 볼 사람 지정(2026-11-28) — 화면과 같은 판정
 
         $search = trim((string) $request->query('q', ''));
         $status = (string) $request->query('status', '');

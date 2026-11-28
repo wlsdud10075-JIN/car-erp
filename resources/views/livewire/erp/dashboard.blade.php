@@ -712,7 +712,7 @@ new #[Layout('components.layouts.app')] class extends Component {
 
         $t = fn (string $k, string $f) => __("dashboard.act.sales.$k.$f");
 
-        return [
+        return $this->withoutSettlementLinks([
             $this->row($t('purchase_unpaid', 'l'),  $t('purchase_unpaid', 'd'),  $base('purchase_unpaid')->count(),  'bg-red-500',   'purchase_unpaid',  true),
             $this->row($t('sale_unpaid', 'l'),      $t('sale_unpaid', 'd'),      $base('sale_unpaid')->count(),      'bg-amber-500', 'sale_unpaid',      true),
             $this->row($t('clearance_needed', 'l'), $t('clearance_needed', 'd'), $base('clearance_needed')->count(), 'bg-blue-500',  'clearance_needed'),
@@ -728,7 +728,7 @@ new #[Layout('components.layouts.app')] class extends Component {
             ['label' => $t('cancel_unpaid', 'l'), 'desc' => $t('cancel_unpaid', 'd'),
              'count' => $cancelTotal, 'dot' => 'bg-rose-500', 'urgent' => false,
              'href' => route('erp.receivables.index').'?cancelFilter=cancelled&classification=cancelled_all'],
-        ];
+        ]);
     }
 
     // ── 통관 role 빌더 ───────────────────────────────────
@@ -851,7 +851,7 @@ new #[Layout('components.layouts.app')] class extends Component {
         // 2차 정산 마감 대기 (jin 2026-07-26) — paid 후 secondary_status=pending. 비용·환차 정정 후 마감.
         $secondaryPending = Settlement::query()->where('secondary_status', 'pending')->count();
 
-        return [
+        return $this->withoutSettlementLinks([
             $this->row($t('purchase_unpaid', 'l'),           $t('purchase_unpaid', 'd'),           $c('purchase_unpaid'),           'bg-red-500',    'purchase_unpaid',           true),
             $this->row($t('sale_unpaid', 'l'),               $t('sale_unpaid', 'd'),               $c('sale_unpaid'),               'bg-amber-500',  'sale_unpaid',               true),
             $this->row($t('exchange_rate_missing', 'l'),     $t('exchange_rate_missing', 'd'),     $c('exchange_rate_missing'),     'bg-red-500',    'exchange_rate_missing',     true),
@@ -868,7 +868,7 @@ new #[Layout('components.layouts.app')] class extends Component {
              'count' => (int) Vehicle::query()->whereNull('deleted_at')->where('cancel_status', '!=', Vehicle::CANCEL_NONE)->count(),
              'dot' => 'bg-rose-500', 'urgent' => false,
              'href' => route('erp.receivables.index').'?cancelFilter=cancelled&classification=cancelled_all'],
-        ];
+        ]);
     }
 
     // ── 관리 role 빌더 (큐 14-2) ─────────────────────────
@@ -936,6 +936,17 @@ new #[Layout('components.layouts.app')] class extends Component {
             $this->row($t('inventory', 'l'),                 $t('inventory', 'd'),                 $generalStock,                   'bg-amber-500',  '',                false, route('erp.inventory.index').'?category=general'),
             $this->row($t('clearance_stuck', 'l'),           $t('clearance_stuck', 'd'),           $c('clearance_stuck'),           'bg-amber-500',  'clearance_stuck', true),
         ];
+    }
+
+    /** 🧮 「정산 처리」 볼 사람 지정(jin 2026-11-28) — 그 화면을 못 보는 사람에게는 거기로 가는 할 일 줄을 안 그린다(눌러도 403 이라). */
+    private function withoutSettlementLinks(array $rows): array
+    {
+        if (auth()->user()?->canSeeSettlementScreen()) {
+            return $rows;
+        }
+        $base = route('erp.settlements.index');
+
+        return array_values(array_filter($rows, fn ($r) => ! str_starts_with((string) ($r['href'] ?? ''), $base)));
     }
 
     private function row(string $label, string $desc, int $count, string $dot, string $action, bool $urgent = false, ?string $href = null): array

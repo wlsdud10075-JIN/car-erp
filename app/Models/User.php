@@ -431,6 +431,25 @@ class User extends Authenticatable
     }
 
     /**
+     * 🧮 「정산 처리」 화면(메뉴·페이지·정산 엑셀·대시보드에서 넘어가는 링크)을 보나 — jin 2026-11-28 «볼 사람 지정 방식으로».
+     * 시스템관리자 = 항상. 기능설정에 한 번도 저장 안 했으면 종전(canAccessSettlement — 재무·관리·업무관리자 이상). 저장 뒤엔 그중 체크한 사람만.
+     * 🚫 canAccessSettlement 를 대신하지 않는다 — 그쪽은 사내직원관리·재무 처리·월정산 라우트와 차량 엑셀의 정산 칸이 같이 쓴다(그대로).
+     *    정산 확정·제출 같은 버튼 권한(canConfirmFinance·canSubmitPayoutBatch)도 그대로이고, 화면이 안 보이면 갈 길이 없을 뿐이다.
+     */
+    public function canSeeSettlementScreen(): bool
+    {
+        if ($this->isSuperAdmin()) {
+            return true;
+        }
+        if (! $this->canAccessSettlement()) {
+            return false;
+        }
+        $ids = Setting::settlementViewerIds();
+
+        return $ids === null || in_array((int) $this->id, $ids, true);
+    }
+
+    /**
      * 📱 카톡자동화 「내 카톡 할 일」(메뉴·페이지·수집기 API)을 쓰나 — jin 2026-11-10 «공개 범위 표에서 공개하는 인원에게만».
      * 회사 토글이 꺼져 있으면 아무도. 시스템관리자 = 항상. 기능설정에 한 번도 저장 안 했으면 종전(로그인하는 전원). 저장 뒤엔 체크한 사람만(후보 = 관리·수출통관·재무·업무관리자·최고관리자, 영업은 로그인하지 않는다).
      * 단일 출처 — 사이드바·페이지 mount·수집기 토큰 미들웨어·수집기 로그인이 전부 이걸 본다(조건을 옮겨 적지 말 것).
