@@ -115,7 +115,7 @@ class VehicleExportService
     }
 
     /**
-     * export 가능 컬럼 key. 정산 그룹은 정산 접근 role(canAccessSettlement)에게만.
+     * export 가능 컬럼 key. 정산 그룹은 「정산 처리」 화면을 보는 사람(canSeeSettlementScreen)에게만.
      *
      * @return list<string>
      */

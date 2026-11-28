@@ -433,7 +433,7 @@ class User extends Authenticatable
     /**
      * 🧮 「정산 처리」 화면(메뉴·페이지·정산 엑셀·대시보드에서 넘어가는 링크)을 보나 — jin 2026-11-28 «볼 사람 지정 방식으로».
      * 시스템관리자 = 항상. 기능설정에 한 번도 저장 안 했으면 종전(canAccessSettlement — 재무·관리·업무관리자 이상). 저장 뒤엔 그중 체크한 사람만.
-     * 🚫 canAccessSettlement 를 대신하지 않는다 — 그쪽은 사내직원관리·재무 처리·월정산 라우트와 차량 엑셀의 정산 칸이 같이 쓴다(그대로).
+     * 🚫 canAccessSettlement 를 대신하지 않는다 — 그쪽은 사내직원관리·재무 처리·월정산 라우트가 같이 쓴다(그대로).
      *    정산 확정·제출 같은 버튼 권한(canConfirmFinance·canSubmitPayoutBatch)도 그대로이고, 화면이 안 보이면 갈 길이 없을 뿐이다.
      */
     public function canSeeSettlementScreen(): bool

@@ -34,8 +34,8 @@ class VehicleExportController extends Controller
         $restrictMgr = ! $user->isAdmin() && ! $user->isManager() && $user->role === '관리';
         $subIds = $restrictMgr ? $user->getSubordinateSalesmanIds() : [];
 
-        // 정산 그룹은 정산 접근 role(재무·관리·admin·super)에게만 — 영업·통관은 마진 export 불가.
-        $allowSettlement = $user->canAccessSettlement();
+        // 정산 그룹은 「정산 처리」 화면을 보는 사람에게만(jin 2026-11-28 — 기능설정 지정. 미저장이면 재무·관리·업무관리자 이상) — 영업·통관은 마진 export 불가.
+        $allowSettlement = $user->canSeeSettlementScreen();
 
         // 컬럼 선택 — 화이트리스트 교집합만(보안: 알 수 없는 key·권한 밖 정산 컬럼 무시).
         $selected = array_values(array_filter(explode(',', (string) $request->query('cols', ''))));

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\VehicleExportService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Volt\Volt;
 use Tests\TestCase;
@@ -67,6 +68,20 @@ class SettlementScreenVisibilityTest extends TestCase
         $this->actingAs($other)->get('/erp/salesmen')->assertOk();
         $this->actingAs($other)->get('/erp/transfers')->assertOk();
         $this->actingAs($other)->get('/erp/receivables')->assertOk();
+    }
+
+    public function test_vehicle_export_drops_settlement_columns_for_unchecked_people(): void
+    {
+        $picked = $this->user('manager');
+        $other = $this->user('manager');
+        $this->save([$picked->id]);
+        $svc = app(VehicleExportService::class);
+
+        $this->assertContains('total_margin', $svc->columnKeys($picked->canSeeSettlementScreen()));
+        $this->assertNotContains('total_margin', $svc->columnKeys($other->canSeeSettlementScreen()));
+        $this->actingAs($other)->get(route('erp.vehicles.export', ['cols' => 'vehicle_number,total_margin']))->assertOk();
+        $this->assertStringContainsString('canSeeSettlementScreen', file_get_contents(app_path('Http/Controllers/VehicleExportController.php')));
+        $this->assertStringNotContainsString('canAccessSettlement()', file_get_contents(resource_path('views/livewire/erp/vehicles/index.blade.php')));
     }
 
     public function test_a_person_outside_the_role_is_not_let_in_by_being_listed(): void

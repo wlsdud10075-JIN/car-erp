@@ -9831,7 +9831,7 @@ function vehicleColumnsToggle(columns, serverKnows) {
         @endif
         {{-- 데이터 내려받기 팝오버 (전 ERP role — canScopeVehicle 스코핑). 범위(현재필터/전체) + 컬럼 선택.
              정산 그룹은 정산 접근 role(재무·관리·admin·super)에게만 노출·허용. 선택 컬럼은 서버 화이트리스트 교집합. --}}
-        @php $allowSettlement = auth()->user()->canAccessSettlement();
+        @php $allowSettlement = auth()->user()->canSeeSettlementScreen();
              $exportCols = (new \App\Services\VehicleExportService)->columnsForUi($allowSettlement);
              $exportAllKeys = array_merge(...array_map('array_keys', array_values($exportCols))); @endphp
         <div class="relative" x-data="{
