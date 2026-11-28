@@ -2265,12 +2265,13 @@ new #[Layout('components.layouts.app')] class extends Component
                 <div class="text-sm text-gray-700">{{ __('feature_settings.payroll_viewers') }}
                     <span class="mt-0.5 block text-xs text-gray-400">{{ __('feature_settings.payroll_viewers_sub') }}</span>
                 </div>
-                <div class="mt-2 overflow-x-auto">
+                {{-- 사람 칸(왼쪽)·머리글(위)을 붙여 둔다 — 칸이 늘어 가로로 밀어도 누구 줄인지 보이게 (jin 2026-11-28). 새 유틸 클래스 대신 style(빌드 무관). --}}
+                <div class="mt-2 overflow-auto" style="max-height:70vh" data-payroll-viewers-scroll>
                     <table class="w-full min-w-[520px] text-xs">
                         <thead><tr class="border-b border-gray-200 text-gray-500">
-                            <th class="py-1 pr-2 text-left font-normal">{{ __('feature_settings.payroll_viewers_person') }}</th>
+                            <th class="bg-white py-1 pr-2 text-left font-normal" style="position:sticky;left:0;top:0;z-index:3">{{ __('feature_settings.payroll_viewers_person') }}</th>
                             @foreach($pvCats as $cat => $label)
-                            <th class="px-1 py-1 text-center font-normal whitespace-nowrap">
+                            <th class="bg-white px-1 py-1 text-center font-normal whitespace-nowrap" style="position:sticky;top:0;z-index:2">
                                 {{-- 헤더 클릭 = 그 칸 전체 선택/해제 (jin 11-10) --}}
                                 <button type="button" wire:click="toggleViewerColumn('{{ $cat }}')" class="h-9 rounded px-1 text-gray-500 underline decoration-dotted underline-offset-2 hover:bg-gray-100 hover:text-gray-800 sm:h-7" title="{{ __('feature_settings.payroll_viewers_toggle_col') }}" data-viewer-col-toggle="{{ $cat }}">{{ $label }}</button>
                             </th>
@@ -2279,7 +2280,7 @@ new #[Layout('components.layouts.app')] class extends Component
                         <tbody class="divide-y divide-gray-100">
                         @foreach($this->payrollViewerCandidates as $cand)
                         <tr data-payroll-viewer-row="{{ $cand->id }}">
-                            <td class="py-1 pr-2 whitespace-nowrap text-gray-700">{{ $cand->name }} <span class="text-gray-400">· {{ $cand->approval_title ?: ($cand->permission === 'user' ? $cand->role : __('nav.permission.'.$cand->permission)) }}</span></td>
+                            <td class="bg-white py-1 pr-2 whitespace-nowrap text-gray-700" style="position:sticky;left:0;z-index:1">{{ $cand->name }} <span class="text-gray-400">· {{ $cand->approval_title ?: ($cand->permission === 'user' ? $cand->role : __('nav.permission.'.$cand->permission)) }}</span></td>
                             @foreach($pvCats as $cat => $label)
                             @if($cat !== 'kakao' && ! $cand->canEditPayroll())
                             <td class="px-1 py-1 text-center text-gray-300">—</td>{{-- 급여 칸은 급여 입력 권한자(관리 이상·재무)만 --}}
