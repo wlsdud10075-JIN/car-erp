@@ -71,9 +71,6 @@ class SettlementReadjustTest extends TestCase
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
         $this->actingAs($sales);
 
-        // canUnlockLedger 실패 → 모달 안 열림 (친절 차단).
-        Volt::test('erp.settlements.index')
-            ->call('openReadjustModal', $settlement->id)
-            ->assertSet('showReadjustModal', false);
+        Volt::test('erp.settlements.index')->assertForbidden();   // 2026-11-28 — 영업은 「정산 처리」 화면에 들어가지도 못한다(mount 게이트 canSeeSettlementScreen)
     }
 }

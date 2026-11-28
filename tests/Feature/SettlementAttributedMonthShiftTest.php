@@ -213,7 +213,7 @@ class SettlementAttributedMonthShiftTest extends TestCase
         $sales = User::factory()->create(['permission' => 'user', 'role' => '영업', 'email_verified_at' => now()]);
         $this->actingAs($sales);
 
-        $this->move($s, '2026-09')->assertForbidden();
+        Volt::test('erp.settlements.index')->assertForbidden();   // 2026-11-28 — 영업은 「정산 처리」 화면에 들어가지도 못한다(mount 게이트 canSeeSettlementScreen)
         $this->assertSame('2026-10-01', $s->fresh()->attributed_month->format('Y-m-d'));
     }
 }

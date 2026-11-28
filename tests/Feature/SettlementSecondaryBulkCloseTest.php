@@ -157,10 +157,7 @@ class SettlementSecondaryBulkCloseTest extends TestCase
         $s = $this->makeSettlement('BULK-OK', 10000, 0, 10000);
         $this->actingAs(User::factory()->create(['permission' => 'user', 'role' => '영업']));
 
-        Volt::test('erp.settlements.index')
-            ->set('monthFilter', '2026-07')
-            ->call('closeSecondaryMonth')
-            ->assertStatus(403);
+        Volt::test('erp.settlements.index')->assertForbidden();   // 2026-11-28 — 영업은 「정산 처리」 화면에 들어가지도 못한다(mount 게이트 canSeeSettlementScreen)
 
         $this->assertSame('pending', $s->fresh()->secondary_status);
     }
@@ -204,9 +201,7 @@ class SettlementSecondaryBulkCloseTest extends TestCase
             ->assertSet('secondaryPendingCount', 0);   // 월 미선택 = 전체 일괄 마감 금지
 
         $this->actingAs(User::factory()->create(['permission' => 'user', 'role' => '영업']));
-        Volt::test('erp.settlements.index')
-            ->set('monthFilter', '2026-07')
-            ->assertSet('secondaryPendingCount', 0);   // 권한 없음
+        Volt::test('erp.settlements.index')->assertForbidden();   // 2026-11-28 — 영업은 「정산 처리」 화면에 들어가지도 못한다(mount 게이트 canSeeSettlementScreen)
     }
 
     public function test_inline_single_close_still_works_after_refactor(): void

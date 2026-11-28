@@ -138,9 +138,7 @@ class SecondarySettlementTest extends TestCase
         $sales = $this->makeUser('user', '영업');
         $this->actingAs($sales);
 
-        Volt::test('erp.settlements.index')
-            ->call('closeSecondarySettlement', $s->id)
-            ->assertStatus(403);
+        Volt::test('erp.settlements.index')->assertForbidden();   // 2026-11-28 — 영업은 「정산 처리」 화면에 들어가지도 못한다(mount 게이트 canSeeSettlementScreen)
 
         $this->assertSame('pending', $s->fresh()->secondary_status, '영업은 closeSecondary 차단');
     }
