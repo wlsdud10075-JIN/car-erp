@@ -282,10 +282,10 @@
             'items' => [
                 [
                     'label' => __('nav.menu.settlements'),
-                    'href' => $user->canAccessSettlement() ? route('erp.settlements.index') : '#',
+                    'href' => $user->canSeeSettlementScreen() ? route('erp.settlements.index') : '#',
                     'icon' => 'calculator',
                     'active' => request()->routeIs('erp.settlements.*'),
-                    'show' => $user->canAccessSettlement(),
+                    'show' => $user->canSeeSettlementScreen(),   // 볼 사람 지정(2026-11-28)
                 ],
                 [
                     'label' => __('nav.menu.approvals'),

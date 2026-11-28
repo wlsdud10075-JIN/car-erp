@@ -287,6 +287,9 @@ new #[Layout('components.layouts.app')] class extends Component
 
     public function mount(): void
     {
+        // 🧮 볼 사람 지정(jin 2026-11-28) — 라우트(settlement 미들웨어)는 사내직원관리·재무 처리와 같이 쓰므로 이 화면만 여기서 다시 좁힌다.
+        abort_unless((bool) auth()->user()?->canSeeSettlementScreen(), 403);
+
         // 🔗 대시보드 앵커 — 담당자별 합계를 펼친 채 들어온다(월은 URL 의 month 가 이긴다 — #[Url] 이 mount 전에 채운다).
         if ($this->focusSalesmanId > 0) {
             $this->showSummaries = true;

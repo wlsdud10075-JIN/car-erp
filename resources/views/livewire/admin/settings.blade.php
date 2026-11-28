@@ -1270,6 +1270,11 @@ new #[Layout('components.layouts.app')] class extends Component
         $this->payrollViewerMatrix['staff_payout'] = $staff === null
             ? $this->payrollViewerCandidates->filter(fn ($u) => $u->canApprove())->pluck('id')->map(fn ($i) => (string) $i)->values()->all()
             : array_map('strval', $staff);
+        // 🧮 「정산 처리」 볼 사람(jin 2026-11-28) — 저장 전엔 「종전 = 정산 접근 권한자 전원」을 체크해 둔다(저장해도 지금과 같게).
+        $settle = Setting::settlementViewerIds();
+        $this->payrollViewerMatrix['settlement'] = $settle === null
+            ? $this->payrollViewerCandidates->filter(fn ($u) => $u->canAccessSettlement())->pluck('id')->map(fn ($i) => (string) $i)->values()->all()
+            : array_map('strval', $settle);
     }
 
     public function savePayrollViewers(): void
@@ -1318,6 +1323,20 @@ new #[Layout('components.layouts.app')] class extends Component
                 'user_id' => auth()->id(), 'auditable_type' => Setting::class, 'auditable_id' => $sp->id,
                 'action' => 'staff_payout_viewers_changed', 'column_name' => 'staff_payout_viewers',
                 'old_value' => $beforeStaff === null ? null : json_encode($beforeStaff), 'new_value' => json_encode($staff), 'ip_address' => request()?->ip(),
+            ]);
+        }
+        // 🧮 「정산 처리」 볼 사람(jin 2026-11-28) — 후보 = 정산 접근 권한자(재무·관리·업무관리자·최고관리자). 저장 전(null)이면 첫 저장에 그대로 박힌다.
+        $settleAllowed = $this->payrollViewerCandidates->filter(fn ($u) => $u->canAccessSettlement())->pluck('id')->map(fn ($i) => (int) $i)->all();
+        $settle = array_values(array_intersect(array_map('intval', (array) ($this->payrollViewerMatrix['settlement'] ?? [])), $settleAllowed));
+        sort($settle);
+        $beforeSettle = Setting::settlementViewerIds();
+        if ($beforeSettle === null || $settle !== (function ($x) { sort($x); return $x; })($beforeSettle)) {
+            $sv = Setting::updateOrCreate(['key' => 'settlement_viewers'],
+                ['value' => json_encode($settle), 'type' => 'string', 'description' => '정산 처리 화면 볼 사람(user id)']);
+            \App\Models\AuditLog::create([
+                'user_id' => auth()->id(), 'auditable_type' => Setting::class, 'auditable_id' => $sv->id,
+                'action' => 'settlement_viewers_changed', 'column_name' => 'settlement_viewers',
+                'old_value' => $beforeSettle === null ? null : json_encode($beforeSettle), 'new_value' => json_encode($settle), 'ip_address' => request()?->ip(),
             ]);
         }
         // 📱 카톡자동화 쓰는 사람(jin 2026-11-10) — 후보 = 로그인하는 전원. 저장 전(null)이면 첫 저장에 그대로 박힌다.
@@ -2238,6 +2257,8 @@ new #[Layout('components.layouts.app')] class extends Component
             @php $pvCats = \App\Models\Salesman::PAYROLL_VIEW_CATEGORIES; if (! $domesticPayoutEnabled) { unset($pvCats['domestic']); }
                  // 🧾 사내직원 월정산 볼 사람(jin 2026-11-05) — 급여 칸이 아니라 메뉴 칸. 맨 앞에(내수직원과 나란히).
                  $pvCats = ['staff_payout' => __('feature_settings.staff_payout_col')] + $pvCats;
+                 // 🧮 「정산 처리」 화면 볼 사람(jin 2026-11-28) — 메뉴 칸. 맨 앞에.
+                 $pvCats = ['settlement' => __('feature_settings.settlement_col')] + $pvCats;
                  // 📱 카톡자동화 쓰는 사람(jin 2026-11-10) — 회사 토글이 켜진 회사만 칸이 보인다. 전원 후보라 모든 줄에 체크칸.
                  if ($kakaoAssistantEnabled) { $pvCats['kakao'] = __('feature_settings.kakao_col'); } @endphp
             <div class="rounded-md border border-gray-100 px-3 py-2" data-payroll-viewers>

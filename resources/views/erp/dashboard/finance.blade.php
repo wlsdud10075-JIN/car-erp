@@ -25,7 +25,8 @@
     </div>
 </div>
 
-{{-- 정산 진행줄 --}}
+{{-- 정산 진행줄 — 「정산 처리」를 볼 수 있는 사람에게만(볼 사람 지정, 2026-11-28) --}}
+@if(auth()->user()?->canSeeSettlementScreen())
 <div class="card" data-finance-steps>
     <div class="flex items-center justify-between">
         <div class="section-header"><span class="section-dot bg-violet-500"></span><span class="section-title">{{ $t('steps.title') }}</span></div>
@@ -41,6 +42,7 @@
         @endforeach
     </div>
 </div>
+@endif
 
 {{-- 통장 마감잔액 입력 (현행 그대로) --}}
 @include('erp.dashboard._cash')

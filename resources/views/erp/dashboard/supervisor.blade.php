@@ -1,3 +1,4 @@
+@php $canSeeSettle = (bool) auth()->user()?->canSeeSettlementScreen(); @endphp{{-- 「정산 처리」 볼 사람 지정(2026-11-28) — 못 보는 사람에게는 그 화면으로 가는 버튼을 안 그린다 --}}
 {{-- 업무 대시보드 · 업무관리자 뷰 (jin 2026-10-17: 결재는 대표 — 여기는 올릴 것·멈춘 것·팀별 미처리·보고용 숫자). $this = erp.dashboard 컴포넌트. --}}
 @php
     $s = $this->submissionStatus;
@@ -32,20 +33,20 @@
                     @else {{ $t('submit.batch_rejected') }}
                     @endif
                 </span></div>
-            <a href="{{ route('erp.settlements.index') }}" wire:navigate class="btn-primary px-3 py-1 text-xs">{{ $t('submit.go') }}</a>
+            @if($canSeeSettle)<a href="{{ route('erp.settlements.index') }}" wire:navigate class="btn-primary px-3 py-1 text-xs">{{ $t('submit.go') }}</a>@endif
         </div>
         <div class="mt-2 flex flex-wrap gap-x-6 gap-y-1 text-sm">
             <span class="flex items-center gap-2"><span class="section-dot bg-emerald-500"></span>{{ $t('submit.eligible', ['n' => $s['eligible_count']]) }}</span>
             <span class="flex items-center gap-2"><span class="section-dot {{ $s['unconfirmed_count'] > 0 ? 'bg-red-500' : 'bg-gray-300' }}"></span><span class="{{ $s['unconfirmed_count'] > 0 ? 'text-red-700' : '' }}">{{ $t('submit.unconfirmed', ['n' => $s['unconfirmed_count']]) }}</span>
-                <a href="{{ route('erp.settlements.index') }}?status=pending" wire:navigate class="text-xs text-primary-text hover:underline">→</a></span>
+                @if($canSeeSettle)<a href="{{ route('erp.settlements.index') }}?status=pending" wire:navigate class="text-xs text-primary-text hover:underline">→</a>@endif</span>
             <span class="flex items-center gap-2"><span class="section-dot {{ $s['held_count'] > 0 ? 'bg-amber-500' : 'bg-gray-300' }}"></span><span class="{{ $s['held_count'] > 0 ? 'text-amber-700' : '' }}">{{ $t('submit.held', ['n' => $s['held_count']]) }}</span>
-                <a href="{{ route('erp.settlements.index') }}?held=1" wire:navigate class="text-xs text-primary-text hover:underline">→</a></span>
+                @if($canSeeSettle)<a href="{{ route('erp.settlements.index') }}?held=1" wire:navigate class="text-xs text-primary-text hover:underline">→</a>@endif</span>
         </div>
     </div>
     @foreach($s['leavers'] as $lv)
     <div class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-gray-200 px-3 py-2">
         <div><span class="badge badge-amber">{{ $t('submit.leaver') }}</span> <b class="text-gray-900">{{ $t('submit.leaver_row', ['name' => $lv->name, 'date' => $lv->left_at?->format('m-d')]) }}</b></div>
-        <a href="{{ route('erp.settlements.index') }}?leavers=1" wire:navigate class="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50">{{ $t('submit.leaver_go') }}</a>
+        @if($canSeeSettle)<a href="{{ route('erp.settlements.index') }}?leavers=1" wire:navigate class="rounded border border-gray-300 bg-white px-3 py-1 text-xs text-gray-700 hover:bg-gray-50">{{ $t('submit.leaver_go') }}</a>@endif
     </div>
     @endforeach
     <div class="mt-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs text-gray-500">
